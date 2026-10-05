@@ -2,6 +2,7 @@ import {
   OnirigiriWorkspace,
   type OnirigiriPaneDefinition,
   type OnirigiriWorkspaceHandle,
+  type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
@@ -113,39 +114,70 @@ function UnfocusedThreadPane({ pane }: { pane: WorkspacePane }) {
   );
 }
 
-function useOverlayFollowsSlot(
-  overlayRef: { readonly current: HTMLDivElement | null },
-  enabled: boolean,
-  slot: FocusedSlot | null,
-) {
-  useEffect(() => {
-    const overlay = overlayRef.current;
+interface PaneContentInsets {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
+
+// Places the shared ChatView over the focused pane's content area from the
+// frames Onirigiri reports, so following the camera never reads layout.
+class OverlayPlacement {
+  private frame: WorkspaceFocusedPaneFrame | null = null;
+  private insets: PaneContentInsets | null = null;
+  private stageOrigin = { x: 0, y: 0 };
+  private written = "";
+
+  constructor(private readonly overlay: { readonly current: HTMLDivElement | null }) {}
+
+  setSlot(slot: HTMLElement | null) {
+    const host = slot?.closest<HTMLElement>("[data-onirigiri-pane-id]");
+    const stage = slot?.closest<HTMLElement>('[data-onirigiri-slot="stage"]');
+    if (slot && host && stage && !this.insets) {
+      const hostRect = host.getBoundingClientRect();
+      const slotRect = slot.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const scale = host.offsetWidth > 0 ? hostRect.width / host.offsetWidth : 1;
+      this.insets = {
+        bottom: (hostRect.bottom - slotRect.bottom) / scale,
+        left: (slotRect.left - hostRect.left) / scale,
+        right: (hostRect.right - slotRect.right) / scale,
+        top: (slotRect.top - hostRect.top) / scale,
+      };
+      this.stageOrigin = { x: stageRect.left, y: stageRect.top };
+    }
+    this.apply();
+  }
+
+  setFrame(frame: WorkspaceFocusedPaneFrame | null) {
+    this.frame = frame;
+    this.apply();
+  }
+
+  private apply() {
+    const overlay = this.overlay.current;
     if (!overlay) return;
-    if (!enabled || !slot) {
-      overlay.style.visibility = "hidden";
+    const { frame, insets } = this;
+    if (!frame || !insets || Math.abs(frame.scale - 1) > 0.001) {
+      if (this.written !== "hidden") {
+        this.written = "hidden";
+        overlay.style.visibility = "hidden";
+      }
       return;
     }
-    let frame = 0;
-    let last = "";
-    const follow = () => {
-      const rect = slot.element.getBoundingClientRect();
-      const scaled = Math.abs(rect.width - slot.element.offsetWidth) > 0.5;
-      const next = scaled ? "scaled" : `${rect.left},${rect.top},${rect.width},${rect.height}`;
-      if (next !== last && scaled) {
-        last = next;
-        overlay.style.visibility = "hidden";
-      } else if (next !== last) {
-        last = next;
-        overlay.style.transform = `translate(${rect.left}px, ${rect.top}px)`;
-        overlay.style.width = `${rect.width}px`;
-        overlay.style.height = `${rect.height}px`;
-        overlay.style.visibility = "visible";
-      }
-      frame = requestAnimationFrame(follow);
-    };
-    follow();
-    return () => cancelAnimationFrame(frame);
-  }, [enabled, overlayRef, slot]);
+    const x = this.stageOrigin.x + frame.x + insets.left;
+    const y = this.stageOrigin.y + frame.y + insets.top;
+    const width = frame.width - insets.left - insets.right;
+    const height = frame.height - insets.top - insets.bottom;
+    const next = `${x},${y},${width},${height}`;
+    if (next === this.written) return;
+    this.written = next;
+    overlay.style.transform = `translate(${x}px, ${y}px)`;
+    overlay.style.width = `${width}px`;
+    overlay.style.height = `${height}px`;
+    overlay.style.visibility = "visible";
+  }
 }
 
 export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null }) {
@@ -162,7 +194,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     return element;
   });
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [overview, setOverview] = useState(false);
+  const [placement] = useState(() => new OverlayPlacement(overlayRef));
 
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
@@ -181,13 +213,26 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     else chatHost.remove();
   }, [chatHost, mode, slot]);
 
-  useOverlayFollowsSlot(overlayRef, mode === "overlay" && !overview, overview ? null : slot);
+  useLayoutEffect(() => {
+    if (mode === "overlay") placement.setSlot(slot?.element ?? null);
+  }, [mode, placement, slot]);
 
   useEffect(() => {
     if (!slot || slot.paneId === routePaneId) return;
     const data = paneData.get(slot.paneId);
     if (!data) return;
-    void navigate({ to: "/$environmentId/$threadId", params: data });
+    // Switch the thread after the focus change has painted, so ChatView's
+    // layout reads do not also lay out the workspace's pending changes.
+    let timeout = 0;
+    const frame = requestAnimationFrame(() => {
+      timeout = window.setTimeout(() => {
+        void navigate({ to: "/$environmentId/$threadId", params: data });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timeout);
+    };
   }, [navigate, paneData, routePaneId, slot]);
 
   const focusRoutePane = useEffectEvent((paneId: string) => {
@@ -219,7 +264,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
           initialPanes={initialPanes}
           renderPane={renderPane}
           shortcutScope="application"
-          onPresentationModeChange={(next) => setOverview(next === "overview")}
+          onFocusedPaneFrame={(frame) => placement.setFrame(frame)}
           workspaceId="onirigiri-t3-spike"
         />
       ) : null}
