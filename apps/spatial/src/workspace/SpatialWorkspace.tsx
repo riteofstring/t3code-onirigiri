@@ -34,7 +34,7 @@ function threadPaneId(environmentId: string, threadId: string) {
 function readSpikeOptions() {
   const search = new URLSearchParams(window.location.search);
   return {
-    liveContent: search.has("live"),
+    liveContent: !search.has("frozen"),
     maxRows: Number(search.get("rows") ?? 3),
     maxThreadsPerRow: Number(search.get("perRow") ?? 4),
     sidesThreadId: search.get("sides"),
