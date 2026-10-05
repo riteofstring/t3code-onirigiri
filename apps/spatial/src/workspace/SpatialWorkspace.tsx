@@ -204,9 +204,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
       return (
         <ThreadPane
           thread={pane.data as ThreadPaneData}
-          active={
-            state.focused && state.runtimeState === "live" && state.presentationMode === "normal"
-          }
+          active={state.focused && state.interactive}
           onNavigateAway={navigateAway}
         />
       );
