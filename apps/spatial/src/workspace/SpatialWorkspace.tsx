@@ -29,6 +29,7 @@ import {
 } from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
+import { setChatFocused } from "./chatInputGate";
 import { DiffPane, TerminalPane } from "./SidePanes";
 
 type ChatHostMode = "none" | "overlay" | "reparent";
@@ -230,6 +231,8 @@ class OverlayPlacement {
       if (this.written !== "hidden") {
         this.written = "hidden";
         overlay.style.visibility = "hidden";
+        overlay.inert = true;
+        setChatFocused(false);
       }
       return;
     }
@@ -244,6 +247,8 @@ class OverlayPlacement {
     overlay.style.width = `${width}px`;
     overlay.style.height = `${height}px`;
     overlay.style.visibility = "visible";
+    overlay.inert = false;
+    setChatFocused(true);
   }
 }
 
