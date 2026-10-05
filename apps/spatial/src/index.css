@@ -2,21 +2,6 @@
 
 @source "../../web/src";
 
-.spatial-chat-slot,
-.spatial-chat-host {
-  width: 100%;
+.spatial-thread-pane [data-slot="sidebar-inset"] {
   height: 100%;
-}
-
-.spatial-chat-host [data-slot="sidebar-inset"] {
-  height: 100%;
-}
-
-.spatial-chat-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 10;
-  visibility: hidden;
-  will-change: transform;
 }

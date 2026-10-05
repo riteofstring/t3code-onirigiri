@@ -7,10 +7,8 @@ import { AppAtomRegistryProvider } from "@t3tools/web/src/rpc/atomRegistry";
 import "./index.css";
 
 import { getRouter } from "./router";
-import { installChatInputGate } from "./workspace/chatInputGate";
 
 prepareProviderAuthDelivery();
-installChatInputGate(window);
 
 const router = getRouter(createBrowserHistory());
 

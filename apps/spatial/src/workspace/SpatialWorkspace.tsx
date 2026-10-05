@@ -9,19 +9,9 @@ import {
 import "@riteofstring/onirigiri/styles.css";
 import { reconcileWorkspaceLayout } from "@riteofstring/onirigiri-t3";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { createPortal } from "react-dom";
+import { useRouter } from "@tanstack/react-router";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
-import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
@@ -29,34 +19,33 @@ import {
 } from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { setChatFocused } from "./chatInputGate";
 import { DiffPane, TerminalPane } from "./SidePanes";
-
-type ChatHostMode = "none" | "overlay" | "reparent";
+import { ThreadPane } from "./ThreadPane";
 
 interface ThreadPaneData {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }
 
-interface FocusedSlot {
-  readonly paneId: string;
-  readonly element: HTMLElement;
-}
-
-const MAX_ROWS = 3;
-const MAX_THREADS_PER_ROW = 4;
-
 function threadPaneId(environmentId: string, threadId: string) {
   return `thread:${environmentId}:${threadId}`;
 }
 
-function readChatHostMode(): ChatHostMode {
-  const mode = new URLSearchParams(window.location.search).get("chat");
-  return mode === "reparent" || mode === "none" ? mode : "overlay";
+function readSpikeOptions() {
+  const search = new URLSearchParams(window.location.search);
+  return {
+    liveContent: search.has("live"),
+    maxRows: Number(search.get("rows") ?? 3),
+    maxThreadsPerRow: Number(search.get("perRow") ?? 4),
+    sidesThreadId: search.get("sides"),
+  };
 }
 
-function useThreadPanes(sidesThreadId: string | null): readonly OnirigiriPaneDefinition[] | null {
+function useThreadPanes(
+  sidesThreadId: string | null,
+  maxRows: number,
+  maxThreadsPerRow: number,
+): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const projects = useProjects();
   const threads = useThreadShells();
@@ -90,10 +79,10 @@ function useThreadPanes(sidesThreadId: string | null): readonly OnirigiriPaneDef
     );
     const panes = layout.rows
       .filter((row) => row.panes.length > 0)
-      .slice(0, MAX_ROWS)
+      .slice(0, maxRows)
       .flatMap((row, planeIndex) =>
         row.panes
-          .slice(0, MAX_THREADS_PER_ROW)
+          .slice(0, maxThreadsPerRow)
           .flatMap((pane) => {
             const thread = threadById.get(pane.threadId);
             if (!thread) return [];
@@ -112,7 +101,7 @@ function useThreadPanes(sidesThreadId: string | null): readonly OnirigiriPaneDef
           .map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
       );
     return panes.length > 0 ? panes : null;
-  }, [bootstrapped, projects, threads, sidesThreadId]);
+  }, [bootstrapped, projects, threads, sidesThreadId, maxRows, maxThreadsPerRow]);
 }
 
 function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
@@ -138,136 +127,18 @@ function scopedKey(environmentId: string, id: string) {
   return `${environmentId}:${id}`;
 }
 
-function FocusedPaneSlot({
-  paneId,
-  onSlot,
-}: {
-  paneId: string;
-  onSlot: (update: (current: FocusedSlot | null) => FocusedSlot | null) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (!ref.current) return;
-    const slot = { paneId, element: ref.current };
-    onSlot(() => slot);
-    return () => onSlot((current) => (current === slot ? null : current));
-  }, [onSlot, paneId]);
-  return <div ref={ref} className="spatial-chat-slot" data-spatial-chat-slot={paneId} />;
-}
-
-function UnfocusedThreadPane({ pane }: { pane: WorkspacePane }) {
-  return (
-    <div className="flex h-full flex-col justify-center gap-1 bg-background p-6 text-foreground">
-      <div className="text-sm text-muted-foreground">{pane.subtitle}</div>
-      <div className="text-lg font-medium">{pane.title}</div>
-    </div>
-  );
-}
-
-interface PaneContentInsets {
-  readonly bottom: number;
-  readonly left: number;
-  readonly right: number;
-  readonly top: number;
-}
-
-// Places the shared ChatView over the focused pane's content area from the
-// frames Onirigiri reports, so following the camera never reads layout.
-class OverlayPlacement {
-  private frame: WorkspaceFocusedPaneFrame | null = null;
-  private insets: PaneContentInsets | null = null;
-  private slotPaneId: string | null = null;
-  private stageOrigin = { x: 0, y: 0 };
-  private written = "";
-
-  constructor(private readonly overlay: { readonly current: HTMLDivElement | null }) {}
-
-  private observer: ResizeObserver | null = null;
-
-  setSlot(slot: HTMLElement | null, paneId: string | null) {
-    this.slotPaneId = paneId;
-    this.observer?.disconnect();
-    this.observer = null;
-    if (slot) {
-      this.observer = new ResizeObserver(() => this.measure(slot));
-      this.observer.observe(slot);
-    }
-    this.apply();
-  }
-
-  private measure(slot: HTMLElement) {
-    const host = slot.closest<HTMLElement>("[data-onirigiri-pane-id]");
-    const stage = slot.closest<HTMLElement>('[data-onirigiri-slot="stage"]');
-    if (!host || !stage || host.offsetWidth === 0 || slot.offsetWidth === 0) return;
-    const hostRect = host.getBoundingClientRect();
-    const slotRect = slot.getBoundingClientRect();
-    const stageRect = stage.getBoundingClientRect();
-    const scale = hostRect.width / host.offsetWidth;
-    this.insets = {
-      bottom: (hostRect.bottom - slotRect.bottom) / scale,
-      left: (slotRect.left - hostRect.left) / scale,
-      right: (hostRect.right - slotRect.right) / scale,
-      top: (slotRect.top - hostRect.top) / scale,
-    };
-    this.stageOrigin = { x: stageRect.left, y: stageRect.top };
-    this.apply();
-  }
-
-  setFrame(frame: WorkspaceFocusedPaneFrame | null) {
-    this.frame = frame;
-    this.apply();
-  }
-
-  private apply() {
-    const overlay = this.overlay.current;
-    if (!overlay) return;
-    const { frame, insets } = this;
-    if (
-      !frame ||
-      !insets ||
-      frame.paneId !== this.slotPaneId ||
-      Math.abs(frame.scale - 1) > 0.001
-    ) {
-      if (this.written !== "hidden") {
-        this.written = "hidden";
-        overlay.style.visibility = "hidden";
-        overlay.inert = true;
-        setChatFocused(false);
-      }
-      return;
-    }
-    const x = this.stageOrigin.x + frame.x + insets.left;
-    const y = this.stageOrigin.y + frame.y + insets.top;
-    const width = frame.width - insets.left - insets.right;
-    const height = frame.height - insets.top - insets.bottom;
-    const next = `${x},${y},${width},${height}`;
-    if (next === this.written) return;
-    this.written = next;
-    overlay.style.transform = `translate(${x}px, ${y}px)`;
-    overlay.style.width = `${width}px`;
-    overlay.style.height = `${height}px`;
-    overlay.style.visibility = "visible";
-    overlay.inert = false;
-    setChatFocused(true);
-  }
-}
-
 export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null }) {
-  const navigate = useNavigate();
-  const [sidesThreadId] = useState(() => new URLSearchParams(window.location.search).get("sides"));
-  const threadPanes = useThreadPanes(sidesThreadId);
+  const router = useRouter();
+  const [options] = useState(readSpikeOptions);
+  const threadPanes = useThreadPanes(
+    options.sidesThreadId,
+    options.maxRows,
+    options.maxThreadsPerRow,
+  );
   const [initialPanes, setInitialPanes] = useState(threadPanes);
   if (initialPanes === null && threadPanes !== null) setInitialPanes(threadPanes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
-  const [mode] = useState(readChatHostMode);
-  const [slot, setSlot] = useState<FocusedSlot | null>(null);
-  const [chatHost] = useState(() => {
-    const element = document.createElement("div");
-    element.className = "spatial-chat-host";
-    return element;
-  });
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const [placement] = useState(() => new OverlayPlacement(overlayRef));
+  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
 
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
@@ -282,84 +153,81 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
 
-  useLayoutEffect(() => {
-    if (mode !== "reparent") return;
-    if (slot) slot.element.appendChild(chatHost);
-    else chatHost.remove();
-  }, [chatHost, mode, slot]);
-
-  useLayoutEffect(() => {
-    if (mode === "overlay") placement.setSlot(slot?.element ?? null, slot?.paneId ?? null);
-  }, [mode, placement, slot]);
-
+  // The app route follows the focused thread so T3's global surfaces act on it.
+  // Routes this workspace requested are remembered so they are not mistaken for
+  // a navigation elsewhere in the app, which instead moves focus to its pane.
+  const requestedRoutesRef = useRef(new Set<string>());
   useEffect(() => {
-    if (!slot || slot.paneId === routePaneId) return;
-    const data = paneData.get(slot.paneId);
-    if (!data) return;
-    // Switch the thread after the focus change has painted, so ChatView's
-    // layout reads do not also lay out the workspace's pending changes.
-    let timeout = 0;
+    const data = focusedPaneId ? paneData.get(focusedPaneId) : undefined;
+    if (!focusedPaneId || !data || focusedPaneId === routePaneId) return;
     const frame = requestAnimationFrame(() => {
-      timeout = window.setTimeout(() => {
-        void navigate({ to: "/$environmentId/$threadId", params: data });
-      });
+      requestedRoutesRef.current.add(focusedPaneId);
+      void router.navigate({ to: "/$environmentId/$threadId", params: data });
     });
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(timeout);
-    };
-  }, [navigate, paneData, routePaneId, slot]);
+    return () => cancelAnimationFrame(frame);
+  }, [focusedPaneId, paneData, routePaneId, router]);
 
   const focusRoutePane = useEffectEvent((paneId: string) => {
-    if (paneData.has(paneId) && slot?.paneId !== paneId) workspaceRef.current?.focusPane(paneId);
+    if (requestedRoutesRef.current.delete(paneId)) return;
+    if (paneData.has(paneId) && focusedPaneId !== paneId) workspaceRef.current?.focusPane(paneId);
   });
 
   useEffect(() => {
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
 
-  const renderPane = useCallback((pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
-    if (pane.surfaceKind === "terminal") {
-      const data = pane.data as ThreadPaneData & { terminalId: string };
-      return (
-        <TerminalPane
-          thread={data}
-          terminalId={data.terminalId}
-          focused={state.focused}
-          live={state.runtimeState === "live"}
-        />
-      );
-    }
-    if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ThreadPaneData} />;
-    return state.focused ? (
-      <FocusedPaneSlot paneId={pane.paneId} onSlot={setSlot} />
-    ) : (
-      <UnfocusedThreadPane pane={pane} />
-    );
+  const navigateAway = useCallback(
+    (href: string) => {
+      void router.navigate({ href });
+    },
+    [router],
+  );
+
+  const trackFocusedPane = useCallback((frame: WorkspaceFocusedPaneFrame | null) => {
+    if (frame) setFocusedPaneId(frame.paneId);
   }, []);
 
-  const chatView = target && mode !== "none" ? <ThreadRouteView target={target} /> : null;
+  const renderPane = useCallback(
+    (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
+      if (pane.surfaceKind === "terminal") {
+        const data = pane.data as ThreadPaneData & { terminalId: string };
+        return (
+          <TerminalPane
+            thread={data}
+            terminalId={data.terminalId}
+            focused={state.focused}
+            live={state.runtimeState === "live"}
+          />
+        );
+      }
+      if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ThreadPaneData} />;
+      return (
+        <ThreadPane
+          thread={pane.data as ThreadPaneData}
+          active={
+            state.focused && state.runtimeState === "live" && state.presentationMode === "normal"
+          }
+          onNavigateAway={navigateAway}
+        />
+      );
+    },
+    [navigateAway],
+  );
 
   return (
-    <div className="spatial-workspace h-dvh w-full" data-spatial-chat-mode={mode}>
+    <div className="spatial-workspace h-dvh w-full">
       {initialPanes ? (
         <OnirigiriWorkspace
           ref={workspaceRef}
           ariaLabel="Onirigiri for T3 Code"
           initialPanes={initialPanes}
+          liveContent={options.liveContent}
+          onFocusedPaneFrame={trackFocusedPane}
           renderPane={renderPane}
           shortcutScope="application"
-          onFocusedPaneFrame={(frame) => placement.setFrame(frame)}
           workspaceId="onirigiri-t3-spike"
         />
       ) : null}
-      {mode === "reparent" ? (
-        createPortal(chatView, chatHost)
-      ) : (
-        <div ref={overlayRef} className="spatial-chat-overlay spatial-chat-host">
-          {chatView}
-        </div>
-      )}
     </div>
   );
 }
