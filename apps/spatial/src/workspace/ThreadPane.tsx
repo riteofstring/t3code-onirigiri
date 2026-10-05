@@ -1,3 +1,4 @@
+import { useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   Outlet,
@@ -81,17 +82,20 @@ function createPaneRouter(threadPath: string) {
  * One thread rendered by its own live ChatView. The pane owns a memory-history
  * router so every route read inside ChatView resolves to this thread; any
  * navigation away from it is handed to the app router instead. Only the
- * focused pane's ChatView is active; switching activity does not re-render it.
+ * focused pane's ChatView is active while its content accepts input; switching
+ * activity does not re-render it.
  */
 export const ThreadPane = memo(function ThreadPane({
   thread,
-  active,
+  focused,
   onNavigateAway,
 }: {
   thread: ThreadPaneThread;
-  active: boolean;
+  focused: boolean;
   onNavigateAway: (href: string) => void;
 }) {
+  const interactive = useOnirigiriPaneInteractive();
+  const active = focused && interactive;
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
