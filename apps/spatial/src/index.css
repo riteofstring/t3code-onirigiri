@@ -1,3 +1,22 @@
 @import "@t3tools/web/src/index.css";
 
 @source "../../web/src";
+
+.spatial-chat-slot,
+.spatial-chat-host {
+  width: 100%;
+  height: 100%;
+}
+
+.spatial-chat-host [data-slot="sidebar-inset"] {
+  height: 100%;
+}
+
+.spatial-chat-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  visibility: hidden;
+  will-change: transform;
+}

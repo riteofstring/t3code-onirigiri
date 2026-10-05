@@ -1,8 +1,9 @@
 import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 
-import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { SidebarProvider } from "@t3tools/web/src/components/ui/sidebar";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
+
+import { SpatialWorkspace } from "../workspace/SpatialWorkspace";
 
 function SpatialChatLayout() {
   const threadTarget = useParams({
@@ -11,7 +12,8 @@ function SpatialChatLayout() {
   });
   return (
     <SidebarProvider defaultOpen={false}>
-      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
+      <SpatialWorkspace target={threadTarget} />
+      <Outlet />
     </SidebarProvider>
   );
 }

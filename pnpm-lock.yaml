@@ -594,6 +594,9 @@ importers:
 
   apps/spatial:
     dependencies:
+      '@riteofstring/onirigiri':
+        specifier: link:../../../onirigiri
+        version: link:../../../onirigiri
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

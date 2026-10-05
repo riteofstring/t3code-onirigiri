@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@riteofstring/onirigiri": "link:../../../onirigiri",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/web": "workspace:*",
     "@tanstack/react-router": "^1.160.2",
