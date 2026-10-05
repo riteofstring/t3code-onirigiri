@@ -78,6 +78,7 @@ import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { useChatViewActivity } from "./chatViewActivity";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -425,12 +426,14 @@ function RightPanelEmptyState(props: {
   // is focused; focus moves around too easily (stray clicks) to carry them.
   // Capture phase so app-level key handlers cannot swallow the event first;
   // typing contexts and already-handled events are left alone.
+  const chatViewActivity = useChatViewActivity();
   const shortcutActionsRef = useRef(availableActions);
   useEffect(() => {
     shortcutActionsRef.current = availableActions;
   });
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (!chatViewActivity.isActive()) return;
       const action = surfaceShortcutActionForKey(shortcutActionsRef.current, event);
       if (!action) return;
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
@@ -442,7 +445,7 @@ function RightPanelEmptyState(props: {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, []);
+  }, [chatViewActivity]);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;

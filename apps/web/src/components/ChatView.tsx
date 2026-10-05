@@ -200,6 +200,7 @@ import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
+import { useActiveChatViewEffect, useChatViewActivity } from "./chatViewActivity";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -1595,6 +1596,7 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [routeKind, routeThreadRef, routeThreadState]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const chatViewActivity = useChatViewActivity();
   const settings = useEnvironmentSettings(environmentId);
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
@@ -2122,7 +2124,7 @@ export default function ChatView(props: ChatViewProps) {
   // exactly the completion the user is looking at: a wake or completion that
   // lands later still gets its signal (markThreadVisited never moves the
   // timestamp backwards).
-  useEffect(() => {
+  useActiveChatViewEffect(() => {
     const completedAt = serverThread?.latestTurn?.completedAt;
     if (!serverThread?.id || !completedAt) return;
     markThreadVisited(
@@ -3983,7 +3985,13 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
-  useEffect(() => subscribeSnapShotComposerFocus(focusComposer), [focusComposer]);
+  useEffect(
+    () =>
+      subscribeSnapShotComposerFocus(() => {
+        if (chatViewActivity.isActive()) focusComposer();
+      }),
+    [chatViewActivity, focusComposer],
+  );
   const scheduleComposerFocus = useCallback(() => {
     window.requestAnimationFrame(() => {
       focusComposer();
@@ -5210,9 +5218,9 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(
     () =>
       subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanel();
+        if (action === "toggle-panel" && chatViewActivity.isActive()) togglePreviewPanel();
       }),
-    [togglePreviewPanel],
+    [chatViewActivity, togglePreviewPanel],
   );
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
@@ -5510,6 +5518,7 @@ export default function ChatView(props: ChatViewProps) {
         // the end on the next stream chunk. Clicking message text can leave
         // DOM focus on body, so these keys must also be heard at document.
         const handleKeyDown = (event: KeyboardEvent) => {
+          if (!chatViewActivity.isActive()) return;
           if (
             !(event.target instanceof Node) ||
             (!scrollNode.contains(event.target) &&
@@ -5586,7 +5595,12 @@ export default function ChatView(props: ChatViewProps) {
       }
       removeListeners?.();
     };
-  }, [activeThread?.id, isTimelineAtLogicalEnd, timelineRealContentOverflowsViewport]);
+  }, [
+    activeThread?.id,
+    chatViewActivity,
+    isTimelineAtLogicalEnd,
+    timelineRealContentOverflowsViewport,
+  ]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
     // Anchored-end space can be remeasured when the turn completes. Once the
@@ -5741,7 +5755,7 @@ export default function ChatView(props: ChatViewProps) {
     // activeThreadRef resets transitively with the active thread.
   }, [activeThread?.id, routeThreadKey]);
 
-  useEffect(() => {
+  useActiveChatViewEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
@@ -5756,7 +5770,7 @@ export default function ChatView(props: ChatViewProps) {
   // drawer terminal owns keyboard input while it is open, so it opts out here; a right panel
   // terminal is a surface and is recognized by the predicate instead. Mobile is left alone so
   // returning to the app does not raise the keyboard.
-  useEffect(() => {
+  useActiveChatViewEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
     let frame: number | null = null;
     const onWindowFocus = () => {
@@ -6687,6 +6701,7 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
+      if (!chatViewActivity.isActive()) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
@@ -6932,6 +6947,7 @@ export default function ChatView(props: ChatViewProps) {
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [
+    chatViewActivity,
     activeProject,
     activeRightPanelSurface,
     activeProjectScripts,
@@ -6975,6 +6991,7 @@ export default function ChatView(props: ChatViewProps) {
   // Route it to the composer like a typed key, which also expands it.
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
+      if (!chatViewActivity.isActive()) return;
       if (
         shouldRedirectInputToComposer(event) &&
         isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
@@ -6983,6 +7000,7 @@ export default function ChatView(props: ChatViewProps) {
       }
     };
     const handler = (event: ClipboardEvent) => {
+      if (!chatViewActivity.isActive()) return;
       if (!activeThreadId || isCommandPaletteOpen()) return;
       if (getTerminalFocusOwner() !== null) return;
       if (composerRef.current?.isModelPickerOpen()) return;
@@ -7006,7 +7024,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [activeThreadId, chatViewActivity, composerRef]);
 
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;
