@@ -6,6 +6,7 @@ import {
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
+import { reconcileWorkspaceLayout } from "@riteofstring/onirigiri-t3";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -58,34 +59,54 @@ function useThreadPanes(): readonly OnirigiriPaneDefinition[] | null {
 
   return useMemo(() => {
     if (!bootstrapped) return null;
-    const rows = projects
-      .map((project) => ({
-        project,
-        threads: threads
-          .filter(
-            (thread) =>
-              thread.environmentId === project.environmentId &&
-              thread.projectId === project.id &&
-              thread.archivedAt === null,
-          )
-          .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-          .slice(0, MAX_THREADS_PER_ROW),
-      }))
-      .filter((row) => row.threads.length > 0)
-      .slice(0, MAX_ROWS);
-    const panes = rows.flatMap((row, planeIndex) =>
-      row.threads.map((thread, slotIndex) => ({
-        paneId: threadPaneId(thread.environmentId, thread.id),
-        planeIndex,
-        slotIndex,
-        surfaceKind: "thread",
-        title: thread.title,
-        subtitle: row.project.title,
-        data: { environmentId: thread.environmentId, threadId: thread.id } satisfies ThreadPaneData,
-      })),
+    const projectById = new Map(
+      projects.map((project) => [scopedKey(project.environmentId, project.id), project]),
     );
+    const threadById = new Map(
+      threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
+    );
+    const layout = reconcileWorkspaceLayout(
+      { rows: [] },
+      {
+        projects: [...projectById.keys()].map((id) => ({ id })),
+        threads: threads
+          .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .map((thread) => ({
+            id: scopedKey(thread.environmentId, thread.id),
+            projectId: scopedKey(thread.environmentId, thread.projectId),
+            archived: thread.archivedAt !== null,
+          })),
+      },
+    );
+    const panes = layout.rows
+      .filter((row) => row.panes.length > 0)
+      .slice(0, MAX_ROWS)
+      .flatMap((row, planeIndex) =>
+        row.panes.slice(0, MAX_THREADS_PER_ROW).flatMap((pane, slotIndex) => {
+          const thread = threadById.get(pane.threadId);
+          if (!thread) return [];
+          return [
+            {
+              paneId: threadPaneId(thread.environmentId, thread.id),
+              planeIndex,
+              slotIndex,
+              surfaceKind: "thread",
+              title: thread.title,
+              subtitle: projectById.get(row.projectId)?.title ?? "",
+              data: {
+                environmentId: thread.environmentId,
+                threadId: thread.id,
+              } satisfies ThreadPaneData,
+            },
+          ];
+        }),
+      );
     return panes.length > 0 ? panes : null;
   }, [bootstrapped, projects, threads]);
+}
+
+function scopedKey(environmentId: string, id: string) {
+  return `${environmentId}:${id}`;
 }
 
 function FocusedPaneSlot({
