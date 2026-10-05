@@ -1,0 +1,25 @@
+{
+  "name": "@t3tools/spatial",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/web": "workspace:*",
+    "@tanstack/react-router": "^1.160.2",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "@types/react-dom": "~19.2.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
