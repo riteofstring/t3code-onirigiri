@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/atom-react": "catalog:",
     "@riteofstring/onirigiri": "link:../../../onirigiri",
     "@riteofstring/onirigiri-t3": "link:../../../onirigiri-t3",
     "@t3tools/contracts": "workspace:*",

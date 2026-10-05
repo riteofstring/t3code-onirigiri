@@ -1,6 +1,7 @@
 import {
   OnirigiriWorkspace,
   type OnirigiriPaneDefinition,
+  type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
   type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
@@ -28,6 +29,8 @@ import {
 } from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
+import { DiffPane, TerminalPane } from "./SidePanes";
+
 type ChatHostMode = "none" | "overlay" | "reparent";
 
 interface ThreadPaneData {
@@ -52,7 +55,7 @@ function readChatHostMode(): ChatHostMode {
   return mode === "reparent" || mode === "none" ? mode : "overlay";
 }
 
-function useThreadPanes(): readonly OnirigiriPaneDefinition[] | null {
+function useThreadPanes(sidesThreadId: string | null): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const projects = useProjects();
   const threads = useThreadShells();
@@ -65,44 +68,69 @@ function useThreadPanes(): readonly OnirigiriPaneDefinition[] | null {
     const threadById = new Map(
       threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
     );
+    const recentThreads = threads.toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const layout = reconcileWorkspaceLayout(
       { rows: [] },
       {
-        projects: [...projectById.keys()].map((id) => ({ id })),
-        threads: threads
-          .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-          .map((thread) => ({
-            id: scopedKey(thread.environmentId, thread.id),
-            projectId: scopedKey(thread.environmentId, thread.projectId),
-            archived: thread.archivedAt !== null,
-          })),
+        projects: [
+          ...new Set([
+            ...recentThreads.map((thread) => scopedKey(thread.environmentId, thread.projectId)),
+            ...projectById.keys(),
+          ]),
+        ]
+          .filter((id) => projectById.has(id))
+          .map((id) => ({ id })),
+        threads: recentThreads.map((thread) => ({
+          id: scopedKey(thread.environmentId, thread.id),
+          projectId: scopedKey(thread.environmentId, thread.projectId),
+          archived: thread.archivedAt !== null,
+        })),
       },
     );
     const panes = layout.rows
       .filter((row) => row.panes.length > 0)
       .slice(0, MAX_ROWS)
       .flatMap((row, planeIndex) =>
-        row.panes.slice(0, MAX_THREADS_PER_ROW).flatMap((pane, slotIndex) => {
-          const thread = threadById.get(pane.threadId);
-          if (!thread) return [];
-          return [
-            {
+        row.panes
+          .slice(0, MAX_THREADS_PER_ROW)
+          .flatMap((pane) => {
+            const thread = threadById.get(pane.threadId);
+            if (!thread) return [];
+            const data = { environmentId: thread.environmentId, threadId: thread.id };
+            const threadPane = {
               paneId: threadPaneId(thread.environmentId, thread.id),
-              planeIndex,
-              slotIndex,
               surfaceKind: "thread",
               title: thread.title,
               subtitle: projectById.get(row.projectId)?.title ?? "",
-              data: {
-                environmentId: thread.environmentId,
-                threadId: thread.id,
-              } satisfies ThreadPaneData,
-            },
-          ];
-        }),
+              data,
+            };
+            return thread.id === sidesThreadId
+              ? [threadPane, ...sidePaneDefinitions(threadPane.paneId, data)]
+              : [threadPane];
+          })
+          .map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
       );
     return panes.length > 0 ? panes : null;
-  }, [bootstrapped, projects, threads]);
+  }, [bootstrapped, projects, threads, sidesThreadId]);
+}
+
+function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
+  return [
+    ...["spatial-a", "spatial-b"].map((terminalId) => ({
+      paneId: `${threadPaneId}:terminal:${terminalId}`,
+      surfaceKind: "terminal",
+      title: `Terminal ${terminalId}`,
+      subtitle: "",
+      data: { ...thread, terminalId },
+    })),
+    {
+      paneId: `${threadPaneId}:diff`,
+      surfaceKind: "diff",
+      title: "Diff",
+      subtitle: "",
+      data: thread,
+    },
+  ];
 }
 
 function scopedKey(environmentId: string, id: string) {
@@ -147,27 +175,40 @@ interface PaneContentInsets {
 class OverlayPlacement {
   private frame: WorkspaceFocusedPaneFrame | null = null;
   private insets: PaneContentInsets | null = null;
+  private slotPaneId: string | null = null;
   private stageOrigin = { x: 0, y: 0 };
   private written = "";
 
   constructor(private readonly overlay: { readonly current: HTMLDivElement | null }) {}
 
-  setSlot(slot: HTMLElement | null) {
-    const host = slot?.closest<HTMLElement>("[data-onirigiri-pane-id]");
-    const stage = slot?.closest<HTMLElement>('[data-onirigiri-slot="stage"]');
-    if (slot && host && stage && !this.insets) {
-      const hostRect = host.getBoundingClientRect();
-      const slotRect = slot.getBoundingClientRect();
-      const stageRect = stage.getBoundingClientRect();
-      const scale = host.offsetWidth > 0 ? hostRect.width / host.offsetWidth : 1;
-      this.insets = {
-        bottom: (hostRect.bottom - slotRect.bottom) / scale,
-        left: (slotRect.left - hostRect.left) / scale,
-        right: (hostRect.right - slotRect.right) / scale,
-        top: (slotRect.top - hostRect.top) / scale,
-      };
-      this.stageOrigin = { x: stageRect.left, y: stageRect.top };
+  private observer: ResizeObserver | null = null;
+
+  setSlot(slot: HTMLElement | null, paneId: string | null) {
+    this.slotPaneId = paneId;
+    this.observer?.disconnect();
+    this.observer = null;
+    if (slot) {
+      this.observer = new ResizeObserver(() => this.measure(slot));
+      this.observer.observe(slot);
     }
+    this.apply();
+  }
+
+  private measure(slot: HTMLElement) {
+    const host = slot.closest<HTMLElement>("[data-onirigiri-pane-id]");
+    const stage = slot.closest<HTMLElement>('[data-onirigiri-slot="stage"]');
+    if (!host || !stage || host.offsetWidth === 0 || slot.offsetWidth === 0) return;
+    const hostRect = host.getBoundingClientRect();
+    const slotRect = slot.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const scale = hostRect.width / host.offsetWidth;
+    this.insets = {
+      bottom: (hostRect.bottom - slotRect.bottom) / scale,
+      left: (slotRect.left - hostRect.left) / scale,
+      right: (hostRect.right - slotRect.right) / scale,
+      top: (slotRect.top - hostRect.top) / scale,
+    };
+    this.stageOrigin = { x: stageRect.left, y: stageRect.top };
     this.apply();
   }
 
@@ -180,7 +221,12 @@ class OverlayPlacement {
     const overlay = this.overlay.current;
     if (!overlay) return;
     const { frame, insets } = this;
-    if (!frame || !insets || Math.abs(frame.scale - 1) > 0.001) {
+    if (
+      !frame ||
+      !insets ||
+      frame.paneId !== this.slotPaneId ||
+      Math.abs(frame.scale - 1) > 0.001
+    ) {
       if (this.written !== "hidden") {
         this.written = "hidden";
         overlay.style.visibility = "hidden";
@@ -203,7 +249,8 @@ class OverlayPlacement {
 
 export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null }) {
   const navigate = useNavigate();
-  const threadPanes = useThreadPanes();
+  const [sidesThreadId] = useState(() => new URLSearchParams(window.location.search).get("sides"));
+  const threadPanes = useThreadPanes(sidesThreadId);
   const [initialPanes, setInitialPanes] = useState(threadPanes);
   if (initialPanes === null && threadPanes !== null) setInitialPanes(threadPanes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
@@ -219,7 +266,9 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
 
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
-    for (const pane of initialPanes ?? []) byPaneId.set(pane.paneId, pane.data as ThreadPaneData);
+    for (const pane of initialPanes ?? []) {
+      if (pane.surfaceKind === "thread") byPaneId.set(pane.paneId, pane.data as ThreadPaneData);
+    }
     return byPaneId;
   }, [initialPanes]);
 
@@ -235,7 +284,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
   }, [chatHost, mode, slot]);
 
   useLayoutEffect(() => {
-    if (mode === "overlay") placement.setSlot(slot?.element ?? null);
+    if (mode === "overlay") placement.setSlot(slot?.element ?? null, slot?.paneId ?? null);
   }, [mode, placement, slot]);
 
   useEffect(() => {
@@ -264,15 +313,25 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
 
-  const renderPane = useCallback(
-    (pane: WorkspacePane, state: { focused: boolean }) =>
-      state.focused ? (
-        <FocusedPaneSlot paneId={pane.paneId} onSlot={setSlot} />
-      ) : (
-        <UnfocusedThreadPane pane={pane} />
-      ),
-    [],
-  );
+  const renderPane = useCallback((pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
+    if (pane.surfaceKind === "terminal") {
+      const data = pane.data as ThreadPaneData & { terminalId: string };
+      return (
+        <TerminalPane
+          thread={data}
+          terminalId={data.terminalId}
+          focused={state.focused}
+          live={state.runtimeState === "live"}
+        />
+      );
+    }
+    if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ThreadPaneData} />;
+    return state.focused ? (
+      <FocusedPaneSlot paneId={pane.paneId} onSlot={setSlot} />
+    ) : (
+      <UnfocusedThreadPane pane={pane} />
+    );
+  }, []);
 
   const chatView = target && mode !== "none" ? <ThreadRouteView target={target} /> : null;
 
