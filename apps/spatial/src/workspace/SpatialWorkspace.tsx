@@ -3,6 +3,8 @@ import {
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
+  type PanePresentation,
+  type PanePresentationContext,
   type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
@@ -19,6 +21,7 @@ import {
 } from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
+import { LiveBudgetContext, createLiveBudgetStore, type LiveBudgetStore } from "./liveBudget";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { ThreadPane } from "./ThreadPane";
 
@@ -35,6 +38,7 @@ function readSpikeOptions() {
   const search = new URLSearchParams(window.location.search);
   return {
     liveContent: !search.has("frozen"),
+    liveBudget: Number(search.get("budget") ?? 24),
     maxRows: Number(search.get("rows") ?? 3),
     maxThreadsPerRow: Number(search.get("perRow") ?? 4),
     sidesThreadId: search.get("sides"),
@@ -123,6 +127,28 @@ function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
   ];
 }
 
+const BUDGET_TEXTURE: PanePresentation = { kind: "texture", reason: "Live budget" };
+
+// Thread panes nearest the focused one first. The first `liveBudget` of them
+// stay live; the rest show pictures.
+function threadPanesByDistance(
+  panes: readonly OnirigiriPaneDefinition[],
+  focusedPaneId: string | null,
+): readonly string[] {
+  const threads = panes.filter((pane) => pane.surfaceKind === "thread");
+  const focused = threads.find((pane) => pane.paneId === focusedPaneId) ?? threads[0];
+  if (!focused) return [];
+  const distance = (pane: OnirigiriPaneDefinition) => [
+    Math.abs((pane.planeIndex ?? 0) - (focused.planeIndex ?? 0)) +
+      Math.abs((pane.slotIndex ?? 0) - (focused.slotIndex ?? 0)),
+    Math.abs((pane.planeIndex ?? 0) - (focused.planeIndex ?? 0)),
+  ];
+  return threads
+    .map((pane) => ({ paneId: pane.paneId, key: distance(pane) }))
+    .toSorted((a, b) => a.key[0]! - b.key[0]! || a.key[1]! - b.key[1]!)
+    .map((pane) => pane.paneId);
+}
+
 function scopedKey(environmentId: string, id: string) {
   return `${environmentId}:${id}`;
 }
@@ -152,6 +178,35 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     target?.kind === "server"
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
+
+  const paneOrder = useMemo(
+    () => threadPanesByDistance(initialPanes ?? [], focusedPaneId ?? routePaneId),
+    [initialPanes, focusedPaneId, routePaneId],
+  );
+  const livePaneIds = useMemo(
+    () => new Set(paneOrder.slice(0, options.liveBudget)),
+    [paneOrder, options.liveBudget],
+  );
+  const [liveBudget, setLiveBudget] = useState<LiveBudgetStore | null>(null);
+  if (liveBudget === null && paneOrder.length > 0) {
+    setLiveBudget(
+      createLiveBudgetStore(paneOrder, options.liveBudget, focusedPaneId ?? routePaneId),
+    );
+  }
+  useEffect(
+    () => liveBudget?.setBudget(paneOrder, options.liveBudget, focusedPaneId),
+    [liveBudget, paneOrder, options.liveBudget, focusedPaneId],
+  );
+
+  const getPanePresentation = useCallback(
+    (pane: WorkspacePane, context: PanePresentationContext) =>
+      pane.surfaceKind === "thread" &&
+      context.capabilities.canCapture === true &&
+      !livePaneIds.has(pane.paneId)
+        ? BUDGET_TEXTURE
+        : undefined,
+    [livePaneIds],
+  );
 
   // The app route follows the focused thread so T3's global surfaces act on it.
   // Routes this workspace requested are remembered so they are not mistaken for
@@ -205,6 +260,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
         <ThreadPane
           thread={pane.data as ThreadPaneData}
           focused={state.focused}
+          paneId={pane.paneId}
           onNavigateAway={navigateAway}
         />
       );
@@ -214,17 +270,21 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
 
   return (
     <div className="spatial-workspace h-dvh w-full">
-      {initialPanes ? (
-        <OnirigiriWorkspace
-          ref={workspaceRef}
-          ariaLabel="Onirigiri for T3 Code"
-          initialPanes={initialPanes}
-          liveContent={options.liveContent}
-          onFocusedPaneFrame={trackFocusedPane}
-          renderPane={renderPane}
-          shortcutScope="application"
-          workspaceId="onirigiri-t3-spike"
-        />
+      {initialPanes && liveBudget ? (
+        <LiveBudgetContext value={liveBudget}>
+          <OnirigiriWorkspace
+            ref={workspaceRef}
+            ariaLabel="Onirigiri for T3 Code"
+            initialPanes={initialPanes}
+            liveContent={options.liveContent}
+            getPanePresentation={getPanePresentation}
+            onCaptureStatusChange={liveBudget.setCaptureStatus}
+            onFocusedPaneFrame={trackFocusedPane}
+            renderPane={renderPane}
+            shortcutScope="application"
+            workspaceId="onirigiri-t3-spike"
+          />
+        </LiveBudgetContext>
       ) : null}
     </div>
   );
