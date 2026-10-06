@@ -25,7 +25,7 @@ const INITIAL_MOUNTS = 12;
  */
 export function createLiveBudgetStore(
   order: readonly string[],
-  budget: number,
+  initialLive: ReadonlySet<string>,
   focusedPaneId: string | null,
 ) {
   const states = new Map<string, PaneBudgetState>();
@@ -70,10 +70,10 @@ export function createLiveBudgetStore(
 
   const setBudget = (
     nextOrder: readonly string[],
-    nextBudget: number,
+    nextLive: ReadonlySet<string>,
     nextFocusedPaneId: string | null,
   ) => {
-    live = new Set(nextOrder.slice(0, nextBudget));
+    live = nextLive;
     queue = [];
     for (const paneId of nextOrder) {
       const state = get(paneId);
@@ -89,10 +89,10 @@ export function createLiveBudgetStore(
     schedule();
   };
 
-  for (const paneId of order.slice(0, Math.min(budget, INITIAL_MOUNTS))) {
+  for (const paneId of order.filter((id) => initialLive.has(id)).slice(0, INITIAL_MOUNTS)) {
     states.set(paneId, { ...UNMOUNTED, mounted: true, inBudget: true });
   }
-  setBudget(order, budget, focusedPaneId);
+  setBudget(order, initialLive, focusedPaneId);
 
   return {
     get,

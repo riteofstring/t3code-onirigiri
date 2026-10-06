@@ -149,6 +149,23 @@ function threadPanesByDistance(
     .map((pane) => pane.paneId);
 }
 
+// Panes join the live set among the nearest `budget` and leave it only beyond
+// half as many again, so moving between neighbours does not park and reveal
+// panes at the edge of the budget.
+function nextLivePanes(
+  order: readonly string[],
+  budget: number,
+  previous: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const next = new Set(order.slice(0, budget));
+  for (const paneId of order.slice(budget, Math.ceil(budget * 1.5))) {
+    if (previous.has(paneId)) next.add(paneId);
+  }
+  return next.size === previous.size && [...next].every((paneId) => previous.has(paneId))
+    ? previous
+    : next;
+}
+
 function scopedKey(environmentId: string, id: string) {
   return `${environmentId}:${id}`;
 }
@@ -183,19 +200,21 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     () => threadPanesByDistance(initialPanes ?? [], focusedPaneId ?? routePaneId),
     [initialPanes, focusedPaneId, routePaneId],
   );
-  const livePaneIds = useMemo(
-    () => new Set(paneOrder.slice(0, options.liveBudget)),
-    [paneOrder, options.liveBudget],
+  const [liveOrder, setLiveOrder] = useState(paneOrder);
+  const [livePaneIds, setLivePaneIds] = useState(() =>
+    nextLivePanes(paneOrder, options.liveBudget, new Set()),
   );
+  if (liveOrder !== paneOrder) {
+    setLiveOrder(paneOrder);
+    setLivePaneIds(nextLivePanes(paneOrder, options.liveBudget, livePaneIds));
+  }
   const [liveBudget, setLiveBudget] = useState<LiveBudgetStore | null>(null);
   if (liveBudget === null && paneOrder.length > 0) {
-    setLiveBudget(
-      createLiveBudgetStore(paneOrder, options.liveBudget, focusedPaneId ?? routePaneId),
-    );
+    setLiveBudget(createLiveBudgetStore(paneOrder, livePaneIds, focusedPaneId ?? routePaneId));
   }
   useEffect(
-    () => liveBudget?.setBudget(paneOrder, options.liveBudget, focusedPaneId),
-    [liveBudget, paneOrder, options.liveBudget, focusedPaneId],
+    () => liveBudget?.setBudget(paneOrder, livePaneIds, focusedPaneId),
+    [liveBudget, paneOrder, livePaneIds, focusedPaneId],
   );
 
   const getPanePresentation = useCallback(
