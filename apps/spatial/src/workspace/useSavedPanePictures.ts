@@ -3,15 +3,21 @@ import type {
   OnirigiriPanePictureCaptureListener,
   OnirigiriPanePictureResolver,
 } from "@riteofstring/onirigiri";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
 
 import { loadPanePictures, savePanePicture, type SavedPanePicture } from "./panePictureStore";
+import { snapshotPanePicture } from "./panePictureSnapshot";
 import { threadPaneId } from "./useWorkspacePanes";
 
 const syncedPanes = new Set<string>();
+
+/** Asks for a picture of a mounted pane's content to be drawn when the page is idle. */
+export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => void;
+
+export const PaneSnapshotContext = createContext<RequestPaneSnapshot | null>(null);
 
 /** Records whether a mounted pane shows its thread fully synchronized. */
 export function markPaneSynced(paneId: string, synced: boolean) {
@@ -34,14 +40,18 @@ function columnWidths(layout: OnirigiriLayout): Map<string, string> {
  * Thread pictures saved from earlier sessions. A saved picture seeds its pane
  * while it still shows what the thread would: same last update and theme, and
  * the same pane geometry (workspace size, device pixel ratio and column
- * width). Captures of fully synchronized threads are saved for the next load;
- * the seeds themselves come only from the load, so a capture is never
- * replaced by its own saved copy.
+ * width). Captures of fully synchronized threads are saved for the next load.
+ * Where the browser cannot capture panes, mounted panes are drawn from their
+ * DOM when the page is idle; those pictures seed their panes at once and are
+ * saved too. A seed never replaces a capture.
  */
 export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   getPanePicture: OnirigiriPanePictureResolver;
   onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
   onLayoutChange: (layout: OnirigiriLayout) => void;
+  /** The saved picture that still shows the pane as it would look, if any. */
+  pictureFor: (paneId: string) => Blob | null;
+  requestSnapshot: RequestPaneSnapshot;
   stageRef: (element: HTMLElement | null) => void;
 } {
   const threads = useThreadShells();
@@ -108,16 +118,24 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     contentRevisionsRef.current = contentRevisions;
   }, [contentRevisions]);
 
+  const pictureFor = useCallback(
+    (paneId: string): Blob | null => {
+      const picture = saved?.get(paneId);
+      if (!picture) return null;
+      const content = contentRevisions.get(paneId);
+      const geometry = geometryRevision(paneId);
+      if (!content || !geometry || picture.revision !== `${content}|${geometry}`) return null;
+      return picture.image;
+    },
+    [contentRevisions, geometryRevision, saved],
+  );
+
   const getPanePicture = useMemo((): OnirigiriPanePictureResolver => {
     return (pane) => {
-      const picture = saved?.get(pane.paneId);
-      if (!picture) return null;
-      const content = contentRevisions.get(pane.paneId);
-      const geometry = geometryRevision(pane.paneId);
-      if (!content || !geometry || picture.revision !== `${content}|${geometry}`) return null;
-      return { image: picture.image, fit: "fill", replaceable: true };
+      const image = pictureFor(pane.paneId);
+      return image ? { image, fit: "fill", replaceable: true } : null;
     };
-  }, [contentRevisions, geometryRevision, saved]);
+  }, [pictureFor]);
 
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image) => {
@@ -135,5 +153,71 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     [geometryRevision],
   );
 
-  return { getPanePicture, onPanePictureCaptured, onLayoutChange, stageRef };
+  const drawSnapshot = useCallback(
+    async (paneId: string, element: HTMLElement) => {
+      const revision = () => {
+        const content = contentRevisionsRef.current.get(paneId);
+        const geometry = geometryRevision(paneId);
+        return content && geometry ? `${content}|${geometry}` : null;
+      };
+      const before = revision();
+      if (!before || !element.isConnected || !syncedPanes.has(paneId)) return;
+      const image = await snapshotPanePicture(element);
+      if (!image || revision() !== before) return;
+      const picture = { paneId, revision: before, image, savedAt: Date.now() };
+      setSaved((current) => new Map(current ?? []).set(paneId, picture));
+      await savePanePicture(picture);
+    },
+    [geometryRevision],
+  );
+  const [snapshots] = useState(createSnapshotQueue);
+  useEffect(() => snapshots.setDraw(drawSnapshot), [drawSnapshot, snapshots]);
+
+  return {
+    getPanePicture,
+    onPanePictureCaptured,
+    onLayoutChange,
+    pictureFor,
+    requestSnapshot: snapshots.request,
+    stageRef,
+  };
+}
+
+// Draws one requested snapshot at a time while the page is idle; a newer
+// request for a pane replaces one still waiting.
+function createSnapshotQueue() {
+  type Draw = (paneId: string, element: HTMLElement) => Promise<void>;
+  const pending = new Map<string, HTMLElement>();
+  let draw: Draw | null = null;
+  let drawing = false;
+  const next = () => {
+    if (drawing || pending.size === 0 || !draw) return;
+    const current = draw;
+    drawing = true;
+    requestIdleCallback(
+      () => {
+        const [paneId, element] = pending.entries().next().value!;
+        pending.delete(paneId);
+        void current(paneId, element)
+          .catch(() => {})
+          .finally(() => {
+            drawing = false;
+            next();
+          });
+      },
+      { timeout: 4000 },
+    );
+  };
+  const request: RequestPaneSnapshot = (paneId, element) => {
+    pending.set(paneId, element);
+    next();
+  };
+  const setDraw = (nextDraw: Draw) => {
+    draw = nextDraw;
+    next();
+    return () => {
+      if (draw === nextDraw) draw = null;
+    };
+  };
+  return { request, setDraw };
 }

@@ -1,0 +1,102 @@
+/**
+ * Pictures of a thread pane drawn from its DOM, for browsers that cannot
+ * capture pane content. The pane's markup is cloned into an SVG
+ * `foreignObject` with the page's styles and theme variables, rendered as an
+ * image and encoded as PNG. Only same-document styles and system fonts are
+ * available to the image, which is what T3 uses.
+ */
+
+let pageStyles: string | null = null;
+
+function readPageStyles(): string {
+  if (pageStyles !== null) return pageStyles;
+  const rules: string[] = [];
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const rule of sheet.cssRules) rules.push(rule.cssText);
+    } catch {
+      // Cross-origin sheets cannot be read; T3 serves its own.
+    }
+  }
+  pageStyles = rules.join("\n");
+  return pageStyles;
+}
+
+// Theme variables live on the root element, which the image does not have.
+function rootVariables(): string {
+  const style = getComputedStyle(document.documentElement);
+  const declarations: string[] = [];
+  for (let index = 0; index < style.length; index++) {
+    const name = style[index]!;
+    if (name.startsWith("--")) declarations.push(`${name}:${style.getPropertyValue(name)}`);
+  }
+  const body = getComputedStyle(document.body);
+  declarations.push(
+    `font-family:${body.fontFamily}`,
+    `font-size:${body.fontSize}`,
+    `line-height:${body.lineHeight}`,
+    `color:${body.color}`,
+    `-webkit-font-smoothing:antialiased`,
+  );
+  return declarations.join(";");
+}
+
+// A clone loses scroll offsets; shift the content of scrolled elements instead.
+function copyScrollOffsets(source: Element, clone: Element) {
+  const sources = [source, ...source.querySelectorAll("*")];
+  const clones = [clone, ...clone.querySelectorAll("*")];
+  sources.forEach((element, index) => {
+    const copy = clones[index];
+    if (!(copy instanceof HTMLElement) || (element.scrollTop === 0 && element.scrollLeft === 0)) {
+      return;
+    }
+    copy.style.overflow = "hidden";
+    for (const child of copy.children) {
+      if (child instanceof HTMLElement || child instanceof SVGElement) {
+        child.style.translate = `${-element.scrollLeft}px ${-element.scrollTop}px`;
+      }
+    }
+  });
+}
+
+function escapeAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () => reject(new Error("pane snapshot did not render")));
+    image.src = url;
+  });
+}
+
+/** A PNG of `element` as it is now drawn, or null when it has no size. */
+export async function snapshotPanePicture(element: HTMLElement): Promise<Blob | null> {
+  const width = element.offsetWidth;
+  const height = element.offsetHeight;
+  if (width === 0 || height === 0) return null;
+  const clone = element.cloneNode(true) as HTMLElement;
+  copyScrollOffsets(element, clone);
+  for (const node of clone.querySelectorAll("script, iframe, video, canvas")) node.remove();
+  const rootClass = document.documentElement.className;
+  const markup = new XMLSerializer().serializeToString(clone);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<foreignObject width="100%" height="100%">` +
+    `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
+    `style="${escapeAttribute(rootVariables())};width:${width}px;height:${height}px;overflow:hidden">` +
+    `<style><![CDATA[${readPageStyles().replaceAll("]]>", "]]]]><![CDATA[>")}]]></style>${markup}</div>` +
+    `</foreignObject></svg>`;
+  const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+  const scale = window.devicePixelRatio || 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.scale(scale, scale);
+  context.drawImage(image, 0, 0, width, height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}

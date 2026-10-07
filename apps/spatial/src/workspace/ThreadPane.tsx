@@ -9,7 +9,7 @@ import {
   createRouter,
   useParams,
 } from "@tanstack/react-router";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, use, useEffect, useRef, useState } from "react";
 
 import {
   ChatViewActivityContext,
@@ -26,7 +26,7 @@ import { useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { usePaneMounted } from "./paneLifecycle";
-import { markPaneSynced } from "./useSavedPanePictures";
+import { PaneSnapshotContext, markPaneSynced } from "./useSavedPanePictures";
 
 export interface ThreadPaneThread {
   readonly environmentId: EnvironmentId;
@@ -84,7 +84,11 @@ const PaneRouter = memo(function PaneRouter({
  * theme form the content revision, so a picture taken before any of them
  * changed never stands in for the pane.
  */
-function usePaneContent(paneId: string, thread: ThreadPaneThread, visible: boolean): boolean {
+function usePaneContent(
+  paneId: string,
+  thread: ThreadPaneThread,
+  visible: boolean,
+): { mounted: boolean; picturable: string | null } {
   const mounted = usePaneMounted(paneId, visible);
   const updatedAt = useThreadShell(thread)?.updatedAt ?? null;
   const status = useThreadStatus(thread);
@@ -111,7 +115,7 @@ function usePaneContent(paneId: string, thread: ThreadPaneThread, visible: boole
     };
   }, [mounted]);
 
-  return mounted;
+  return { mounted, picturable: mounted && settled && synced ? revision : null };
 }
 
 function createPaneRouter(threadPath: string) {
@@ -147,7 +151,7 @@ export const ThreadPane = memo(function ThreadPane({
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
-  const mounted = usePaneContent(paneId, thread, visible);
+  const { mounted, picturable } = usePaneContent(paneId, thread, visible);
 
   // The app shares one composer handle (the command palette provides it).
   // Each pane's ChatView gets its own, and the shared one follows focus.
@@ -165,6 +169,14 @@ export const ThreadPane = memo(function ThreadPane({
       focused.blur();
     }
   }, [active, activity, appComposerRef]);
+
+  // A settled, synchronized view is pictured for when it is not mounted, and
+  // again when it stops being active, in case it was scrolled meanwhile.
+  const requestSnapshot = use(PaneSnapshotContext);
+  useEffect(() => {
+    if (picturable !== null && contentRef.current) requestSnapshot?.(paneId, contentRef.current);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the active state pictures the view again.
+  }, [active, paneId, picturable, requestSnapshot]);
 
   useEffect(
     () =>

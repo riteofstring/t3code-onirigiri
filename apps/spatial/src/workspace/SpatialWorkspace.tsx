@@ -21,9 +21,10 @@ import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import { FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
+import { SavedPanePicture } from "./SavedPanePicture";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
-import { useSavedPanePictures } from "./useSavedPanePictures";
+import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
   threadPaneId,
   useWorkspacePanes,
@@ -111,8 +112,14 @@ export function SpatialWorkspace({
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
-  const { getPanePicture, onLayoutChange, onPanePictureCaptured, stageRef } =
-    useSavedPanePictures(getLayout);
+  const {
+    getPanePicture,
+    onLayoutChange,
+    onPanePictureCaptured,
+    pictureFor,
+    requestSnapshot,
+    stageRef,
+  } = useSavedPanePictures(getLayout);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -309,11 +316,18 @@ export function SpatialWorkspace({
     [navigateAway],
   );
 
-  const renderPanePlaceholder = useCallback((pane: WorkspacePane) => {
-    if (pane.surfaceKind !== "thread") return null;
-    const data = pane.data as ThreadPaneData;
-    return <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
-  }, []);
+  // A pane that is not mounted shows its saved picture while it still matches
+  // the thread, otherwise a card of the thread's details.
+  const renderPanePlaceholder = useCallback(
+    (pane: WorkspacePane) => {
+      if (pane.surfaceKind !== "thread") return null;
+      const image = pictureFor(pane.paneId);
+      if (image) return <SavedPanePicture image={image} />;
+      const data = pane.data as ThreadPaneData;
+      return <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
+    },
+    [pictureFor],
+  );
 
   return (
     <div ref={stageRef} className="spatial-workspace flex h-full w-full flex-col">
@@ -323,27 +337,29 @@ export function SpatialWorkspace({
       </div>
       {initialPanes && lifecycle ? (
         <PaneLifecycleContext value={lifecycle}>
-          <OnirigiriWorkspace
-            ref={workspaceRef}
-            ariaLabel="Onirigiri for T3 Code"
-            className="min-h-0 flex-1"
-            cursorRunway={0}
-            cursorTargets="panes"
-            desktopControlsContainer={controlsContainer}
-            focusAnchor={focusAnchor}
-            getPanePicture={getPanePicture}
-            gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
-            initialPanes={initialPanes}
-            liveContent
-            onFocusedPaneFrame={onFocusedPaneFrame}
-            onLayoutChange={onLayoutChange}
-            onPanePictureCaptured={onPanePictureCaptured}
-            renderPane={renderPane}
-            renderPanePlaceholder={renderPanePlaceholder}
-            shortcutScope={active ? "application" : "workspace"}
-            shortcuts={SHORTCUTS}
-            workspaceId={WORKSPACE_ID}
-          />
+          <PaneSnapshotContext value={requestSnapshot}>
+            <OnirigiriWorkspace
+              ref={workspaceRef}
+              ariaLabel="Onirigiri for T3 Code"
+              className="min-h-0 flex-1"
+              cursorRunway={0}
+              cursorTargets="panes"
+              desktopControlsContainer={controlsContainer}
+              focusAnchor={focusAnchor}
+              getPanePicture={getPanePicture}
+              gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
+              initialPanes={initialPanes}
+              liveContent
+              onFocusedPaneFrame={onFocusedPaneFrame}
+              onLayoutChange={onLayoutChange}
+              onPanePictureCaptured={onPanePictureCaptured}
+              renderPane={renderPane}
+              renderPanePlaceholder={renderPanePlaceholder}
+              shortcutScope={active ? "application" : "workspace"}
+              shortcuts={SHORTCUTS}
+              workspaceId={WORKSPACE_ID}
+            />
+          </PaneSnapshotContext>
         </PaneLifecycleContext>
       ) : null}
     </div>
