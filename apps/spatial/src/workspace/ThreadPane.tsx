@@ -163,7 +163,9 @@ export const ThreadPane = memo(function ThreadPane({
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     activity.set(active);
-    if (active && appComposerRef) appComposerRef.current = paneComposerRef.current;
+    // The app's handle forwards every call to this pane's current handle,
+    // which the composer replaces as its state changes.
+    if (active && appComposerRef) appComposerRef.current = forwardComposerHandle(paneComposerRef);
     const focused = document.activeElement;
     if (!active && focused instanceof HTMLElement && contentRef.current?.contains(focused)) {
       focused.blur();
@@ -206,6 +208,7 @@ export const ThreadPane = memo(function ThreadPane({
       <ComposerHandleContext value={paneComposerRef}>
         <div
           ref={contentRef}
+          onKeyDownCapture={leaveComposerOnEscape}
           className="spatial-thread-pane h-full w-full"
           data-spatial-thread={thread.threadId}
           data-spatial-active={String(active)}
@@ -216,3 +219,27 @@ export const ThreadPane = memo(function ThreadPane({
     </ChatViewActivityContext>
   );
 });
+
+function forwardComposerHandle(target: {
+  readonly current: ChatComposerHandle | null;
+}): ChatComposerHandle {
+  return new Proxy({} as ChatComposerHandle, {
+    get: (_, key) => {
+      const handle = target.current as Record<PropertyKey, unknown> | null;
+      const value = handle?.[key];
+      return typeof value === "function" ? value.bind(handle) : value;
+    },
+  });
+}
+
+// Escape in the composer leaves it, so the workspace's arrow-key navigation
+// works again, unless its suggestion list is open for Escape to close.
+function leaveComposerOnEscape(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const editor = target.closest<HTMLElement>('[data-testid="composer-editor"]');
+  if (!editor || editor.hasAttribute("aria-controls")) return;
+  event.preventDefault();
+  editor.blur();
+}

@@ -6,12 +6,13 @@
  * available to the image, which is what T3 uses.
  */
 
-let pageStyles: string | null = null;
+let pageStyles: { sheets: number; encoded: string } | null = null;
 
 // The page's styles as a URL-encoded style element, built once: they are the
 // bulk of every picture's markup.
 function encodedPageStyles(): string {
-  if (pageStyles !== null) return pageStyles;
+  const sheets = document.styleSheets.length;
+  if (pageStyles !== null && pageStyles.sheets === sheets) return pageStyles.encoded;
   const rules: string[] = [];
   for (const sheet of document.styleSheets) {
     try {
@@ -21,8 +22,8 @@ function encodedPageStyles(): string {
     }
   }
   const css = rules.join("\n").replaceAll("]]>", "]]]]><![CDATA[>");
-  pageStyles = encodeURIComponent(`<style><![CDATA[${css}]]></style>`);
-  return pageStyles;
+  pageStyles = { sheets, encoded: encodeURIComponent(`<style><![CDATA[${css}]]></style>`) };
+  return pageStyles.encoded;
 }
 
 // Theme variables live on the root element, which the image does not have.
@@ -62,6 +63,26 @@ function copyScrollOffsets(source: Element, clone: Element) {
   });
 }
 
+// An image cannot load other resources, so loaded images are inlined.
+function inlineImages(source: Element, clone: Element) {
+  const sources = source.querySelectorAll("img");
+  const clones = clone.querySelectorAll("img");
+  sources.forEach((image, index) => {
+    const copy = clones[index];
+    if (!copy || !image.complete || image.naturalWidth === 0) return;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext("2d")?.drawImage(image, 0, 0);
+      copy.setAttribute("src", canvas.toDataURL());
+      copy.removeAttribute("srcset");
+    } catch {
+      // Cross-origin images stay out of the picture.
+    }
+  });
+}
+
 function escapeAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 }
@@ -82,7 +103,12 @@ export async function snapshotPanePicture(element: HTMLElement): Promise<Blob | 
   if (width === 0 || height === 0) return null;
   const clone = element.cloneNode(true) as HTMLElement;
   copyScrollOffsets(element, clone);
+  inlineImages(element, clone);
   for (const node of clone.querySelectorAll("script, iframe, video, canvas")) node.remove();
+  // Unsent drafts stay out of saved pictures.
+  for (const editor of clone.querySelectorAll('[data-testid="composer-editor"]')) {
+    editor.replaceChildren(document.createElement("p"));
+  }
   const rootClass = document.documentElement.className;
   const markup = new XMLSerializer().serializeToString(clone);
   const open =

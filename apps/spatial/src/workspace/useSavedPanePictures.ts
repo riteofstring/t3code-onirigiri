@@ -8,7 +8,12 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
 
-import { loadPanePictures, savePanePicture, type SavedPanePicture } from "./panePictureStore";
+import {
+  MAX_SAVED,
+  loadPanePictures,
+  savePanePicture,
+  type SavedPanePicture,
+} from "./panePictureStore";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { threadPaneId } from "./useWorkspacePanes";
 
@@ -165,7 +170,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       const image = await snapshotPanePicture(element);
       if (!image || revision() !== before) return;
       const picture = { paneId, revision: before, image, savedAt: Date.now() };
-      setSaved((current) => new Map(current ?? []).set(paneId, picture));
+      setSaved((current) => {
+        const next = new Map(current ?? []).set(paneId, picture);
+        if (next.size <= MAX_SAVED) return next;
+        const newest = [...next.values()].toSorted((a, b) => b.savedAt - a.savedAt);
+        return new Map(newest.slice(0, MAX_SAVED).map((saved) => [saved.paneId, saved]));
+      });
       await savePanePicture(picture);
     },
     [geometryRevision],

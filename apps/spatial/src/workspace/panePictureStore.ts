@@ -1,5 +1,5 @@
 /** Saved pictures are kept within both limits; the least recently saved go first. */
-const MAX_SAVED = 200;
+export const MAX_SAVED = 200;
 const MAX_SAVED_BYTES = 128 * 1024 * 1024;
 const DATABASE = "onirigiri-t3-pane-pictures";
 const STORE = "pictures";

@@ -332,10 +332,10 @@ export function SpatialWorkspace({
   const renderPanePlaceholder = useCallback(
     (pane: WorkspacePane) => {
       if (pane.surfaceKind !== "thread") return null;
-      const image = pictureFor(pane.paneId);
-      if (image) return <SavedPanePicture image={image} />;
       const data = pane.data as ThreadPaneData;
-      return <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
+      const card = <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
+      const image = pictureFor(pane.paneId);
+      return image ? <SavedPanePicture image={image} summary={card} /> : card;
     },
     [pictureFor],
   );

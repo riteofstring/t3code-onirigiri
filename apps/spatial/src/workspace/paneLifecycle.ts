@@ -15,6 +15,8 @@ const PICTURE_TIMEOUT_MS = 10_000;
 /** Background pictures wait this long after input, and this long after each other. */
 const PICTURE_INPUT_QUIET_MS = 3000;
 const PICTURE_GAP_MS = 4000;
+/** A pane that could not be pictured, or whose picture went stale, is tried again after this. */
+const PICTURE_RETRY_MS = 5 * 60_000;
 
 export interface PanePosition {
   readonly paneId: string;
@@ -63,7 +65,7 @@ export function createPaneLifecycleStore(
   let hasPicture: (paneId: string) => boolean = () => false;
   // A pane mounted only so it can be pictured, and the panes already tried.
   let picturing: { paneId: string; since: number } | null = null;
-  const pictureAttempted = new Set<string>();
+  const pictureAttempted = new Map<string, number>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundPictures = false;
   let nextPictureAt = 0;
@@ -109,7 +111,9 @@ export function createPaneLifecycleStore(
     let best: string | null = null;
     let bestDistance = Infinity;
     for (const pane of panes.values()) {
-      if (mounted.has(pane.paneId) || pictureAttempted.has(pane.paneId)) continue;
+      if (mounted.has(pane.paneId)) continue;
+      const attempted = pictureAttempted.get(pane.paneId);
+      if (attempted !== undefined && performance.now() - attempted < PICTURE_RETRY_MS) continue;
       if (hasPicture(pane.paneId)) continue;
       const distance = center
         ? Math.abs(pane.plane - center.plane) * 1000 + Math.abs(pane.slot - center.slot)
@@ -187,7 +191,7 @@ export function createPaneLifecycleStore(
     }
     evictBeyond(MAX_MOUNTED - 1, wanted);
     if (mounted.size >= MAX_MOUNTED) return;
-    pictureAttempted.add(paneId);
+    pictureAttempted.set(paneId, performance.now());
     mount(paneId);
     picturing = { paneId, since: performance.now() };
     waitingFor = paneId;
