@@ -1,9 +1,18 @@
 import type {
   OnirigiriLayout,
+  OnirigiriCaptureStatus,
   OnirigiriPanePictureCaptureListener,
   OnirigiriPanePictureResolver,
 } from "@riteofstring/onirigiri";
-import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
@@ -14,13 +23,17 @@ import {
   savePanePicture,
   type SavedPanePicture,
 } from "./panePictureStore";
-import { snapshotPanePicture } from "./panePictureSnapshot";
+import { canCapturePanes, snapshotPanePicture } from "./panePictureSnapshot";
 import { threadPaneId } from "./useWorkspacePanes";
 
 const syncedPanes = new Set<string>();
 
 /** Asks for a picture of a mounted pane's content to be drawn when the page is idle. */
-export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => void;
+export type RequestPaneSnapshot = (
+  paneId: string,
+  element: HTMLElement,
+  preferNative?: boolean,
+) => void;
 
 export const PaneSnapshotContext = createContext<RequestPaneSnapshot | null>(null);
 
@@ -50,12 +63,16 @@ function columnWidths(layout: OnirigiriLayout): Map<string, string> {
  * DOM when the page is idle; those pictures seed their panes at once and are
  * saved too. A seed never replaces a capture.
  */
-export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
+export function useSavedPanePictures(
+  getLayout: () => OnirigiriLayout | null,
+  getCaptureStatus: () => OnirigiriCaptureStatus | null,
+): {
   getPanePicture: OnirigiriPanePictureResolver;
   onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
   onLayoutChange: (layout: OnirigiriLayout) => void;
-  /** The saved picture that still shows the pane as it would look, if any. */
+  /** A picture validated in this session, retained as cover while its thread refreshes. */
   pictureFor: (paneId: string) => Blob | null;
+  hasFreshPicture: (paneId: string) => boolean;
   requestSnapshot: RequestPaneSnapshot;
   stageRef: (element: HTMLElement | null) => void;
 } {
@@ -123,7 +140,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     contentRevisionsRef.current = contentRevisions;
   }, [contentRevisions]);
 
-  const pictureFor = useCallback(
+  const freshPictureFor = useCallback(
     (paneId: string): Blob | null => {
       const picture = saved?.get(paneId);
       if (!picture) return null;
@@ -135,12 +152,38 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     [contentRevisions, geometryRevision, saved],
   );
 
-  const getPanePicture = useMemo((): OnirigiriPanePictureResolver => {
-    return (pane) => {
-      const image = pictureFor(pane.paneId);
-      return image ? { image, fit: "fill", replaceable: true } : null;
-    };
-  }, [pictureFor]);
+  const lastValidPictures = useRef(new Map<string, Blob>());
+  const pictureFor = useCallback(
+    (paneId: string): Blob | null => {
+      if (!saved?.has(paneId) || !contentRevisions.has(paneId)) {
+        lastValidPictures.current.delete(paneId);
+        return null;
+      }
+      const fresh = freshPictureFor(paneId);
+      if (fresh) lastValidPictures.current.set(paneId, fresh);
+      return fresh ?? lastValidPictures.current.get(paneId) ?? null;
+    },
+    [contentRevisions, freshPictureFor, saved],
+  );
+  useEffect(() => {
+    for (const paneId of lastValidPictures.current.keys()) {
+      if (!saved?.has(paneId) || !contentRevisions.has(paneId)) {
+        lastValidPictures.current.delete(paneId);
+      }
+    }
+  }, [contentRevisions, saved]);
+  const hasFreshPicture = useCallback(
+    (paneId: string) => freshPictureFor(paneId) !== null,
+    [freshPictureFor],
+  );
+  const freshPictureForRef = useRef(freshPictureFor);
+  useLayoutEffect(() => {
+    freshPictureForRef.current = freshPictureFor;
+  }, [freshPictureFor]);
+  const getPanePicture = useCallback<OnirigiriPanePictureResolver>((pane) => {
+    const image = freshPictureForRef.current(pane.paneId);
+    return image ? { image, fit: "fill", replaceable: true } : null;
+  }, []);
 
   const savedRef = useRef(saved);
   useEffect(() => {
@@ -183,6 +226,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       };
       const before = revision();
       if (!before || !element.isConnected || !syncedPanes.has(paneId)) return;
+      if (
+        canCapturePanes() &&
+        getCaptureStatus()?.state !== "unavailable" &&
+        element.closest<HTMLElement>("[data-onirigiri-pane-id]")?.dataset.visible === "true"
+      )
+        return;
       // A capture of the same content is more faithful than a drawing.
       const captured = () => {
         const kept = savedRef.current?.get(paneId);
@@ -190,7 +239,14 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       };
       if (captured()) return;
       const image = await snapshotPanePicture(element);
-      if (!image || revision() !== before || captured()) return;
+      if (
+        !image ||
+        !element.isConnected ||
+        !syncedPanes.has(paneId) ||
+        revision() !== before ||
+        captured()
+      )
+        return;
       const picture = {
         paneId,
         revision: before,
@@ -201,7 +257,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       keepPicture(picture);
       await savePanePicture(picture);
     },
-    [geometryRevision, keepPicture],
+    [geometryRevision, getCaptureStatus, keepPicture],
   );
   const [snapshots] = useState(createSnapshotQueue);
   useEffect(() => snapshots.setDraw(drawSnapshot), [drawSnapshot, snapshots]);
@@ -211,6 +267,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     onPanePictureCaptured,
     onLayoutChange,
     pictureFor,
+    hasFreshPicture,
     requestSnapshot: snapshots.request,
     stageRef,
   };
@@ -219,37 +276,43 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 // Draws one requested snapshot at a time while the page is idle; a newer
 // request for a pane replaces one still waiting.
 const SNAPSHOT_INPUT_QUIET_MS = 1000;
+const NATIVE_CAPTURE_GRACE_MS = 2000;
 
-function createSnapshotQueue() {
+export function createSnapshotQueue() {
   type Draw = (paneId: string, element: HTMLElement) => Promise<void>;
-  const pending = new Map<string, HTMLElement>();
+  const pending = new Map<string, { element: HTMLElement; after: number }>();
   let draw: Draw | null = null;
   let drawing = false;
+  let idle: number | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = 0;
   const noteInput = () => {
     lastInput = performance.now();
   };
-  for (const type of ["keydown", "pointerdown", "wheel"] as const) {
-    window.addEventListener(type, noteInput, { capture: true, passive: true });
-  }
+  const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
   const next = () => {
-    if (drawing || pending.size === 0 || !draw) return;
+    if (drawing || idle !== null || timer !== null || pending.size === 0 || !draw) return;
     const current = draw;
-    drawing = true;
-    requestIdleCallback(
+    idle = requestIdleCallback(
       () => {
+        idle = null;
+        if (draw !== current || pending.size === 0) return;
         // Drawing waits until input has been quiet for a moment.
-        const quietFor = performance.now() - lastInput;
-        if (quietFor < SNAPSHOT_INPUT_QUIET_MS) {
-          setTimeout(() => {
-            drawing = false;
+        const now = performance.now();
+        const [paneId, request] = [...pending].reduce((first, candidate) =>
+          candidate[1].after < first[1].after ? candidate : first,
+        );
+        const wait = Math.max(lastInput + SNAPSHOT_INPUT_QUIET_MS, request.after) - now;
+        if (wait > 0) {
+          timer = setTimeout(() => {
+            timer = null;
             next();
-          }, SNAPSHOT_INPUT_QUIET_MS - quietFor);
+          }, wait);
           return;
         }
-        const [paneId, element] = pending.entries().next().value!;
         pending.delete(paneId);
-        void current(paneId, element)
+        drawing = true;
+        void current(paneId, request.element)
           .catch(() => {})
           .finally(() => {
             drawing = false;
@@ -259,15 +322,32 @@ function createSnapshotQueue() {
       { timeout: 4000 },
     );
   };
-  const request: RequestPaneSnapshot = (paneId, element) => {
-    pending.set(paneId, element);
+  const request: RequestPaneSnapshot = (paneId, element, preferNative = false) => {
+    pending.set(paneId, {
+      element,
+      after: performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : SNAPSHOT_INPUT_QUIET_MS),
+    });
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
     next();
   };
   const setDraw = (nextDraw: Draw) => {
     draw = nextDraw;
+    for (const type of inputEvents) {
+      window.addEventListener(type, noteInput, { capture: true, passive: true });
+    }
     next();
     return () => {
-      if (draw === nextDraw) draw = null;
+      if (draw !== nextDraw) return;
+      draw = null;
+      pending.clear();
+      if (idle !== null) cancelIdleCallback(idle);
+      if (timer !== null) clearTimeout(timer);
+      idle = null;
+      timer = null;
+      for (const type of inputEvents) {
+        window.removeEventListener(type, noteInput, { capture: true });
+      }
     };
   };
   return { request, setDraw };

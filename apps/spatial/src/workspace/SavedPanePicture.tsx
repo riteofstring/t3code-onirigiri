@@ -39,7 +39,7 @@ export function SavedPanePicture({ image, summary }: { image: Blob; summary: Rea
         ref={ref}
         alt=""
         draggable={false}
-        className="pointer-events-none block size-full select-none"
+        className="pointer-events-none absolute inset-0 block size-full select-none"
       />
       <div className="sr-only">{summary}</div>
     </>

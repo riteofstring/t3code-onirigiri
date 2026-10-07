@@ -187,11 +187,13 @@ export const ThreadPane = memo(function ThreadPane({
 
   // A settled, synchronized view is pictured for when it is not mounted, and
   // again when it stops being active, in case it was scrolled meanwhile.
-  // Where the workspace captures panes itself, it pictures those on screen.
+  // Native capture gets the first opportunity; the drawing remains a fallback
+  // when a browser exposes the API but cannot capture this content.
   const requestSnapshot = use(PaneSnapshotContext);
   useEffect(() => {
-    if (visible && canCapturePanes()) return;
-    if (picturable !== null && contentRef.current) requestSnapshot?.(paneId, contentRef.current);
+    if (picturable !== null && contentRef.current) {
+      requestSnapshot?.(paneId, contentRef.current, canCapturePanes());
+    }
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the active state pictures the view again.
   }, [active, paneId, picturable, requestSnapshot, visible]);
 

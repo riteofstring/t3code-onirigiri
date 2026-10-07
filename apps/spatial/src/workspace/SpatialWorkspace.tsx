@@ -138,14 +138,16 @@ export function SpatialWorkspace({
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
+  const getCaptureStatus = useCallback(() => workspaceRef.current?.getCaptureStatus() ?? null, []);
   const {
     getPanePicture,
     onLayoutChange,
     onPanePictureCaptured,
     pictureFor,
+    hasFreshPicture,
     requestSnapshot,
     stageRef,
-  } = useSavedPanePictures(getLayout);
+  } = useSavedPanePictures(getLayout, getCaptureStatus);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -228,8 +230,8 @@ export function SpatialWorkspace({
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useEffect(() => {
-    lifecycle?.setPictures((paneId) => pictureFor(paneId) !== null);
-  }, [lifecycle, pictureFor]);
+    lifecycle?.setPictures(hasFreshPicture);
+  }, [hasFreshPicture, lifecycle]);
   // Panes off screen are laid out only where the browser supports
   // HTML-in-Canvas, so only there can they be pictured without being shown.
   useEffect(() => {
@@ -502,8 +504,7 @@ export function SpatialWorkspace({
     [choose, navigateAway],
   );
 
-  // A pane that is not mounted shows its saved picture while it still matches
-  // the thread, otherwise a card of the thread's details.
+  // A valid picture remains a visual cover while the same thread refreshes.
   const renderPanePlaceholder = useCallback(
     (pane: WorkspacePane) => {
       if (pane.surfaceKind !== "thread") return null;

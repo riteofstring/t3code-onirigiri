@@ -1,8 +1,8 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
 /** Neighbours of the focused pane prepared ahead of use. */
-const NEIGHBORS = 2;
-/** Most thread views mounted at once; the least recently wanted unmount first. */
+const NEIGHBORS = 4;
+/** Retained views; one temporary background capture may exceed this budget. */
 const MAX_MOUNTED = 8;
 /** Quiet time after focus or visibility changes before mounting follows them. */
 const SETTLE_MS = 200;
@@ -89,7 +89,7 @@ export function createPaneLifecycleStore(
   // ones that are not in `keep`.
   const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
     const evictable = [...mounted]
-      .filter((paneId) => !keep.has(paneId))
+      .filter((paneId) => !keep.has(paneId) && paneId !== picturing?.paneId)
       .toSorted((a, b) => (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0));
     while (mounted.size > limit && evictable.length > 0) unmount(evictable.shift()!);
   };
@@ -136,6 +136,7 @@ export function createPaneLifecycleStore(
     if (!done) return true;
     if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
+    evictBeyond(MAX_MOUNTED, wanted);
     nextPictureAt = performance.now() + PICTURE_GAP_MS;
     return false;
   };
@@ -164,7 +165,7 @@ export function createPaneLifecycleStore(
     while (queue.length > 0) {
       const paneId = queue.shift()!;
       if (!panes.has(paneId) || mounted.has(paneId)) continue;
-      evictBeyond(MAX_MOUNTED - 1, wanted);
+      evictBeyond(MAX_MOUNTED - 1 + (picturing ? 1 : 0), wanted);
       mount(paneId);
       waitingFor = paneId;
       return;
@@ -189,8 +190,7 @@ export function createPaneLifecycleStore(
       waitForPicture(wait);
       return;
     }
-    evictBeyond(MAX_MOUNTED - 1, wanted);
-    if (mounted.size >= MAX_MOUNTED) return;
+    if (mounted.size >= MAX_MOUNTED + 1) return;
     pictureAttempted.set(paneId, performance.now());
     mount(paneId);
     picturing = { paneId, since: performance.now() };
@@ -237,12 +237,8 @@ export function createPaneLifecycleStore(
     }
     // Likely destinations come before panes that are merely on screen, and a
     // pane on screen that a picture already shows does not need its view.
-    // Of the neighbours a picture shows, only the next one in the direction of
-    // travel is prepared.
     const onScreen = [...visible].filter((paneId) => !hasPicture(paneId));
-    const nearby = (neighborsWanted ? neighbors() : []).filter(
-      (paneId, index) => index === 0 || !hasPicture(paneId),
-    );
+    const nearby = neighborsWanted ? neighbors() : [];
     const speculative = [...new Set([...nearby, ...onScreen])].filter(
       (paneId) => paneId !== focused && panes.has(paneId),
     );
@@ -251,12 +247,12 @@ export function createPaneLifecycleStore(
     cancelSpeculation();
     queue = speculative.filter((paneId) => wanted.has(paneId) && !mounted.has(paneId));
     // Views stay warm until a mount needs their place.
-    evictBeyond(MAX_MOUNTED, wanted);
+    evictBeyond(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
     schedule();
   };
 
   const requestSettle = () => {
-    if (settleTimer !== null) clearTimeout(settleTimer);
+    if (settleTimer !== null) return;
     settleTimer = setTimeout(settle, SETTLE_MS);
   };
 
@@ -313,10 +309,20 @@ export function createPaneLifecycleStore(
       focused = paneId;
       cancelSpeculation();
       restartNeighborWait();
+      if (settleTimer !== null) clearTimeout(settleTimer);
+      settleTimer = null;
       requestSettle();
     },
     /** Follows the workspace's panes as threads come and go. */
     setPanes: (nextPanes: readonly PanePosition[]) => {
+      if (
+        panes.size === nextPanes.length &&
+        nextPanes.every((pane) => {
+          const previous = panes.get(pane.paneId);
+          return previous?.plane === pane.plane && previous.slot === pane.slot;
+        })
+      )
+        return;
       panes = new Map(nextPanes.map((pane) => [pane.paneId, pane]));
       for (const paneId of mounted) if (!panes.has(paneId)) mounted.delete(paneId);
       for (const paneId of visible) if (!panes.has(paneId)) visible.delete(paneId);

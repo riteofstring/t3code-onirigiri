@@ -46,6 +46,51 @@ it("mounts the focused pane at once and its neighbours after a rest", () => {
   store.dispose();
 });
 
+it("prepares all four neighboring destinations even when saved pictures exist", () => {
+  const panes = [...row(3, 0), ...row(3, 1), ...row(3, 2)];
+  const store = createPaneLifecycleStore(panes, "p1-1");
+  store.setPictures(() => true);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(["p0-1", "p1-0", "p1-1", "p1-2", "p2-1"]);
+  store.dispose();
+});
+
+it("does not postpone a focused mount when unrelated thread pictures and labels keep updating", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setFocus("p0-9");
+  for (let step = 0; step < 5; step++) {
+    vi.advanceTimersByTime(50);
+    store.setPanes(panes.map((pane) => ({ ...pane })));
+    store.setPictures(() => true);
+  }
+  expect(store.isMounted("p0-9")).toBe(true);
+  store.dispose();
+});
+
+it("keeps recent prepared views while one extra view is pictured in the background", () => {
+  const panes = row(16);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  for (let slot = 1; slot <= 8; slot++) {
+    store.setFocus(`p0-${slot}`);
+    drain(store, panes);
+  }
+  const warm = mountedOf(store, panes);
+  expect(warm).toHaveLength(8);
+  store.setPictures((paneId) => paneId !== "p0-15");
+  store.setBackgroundPictures(true);
+  for (let step = 0; step < 6; step++) {
+    vi.advanceTimersByTime(1000);
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect(mountedOf(store, panes)).toEqual([...warm, "p0-15"]);
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(1200);
+  expect(mountedOf(store, panes)).toEqual(warm);
+  store.dispose();
+});
+
 it("prepares the next pane in the direction of travel even with many panes on screen", () => {
   const panes = [...row(4, 0), ...row(12, 1)];
   const store = createPaneLifecycleStore(panes, "p0-0");
@@ -77,7 +122,7 @@ it("keeps at most eight views, unmounting the least recently wanted only to make
   store.dispose();
 });
 
-it("leaves panes on screen that a picture shows unmounted", () => {
+it("leaves pictured panes unmounted unless they are neighboring destinations", () => {
   const panes = [...row(4, 0), ...row(4, 1)];
   const store = createPaneLifecycleStore(panes, "p0-0");
   store.setPictures((paneId) => paneId.startsWith("p1-"));
@@ -85,7 +130,7 @@ it("leaves panes on screen that a picture shows unmounted", () => {
   store.setVisible("p0-3", true);
   drain(store, panes);
   const mounted = mountedOf(store, panes);
-  expect(mounted.filter((paneId) => paneId.startsWith("p1-"))).toEqual([]);
+  expect(mounted.filter((paneId) => paneId.startsWith("p1-"))).toEqual(["p1-0"]);
   expect(mounted).toContain("p0-3");
   expect(mounted).toContain("p0-1");
   store.dispose();
