@@ -9,15 +9,7 @@ import {
   createRouter,
   useParams,
 } from "@tanstack/react-router";
-import {
-  Activity,
-  memo,
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import {
   ChatViewActivityContext,
@@ -32,7 +24,7 @@ import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { useThreadShell } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { usePaneBudget } from "./liveBudget";
+import { usePaneMounted } from "./paneLifecycle";
 
 export interface ThreadPaneThread {
   readonly environmentId: EnvironmentId;
@@ -83,59 +75,32 @@ const PaneRouter = memo(function PaneRouter({
 });
 
 /**
- * Whether the pane's ChatView can be parked: hidden with its state kept while a
- * picture of its current content stands in for it. Each thread change is a new
- * content revision, so only a picture taken after it can park the pane, and a
- * parked pane is revealed again to have its picture retaken. Content is
- * reported not ready for two frames after a reveal so that picture is only
- * taken once the revealed view has settled.
+ * Mounts the pane's ChatView while the workspace keeps it live, and reports its
+ * content ready two frames after mounting, once the view has laid out. The
+ * thread's last update is the content revision, so a picture taken before the
+ * thread last changed never stands in for it.
  */
-function usePaneParking(paneId: string, thread: ThreadPaneThread) {
-  const budget = usePaneBudget(paneId);
-  const contentRevision = useThreadShell(thread)?.updatedAt ?? null;
-  const [ready, setReady] = useState(true);
-  const [baseline, setBaseline] = useState<{ content: string | null; picture: number } | null>(
-    null,
-  );
-  const fresh =
-    baseline !== null &&
-    baseline.content === contentRevision &&
-    budget.pictureRevision !== null &&
-    budget.pictureRevision > baseline.picture;
-  const parked = !budget.inBudget && fresh;
-  const wasParkedRef = useRef(parked);
-  const markBaseline = useEffectEvent((content: string | null) =>
-    setBaseline({ content, picture: budget.pictureRevision ?? -1 }),
-  );
+function usePaneContent(paneId: string, thread: ThreadPaneThread, visible: boolean): boolean {
+  const mounted = usePaneMounted(paneId, visible);
+  const revision = useThreadShell(thread)?.updatedAt ?? null;
+  const [settled, setSettled] = useState(false);
 
-  useOnirigiriPaneContentReady(budget.mounted && ready, contentRevision);
+  useOnirigiriPaneContentReady(mounted && settled, revision);
 
-  // A layout effect records the baseline in the commit that publishes the
-  // revision, before Onirigiri can take a picture of it.
-  useLayoutEffect(() => {
-    const revealing = wasParkedRef.current && !parked;
-    wasParkedRef.current = parked;
-    if (parked || !budget.mounted) return;
-    if (!revealing) {
-      markBaseline(contentRevision);
-      return;
-    }
-    setReady(false);
+  useEffect(() => {
+    if (!mounted) return;
     let second = 0;
     const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        setReady(true);
-        markBaseline(contentRevision);
-      });
+      second = requestAnimationFrame(() => setSettled(true));
     });
     return () => {
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
-      setReady(true);
+      setSettled(false);
     };
-  }, [parked, contentRevision, budget.mounted]);
+  }, [mounted]);
 
-  return { mounted: budget.mounted, parked };
+  return mounted;
 }
 
 function createPaneRouter(threadPath: string) {
@@ -146,7 +111,8 @@ function createPaneRouter(threadPath: string) {
 }
 
 /**
- * One thread rendered by its own live ChatView. The pane owns a memory-history
+ * One thread rendered by its own live ChatView while the workspace keeps it
+ * mounted. The pane owns a memory-history
  * router so every route read inside ChatView resolves to this thread; any
  * navigation away from it is handed to the app router instead. Only the
  * focused pane's ChatView is active while its content accepts input; switching
@@ -156,11 +122,13 @@ export const ThreadPane = memo(function ThreadPane({
   thread,
   paneId,
   focused,
+  visible,
   onNavigateAway,
 }: {
   thread: ThreadPaneThread;
   paneId: string;
   focused: boolean;
+  visible: boolean;
   onNavigateAway: (href: string) => void;
 }) {
   const interactive = useOnirigiriPaneInteractive();
@@ -168,7 +136,7 @@ export const ThreadPane = memo(function ThreadPane({
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
-  const { mounted, parked } = usePaneParking(paneId, thread);
+  const mounted = usePaneContent(paneId, thread, visible);
 
   // The app shares one composer handle (the command palette provides it).
   // Each pane's ChatView gets its own, and the shared one follows focus.
@@ -198,9 +166,7 @@ export const ThreadPane = memo(function ThreadPane({
           data-spatial-thread={thread.threadId}
           data-spatial-active={String(active)}
         >
-          <Activity mode={parked ? "hidden" : "visible"}>
-            {mounted ? <PaneRouter router={router} /> : null}
-          </Activity>
+          {mounted ? <PaneRouter router={router} /> : null}
         </div>
       </ComposerHandleContext>
     </ChatViewActivityContext>

@@ -3,8 +3,6 @@ import {
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
-  type PanePresentation,
-  type PanePresentationContext,
   type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
@@ -21,8 +19,9 @@ import {
 } from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { LiveBudgetContext, createLiveBudgetStore, type LiveBudgetStore } from "./liveBudget";
+import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
+import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
 
 interface ThreadPaneData {
@@ -34,21 +33,24 @@ function threadPaneId(environmentId: string, threadId: string) {
   return `thread:${environmentId}:${threadId}`;
 }
 
-function readSpikeOptions() {
+type WorkspaceLayoutMode = "rows" | "strip";
+
+function readWorkspaceOptions() {
   const search = new URLSearchParams(window.location.search);
   return {
-    liveContent: !search.has("frozen"),
-    liveBudget: Number(search.get("budget") ?? 24),
-    maxRows: Number(search.get("rows") ?? 3),
-    maxThreadsPerRow: Number(search.get("perRow") ?? 4),
+    layout: (search.get("layout") === "strip" ? "strip" : "rows") as WorkspaceLayoutMode,
     sidesThreadId: search.get("sides"),
   };
 }
 
+/** Quiet time after a focus change before the app route follows it. */
+const ROUTE_SETTLE_MS = 150;
+
+// Rows: one plane per project. Strip: every thread on one plane, in the same
+// project order.
 function useThreadPanes(
   sidesThreadId: string | null,
-  maxRows: number,
-  maxThreadsPerRow: number,
+  layoutMode: WorkspaceLayoutMode,
 ): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const projects = useProjects();
@@ -81,31 +83,31 @@ function useThreadPanes(
         })),
       },
     );
-    const panes = layout.rows
+    const rows = layout.rows
       .filter((row) => row.panes.length > 0)
-      .slice(0, maxRows)
-      .flatMap((row, planeIndex) =>
-        row.panes
-          .slice(0, maxThreadsPerRow)
-          .flatMap((pane) => {
-            const thread = threadById.get(pane.threadId);
-            if (!thread) return [];
-            const data = { environmentId: thread.environmentId, threadId: thread.id };
-            const threadPane = {
-              paneId: threadPaneId(thread.environmentId, thread.id),
-              surfaceKind: "thread",
-              title: thread.title,
-              subtitle: projectById.get(row.projectId)?.title ?? "",
-              data,
-            };
-            return thread.id === sidesThreadId
-              ? [threadPane, ...sidePaneDefinitions(threadPane.paneId, data)]
-              : [threadPane];
-          })
-          .map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
+      .map((row) =>
+        row.panes.flatMap((pane) => {
+          const thread = threadById.get(pane.threadId);
+          if (!thread) return [];
+          const data = { environmentId: thread.environmentId, threadId: thread.id };
+          const threadPane = {
+            paneId: threadPaneId(thread.environmentId, thread.id),
+            surfaceKind: "thread",
+            title: thread.title,
+            subtitle: projectById.get(row.projectId)?.title ?? "",
+            data,
+          };
+          return thread.id === sidesThreadId
+            ? [threadPane, ...sidePaneDefinitions(threadPane.paneId, data)]
+            : [threadPane];
+        }),
       );
+    const planes = layoutMode === "strip" ? [rows.flat()] : rows;
+    const panes = planes.flatMap((plane, planeIndex) =>
+      plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
+    );
     return panes.length > 0 ? panes : null;
-  }, [bootstrapped, projects, threads, sidesThreadId, maxRows, maxThreadsPerRow]);
+  }, [bootstrapped, projects, threads, sidesThreadId, layoutMode]);
 }
 
 function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
@@ -127,10 +129,7 @@ function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
   ];
 }
 
-const BUDGET_TEXTURE: PanePresentation = { kind: "texture", reason: "Live budget" };
-
-// Thread panes nearest the focused one first. The first `liveBudget` of them
-// stay live; the rest show pictures.
+// Thread panes nearest the focused one first.
 function threadPanesByDistance(
   panes: readonly OnirigiriPaneDefinition[],
   focusedPaneId: string | null,
@@ -149,39 +148,20 @@ function threadPanesByDistance(
     .map((pane) => pane.paneId);
 }
 
-// Panes join the live set among the nearest `budget` and leave it only beyond
-// half as many again, so moving between neighbours does not park and reveal
-// panes at the edge of the budget.
-function nextLivePanes(
-  order: readonly string[],
-  budget: number,
-  previous: ReadonlySet<string>,
-): ReadonlySet<string> {
-  const next = new Set(order.slice(0, budget));
-  for (const paneId of order.slice(budget, Math.ceil(budget * 1.5))) {
-    if (previous.has(paneId)) next.add(paneId);
-  }
-  return next.size === previous.size && [...next].every((paneId) => previous.has(paneId))
-    ? previous
-    : next;
-}
-
 function scopedKey(environmentId: string, id: string) {
   return `${environmentId}:${id}`;
 }
 
 export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null }) {
   const router = useRouter();
-  const [options] = useState(readSpikeOptions);
-  const threadPanes = useThreadPanes(
-    options.sidesThreadId,
-    options.maxRows,
-    options.maxThreadsPerRow,
-  );
+  const [options] = useState(readWorkspaceOptions);
+  const threadPanes = useThreadPanes(options.sidesThreadId, options.layout);
   const [initialPanes, setInitialPanes] = useState(threadPanes);
   if (initialPanes === null && threadPanes !== null) setInitialPanes(threadPanes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
-  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
+  // Focus is kept out of React state so moving between panes does not
+  // re-render the workspace.
+  const focusedPaneIdRef = useRef<string | null>(null);
 
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
@@ -196,54 +176,56 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
 
-  const paneOrder = useMemo(
-    () => threadPanesByDistance(initialPanes ?? [], focusedPaneId ?? routePaneId),
-    [initialPanes, focusedPaneId, routePaneId],
+  const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
+    null,
   );
-  const [liveOrder, setLiveOrder] = useState(paneOrder);
-  const [livePaneIds, setLivePaneIds] = useState(() =>
-    nextLivePanes(paneOrder, options.liveBudget, new Set()),
-  );
-  if (liveOrder !== paneOrder) {
-    setLiveOrder(paneOrder);
-    setLivePaneIds(nextLivePanes(paneOrder, options.liveBudget, livePaneIds));
+  if (lifecycle === null && initialPanes !== null) {
+    setLifecycle(
+      createPaneLifecycleStore(threadPanesByDistance(initialPanes, routePaneId), routePaneId),
+    );
   }
-  const [liveBudget, setLiveBudget] = useState<LiveBudgetStore | null>(null);
-  if (liveBudget === null && paneOrder.length > 0) {
-    setLiveBudget(createLiveBudgetStore(paneOrder, livePaneIds, focusedPaneId ?? routePaneId));
-  }
-  useEffect(
-    () => liveBudget?.setBudget(paneOrder, livePaneIds, focusedPaneId),
-    [liveBudget, paneOrder, livePaneIds, focusedPaneId],
-  );
 
-  const getPanePresentation = useCallback(
-    (pane: WorkspacePane, context: PanePresentationContext) =>
-      pane.surfaceKind === "thread" &&
-      context.capabilities.canCapture === true &&
-      !livePaneIds.has(pane.paneId)
-        ? BUDGET_TEXTURE
-        : undefined,
-    [livePaneIds],
-  );
-
-  // The app route follows the focused thread so T3's global surfaces act on it.
-  // Routes this workspace requested are remembered so they are not mistaken for
-  // a navigation elsewhere in the app, which instead moves focus to its pane.
+  // The app route follows the focused thread once the camera rests, so T3's
+  // global surfaces act on it. Routes this workspace requested are remembered
+  // so they are not mistaken for a navigation elsewhere in the app, which
+  // instead moves focus to its pane.
   const requestedRoutesRef = useRef(new Set<string>());
+  const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routePaneIdRef = useRef(routePaneId);
   useEffect(() => {
-    const data = focusedPaneId ? paneData.get(focusedPaneId) : undefined;
-    if (!focusedPaneId || !data || focusedPaneId === routePaneId) return;
-    const frame = requestAnimationFrame(() => {
-      requestedRoutesRef.current.add(focusedPaneId);
-      void router.navigate({ to: "/$environmentId/$threadId", params: data });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [focusedPaneId, paneData, routePaneId, router]);
+    routePaneIdRef.current = routePaneId;
+  }, [routePaneId]);
+  useEffect(
+    () => () => {
+      if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
+    },
+    [],
+  );
+
+  const onFocusedPaneFrame = useCallback(
+    (frame: WorkspaceFocusedPaneFrame | null) => {
+      if (!frame || frame.paneId === focusedPaneIdRef.current) return;
+      const data = paneData.get(frame.paneId);
+      if (!data) return;
+      const paneId = frame.paneId;
+      focusedPaneIdRef.current = paneId;
+      lifecycle?.setFocus(threadPanesByDistance(initialPanes ?? [], paneId), paneId);
+      if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
+      routeTimerRef.current = setTimeout(() => {
+        routeTimerRef.current = null;
+        if (paneId === routePaneIdRef.current || focusedPaneIdRef.current !== paneId) return;
+        requestedRoutesRef.current.add(paneId);
+        void router.navigate({ to: "/$environmentId/$threadId", params: data });
+      }, ROUTE_SETTLE_MS);
+    },
+    [initialPanes, lifecycle, paneData, router],
+  );
 
   const focusRoutePane = useEffectEvent((paneId: string) => {
     if (requestedRoutesRef.current.delete(paneId)) return;
-    if (paneData.has(paneId) && focusedPaneId !== paneId) workspaceRef.current?.focusPane(paneId);
+    if (paneData.has(paneId) && focusedPaneIdRef.current !== paneId) {
+      workspaceRef.current?.focusPane(paneId);
+    }
   });
 
   useEffect(() => {
@@ -256,10 +238,6 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     },
     [router],
   );
-
-  const trackFocusedPane = useCallback((frame: WorkspaceFocusedPaneFrame | null) => {
-    if (frame) setFocusedPaneId(frame.paneId);
-  }, []);
 
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
@@ -279,6 +257,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
         <ThreadPane
           thread={pane.data as ThreadPaneData}
           focused={state.focused}
+          visible={state.visible}
           paneId={pane.paneId}
           onNavigateAway={navigateAway}
         />
@@ -287,23 +266,30 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     [navigateAway],
   );
 
+  const renderPanePlaceholder = useCallback((pane: WorkspacePane) => {
+    if (pane.surfaceKind !== "thread") return null;
+    const data = pane.data as ThreadPaneData;
+    return <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
+  }, []);
+
   return (
     <div className="spatial-workspace h-full w-full">
-      {initialPanes && liveBudget ? (
-        <LiveBudgetContext value={liveBudget}>
+      {initialPanes && lifecycle ? (
+        <PaneLifecycleContext value={lifecycle}>
           <OnirigiriWorkspace
             ref={workspaceRef}
             ariaLabel="Onirigiri for T3 Code"
+            cursorRunway={0}
+            gridAxes={options.layout === "strip" ? "horizontal" : "spatial"}
             initialPanes={initialPanes}
-            liveContent={options.liveContent}
-            getPanePresentation={getPanePresentation}
-            onCaptureStatusChange={liveBudget.setCaptureStatus}
-            onFocusedPaneFrame={trackFocusedPane}
+            liveContent
+            onFocusedPaneFrame={onFocusedPaneFrame}
             renderPane={renderPane}
+            renderPanePlaceholder={renderPanePlaceholder}
             shortcutScope="application"
-            workspaceId="onirigiri-t3-spike"
+            workspaceId="onirigiri-t3"
           />
-        </LiveBudgetContext>
+        </PaneLifecycleContext>
       ) : null}
     </div>
   );
