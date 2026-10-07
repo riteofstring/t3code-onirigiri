@@ -8,7 +8,7 @@ import { getRouter } from "@t3tools/web/src/router";
 
 import "./index.css";
 
-import { SpatialChatSurface } from "./workspace/SpatialChatSurface";
+import { renderSpatialChatSurface } from "./workspace/SpatialChatSurface";
 
 prepareProviderAuthDelivery();
 
@@ -18,7 +18,7 @@ const router = getRouter(createBrowserHistory());
 export const startup = router.load().then(() => {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <ChatSurfaceContext value={SpatialChatSurface}>
+      <ChatSurfaceContext value={renderSpatialChatSurface}>
         <AppRoot router={router} />
       </ChatSurfaceContext>
     </React.StrictMode>,

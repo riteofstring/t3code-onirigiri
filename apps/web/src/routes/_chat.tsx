@@ -214,14 +214,12 @@ function ChatRouteLayout() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
-  const ChatSurface = use(ChatSurfaceContext);
+  const renderChatSurface = use(ChatSurfaceContext);
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {ChatSurface ? (
-        <ChatSurface target={threadTarget}>
-          <Outlet />
-        </ChatSurface>
+      {renderChatSurface ? (
+        renderChatSurface({ target: threadTarget, children: <Outlet /> })
       ) : threadTarget ? (
         <ThreadRouteView target={threadTarget} />
       ) : (

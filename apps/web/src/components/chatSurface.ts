@@ -1,4 +1,4 @@
-import { createContext, type ComponentType, type ReactNode } from "react";
+import { createContext, type ReactNode } from "react";
 
 import type { ThreadRouteTarget } from "../threadRoutes";
 
@@ -14,4 +14,6 @@ export interface ChatSurfaceProps {
  * the app shell (sidebar, settings, global shortcuts) unchanged. Without a
  * provider the chat route renders one `ThreadRouteView` for the routed thread.
  */
-export const ChatSurfaceContext = createContext<ComponentType<ChatSurfaceProps> | null>(null);
+export const ChatSurfaceContext = createContext<((props: ChatSurfaceProps) => ReactNode) | null>(
+  null,
+);

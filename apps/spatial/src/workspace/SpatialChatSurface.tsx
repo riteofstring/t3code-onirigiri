@@ -8,7 +8,7 @@ import { SpatialWorkspace } from "./SpatialWorkspace";
  * The chat area of T3's shell. Server threads live in the workspace, which
  * stays mounted while a draft or a non-thread route is shown instead.
  */
-export function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
+function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
   const threadTarget = target?.kind === "server" ? target : null;
   return (
     <>
@@ -25,4 +25,8 @@ export function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
       )}
     </>
   );
+}
+
+export function renderSpatialChatSurface(props: ChatSurfaceProps) {
+  return <SpatialChatSurface {...props} />;
 }
