@@ -1,0 +1,175 @@
+import type { OnirigiriPaneDefinition } from "@riteofstring/onirigiri";
+import {
+  reconcileWorkspaceLayout,
+  type LiveWorkspace,
+  type WorkspaceLayout,
+} from "@riteofstring/onirigiri-t3";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useMemo, useState } from "react";
+
+import { sortLogicalProjectsForSidebar } from "@t3tools/web/src/components/Sidebar.logic";
+import { useClientSettings } from "@t3tools/web/src/hooks/useSettings";
+import { getProjectOrderKey, selectProjectGroupingSettings } from "@t3tools/web/src/logicalProject";
+import { orderItemsByPreferredIds } from "@t3tools/web/src/components/Sidebar.logic";
+import { buildSidebarProjectSnapshots } from "@t3tools/web/src/sidebarProjectGrouping";
+import {
+  useAllEnvironmentShellsBootstrapped,
+  useProjects,
+  useThreadShells,
+} from "@t3tools/web/src/state/entities";
+import { usePrimaryEnvironmentId } from "@t3tools/web/src/state/environments";
+import { legacyProjectCwdPreferenceKey, useUiStateStore } from "@t3tools/web/src/uiStateStore";
+
+export interface ThreadPaneData {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}
+
+export type WorkspaceLayoutMode = "rows" | "strip";
+
+export function threadPaneId(environmentId: string, threadId: string) {
+  return `thread:${environmentId}:${threadId}`;
+}
+
+function scopedKey(environmentId: string, id: string) {
+  return `${environmentId}:${id}`;
+}
+
+/** The sidebar's project groups, in the order the sidebar shows them. */
+function useSidebarProjectGroups() {
+  const projects = useProjects();
+  const threads = useThreadShells();
+  const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const sortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
+  const groupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  return useMemo(() => {
+    const ordered =
+      sortOrder === "manual"
+        ? orderItemsByPreferredIds({
+            items: projects,
+            preferredIds: projectOrder,
+            getId: getProjectOrderKey,
+            getPreferenceIds: (project) => [
+              getProjectOrderKey(project),
+              legacyProjectCwdPreferenceKey(project.workspaceRoot),
+            ],
+          })
+        : projects;
+    const groups = buildSidebarProjectSnapshots({
+      projects: ordered,
+      settings: groupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+    return sortLogicalProjectsForSidebar(groups, threads, sortOrder);
+  }, [groupingSettings, primaryEnvironmentId, projectOrder, projects, sortOrder, threads]);
+}
+
+/**
+ * The workspace's thread panes. Rows follow the sidebar's project groups;
+ * the strip puts every thread on one plane in the same order. Each thread
+ * update reconciles the previous arrangement, so panes keep their places,
+ * threads new since then lead their project's row and archived ones leave.
+ */
+export function useWorkspacePanes(
+  layoutMode: WorkspaceLayoutMode,
+  sidesThreadId: string | null,
+): readonly OnirigiriPaneDefinition[] | null {
+  const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const threads = useThreadShells();
+  const groups = useSidebarProjectGroups();
+
+  const live = useMemo((): LiveWorkspace | null => {
+    if (!bootstrapped) return null;
+    const groupByProject = new Map(
+      groups.flatMap((group) =>
+        group.memberProjectRefs.map(
+          (ref) => [scopedKey(ref.environmentId, ref.projectId), group.projectKey] as const,
+        ),
+      ),
+    );
+    return {
+      projects: groups.map((group) => ({ id: group.projectKey })),
+      threads: threads
+        .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .flatMap((thread) => {
+          const projectId = groupByProject.get(scopedKey(thread.environmentId, thread.projectId));
+          return projectId
+            ? [
+                {
+                  id: scopedKey(thread.environmentId, thread.id),
+                  projectId,
+                  archived: thread.archivedAt !== null,
+                },
+              ]
+            : [];
+        }),
+    };
+  }, [bootstrapped, groups, threads]);
+
+  // Compared by content: the sidebar inputs are rebuilt on unrelated renders.
+  const liveKey = useMemo(() => (live ? JSON.stringify(live) : null), [live]);
+  const [arrangement, setArrangement] = useState<{
+    liveKey: string | null;
+    layout: WorkspaceLayout | null;
+  }>({ liveKey: null, layout: null });
+  if (arrangement.liveKey !== liveKey) {
+    setArrangement({
+      liveKey,
+      layout: live ? reconcileWorkspaceLayout(arrangement.layout ?? { rows: [] }, live) : null,
+    });
+  }
+
+  return useMemo(() => {
+    const layout = arrangement.layout;
+    if (!layout) return null;
+    const threadByKey = new Map(
+      threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
+    );
+    const titleByGroup = new Map(groups.map((group) => [group.projectKey, group.displayName]));
+    const rows = layout.rows
+      .filter((row) => row.panes.length > 0)
+      .map((row) =>
+        row.panes.flatMap((pane) => {
+          const thread = threadByKey.get(pane.threadId);
+          if (!thread) return [];
+          const data: ThreadPaneData = { environmentId: thread.environmentId, threadId: thread.id };
+          const threadPane = {
+            paneId: threadPaneId(thread.environmentId, thread.id),
+            surfaceKind: "thread",
+            title: thread.title,
+            subtitle: titleByGroup.get(row.projectId) ?? "",
+            data,
+          };
+          return thread.id === sidesThreadId
+            ? [threadPane, ...sidePaneDefinitions(threadPane.paneId, data)]
+            : [threadPane];
+        }),
+      );
+    const planes = layoutMode === "strip" ? [rows.flat()] : rows;
+    const panes = planes.flatMap((plane, planeIndex) =>
+      plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
+    );
+    return panes.length > 0 ? panes : null;
+  }, [arrangement.layout, groups, layoutMode, sidesThreadId, threads]);
+}
+
+function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
+  return [
+    ...["spatial-a", "spatial-b"].map((terminalId) => ({
+      paneId: `${threadPaneId}:terminal:${terminalId}`,
+      surfaceKind: "terminal",
+      title: `Terminal ${terminalId}`,
+      subtitle: "",
+      data: { ...thread, terminalId },
+    })),
+    {
+      paneId: `${threadPaneId}:diff`,
+      surfaceKind: "diff",
+      title: "Diff",
+      subtitle: "",
+      data: thread,
+    },
+  ];
+}

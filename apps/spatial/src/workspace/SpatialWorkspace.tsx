@@ -1,5 +1,7 @@
 import {
   OnirigiriWorkspace,
+  createWorkspaceScene,
+  serializeWorkspaceLayout,
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
@@ -7,33 +9,25 @@ import {
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
-import { reconcileWorkspaceLayout } from "@riteofstring/onirigiri-t3";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
-import {
-  useAllEnvironmentShellsBootstrapped,
-  useProjects,
-  useThreadShells,
-} from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
+import {
+  threadPaneId,
+  useWorkspacePanes,
+  type ThreadPaneData,
+  type WorkspaceLayoutMode,
+} from "./useWorkspacePanes";
 
-interface ThreadPaneData {
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-}
-
-function threadPaneId(environmentId: string, threadId: string) {
-  return `thread:${environmentId}:${threadId}`;
-}
-
-type WorkspaceLayoutMode = "rows" | "strip";
+const WORKSPACE_ID = "onirigiri-t3";
+/** Quiet time after a focus change before the app route follows it. */
+const ROUTE_SETTLE_MS = 150;
 
 function readWorkspaceOptions() {
   const search = new URLSearchParams(window.location.search);
@@ -41,92 +35,6 @@ function readWorkspaceOptions() {
     layout: (search.get("layout") === "strip" ? "strip" : "rows") as WorkspaceLayoutMode,
     sidesThreadId: search.get("sides"),
   };
-}
-
-/** Quiet time after a focus change before the app route follows it. */
-const ROUTE_SETTLE_MS = 150;
-
-// Rows: one plane per project. Strip: every thread on one plane, in the same
-// project order.
-function useThreadPanes(
-  sidesThreadId: string | null,
-  layoutMode: WorkspaceLayoutMode,
-): readonly OnirigiriPaneDefinition[] | null {
-  const bootstrapped = useAllEnvironmentShellsBootstrapped();
-  const projects = useProjects();
-  const threads = useThreadShells();
-
-  return useMemo(() => {
-    if (!bootstrapped) return null;
-    const projectById = new Map(
-      projects.map((project) => [scopedKey(project.environmentId, project.id), project]),
-    );
-    const threadById = new Map(
-      threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
-    );
-    const recentThreads = threads.toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    const layout = reconcileWorkspaceLayout(
-      { rows: [] },
-      {
-        projects: [
-          ...new Set([
-            ...recentThreads.map((thread) => scopedKey(thread.environmentId, thread.projectId)),
-            ...projectById.keys(),
-          ]),
-        ]
-          .filter((id) => projectById.has(id))
-          .map((id) => ({ id })),
-        threads: recentThreads.map((thread) => ({
-          id: scopedKey(thread.environmentId, thread.id),
-          projectId: scopedKey(thread.environmentId, thread.projectId),
-          archived: thread.archivedAt !== null,
-        })),
-      },
-    );
-    const rows = layout.rows
-      .filter((row) => row.panes.length > 0)
-      .map((row) =>
-        row.panes.flatMap((pane) => {
-          const thread = threadById.get(pane.threadId);
-          if (!thread) return [];
-          const data = { environmentId: thread.environmentId, threadId: thread.id };
-          const threadPane = {
-            paneId: threadPaneId(thread.environmentId, thread.id),
-            surfaceKind: "thread",
-            title: thread.title,
-            subtitle: projectById.get(row.projectId)?.title ?? "",
-            data,
-          };
-          return thread.id === sidesThreadId
-            ? [threadPane, ...sidePaneDefinitions(threadPane.paneId, data)]
-            : [threadPane];
-        }),
-      );
-    const planes = layoutMode === "strip" ? [rows.flat()] : rows;
-    const panes = planes.flatMap((plane, planeIndex) =>
-      plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
-    );
-    return panes.length > 0 ? panes : null;
-  }, [bootstrapped, projects, threads, sidesThreadId, layoutMode]);
-}
-
-function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
-  return [
-    ...["spatial-a", "spatial-b"].map((terminalId) => ({
-      paneId: `${threadPaneId}:terminal:${terminalId}`,
-      surfaceKind: "terminal",
-      title: `Terminal ${terminalId}`,
-      subtitle: "",
-      data: { ...thread, terminalId },
-    })),
-    {
-      paneId: `${threadPaneId}:diff`,
-      surfaceKind: "diff",
-      title: "Diff",
-      subtitle: "",
-      data: thread,
-    },
-  ];
 }
 
 // Thread panes nearest the focused one first.
@@ -148,16 +56,16 @@ function threadPanesByDistance(
     .map((pane) => pane.paneId);
 }
 
-function scopedKey(environmentId: string, id: string) {
-  return `${environmentId}:${id}`;
+function paneMembership(panes: readonly OnirigiriPaneDefinition[]) {
+  return panes.map((pane) => `${pane.paneId}@${pane.planeIndex}:${pane.slotIndex}`).join("|");
 }
 
 export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null }) {
   const router = useRouter();
-  const [options] = useState(readWorkspaceOptions);
-  const threadPanes = useThreadPanes(options.sidesThreadId, options.layout);
-  const [initialPanes, setInitialPanes] = useState(threadPanes);
-  if (initialPanes === null && threadPanes !== null) setInitialPanes(threadPanes);
+  const [{ layout: layoutMode, sidesThreadId }] = useState(readWorkspaceOptions);
+  const panes = useWorkspacePanes(layoutMode, sidesThreadId);
+  const [initialPanes, setInitialPanes] = useState(panes);
+  if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
@@ -165,11 +73,12 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
 
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
-    for (const pane of initialPanes ?? []) {
+    for (const pane of panes ?? []) {
       if (pane.surfaceKind === "thread") byPaneId.set(pane.paneId, pane.data as ThreadPaneData);
     }
     return byPaneId;
-  }, [initialPanes]);
+  }, [panes]);
+  const panesRef = useRef(panes);
 
   const routePaneId =
     target?.kind === "server"
@@ -184,6 +93,40 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
       createPaneLifecycleStore(threadPanesByDistance(initialPanes, routePaneId), routePaneId),
     );
   }
+
+  // Threads appearing, leaving or moving rebuild the arrangement around the
+  // focused pane; renames only retitle their panes.
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!panes || !workspace) return;
+    const previous = panesRef.current;
+    panesRef.current = panes;
+    if (!previous || previous === panes) return;
+    if (paneMembership(panes) !== paneMembership(previous)) {
+      const { scene } = createWorkspaceScene({
+        gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
+        id: WORKSPACE_ID,
+        panes,
+      });
+      const focused =
+        panes.find((pane) => pane.paneId === focusedPaneIdRef.current) ??
+        panes.find((pane) => pane.surfaceKind === "thread");
+      workspace.restoreLayout(
+        serializeWorkspaceLayout(scene, {
+          column: focused?.slotIndex ?? 0,
+          row: focused?.planeIndex ?? 0,
+          split: 0,
+        }),
+      );
+      return;
+    }
+    const previousTitles = new Map(previous.map((pane) => [pane.paneId, pane.title]));
+    for (const pane of panes) {
+      if (pane.title && previousTitles.get(pane.paneId) !== pane.title) {
+        workspace.renamePane(pane.paneId, pane.title);
+      }
+    }
+  }, [layoutMode, panes]);
 
   // The app route follows the focused thread once the camera rests, so T3's
   // global surfaces act on it. Routes this workspace requested are remembered
@@ -209,7 +152,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
       if (!data) return;
       const paneId = frame.paneId;
       focusedPaneIdRef.current = paneId;
-      lifecycle?.setFocus(threadPanesByDistance(initialPanes ?? [], paneId), paneId);
+      lifecycle?.setFocus(threadPanesByDistance(panesRef.current ?? [], paneId), paneId);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       routeTimerRef.current = setTimeout(() => {
         routeTimerRef.current = null;
@@ -218,19 +161,33 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
         void router.navigate({ to: "/$environmentId/$threadId", params: data });
       }, ROUTE_SETTLE_MS);
     },
-    [initialPanes, lifecycle, paneData, router],
+    [lifecycle, paneData, router],
   );
 
+  // A route the workspace did not request (the sidebar, a notification, a new
+  // thread) moves focus to its pane, leaving overview. A thread whose pane is
+  // not in the workspace yet is focused once reconciliation adds it.
+  const pendingRoutePaneRef = useRef<string | null>(null);
   const focusRoutePane = useEffectEvent((paneId: string) => {
     if (requestedRoutesRef.current.delete(paneId)) return;
-    if (paneData.has(paneId) && focusedPaneIdRef.current !== paneId) {
-      workspaceRef.current?.focusPane(paneId);
+    if (!paneData.has(paneId)) {
+      pendingRoutePaneRef.current = paneId;
+      return;
+    }
+    pendingRoutePaneRef.current = null;
+    if (focusedPaneIdRef.current !== paneId) {
+      workspaceRef.current?.focusPane(paneId, { exitOverview: true });
     }
   });
 
   useEffect(() => {
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
+
+  useEffect(() => {
+    const pending = pendingRoutePaneRef.current;
+    if (pending && paneData.has(pending)) focusRoutePane(pending);
+  }, [paneData]);
 
   const navigateAway = useCallback(
     (href: string) => {
@@ -280,14 +237,15 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
             ref={workspaceRef}
             ariaLabel="Onirigiri for T3 Code"
             cursorRunway={0}
-            gridAxes={options.layout === "strip" ? "horizontal" : "spatial"}
+            cursorTargets="panes"
+            gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
             initialPanes={initialPanes}
             liveContent
             onFocusedPaneFrame={onFocusedPaneFrame}
             renderPane={renderPane}
             renderPanePlaceholder={renderPanePlaceholder}
             shortcutScope="application"
-            workspaceId="onirigiri-t3"
+            workspaceId={WORKSPACE_ID}
           />
         </PaneLifecycleContext>
       ) : null}
