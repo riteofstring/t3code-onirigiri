@@ -4,11 +4,13 @@ import {
   defaultOnirigiriShortcuts,
   type OnirigiriShortcutBindings,
   serializeWorkspaceLayout,
+  type OnirigiriLayout,
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
   type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
+  type WorkspaceScene,
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
@@ -60,6 +62,30 @@ function threadPanePositions(panes: readonly OnirigiriPaneDefinition[]): PanePos
       plane: pane.planeIndex ?? 0,
       slot: pane.slotIndex ?? 0,
     }));
+}
+
+// Panes that stay keep the widths their columns were given.
+function keepColumnWidths(layout: OnirigiriLayout, current: WorkspaceScene): OnirigiriLayout {
+  const columnByPane = new Map(
+    current.columns.flatMap((column) => column.cells.map((cell) => [cell.paneId, column] as const)),
+  );
+  return {
+    ...layout,
+    columns: layout.columns.map((column) => {
+      const previous = column.cells
+        .map((cell) => columnByPane.get(cell.paneId))
+        .find((match) => match !== undefined);
+      if (!previous) return column;
+      const { widthOverride, previousProportionWidth } = previous;
+      return {
+        ...column,
+        idealWidthSpec: previous.idealWidthSpec,
+        widthSpec: previous.widthSpec,
+        ...(widthOverride === undefined ? {} : { widthOverride }),
+        ...(previousProportionWidth === undefined ? {} : { previousProportionWidth }),
+      };
+    }),
+  };
 }
 
 function paneMembership(panes: readonly OnirigiriPaneDefinition[]) {
@@ -123,13 +149,14 @@ export function SpatialWorkspace({
       const focused =
         panes.find((pane) => pane.paneId === focusedPaneIdRef.current) ??
         panes.find((pane) => pane.surfaceKind === "thread");
-      workspace.restoreLayout(
-        serializeWorkspaceLayout(scene, {
-          column: focused?.slotIndex ?? 0,
-          row: focused?.planeIndex ?? 0,
-          split: 0,
-        }),
-      );
+      const layout = serializeWorkspaceLayout(scene, {
+        column: focused?.slotIndex ?? 0,
+        row: focused?.planeIndex ?? 0,
+        split: 0,
+      });
+      workspace.restoreLayout(keepColumnWidths(layout, workspace.getScene()), {
+        keepPresentation: true,
+      });
       return;
     }
     const previousTitles = new Map(previous.map((pane) => [pane.paneId, pane.title]));
