@@ -236,16 +236,21 @@ export function SpatialWorkspace({
   // instead moves focus to its pane.
   const requestedRoutesRef = useRef(new Set<string>());
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRouteRef = useRef<(() => void) | null>(null);
   const routePaneIdRef = useRef(routePaneId);
   // A route change made elsewhere, or covering the workspace, supersedes a
-  // pending follow of the camera.
+  // pending follow of the camera; one this workspace asked for earlier does not.
   useEffect(() => {
+    const coveredChanged = activeRef.current !== active;
     routePaneIdRef.current = routePaneId;
     activeRef.current = active;
+    const requested = routePaneId !== null && requestedRoutesRef.current.has(routePaneId);
+    if (!coveredChanged && requested) return;
     if (routeTimerRef.current !== null) {
       clearTimeout(routeTimerRef.current);
       routeTimerRef.current = null;
     }
+    pendingRouteRef.current = null;
   }, [routePaneId, active]);
   useEffect(
     () => () => {
@@ -263,15 +268,41 @@ export function SpatialWorkspace({
       if (!data) return;
       lifecycle?.setFocus(paneId);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
-      routeTimerRef.current = setTimeout(() => {
+      const follow = () => {
+        if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
         routeTimerRef.current = null;
+        pendingRouteRef.current = null;
         if (paneId === routePaneIdRef.current || focusedPaneIdRef.current !== paneId) return;
         requestedRoutesRef.current.add(paneId);
         void router.navigate({ to: "/$environmentId/$threadId", params: data });
-      }, ROUTE_SETTLE_MS);
+      };
+      pendingRouteRef.current = follow;
+      routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
     [lifecycle, paneData, router],
   );
+
+  // Anything but moving on through the workspace, such as opening the command
+  // palette or clicking, may act on the focused thread, so a route still
+  // waiting for the camera follows it at once.
+  useEffect(() => {
+    const followNow = (event: Event) => {
+      const follow = pendingRouteRef.current;
+      if (!follow) return;
+      if (event instanceof KeyboardEvent) {
+        const modifierOnly = ["Alt", "Control", "Meta", "Shift"].includes(event.key);
+        const navigating = event.altKey && (event.key.startsWith("Arrow") || event.code === "KeyO");
+        if (modifierOnly || navigating) return;
+      }
+      follow();
+    };
+    window.addEventListener("keydown", followNow, true);
+    window.addEventListener("pointerdown", followNow, true);
+    return () => {
+      window.removeEventListener("keydown", followNow, true);
+      window.removeEventListener("pointerdown", followNow, true);
+    };
+  }, []);
 
   // Focus moved while the workspace was covered, as when a route it did not
   // request focused a pane, reaches the lifecycle once it shows again.
