@@ -269,3 +269,38 @@ it("does not apply failure backoff to a successful picture that later becomes st
   expect(store.isMounted("p0-2")).toBe(true);
   store.dispose();
 });
+
+it("lets the newly focused view commit before preparing its neighbor", () => {
+  const panes = row(10);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setFocus("p0-8");
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-8")).toBe(true);
+  expect(store.isMounted("p0-9")).toBe(false);
+  store.committed("p0-8", true);
+  vi.advanceTimersByTime(100);
+  expect(store.isMounted("p0-9")).toBe(true);
+  store.dispose();
+});
+
+it("does not repeatedly mount a running thread just to update its background picture", () => {
+  const panes = row(3);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setBackgroundPictures(true);
+  store.setPictures(
+    (paneId) => paneId !== "p0-2",
+    true,
+    (paneId) => paneId !== "p0-2",
+  );
+  drain(store, panes);
+  expect(store.isMounted("p0-2")).toBe(false);
+  store.setPictures(
+    (paneId) => paneId !== "p0-2",
+    true,
+    () => true,
+  );
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.dispose();
+});

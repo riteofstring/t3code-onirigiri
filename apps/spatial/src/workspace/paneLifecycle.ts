@@ -67,6 +67,7 @@ export function createPaneLifecycleStore(
   let clock = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
   let freshPictures = new Set<string>();
+  let pictureExcluded = new Set<string>();
   let picturesReady = true;
   let storedPicturesTimer: ReturnType<typeof setTimeout> | null = null;
   let storedPicturesWaited = false;
@@ -136,6 +137,7 @@ export function createPaneLifecycleStore(
     let bestDistance = Infinity;
     for (const pane of panes.values()) {
       if (mounted.has(pane.paneId)) continue;
+      if (pictureExcluded.has(pane.paneId)) continue;
       const attempted = pictureAttempted.get(pane.paneId);
       if (attempted !== undefined && performance.now() - attempted < PICTURE_RETRY_MS) continue;
       if (hasPicture(pane.paneId)) continue;
@@ -256,7 +258,7 @@ export function createPaneLifecycleStore(
     clock += 1;
     if (focused && panes.has(focused)) {
       lastWanted.set(focused, clock);
-      mount(focused);
+      if (!mounted.has(focused)) mountPrepared(focused);
     }
     // Likely destinations come before panes that are merely on screen, and a
     // pane on screen that a picture already shows does not need its view.
@@ -371,16 +373,24 @@ export function createPaneLifecycleStore(
       requestSettle();
     },
     /** Tells which panes a picture shows faithfully while they are not mounted. */
-    setPictures: (pictured: (paneId: string) => boolean, loaded = true) => {
+    setPictures: (
+      pictured: (paneId: string) => boolean,
+      loaded = true,
+      canPicture: (paneId: string) => boolean = () => true,
+    ) => {
       hasPicture = pictured;
       const ready = loaded || storedPicturesWaited;
       const next = new Set([...panes.keys()].filter(pictured));
+      const excluded = new Set([...panes.keys()].filter((paneId) => !canPicture(paneId)));
       const changed =
         ready !== picturesReady ||
         next.size !== freshPictures.size ||
-        [...next].some((paneId) => !freshPictures.has(paneId));
+        [...next].some((paneId) => !freshPictures.has(paneId)) ||
+        excluded.size !== pictureExcluded.size ||
+        [...excluded].some((paneId) => !pictureExcluded.has(paneId));
       picturesReady = ready;
       freshPictures = next;
+      pictureExcluded = excluded;
       if (ready && storedPicturesTimer !== null) {
         clearTimeout(storedPicturesTimer);
         storedPicturesTimer = null;

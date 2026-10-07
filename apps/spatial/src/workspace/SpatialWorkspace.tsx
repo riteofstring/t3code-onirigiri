@@ -144,6 +144,7 @@ export function SpatialWorkspace({
     onPanePictureCaptured,
     pictureFor,
     hasFreshPicture,
+    canBackgroundPicture,
     picturesLoaded,
     requestSnapshot,
     stageRef,
@@ -230,8 +231,8 @@ export function SpatialWorkspace({
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useEffect(() => {
-    lifecycle?.setPictures(hasFreshPicture, picturesLoaded);
-  }, [hasFreshPicture, lifecycle, picturesLoaded]);
+    lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
+  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
   // Panes off screen are laid out only where the browser supports
   // HTML-in-Canvas, so only there can they be pictured without being shown.
   useEffect(() => {

@@ -10,6 +10,7 @@ const store = {
   saved: new Map<string, SavedPanePicture>(),
   writes: [] as SavedPanePicture[],
   updatedAt: "u1",
+  running: false,
 };
 const snapshot = vi.hoisted(() => vi.fn(async () => new Blob(["snapshot"])));
 vi.mock("./panePictureSnapshot", () => ({
@@ -26,7 +27,14 @@ vi.mock("@t3tools/web/src/hooks/useTheme", () => ({
   useTheme: () => ({ resolvedTheme: "dark" }),
 }));
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThreadShells: () => [{ environmentId: "e", id: "t1", updatedAt: store.updatedAt }],
+  useThreadShells: () => [
+    {
+      environmentId: "e",
+      id: "t1",
+      updatedAt: store.updatedAt,
+      latestTurn: { state: store.running ? "running" : "completed" },
+    },
+  ],
 }));
 vi.mock("./useWorkspacePanes", () => ({
   threadPaneId: (environmentId: string, threadId: string) => `thread:${environmentId}:${threadId}`,
@@ -90,6 +98,7 @@ afterEach(async () => {
   store.saved.clear();
   store.writes.length = 0;
   store.updatedAt = "u1";
+  store.running = false;
   currentLayout = layout(400);
   markPaneSynced(paneId, false);
   snapshot.mockClear();
@@ -154,12 +163,12 @@ it("does not display an old persisted picture that was never valid in this sessi
 it("lets an accepted native capture suppress the pending fallback drawing", async () => {
   await mount();
   markPaneSynced(paneId, true);
-  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, true);
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(async () => {
     hook.onPanePictureCaptured(pane, new Blob(["native"]));
   });
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2500);
+    await vi.advanceTimersByTimeAsync(3500);
   });
   expect(snapshot).not.toHaveBeenCalled();
   expect(store.writes).toHaveLength(1);
@@ -175,10 +184,10 @@ it("draws a fallback after the native grace period when no capture arrives", asy
       isConnected: true,
       closest: () => ({ dataset: { visible: "true" } }),
     } as unknown as HTMLElement,
-    true,
+    { preferNative: true },
   );
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2500);
+    await vi.advanceTimersByTimeAsync(3500);
   });
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes[0]?.source).toBe("snapshot");
@@ -206,10 +215,53 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
 it("does not draw pending pictures after the workspace unmounts", async () => {
   await mount();
   markPaneSynced(paneId, true);
-  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, true);
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(() => renderer!.unmount());
   renderer = undefined;
   await vi.advanceTimersByTimeAsync(3000);
   expect(snapshot).not.toHaveBeenCalled();
   expect(store.writes).toHaveLength(0);
+});
+
+it("reuses a matching snapshot until a departed pane needs its scroll position refreshed", async () => {
+  await mount();
+  markPaneSynced(paneId, true);
+  const element = { isConnected: true } as HTMLElement;
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  hook.requestSnapshot(paneId, element, { refresh: true });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledTimes(2);
+});
+
+it("waits until a running turn completes before drawing its fallback picture", async () => {
+  store.running = true;
+  await mount();
+  markPaneSynced(paneId, true);
+  const element = { isConnected: true } as HTMLElement;
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(hook.canBackgroundPicture(paneId)).toBe(false);
+  store.running = false;
+  store.updatedAt = "u2";
+  await act(() => renderer!.update(<Probe />));
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(hook.canBackgroundPicture(paneId)).toBe(true);
 });

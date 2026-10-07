@@ -190,11 +190,14 @@ export const ThreadPane = memo(function ThreadPane({
   // Native capture gets the first opportunity; the drawing remains a fallback
   // when a browser exposes the API but cannot capture this content.
   const requestSnapshot = use(PaneSnapshotContext);
+  const wasActive = useRef(false);
   useEffect(() => {
+    const refresh = wasActive.current && !active;
+    wasActive.current = active;
     if (picturable !== null && contentRef.current) {
-      requestSnapshot?.(paneId, contentRef.current, canCapturePanes());
+      requestSnapshot?.(paneId, contentRef.current, { preferNative: canCapturePanes(), refresh });
     }
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the active state pictures the view again.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Visibility retries a previously unmeasurable pane.
   }, [active, paneId, picturable, requestSnapshot, visible]);
 
   useEffect(
