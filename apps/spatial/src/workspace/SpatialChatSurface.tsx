@@ -9,13 +9,14 @@ import {
 } from "@t3tools/web/src/state/entities";
 
 import { SpatialWorkspace } from "./SpatialWorkspace";
+import { useCarriedThread } from "./useCarriedThread";
 
 /**
  * The chat area of T3's shell. The workspace shows every chat route except a
- * draft and the pull-requests page, which cover it while it stays mounted.
- * The app's index shows the workspace, whose focus then sets the route,
- * rather than T3's landing draft; with no threads at all it shows T3's own
- * landing, which starts one.
+ * draft, a thread its draft view still carries, and the pull-requests page,
+ * which cover it while it stays mounted. The app's index shows the workspace,
+ * whose focus then sets the route, rather than T3's landing draft; with no
+ * threads at all it shows T3's own landing, which starts one.
  */
 function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
   const onOtherPage = useLocation({
@@ -24,8 +25,10 @@ function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
   const threadTarget = target?.kind === "server" ? target : null;
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const hasThreads = useThreadShells().some((thread) => thread.archivedAt === null);
+  const carried = useCarriedThread(target);
+  const draftView = target !== null && (target.kind === "draft" || carried !== null);
   const workspaceShown =
-    target?.kind !== "draft" && !onOtherPage && (target !== null || !bootstrapped || hasThreads);
+    !draftView && !onOtherPage && (target !== null || !bootstrapped || hasThreads);
   return (
     <>
       <SidebarInset
@@ -34,11 +37,7 @@ function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
       >
         <SpatialWorkspace target={threadTarget} active={workspaceShown} />
       </SidebarInset>
-      {target?.kind === "draft" ? (
-        <ThreadRouteView target={target} />
-      ) : workspaceShown ? null : (
-        children
-      )}
+      {draftView ? <ThreadRouteView target={target} /> : workspaceShown ? null : children}
     </>
   );
 }

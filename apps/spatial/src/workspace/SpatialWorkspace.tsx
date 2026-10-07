@@ -219,6 +219,17 @@ export function SpatialWorkspace({
     [lifecycle, paneData, router],
   );
 
+  // Focus moved while the workspace was covered, as when a route it did not
+  // request focused a pane, reaches the lifecycle once it shows again.
+  useEffect(() => {
+    if (!active || !lifecycle) return;
+    const paneId = workspaceRef.current?.getSnapshot().focusedPaneId;
+    if (paneId && paneId !== focusedPaneIdRef.current && paneData.has(paneId)) {
+      focusedPaneIdRef.current = paneId;
+      lifecycle.setFocus(paneId);
+    }
+  }, [active, lifecycle, paneData]);
+
   // A route the workspace did not request (the sidebar, a notification, a new
   // thread) moves focus to its pane, leaving overview. A thread whose pane is
   // not in the workspace yet is focused once reconciliation adds it.
