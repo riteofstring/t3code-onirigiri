@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
@@ -35,7 +36,10 @@ const thread = (threadId: string) =>
 let renderer: ReactTestRenderer | undefined;
 let carried: string | null = null;
 function Probe({ target }: { target: ThreadRouteTarget | null }) {
-  carried = useCarriedThread(target);
+  const value = useCarriedThread(target);
+  useEffect(() => {
+    carried = value;
+  });
   return null;
 }
 async function show(target: ThreadRouteTarget | null) {
