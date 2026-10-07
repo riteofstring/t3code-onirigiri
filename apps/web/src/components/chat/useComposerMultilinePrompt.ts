@@ -33,8 +33,7 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
     if (!body) return;
     let observedEditor: HTMLElement | null = null;
     const measure = () => {
-      // The editor element can be replaced, as when a static stand-in gives
-      // way to the live editor; follow it so its own size changes are seen.
+      // Switching editor modes replaces its element; follow the current one.
       const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
       if (editor !== observedEditor) {
         if (observedEditor) resizeObserver.unobserve(observedEditor);
