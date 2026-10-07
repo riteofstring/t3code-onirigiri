@@ -1,6 +1,33 @@
-import type { ComponentProps } from "react";
+import { useLayoutEffect, useRef, type ComponentProps } from "react";
 
 import { cn } from "~/lib/utils";
+
+/**
+ * Marks the shell while an attached banner surface is inside it. Styles key off
+ * this attribute instead of `:has()`, which Chromium cannot scope: every
+ * banner change would otherwise restyle the whole document.
+ */
+function useBannerAttachedAttribute() {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const shell = ref.current;
+    if (!shell) return;
+    const sync = () =>
+      shell.toggleAttribute(
+        "data-banner-attached",
+        shell.querySelector('[data-composer-banner-surface="attached"]') !== null,
+      );
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(shell, {
+      attributeFilter: ["data-composer-banner-surface"],
+      childList: true,
+      subtree: true,
+    });
+    return () => observer.disconnect();
+  }, []);
+  return ref;
+}
 
 /** One glass backdrop until a top attachment needs the composer to cover its overlap. */
 function Shell({
@@ -8,8 +35,10 @@ function Shell({
   className,
   ...props
 }: ComponentProps<"div"> & { contextStrip?: boolean }) {
+  const ref = useBannerAttachedAttribute();
   return (
     <div
+      ref={ref}
       data-slot="composer-shell"
       data-with-context={contextStrip || undefined}
       className={cn(
@@ -21,7 +50,7 @@ function Shell({
         "dark:[html[data-theme-id=t3-chat]_&]:[--chat-composer-highlight:color-mix(in_srgb,#432d48_12%,transparent)] dark:[html[data-theme-id=t3-chat]_&]:[--chat-composer-outline:#241e28]",
         "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-3xl before:bg-(--chat-composer-glass-surface)/(--glass-opacity) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
         "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-glass-surface)",
-        "has-data-[composer-banner-surface=attached]:before:hidden",
+        "data-banner-attached:before:hidden",
         contextStrip && [
           "[--chat-composer-context-extension:2.25rem] sm:[--chat-composer-context-extension:2rem]",
           // Keep one continuous backdrop around the fixed-pixel corners and rem-sized strip inset.
@@ -51,7 +80,7 @@ function Host({ className, ...props }: ComponentProps<"div">) {
         "relative z-10 w-full rounded-3xl shadow-composer after:z-1 dark:shadow-none",
         outlineClasses,
         contextSeamClasses,
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none group-has-data-[composer-banner-surface=attached]/composer-surface:after:hidden",
+        "group-data-banner-attached/composer-surface:shadow-none group-data-banner-attached/composer-surface:after:hidden",
         className,
       )}
       {...props}
@@ -67,11 +96,11 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         "group relative z-10 rounded-3xl p-px transition-colors duration-200",
         outlineClasses,
         contextSeamClasses,
-        "after:z-20 after:hidden group-has-data-[composer-banner-surface=attached]/composer-surface:after:block",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-has-data-[composer-banner-surface=attached]/composer-surface:backdrop-blur-(--glass-blur) group-has-data-[composer-banner-surface=attached]/composer-surface:backdrop-saturate-(--glass-saturation)",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-composer dark:group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
+        "after:z-20 after:hidden group-data-banner-attached/composer-surface:after:block",
+        "group-data-banner-attached/composer-surface:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-data-banner-attached/composer-surface:backdrop-blur-(--glass-blur) group-data-banner-attached/composer-surface:backdrop-saturate-(--glass-saturation)",
+        "group-data-banner-attached/composer-surface:shadow-composer dark:group-data-banner-attached/composer-surface:shadow-none",
+        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-data-banner-attached/composer-surface:bg-(--chat-composer-glass-surface)",
+        "group-data-banner-attached/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
         className,
       )}
       {...props}
@@ -87,7 +116,7 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
         "group/composer-context relative isolate mx-auto -mt-4 flex w-[calc(100%-2*var(--chat-composer-drawer-inset))] items-center gap-2 overflow-x-clip overflow-y-visible ps-1 pe-2 pt-5 pb-1",
         "before:absolute before:inset-0 before:-z-1 before:rounded-b-2xl before:border before:border-(--chat-composer-outline) before:mask-b-from-transparent before:mask-b-from-4 before:mask-b-to-black before:mask-b-to-4 before:shadow-composer",
         "dark:before:border-white/7 dark:before:bg-composer-seam-below dark:before:shadow-composer-dark",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:before:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-has-data-[composer-banner-surface=attached]/composer-surface:before:backdrop-blur-(--glass-blur) group-has-data-[composer-banner-surface=attached]/composer-surface:before:backdrop-saturate-(--glass-saturation)",
+        "group-data-banner-attached/composer-surface:before:bg-(--chat-composer-glass-surface)/(--glass-opacity) group-data-banner-attached/composer-surface:before:backdrop-blur-(--glass-blur) group-data-banner-attached/composer-surface:before:backdrop-saturate-(--glass-saturation)",
         "not-supports-[clip-path:shape(from_0_0,line_to_1px_1px)]:before:bg-(--chat-composer-glass-surface)/(--glass-opacity) not-supports-[clip-path:shape(from_0_0,line_to_1px_1px)]:before:backdrop-blur-(--glass-blur) not-supports-[clip-path:shape(from_0_0,line_to_1px_1px)]:before:backdrop-saturate-(--glass-saturation)",
         className,
       )}
