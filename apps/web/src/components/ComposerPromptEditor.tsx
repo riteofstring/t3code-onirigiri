@@ -64,6 +64,7 @@ function StaticEmptyComposerEditor({
   placeholder,
   placeholderClassName,
   richTextEnabled,
+  suggestionListId,
 }: ComposerPromptEditorProps & {
   onWarm: (focus: (editor: ComposerPromptEditorHandle) => void) => void;
 }) {
@@ -99,6 +100,8 @@ function StaticEmptyComposerEditor({
           aria-label={ariaLabel}
           aria-readonly={disabled ? "true" : undefined}
           aria-placeholder={placeholder}
+          aria-autocomplete={!disabled && suggestionListId ? "list" : undefined}
+          aria-haspopup={!disabled && suggestionListId ? "listbox" : undefined}
           translate="no"
           tabIndex={0}
           onFocus={() => onWarm((editor) => editor.focus())}

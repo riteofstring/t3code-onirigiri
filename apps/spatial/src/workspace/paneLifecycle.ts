@@ -24,8 +24,8 @@ type Direction = "left" | "right" | "up" | "down";
  *
  * Once focus and visibility have been quiet for a moment the focused pane
  * mounts at once, ahead of any other work; a camera sweep therefore mounts
- * only where it stops. Visible panes and the focused pane's neighbours, the
- * next one in the direction of travel first, are prepared speculatively: one
+ * only where it stops. The focused pane's neighbours, the next one in the
+ * direction of travel first, and then visible panes are prepared speculatively: one
  * at a time, each after the previous one has committed, only while the page is
  * idle and input has been quiet. Navigation cancels speculative work that has
  * not started yet.
@@ -43,6 +43,7 @@ export function createPaneLifecycleStore(
   const lastWanted = new Map<string, number>();
   const listeners = new Map<string, Set<() => void>>();
   let queue: string[] = [];
+  let wanted = new Set<string>();
   let waitingFor: string | null = null;
   let idleCallback: number | null = null;
   let quietTimer: ReturnType<typeof setTimeout> | null = null;
@@ -106,10 +107,11 @@ export function createPaneLifecycleStore(
     }
     while (queue.length > 0) {
       const paneId = queue.shift()!;
-      if (panes.has(paneId) && mount(paneId)) {
-        waitingFor = paneId;
-        return;
-      }
+      if (!panes.has(paneId) || mounted.has(paneId)) continue;
+      evictBeyond(MAX_MOUNTED - 1, wanted);
+      mount(paneId);
+      waitingFor = paneId;
+      return;
     }
   };
 
@@ -151,14 +153,16 @@ export function createPaneLifecycleStore(
       lastWanted.set(focused, clock);
       mount(focused);
     }
-    const speculative = [...new Set([...visible, ...(neighborsWanted ? neighbors() : [])])].filter(
+    // Likely destinations come before panes that are merely on screen.
+    const speculative = [...new Set([...(neighborsWanted ? neighbors() : []), ...visible])].filter(
       (paneId) => paneId !== focused && panes.has(paneId),
     );
-    const wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
+    wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
     for (const paneId of wanted) lastWanted.set(paneId, clock);
     cancelSpeculation();
     queue = speculative.filter((paneId) => wanted.has(paneId) && !mounted.has(paneId));
-    evictBeyond(MAX_MOUNTED - queue.length, wanted);
+    // Views stay warm until a mount needs their place.
+    evictBeyond(MAX_MOUNTED, wanted);
     schedule();
   };
 
@@ -229,6 +233,7 @@ export function createPaneLifecycleStore(
       for (const paneId of visible) if (!panes.has(paneId)) visible.delete(paneId);
       if (focused && !panes.has(focused)) focused = null;
       queue = queue.filter((paneId) => panes.has(paneId));
+      wanted = new Set([...wanted].filter((paneId) => panes.has(paneId)));
       if (waitingFor !== null && !panes.has(waitingFor)) {
         waitingFor = null;
         schedule();

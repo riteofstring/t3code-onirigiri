@@ -25,11 +25,19 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
 
   useLayoutEffect(() => {
     if (!body) return;
+    let observedEditor: HTMLElement | null = null;
     const measure = () => {
+      // The editor element can be replaced, as when a static stand-in gives
+      // way to the live editor; follow it so its own size changes are seen.
+      const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
+      if (editor !== observedEditor) {
+        if (observedEditor) resizeObserver.unobserve(observedEditor);
+        if (editor) resizeObserver.observe(editor);
+        observedEditor = editor;
+      }
       const next = measureComposerMultilinePrompt(body);
       if (next !== null) setIsMultiline(next);
     };
-    measure();
     // One measurement per frame, still before paint, covers bursts of changes.
     let frame: number | null = null;
     const scheduleMeasure = () => {
@@ -40,8 +48,7 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
     };
     const resizeObserver = new ResizeObserver(scheduleMeasure);
     resizeObserver.observe(body);
-    const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
-    if (editor) resizeObserver.observe(editor);
+    measure();
     const mutationObserver = new MutationObserver(scheduleMeasure);
     mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
     return () => {
