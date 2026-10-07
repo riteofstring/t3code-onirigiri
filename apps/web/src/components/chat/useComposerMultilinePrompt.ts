@@ -15,11 +15,14 @@ export function measureComposerMultilinePrompt(body: HTMLElement): boolean | nul
   const range = document.createRange();
   range.selectNodeContents(editor);
   const bounds = range.getBoundingClientRect();
+  // Range bounds are on screen, so they include any scale an ancestor
+  // transform applies; layout sizes do not.
+  const scale = editor.getBoundingClientRect().width / editor.offsetWidth || 1;
 
   // Measure content, not the editor's minimum height. While resting, the
   // prompt is unwrapped: compare its width with the expanded row so that
   // moving the actions inline cannot make collapse and expansion oscillate.
-  return bounds.height > lineHeight + 1 || bounds.width > expandedWidth + 1;
+  return bounds.height / scale > lineHeight + 1 || bounds.width / scale > expandedWidth + 1;
 }
 
 export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {

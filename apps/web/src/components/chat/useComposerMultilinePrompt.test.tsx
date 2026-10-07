@@ -6,8 +6,20 @@ import {
   useComposerMultilinePrompt,
 } from "./useComposerMultilinePrompt";
 
-function measure(input: { width: number; height: number; resting?: boolean; hidden?: boolean }) {
-  const editor = { clientWidth: input.hidden ? 0 : input.resting ? 400 : 500 };
+function measure(input: {
+  width: number;
+  height: number;
+  resting?: boolean;
+  hidden?: boolean;
+  scale?: number;
+}) {
+  const scale = input.scale ?? 1;
+  const layoutWidth = input.hidden ? 0 : input.resting ? 400 : 500;
+  const editor = {
+    clientWidth: layoutWidth,
+    offsetWidth: layoutWidth,
+    getBoundingClientRect: () => ({ width: layoutWidth * scale }),
+  };
   const body = { clientWidth: 532, querySelector: () => editor };
   vi.stubGlobal("getComputedStyle", (element: unknown) =>
     element === body
@@ -17,7 +29,7 @@ function measure(input: { width: number; height: number; resting?: boolean; hidd
   vi.stubGlobal("document", {
     createRange: () => ({
       selectNodeContents() {},
-      getBoundingClientRect: () => ({ width: input.width, height: input.height }),
+      getBoundingClientRect: () => ({ width: input.width * scale, height: input.height * scale }),
     }),
   });
   return measureComposerMultilinePrompt(body as unknown as HTMLElement);
@@ -46,6 +58,11 @@ describe("composer prompt line measurement", () => {
   it("allows collapse again after deleting the second line", () => {
     expect(measure({ width: 500, height: 45.5 })).toBe(true);
     expect(measure({ width: 500, height: 22.75 })).toBe(false);
+  });
+
+  it("measures the same under a scaled ancestor", () => {
+    expect(measure({ width: 500, height: 45.5, scale: 0.4 })).toBe(true);
+    expect(measure({ width: 500, height: 22.75, scale: 0.4 })).toBe(false);
   });
 
   it("retains the previous measurement when the editor is hidden", () => {
