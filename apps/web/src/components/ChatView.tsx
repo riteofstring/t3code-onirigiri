@@ -1,3 +1,4 @@
+import { readLayoutRect, readLayoutScale } from "./chat/layoutGeometry";
 import { isChatGptUsageLimitError } from "@t3tools/shared/usageLimits";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -5382,7 +5383,8 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(() => {
     const controller = createPageScrollController({
       getContainer: () => legendListRef.current?.getScrollableNode() ?? null,
-      getScrollPaddingBottomPx: () => composerOverlayElement?.getBoundingClientRect().height ?? 0,
+      getScrollPaddingBottomPx: () =>
+        composerOverlayElement ? readLayoutRect(composerOverlayElement).height : 0,
       onScrollStart: handlePageScrollStart,
     });
     pageScrollControllerRef.current = controller;
@@ -5918,17 +5920,18 @@ export default function ChatView(props: ChatViewProps) {
       const button = composerOverlayElement?.parentElement?.querySelector<HTMLElement>(
         'button[aria-label="Scroll to end"]',
       );
+      const scale = composerOverlayElement ? readLayoutScale(composerOverlayElement) : 1;
       const clearance =
         composerOverlayElement && mainSurface && button
           ? resolveScrollToEndClearance({
               overlayHeight,
-              mainSurfaceTop: mainSurface.getBoundingClientRect().top,
-              button: button.getBoundingClientRect(),
+              mainSurfaceTop: readLayoutRect(mainSurface, scale).top,
+              button: readLayoutRect(button, scale),
               attachments: Array.from(
                 composerOverlayElement.querySelectorAll<HTMLElement>(
                   '[data-composer-banner-surface="attached"]',
                 ),
-                (element) => element.getBoundingClientRect(),
+                (element) => readLayoutRect(element, scale),
               ),
             })
           : overlayHeight;
@@ -5968,14 +5971,14 @@ export default function ChatView(props: ChatViewProps) {
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
     composerTimelineInsetRef.current = 0;
-    publishComposerOverlayHeight(composerOverlayElement.getBoundingClientRect().height);
+    publishComposerOverlayHeight(readLayoutRect(composerOverlayElement).height);
   }, [activeThreadKey, composerOverlayElement, publishComposerOverlayHeight]);
 
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
 
     const updateHeight = () => {
-      publishComposerOverlayHeight(composerOverlayElement.getBoundingClientRect().height);
+      publishComposerOverlayHeight(readLayoutRect(composerOverlayElement).height);
     };
 
     updateHeight();

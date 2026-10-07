@@ -195,6 +195,7 @@ import {
   shouldUseRestingComposerLayout,
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
+import { readLayoutRect, readLayoutScale } from "./layoutGeometry";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import {
   ComposerContextActionsContext,
@@ -467,6 +468,7 @@ function useComposerRestingTransition(
       const element = elementRef.current;
       const surface = element?.querySelector<HTMLElement>('[data-chat-composer-surface="true"]');
       if (!element || !surface) return;
+      const scale = readLayoutScale(element);
 
       const nextIsCollapsed = isCollapsedRef.current;
 
@@ -480,15 +482,11 @@ function useComposerRestingTransition(
       const action = visibleTransitionElement('[data-chat-composer-transition-actions="true"]');
       const footer = element.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
       const interruptedAnimation = animationRef.current;
-      const interruptedPromptTop = interruptedAnimation
-        ? (prompt?.getBoundingClientRect().top ?? null)
-        : null;
-      const interruptedActionTop = interruptedAnimation
-        ? (action?.getBoundingClientRect().top ?? null)
-        : null;
-      const interruptedHeight = interruptedAnimation
-        ? element.getBoundingClientRect().height
-        : null;
+      const interruptedPromptTop =
+        interruptedAnimation && prompt ? readLayoutRect(prompt, scale).top : null;
+      const interruptedActionTop =
+        interruptedAnimation && action ? readLayoutRect(action, scale).top : null;
+      const interruptedHeight = interruptedAnimation ? readLayoutRect(element, scale).height : null;
       const interruptedTargetHeight = animationTargetHeightRef.current;
       const interruptedCurrentTime =
         typeof interruptedAnimation?.currentTime === "number"
@@ -513,20 +511,20 @@ function useComposerRestingTransition(
       }
       clearTransitionStyles();
 
-      const nextRect = element.getBoundingClientRect();
+      const nextRect = readLayoutRect(element, scale);
       const nextHeight = nextRect.height;
       // The chat view resize-observes the overlay to place the timeline
       // inset, the scroll-to-end pill, and the mini player. Publishing the
       // destination height here turns that feedback into one update instead
       // of a ChatView re-render on every animation frame.
       const overlay = element.closest<HTMLElement>('[data-chat-composer-overlay="true"]');
-      const overlayHeight = overlay?.getBoundingClientRect().height ?? null;
+      const overlayHeight = overlay ? readLayoutRect(overlay, scale).height : null;
       if (overlayHeight !== null) {
         onOverlayHeightChange(overlayHeight);
       }
-      const nextPromptRect = prompt?.getBoundingClientRect() ?? null;
+      const nextPromptRect = prompt ? readLayoutRect(prompt, scale) : null;
       const nextPromptTop = nextPromptRect?.top ?? null;
-      const nextActionTop = action?.getBoundingClientRect().top ?? null;
+      const nextActionTop = action ? readLayoutRect(action, scale).top : null;
       const previousHeight = interruptedHeight ?? previousHeightRef.current;
       const targetChanged =
         interruptedTargetHeight === null || Math.abs(interruptedTargetHeight - nextHeight) >= 0.5;
@@ -592,7 +590,7 @@ function useComposerRestingTransition(
         animationRef.current = animation;
         animationTargetHeightRef.current = nextHeight;
 
-        const animatedRect = element.getBoundingClientRect();
+        const animatedRect = readLayoutRect(element, scale);
         const previousPromptTop =
           interruptedPromptTop ??
           (previousContentOffsetsRef.current.promptFromTop === null
@@ -609,7 +607,7 @@ function useComposerRestingTransition(
           previousTop: number | null,
         ) => {
           if (!content || previousTop === null) return;
-          const offset = previousTop - content.getBoundingClientRect().top;
+          const offset = previousTop - readLayoutRect(content, scale).top;
           if (Math.abs(offset) < 0.5) return;
           contentAnimations.push(
             content.animate(
@@ -783,7 +781,7 @@ function useComposerRestingTransition(
     previousRestingRef.current = isResting;
     if (animationRef.current) return;
     const overlay = elementRef.current?.closest<HTMLElement>('[data-chat-composer-overlay="true"]');
-    if (overlay) onOverlayHeightChange(overlay.getBoundingClientRect().height);
+    if (overlay) onOverlayHeightChange(readLayoutRect(overlay).height);
   }, [isResting, onOverlayHeightChange]);
 
   useLayoutEffect(() => {
@@ -798,17 +796,20 @@ function useComposerRestingTransition(
         }
         return;
       }
-      const elementRect = element.getBoundingClientRect();
+      const scale = readLayoutScale(element);
+      const elementRect = readLayoutRect(element, scale);
       const visibleTransitionElement = (selector: string) =>
         Array.from(element.querySelectorAll<HTMLElement>(selector)).find(
           (candidate) => candidate.getClientRects().length > 0,
         ) ?? null;
-      const promptRect = visibleTransitionElement(
+      const promptElement = visibleTransitionElement(
         '[data-testid="composer-editor"], [data-chat-composer-transition-prompt="true"]',
-      )?.getBoundingClientRect();
-      const actionTop = visibleTransitionElement(
+      );
+      const promptRect = promptElement ? readLayoutRect(promptElement, scale) : undefined;
+      const actionElement = visibleTransitionElement(
         '[data-chat-composer-transition-actions="true"]',
-      )?.getBoundingClientRect().top;
+      );
+      const actionTop = actionElement ? readLayoutRect(actionElement, scale).top : undefined;
       previousHeightRef.current = elementRect.height;
       previousContentOffsetsRef.current = {
         promptFromTop: promptRect === undefined ? null : promptRect.top - elementRect.top,

@@ -1,7 +1,8 @@
 import type { RestingComposerControlsMeasurement } from "../composerFooterLayout";
+import { readLayoutScale } from "./layoutGeometry";
 
-function elementOuterWidth(element: HTMLElement): number {
-  const width = element.getBoundingClientRect().width;
+function elementOuterWidth(element: HTMLElement, scale: number): number {
+  const width = element.getBoundingClientRect().width / scale;
   if (width === 0) return 0;
   const style = getComputedStyle(element);
   return (
@@ -19,8 +20,8 @@ function elementInlineMarginWidth(element: HTMLElement): number {
   );
 }
 
-function providerModelPickerNaturalWidth(picker: HTMLElement): number {
-  const renderedWidth = picker.getBoundingClientRect().width;
+function providerModelPickerNaturalWidth(picker: HTMLElement, scale: number): number {
+  const renderedWidth = picker.getBoundingClientRect().width / scale;
   if (renderedWidth === 0) return 0;
   const style = getComputedStyle(picker);
   const label = picker.querySelector<HTMLElement>('[data-chat-provider-model-picker-label="true"]');
@@ -42,9 +43,12 @@ function providerModelPickerMinimumWidth(picker: HTMLElement): number {
   return minWidth + elementInlineMarginWidth(picker);
 }
 
-function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: number } {
+function controlBlockWidths(
+  block: HTMLElement,
+  scale: number,
+): { natural: number; iconOnly: number } {
   const compact = block.dataset.composerBlockIconOnly === "true";
-  let natural = elementOuterWidth(block);
+  let natural = elementOuterWidth(block, scale);
   let iconOnly = natural;
   for (const label of block.querySelectorAll<HTMLElement>("[data-composer-control-label]")) {
     // Labels remain mounted at natural width when icons replace them. Reading
@@ -55,13 +59,13 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
     // remains in effect even when compact styles replace its one-pixel width.
     if (!inFlow && (!compact || labelStyle.clip !== "auto")) continue;
     const labelWidth = label.scrollWidth;
-    const renderedWidth = inFlow ? label.getBoundingClientRect().width : 0;
+    const renderedWidth = inFlow ? label.getBoundingClientRect().width / scale : 0;
     const gap = Number.parseFloat(getComputedStyle(label.parentElement!).columnGap) || 0;
     natural += labelWidth - renderedWidth + (inFlow ? 0 : gap);
     iconOnly -= renderedWidth + (inFlow ? gap : 0);
   }
   for (const icon of block.querySelectorAll<HTMLElement>("[data-composer-control-compact-icon]")) {
-    const width = elementOuterWidth(icon);
+    const width = elementOuterWidth(icon, scale);
     const gap = Number.parseFloat(getComputedStyle(icon.parentElement!).columnGap) || 0;
     natural -= compact ? width + gap : 0;
     iconOnly += compact ? 0 : width + gap;
@@ -83,6 +87,7 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
 export function measureRestingComposerControls(
   controls: HTMLElement,
 ): RestingComposerControlsMeasurement | null {
+  const scale = readLayoutScale(controls);
   const gap = Number.parseFloat(getComputedStyle(controls).columnGap) || 0;
   const picker = controls.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
   const leadingControl =
@@ -90,21 +95,23 @@ export function measureRestingComposerControls(
   if (!leadingControl) return null;
   // Separators are display:none on phone widths; a hidden one takes no gap.
   const separator = controls.querySelector<HTMLElement>("[data-resting-controls-separator]");
-  const separatorWidth = separator ? elementOuterWidth(separator) : 0;
+  const separatorWidth = separator ? elementOuterWidth(separator, scale) : 0;
   const overflow = controls.querySelector<HTMLElement>("[data-resting-controls-overflow]");
   const separatorAndGapWidth = separatorWidth > 0 ? separatorWidth + gap : 0;
   const blocks = Array.from(controls.querySelectorAll<HTMLElement>("[data-resting-block]"));
-  const widths = blocks.map(controlBlockWidths);
+  const widths = blocks.map((block) => controlBlockWidths(block, scale));
   return {
     gap,
     naturalFixedWidth:
-      (picker ? providerModelPickerNaturalWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth,
+      (picker
+        ? providerModelPickerNaturalWidth(picker, scale)
+        : elementOuterWidth(leadingControl, scale)) + separatorAndGapWidth,
     minimumFixedWidth:
-      (picker ? providerModelPickerMinimumWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth,
+      (picker
+        ? providerModelPickerMinimumWidth(picker)
+        : elementOuterWidth(leadingControl, scale)) + separatorAndGapWidth,
     blockWidths: widths.map((width) => width.natural),
     iconOnlyBlockWidths: widths.map((width) => width.iconOnly),
-    overflowWidth: overflow ? elementOuterWidth(overflow) : 0,
+    overflowWidth: overflow ? elementOuterWidth(overflow, scale) : 0,
   };
 }
