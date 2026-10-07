@@ -8,7 +8,9 @@
 
 let pageStyles: string | null = null;
 
-function readPageStyles(): string {
+// The page's styles as a URL-encoded style element, built once: they are the
+// bulk of every picture's markup.
+function encodedPageStyles(): string {
   if (pageStyles !== null) return pageStyles;
   const rules: string[] = [];
   for (const sheet of document.styleSheets) {
@@ -18,7 +20,8 @@ function readPageStyles(): string {
       // Cross-origin sheets cannot be read; T3 serves its own.
     }
   }
-  pageStyles = rules.join("\n");
+  const css = rules.join("\n").replaceAll("]]>", "]]]]><![CDATA[>");
+  pageStyles = encodeURIComponent(`<style><![CDATA[${css}]]></style>`);
   return pageStyles;
 }
 
@@ -82,14 +85,16 @@ export async function snapshotPanePicture(element: HTMLElement): Promise<Blob | 
   for (const node of clone.querySelectorAll("script, iframe, video, canvas")) node.remove();
   const rootClass = document.documentElement.className;
   const markup = new XMLSerializer().serializeToString(clone);
-  const svg =
+  const open =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
     `<foreignObject width="100%" height="100%">` +
     `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
-    `style="${escapeAttribute(rootVariables())};width:${width}px;height:${height}px;overflow:hidden">` +
-    `<style><![CDATA[${readPageStyles().replaceAll("]]>", "]]]]><![CDATA[>")}]]></style>${markup}</div>` +
-    `</foreignObject></svg>`;
-  const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    `style="${escapeAttribute(rootVariables())};width:${width}px;height:${height}px;overflow:hidden">`;
+  const close = `</div></foreignObject></svg>`;
+  const image = await loadImage(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${encodedPageStyles()}` +
+      `${encodeURIComponent(markup + close)}`,
+  );
   const scale = window.devicePixelRatio || 1;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * scale);
