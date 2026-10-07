@@ -93,7 +93,7 @@ function usePaneContent(
   const detail = useThreadDetail(mounted ? thread : null);
   const updatedAt = shell?.updatedAt ?? null;
   const detailUpdatedAt = detail?.updatedAt ?? null;
-  const status = useThreadStatus(thread);
+  const status = useThreadStatus(mounted ? thread : null);
   const synced = status === "live" || status === "deleted";
   const { theme, resolvedTheme } = useTheme();
   const running = shell?.latestTurn?.state === "running";
