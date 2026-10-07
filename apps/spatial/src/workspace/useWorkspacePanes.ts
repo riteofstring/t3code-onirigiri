@@ -20,6 +20,8 @@ import {
 import { usePrimaryEnvironmentId } from "@t3tools/web/src/state/environments";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "@t3tools/web/src/uiStateStore";
 
+import type { ToolPane } from "./useToolPanes";
+
 export interface ThreadPaneData {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -74,7 +76,7 @@ function useSidebarProjectGroups() {
  */
 export function useWorkspacePanes(
   layoutMode: WorkspaceLayoutMode,
-  sidesThreadId: string | null,
+  toolPanes: readonly ToolPane[],
 ): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const threads = useThreadShells();
@@ -135,6 +137,11 @@ export function useWorkspacePanes(
       threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
     );
     const titleByGroup = new Map(groups.map((group) => [group.projectKey, group.displayName]));
+    const toolPanesByThread = new Map<string, ToolPane[]>();
+    for (const tool of toolPanes) {
+      const key = scopedKey(tool.environmentId, tool.threadId);
+      toolPanesByThread.set(key, [...(toolPanesByThread.get(key) ?? []), tool]);
+    }
     const rows = layout.rows
       .filter((row) => row.panes.length > 0)
       .map((row) =>
@@ -149,9 +156,8 @@ export function useWorkspacePanes(
             subtitle: titleByGroup.get(row.projectId) ?? "",
             data,
           };
-          return thread.id === sidesThreadId
-            ? [threadPane, ...sidePaneDefinitions(threadPane.paneId, data)]
-            : [threadPane];
+          const added = toolPanesByThread.get(pane.threadId) ?? [];
+          return [threadPane, ...added.map((tool) => toolPaneDefinition(tool, thread.title))];
         }),
       );
     const planes = layoutMode === "strip" ? [rows.flat()] : rows;
@@ -159,24 +165,21 @@ export function useWorkspacePanes(
       plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
     );
     return panes.length > 0 ? panes : null;
-  }, [arrangement.layout, groups, layoutMode, sidesThreadId, threads]);
+  }, [arrangement.layout, groups, layoutMode, threads, toolPanes]);
 }
 
-function sidePaneDefinitions(threadPaneId: string, thread: ThreadPaneData) {
-  return [
-    ...["spatial-a", "spatial-b"].map((terminalId) => ({
-      paneId: `${threadPaneId}:terminal:${terminalId}`,
-      surfaceKind: "terminal",
-      title: `Terminal ${terminalId}`,
-      subtitle: "",
-      data: { ...thread, terminalId },
-    })),
-    {
-      paneId: `${threadPaneId}:diff`,
-      surfaceKind: "diff",
-      title: "Diff",
-      subtitle: "",
-      data: thread,
-    },
-  ];
+const TOOL_TITLES: Record<ToolPane["kind"], string> = {
+  diff: "Diff",
+  empty: "New pane",
+  terminal: "Terminal",
+};
+
+function toolPaneDefinition(tool: ToolPane, threadTitle: string) {
+  return {
+    paneId: tool.paneId,
+    surfaceKind: tool.kind,
+    title: TOOL_TITLES[tool.kind],
+    subtitle: threadTitle,
+    data: tool,
+  };
 }

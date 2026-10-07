@@ -16,15 +16,19 @@ import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
+import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
+import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
+import { EmptyPane } from "./EmptyPane";
+import { AddPaneButton, FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { canCapturePanes } from "./panePictureSnapshot";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
+import { useToolPanes, type ToolPane } from "./useToolPanes";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
   threadPaneId,
@@ -71,7 +75,6 @@ function readWorkspaceOptions() {
   const search = new URLSearchParams(window.location.search);
   return {
     layout: (search.get("layout") === "strip" ? "strip" : "rows") as WorkspaceLayoutMode,
-    sidesThreadId: search.get("sides"),
   };
 }
 
@@ -122,8 +125,9 @@ export function SpatialWorkspace({
   active: boolean;
 }) {
   const router = useRouter();
-  const [{ layout: layoutMode, sidesThreadId }] = useState(readWorkspaceOptions);
-  const panes = useWorkspacePanes(layoutMode, sidesThreadId);
+  const [{ layout: layoutMode }] = useState(readWorkspaceOptions);
+  const { toolPanes, addEmpty, choose, remove } = useToolPanes();
+  const panes = useWorkspacePanes(layoutMode, toolPanes);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
@@ -141,6 +145,8 @@ export function SpatialWorkspace({
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
+  // A pane just added, focused once the arrangement includes it.
+  const pendingFocusPaneIdRef = useRef<string | null>(null);
 
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
@@ -164,8 +170,8 @@ export function SpatialWorkspace({
     setLifecycle(createPaneLifecycleStore(threadPanePositions(initialPanes), routePaneId));
   }
 
-  // Threads appearing, leaving or moving rebuild the arrangement around the
-  // focused pane; renames only retitle their panes.
+  // Panes appearing, leaving or moving rebuild the arrangement around the
+  // focused pane; renames and an empty pane's choice change panes in place.
   useEffect(() => {
     const workspace = workspaceRef.current;
     if (!panes || !workspace) return;
@@ -179,8 +185,10 @@ export function SpatialWorkspace({
         panes,
       });
       const focused =
+        panes.find((pane) => pane.paneId === pendingFocusPaneIdRef.current) ??
         panes.find((pane) => pane.paneId === focusedPaneIdRef.current) ??
         panes.find((pane) => pane.surfaceKind === "thread");
+      pendingFocusPaneIdRef.current = null;
       const layout = serializeWorkspaceLayout(scene, {
         column: focused?.slotIndex ?? 0,
         row: focused?.planeIndex ?? 0,
@@ -191,9 +199,17 @@ export function SpatialWorkspace({
       });
       return;
     }
-    const previousTitles = new Map(previous.map((pane) => [pane.paneId, pane.title]));
+    const previousById = new Map(previous.map((pane) => [pane.paneId, pane]));
     for (const pane of panes) {
-      if (pane.title && previousTitles.get(pane.paneId) !== pane.title) {
+      const before = previousById.get(pane.paneId);
+      // An empty pane the user turned into a terminal or diff changes in place.
+      if (before && before.surfaceKind !== pane.surfaceKind) {
+        workspace.configurePane(pane.paneId, {
+          data: pane.data,
+          surfaceKind: pane.surfaceKind,
+          title: pane.title,
+        });
+      } else if (pane.title && before?.title !== pane.title) {
         workspace.renamePane(pane.paneId, pane.title);
       }
     }
@@ -241,10 +257,10 @@ export function SpatialWorkspace({
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null) => {
       if (!frame || frame.paneId === focusedPaneIdRef.current || !activeRef.current) return;
-      const data = paneData.get(frame.paneId);
-      if (!data) return;
       const paneId = frame.paneId;
       focusedPaneIdRef.current = paneId;
+      const data = paneData.get(paneId);
+      if (!data) return;
       lifecycle?.setFocus(paneId);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       routeTimerRef.current = setTimeout(() => {
@@ -315,20 +331,82 @@ export function SpatialWorkspace({
     [router],
   );
 
+  // A new empty pane opens beside the focused pane, for its thread.
+  const addPane = useCallback(() => {
+    const focused = focusedPaneIdRef.current;
+    const thread = focused ? paneData.get(focused) : undefined;
+    const tool = toolPanes.find((pane) => pane.paneId === focused);
+    const owner = thread ?? tool;
+    if (!owner) return;
+    pendingFocusPaneIdRef.current = addEmpty(
+      { environmentId: owner.environmentId, threadId: owner.threadId },
+      tool?.paneId ?? null,
+    );
+  }, [addEmpty, paneData, toolPanes]);
+
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "KeyN" || !event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.shiftKey || event.defaultPrevented || event.isComposing) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest("input, textarea, select"))
+      ) {
+        return;
+      }
+      event.preventDefault();
+      addPane();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, addPane]);
+
+  const closeTerminal = useAtomCommand(terminalEnvironment.close, { reportFailure: false });
+  const onPaneClose = useCallback(
+    (pane: WorkspacePane) => {
+      const tool = toolPanes.find((candidate) => candidate.paneId === pane.paneId);
+      if (!tool) return false;
+      if (tool.kind === "terminal" && tool.terminalId) {
+        void closeTerminal({
+          environmentId: tool.environmentId,
+          input: { threadId: tool.threadId, terminalId: tool.terminalId, deleteHistory: true },
+        });
+      }
+      // The rebuilt arrangement drops the pane, so the workspace does not
+      // close it itself; focus returns to its thread.
+      pendingFocusPaneIdRef.current = threadPaneId(tool.environmentId, tool.threadId);
+      remove(tool.paneId);
+      return false;
+    },
+    [closeTerminal, remove, toolPanes],
+  );
+
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
+      if (pane.surfaceKind === "empty") {
+        return (
+          <EmptyPane
+            threadTitle={pane.subtitle}
+            onChoose={(kind) => choose(pane.paneId, kind)}
+            onClose={() => void workspaceRef.current?.closePane(pane.paneId)}
+          />
+        );
+      }
       if (pane.surfaceKind === "terminal") {
-        const data = pane.data as ThreadPaneData & { terminalId: string };
+        const tool = pane.data as ToolPane;
+        if (!tool.terminalId) return null;
         return (
           <TerminalPane
-            thread={data}
-            terminalId={data.terminalId}
+            thread={tool}
+            terminalId={tool.terminalId}
             focused={state.focused}
             live={state.runtimeState === "live"}
           />
         );
       }
-      if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ThreadPaneData} />;
+      if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ToolPane} />;
       if (pane.surfaceKind !== "thread") return null;
       return (
         <ThreadPane
@@ -340,7 +418,7 @@ export function SpatialWorkspace({
         />
       );
     },
-    [navigateAway],
+    [choose, navigateAway],
   );
 
   // A pane that is not mounted shows its saved picture while it still matches
@@ -359,6 +437,7 @@ export function SpatialWorkspace({
   return (
     <div ref={stageRef} className="spatial-workspace flex h-full w-full flex-col">
       <div className="flex shrink-0 items-center justify-end bg-[color-mix(in_oklch,var(--background)_94%,var(--foreground))]">
+        <AddPaneButton onAdd={addPane} />
         <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={toggleFocusAnchor} />
         <div ref={setControlsContainer} />
       </div>
@@ -379,6 +458,7 @@ export function SpatialWorkspace({
               liveContent
               onFocusedPaneFrame={onFocusedPaneFrame}
               onLayoutChange={onLayoutChange}
+              onPaneClose={onPaneClose}
               onPanePictureCaptured={onPanePictureCaptured}
               renderPane={renderPane}
               renderPanePlaceholder={renderPanePlaceholder}

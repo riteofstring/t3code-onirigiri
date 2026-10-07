@@ -69,3 +69,32 @@ export function FocusAnchorToggle({
     </div>
   );
 }
+
+/** A workspace control that opens a new, empty pane beside the focused one. */
+export function AddPaneButton({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="onirigiri-workspace__desktop-controls">
+      <div className="onirigiri-workspace__toolbar">
+        <button
+          type="button"
+          className="onirigiri-workspace__control"
+          data-available="true"
+          aria-label="Add a pane (Option+N)"
+          onClick={onAdd}
+        >
+          <svg
+            aria-hidden="true"
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
+            <path d="M8 3v10M3 8h10" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
