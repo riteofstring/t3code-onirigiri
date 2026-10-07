@@ -50,13 +50,19 @@ export function TerminalPane({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const cwd = useThreadCwd(thread);
   const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
-  const [session, setSession] = useState({ attempt: 0, exited: false });
+  const [session, setSession] = useState({ attempt: 0, exited: false, failed: false });
   if (!cwd) return null;
   const restart = () => {
     void openTerminal({
       environmentId: thread.environmentId,
       input: { threadId: thread.threadId, terminalId, cwd },
-    }).then(() => setSession((current) => ({ attempt: current.attempt + 1, exited: false })));
+    }).then((result) =>
+      setSession((current) =>
+        result._tag === "Success"
+          ? { attempt: current.attempt + 1, exited: false, failed: false }
+          : { ...current, failed: true },
+      ),
+    );
   };
   return (
     <div className="relative h-full w-full" data-terminal-owner="drawer">
@@ -68,7 +74,9 @@ export function TerminalPane({
         terminalId={terminalId}
         terminalLabel={terminalId}
         cwd={cwd}
-        onSessionExited={() => setSession((current) => ({ ...current, exited: true }))}
+        onSessionExited={() =>
+          setSession((current) => ({ ...current, exited: true, failed: false }))
+        }
         focusRequestId={0}
         autoFocus={focused && !session.exited}
         visible={live}
@@ -78,7 +86,9 @@ export function TerminalPane({
       />
       {session.exited ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/85 text-foreground">
-          <p className="text-sm">The shell exited.</p>
+          <p className="text-sm">
+            {session.failed ? "The shell could not be restarted." : "The shell exited."}
+          </p>
           <Button size="sm" variant="outline" onClick={restart}>
             Restart
           </Button>

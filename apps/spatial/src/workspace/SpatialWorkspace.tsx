@@ -401,6 +401,7 @@ export function SpatialWorkspace({
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey) return;
+      if (event.isComposing || event.getModifierState("AltGraph")) return;
       const target = event.target;
       if (
         !(target instanceof Element) ||
@@ -412,10 +413,10 @@ export function SpatialWorkspace({
       if (!direction && event.code !== "KeyO") return;
       event.preventDefault();
       event.stopPropagation();
-      if (target instanceof HTMLElement) target.blur();
       const workspace = workspaceRef.current;
-      if (direction) workspace?.focus(direction);
-      else workspace?.toggleOverview();
+      // The terminal keeps the keyboard when there is no pane to move to.
+      const moved = direction ? workspace?.focus(direction) : (workspace?.toggleOverview(), true);
+      if (moved && target instanceof HTMLElement) target.blur();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
@@ -442,14 +443,16 @@ export function SpatialWorkspace({
 
   const closeTerminal = useAtomCommand(terminalEnvironment.close, { reportFailure: false });
   const onPaneClose = useCallback(
-    (pane: WorkspacePane) => {
+    async (pane: WorkspacePane) => {
       const tool = toolPanes.find((candidate) => candidate.paneId === pane.paneId);
       if (!tool) return false;
+      // A terminal whose session would not close keeps its pane.
       if (tool.kind === "terminal" && tool.terminalId) {
-        void closeTerminal({
+        const closed = await closeTerminal({
           environmentId: tool.environmentId,
           input: { threadId: tool.threadId, terminalId: tool.terminalId, deleteHistory: true },
         });
+        if (closed._tag !== "Success") return false;
       }
       // The rebuilt arrangement drops the pane, so the workspace does not
       // close it itself; focus returns to its thread.

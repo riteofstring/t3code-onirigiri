@@ -1,9 +1,10 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useEffect, useState } from "react";
 
-import { PANE_TERMINAL_ID_PREFIX } from "@t3tools/web/src/terminalOwnership";
+import { PANE_TERMINAL_ID_PREFIX, isPaneTerminalId } from "@t3tools/web/src/terminalOwnership";
 
 const STORAGE_KEY = "onirigiri-t3:tool-panes";
+const TOOL_PANE_PREFIX = "tool-";
 
 export type ToolPaneKind = "empty" | "terminal" | "diff";
 
@@ -25,10 +26,13 @@ function isToolPane(value: unknown): value is ToolPane {
   const kindValid =
     pane.kind === "empty" ||
     pane.kind === "diff" ||
-    (pane.kind === "terminal" && typeof pane.terminalId === "string");
+    (pane.kind === "terminal" &&
+      typeof pane.terminalId === "string" &&
+      isPaneTerminalId(pane.terminalId));
   return (
     kindValid &&
     typeof pane.paneId === "string" &&
+    pane.paneId.startsWith(TOOL_PANE_PREFIX) &&
     typeof pane.environmentId === "string" &&
     typeof pane.threadId === "string"
   );
@@ -78,7 +82,7 @@ export function useToolPanes() {
    */
   const addEmpty = useCallback(
     (thread: { environmentId: EnvironmentId; threadId: ThreadId }, afterPaneId: string | null) => {
-      const pane: ToolPane = { paneId: newId("tool-"), kind: "empty", ...thread };
+      const pane: ToolPane = { paneId: newId(TOOL_PANE_PREFIX), kind: "empty", ...thread };
       update((current) => {
         const after = current.findIndex((existing) => existing.paneId === afterPaneId);
         const first = current.findIndex(
