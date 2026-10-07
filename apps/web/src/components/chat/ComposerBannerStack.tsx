@@ -264,12 +264,21 @@ function NoticeDescription({ children, compact }: { children: ReactNode; compact
       );
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    // One measurement per frame, still before paint, covers bursts of changes.
+    let frame: number | null = null;
+    const scheduleMeasure = () => {
+      frame ??= requestAnimationFrame(() => {
+        frame = null;
+        measure();
+      });
+    };
+    const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(description);
     // A child can reveal new text without resizing its clipped box.
-    const mutations = new MutationObserver(measure);
+    const mutations = new MutationObserver(scheduleMeasure);
     mutations.observe(description, { childList: true, subtree: true, characterData: true });
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       observer.disconnect();
       mutations.disconnect();
     };

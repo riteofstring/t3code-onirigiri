@@ -30,13 +30,22 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
       if (next !== null) setIsMultiline(next);
     };
     measure();
-    const resizeObserver = new ResizeObserver(measure);
+    // One measurement per frame, still before paint, covers bursts of changes.
+    let frame: number | null = null;
+    const scheduleMeasure = () => {
+      frame ??= requestAnimationFrame(() => {
+        frame = null;
+        measure();
+      });
+    };
+    const resizeObserver = new ResizeObserver(scheduleMeasure);
     resizeObserver.observe(body);
     const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
     if (editor) resizeObserver.observe(editor);
-    const mutationObserver = new MutationObserver(measure);
+    const mutationObserver = new MutationObserver(scheduleMeasure);
     mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       mutationObserver.disconnect();
     };

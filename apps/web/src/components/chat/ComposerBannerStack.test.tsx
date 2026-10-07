@@ -43,6 +43,14 @@ it("only offers notice details when the description cannot fit", async () => {
       disconnect() {}
     },
   );
+  let frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+  vi.stubGlobal("cancelAnimationFrame", () => {});
+  const flushFrames = () => {
+    const pending = frames;
+    frames = [];
+    for (const callback of pending) callback(0);
+  };
   let position = "static";
   vi.stubGlobal("getComputedStyle", () => ({ position }));
   let availableWidth = 200;
@@ -79,25 +87,46 @@ it("only offers notice details when the description cannot fit", async () => {
   const details = () => renderer.root.findAllByProps({ "aria-label": "Show notice details" });
   expect(details()).toHaveLength(0);
   text.scrollWidth = 300;
-  await act(() => resize());
+  await act(() => {
+    resize();
+    flushFrames();
+  });
   expect(details()).toHaveLength(1);
   // It fits without the icon: the icon must not keep its own overflow alive.
   availableWidth = 308;
-  await act(() => resize());
+  await act(() => {
+    resize();
+    flushFrames();
+  });
   expect(details()).toHaveLength(0);
   text.scrollWidth = 80;
-  await act(() => resize());
+  await act(() => {
+    resize();
+    flushFrames();
+  });
   expect(details()).toHaveLength(0);
   nested.scrollWidth = 500;
-  await act(() => mutate());
+  await act(() => {
+    mutate();
+    flushFrames();
+  });
   expect(details()).toHaveLength(1);
   nested.scrollWidth = 80;
-  await act(() => mutate());
+  await act(() => {
+    mutate();
+    flushFrames();
+  });
   expect(details()).toHaveLength(0);
   position = "absolute";
-  await act(() => resize());
+  await act(() => {
+    resize();
+    flushFrames();
+  });
   expect(details()).toHaveLength(1);
   position = "static";
-  await act(() => resize());
+  await act(() => {
+    resize();
+    flushFrames();
+  });
   expect(details()).toHaveLength(0);
 });

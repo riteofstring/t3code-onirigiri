@@ -489,20 +489,30 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
   useLayoutEffect(() => {
     if (!element) return;
     measure();
-    const observer = new ResizeObserver(measure);
+    // Changes arrive in bursts while a ChatView mounts; one measurement per
+    // frame, still before paint, covers them.
+    let frame: number | null = null;
+    const scheduleMeasure = () => {
+      frame ??= requestAnimationFrame(() => {
+        frame = null;
+        measure();
+      });
+    };
+    const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(element);
-    const mutations = new MutationObserver(measure);
+    const mutations = new MutationObserver(scheduleMeasure);
     mutations.observe(element, {
       attributes: true,
       characterData: true,
       childList: true,
       subtree: true,
     });
-    document.fonts.addEventListener("loadingdone", measure);
+    document.fonts.addEventListener("loadingdone", scheduleMeasure);
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       observer.disconnect();
       mutations.disconnect();
-      document.fonts.removeEventListener("loadingdone", measure);
+      document.fonts.removeEventListener("loadingdone", scheduleMeasure);
     };
   }, [element, measure]);
 
