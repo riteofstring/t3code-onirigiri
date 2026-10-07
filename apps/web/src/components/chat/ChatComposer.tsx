@@ -991,6 +991,8 @@ import type { ReviewCommentContext } from "../../reviewCommentContext";
 import { useChatViewActivity } from "../chatViewActivity";
 
 const WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS = 10_000;
+// Composers mounted together for the same workspace share one refresh.
+const workspaceRefreshesInFlight = new Map<string, Promise<unknown>>();
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -2006,10 +2008,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         notBefore: Date.now() + WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS,
       };
     };
-    void refreshProviders({
-      environmentId,
-      input: { instanceId: selectedProviderEntry.instanceId, cwd: gitCwd },
-    }).then((result) => {
+    const inFlight = workspaceRefreshesInFlight.get(key) as
+      | ReturnType<typeof refreshProviders>
+      | undefined;
+    const request =
+      inFlight ??
+      refreshProviders({
+        environmentId,
+        input: { instanceId: selectedProviderEntry.instanceId, cwd: gitCwd },
+      });
+    if (!inFlight) {
+      workspaceRefreshesInFlight.set(key, request);
+      const forget = () => workspaceRefreshesInFlight.delete(key);
+      request.then(forget, forget);
+    }
+    void request.then((result) => {
       const hasWorkspaceSnapshot =
         result._tag === "Success" &&
         result.value.providers
