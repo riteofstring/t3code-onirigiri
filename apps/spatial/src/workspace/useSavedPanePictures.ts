@@ -1,6 +1,5 @@
 import type {
   OnirigiriLayout,
-  OnirigiriCaptureStatus,
   OnirigiriPanePictureCaptureListener,
   OnirigiriPanePictureResolver,
 } from "@riteofstring/onirigiri";
@@ -23,7 +22,7 @@ import {
   savePanePicture,
   type SavedPanePicture,
 } from "./panePictureStore";
-import { canCapturePanes, snapshotPanePicture } from "./panePictureSnapshot";
+import { snapshotPanePicture } from "./panePictureSnapshot";
 import { threadPaneId } from "./useWorkspacePanes";
 
 const syncedPanes = new Set<string>();
@@ -63,16 +62,14 @@ function columnWidths(layout: OnirigiriLayout): Map<string, string> {
  * DOM when the page is idle; those pictures seed their panes at once and are
  * saved too. A seed never replaces a capture.
  */
-export function useSavedPanePictures(
-  getLayout: () => OnirigiriLayout | null,
-  getCaptureStatus: () => OnirigiriCaptureStatus | null,
-): {
+export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   getPanePicture: OnirigiriPanePictureResolver;
   onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
   onLayoutChange: (layout: OnirigiriLayout) => void;
   /** A picture validated in this session, retained as cover while its thread refreshes. */
   pictureFor: (paneId: string) => Blob | null;
   hasFreshPicture: (paneId: string) => boolean;
+  picturesLoaded: boolean;
   requestSnapshot: RequestPaneSnapshot;
   stageRef: (element: HTMLElement | null) => void;
 } {
@@ -81,6 +78,7 @@ export function useSavedPanePictures(
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const widthsRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
+  const [geometryVersion, setGeometryVersion] = useState(0);
 
   useEffect(() => {
     let current = true;
@@ -101,14 +99,26 @@ export function useSavedPanePictures(
     if (!element) return;
     const observer = new ResizeObserver(([entry]) => {
       const size = entry?.contentRect;
-      if (size) stageSizeRef.current = `${Math.round(size.width)}x${Math.round(size.height)}`;
+      if (!size) return;
+      const next = `${Math.round(size.width)}x${Math.round(size.height)}`;
+      if (stageSizeRef.current === next) return;
+      stageSizeRef.current = next;
+      setGeometryVersion((version) => version + 1);
     });
     observer.observe(element);
     stageObserverRef.current = observer;
   }, []);
 
   const onLayoutChange = useCallback((layout: OnirigiriLayout) => {
-    widthsRef.current = columnWidths(layout);
+    const next = columnWidths(layout);
+    const previous = widthsRef.current;
+    widthsRef.current = next;
+    if (
+      !previous ||
+      previous.size !== next.size ||
+      [...next].some(([paneId, width]) => previous.get(paneId) !== width)
+    )
+      setGeometryVersion((version) => version + 1);
   }, []);
 
   const geometryRevision = useCallback(
@@ -136,7 +146,7 @@ export function useSavedPanePictures(
     [resolvedTheme, threads],
   );
   const contentRevisionsRef = useRef(contentRevisions);
-  useEffect(() => {
+  useLayoutEffect(() => {
     contentRevisionsRef.current = contentRevisions;
   }, [contentRevisions]);
 
@@ -155,15 +165,19 @@ export function useSavedPanePictures(
   const lastValidPictures = useRef(new Map<string, Blob>());
   const pictureFor = useCallback(
     (paneId: string): Blob | null => {
-      if (!saved?.has(paneId) || !contentRevisions.has(paneId)) {
+      if (!saved?.has(paneId) || !contentRevisionsRef.current.has(paneId)) {
         lastValidPictures.current.delete(paneId);
         return null;
       }
-      const fresh = freshPictureFor(paneId);
+      const picture = saved.get(paneId)!;
+      const content = contentRevisionsRef.current.get(paneId);
+      const geometry = geometryRevision(paneId);
+      const fresh =
+        geometry && picture.revision === `${content}|${geometry}` ? picture.image : null;
       if (fresh) lastValidPictures.current.set(paneId, fresh);
       return fresh ?? lastValidPictures.current.get(paneId) ?? null;
     },
-    [contentRevisions, freshPictureFor, saved],
+    [geometryRevision, saved],
   );
   useEffect(() => {
     for (const paneId of lastValidPictures.current.keys()) {
@@ -174,7 +188,8 @@ export function useSavedPanePictures(
   }, [contentRevisions, saved]);
   const hasFreshPicture = useCallback(
     (paneId: string) => freshPictureFor(paneId) !== null,
-    [freshPictureFor],
+    // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
+    [freshPictureFor, geometryVersion],
   );
   const freshPictureForRef = useRef(freshPictureFor);
   useLayoutEffect(() => {
@@ -226,12 +241,6 @@ export function useSavedPanePictures(
       };
       const before = revision();
       if (!before || !element.isConnected || !syncedPanes.has(paneId)) return;
-      if (
-        canCapturePanes() &&
-        getCaptureStatus()?.state !== "unavailable" &&
-        element.closest<HTMLElement>("[data-onirigiri-pane-id]")?.dataset.visible === "true"
-      )
-        return;
       // A capture of the same content is more faithful than a drawing.
       const captured = () => {
         const kept = savedRef.current?.get(paneId);
@@ -257,7 +266,7 @@ export function useSavedPanePictures(
       keepPicture(picture);
       await savePanePicture(picture);
     },
-    [geometryRevision, getCaptureStatus, keepPicture],
+    [geometryRevision, keepPicture],
   );
   const [snapshots] = useState(createSnapshotQueue);
   useEffect(() => snapshots.setDraw(drawSnapshot), [drawSnapshot, snapshots]);
@@ -268,6 +277,7 @@ export function useSavedPanePictures(
     onLayoutChange,
     pictureFor,
     hasFreshPicture,
+    picturesLoaded: saved !== null,
     requestSnapshot: snapshots.request,
     stageRef,
   };

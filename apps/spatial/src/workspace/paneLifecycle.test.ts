@@ -175,3 +175,97 @@ it("mounts panes without a picture one at a time to picture them, then lets them
   expect(store.isMounted("p0-3")).toBe(false);
   store.dispose();
 });
+
+it("continues preparing when a view never reports a React commit", () => {
+  const panes = row(6);
+  const store = createPaneLifecycleStore(panes, "p0-2");
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(5000);
+  expect(mountedOf(store, panes)).toEqual(["p0-1", "p0-2", "p0-3"]);
+  store.dispose();
+});
+
+it("accepts synchronous mount commits without stranding the next destination", () => {
+  const panes = row(6);
+  const store = createPaneLifecycleStore(panes, "p0-2");
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(1000);
+  expect(mountedOf(store, panes)).toEqual(["p0-1", "p0-2", "p0-3"]);
+  store.dispose();
+});
+
+it("continues preparation after a pending view is removed before committing", () => {
+  const panes = row(6);
+  const store = createPaneLifecycleStore(panes, "p0-2");
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(700);
+  expect(store.isMounted("p0-3")).toBe(true);
+  store.setPanes(panes.filter(({ paneId }) => paneId !== "p0-3"));
+  vi.advanceTimersByTime(500);
+  expect(store.isMounted("p0-4")).toBe(true);
+  expect(store.isMounted("p0-3")).toBe(false);
+  store.dispose();
+});
+
+it("does not keep cancelling idle preparation when picture freshness is unchanged", () => {
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 500));
+  const panes = row(6);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  for (let step = 0; step < 14; step++) {
+    vi.advanceTimersByTime(100);
+    store.setPictures(() => true);
+  }
+  expect(store.isMounted("p0-1")).toBe(true);
+  store.dispose();
+});
+
+it("prepares neighbors but waits for stored pictures before mounting other visible views", () => {
+  const panes = row(10);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setVisible("p0-8", true);
+  store.setPictures(() => false, false);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-1")).toBe(true);
+  expect(store.isMounted("p0-8")).toBe(false);
+  store.committed("p0-1", true);
+  store.setPictures(() => true, true);
+  vi.advanceTimersByTime(3000);
+  expect(store.isMounted("p0-8")).toBe(false);
+  store.dispose();
+});
+
+it("resumes visible preparation when stored pictures never finish loading", () => {
+  const panes = row(10);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setVisible("p0-8", true);
+  store.setPictures(() => false, false);
+  vi.advanceTimersByTime(1000);
+  store.committed("p0-1", true);
+  vi.advanceTimersByTime(1500);
+  expect(store.isMounted("p0-8")).toBe(true);
+  store.dispose();
+});
+
+it("does not apply failure backoff to a successful picture that later becomes stale", () => {
+  const panes = row(3);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const pictured = new Set(["p0-0", "p0-1"]);
+  store.setPictures((paneId) => pictured.has(paneId));
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(5000);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.committed("p0-2", true);
+  pictured.add("p0-2");
+  store.setPictures((paneId) => pictured.has(paneId));
+  vi.advanceTimersByTime(1200);
+  expect(store.isMounted("p0-2")).toBe(false);
+  pictured.delete("p0-2");
+  store.setPictures((paneId) => pictured.has(paneId));
+  vi.advanceTimersByTime(5000);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.dispose();
+});

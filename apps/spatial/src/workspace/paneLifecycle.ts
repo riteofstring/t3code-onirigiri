@@ -10,12 +10,14 @@ const SETTLE_MS = 200;
 const NEIGHBOR_SETTLE_MS = 600;
 /** Speculative mounts wait for this long without keyboard or pointer input. */
 const INPUT_QUIET_MS = 400;
+const COMMIT_TIMEOUT_MS = 2000;
+const STORED_PICTURES_WAIT_MS = 2000;
 /** How long a pane mounted only to be pictured may take before it is let go. */
 const PICTURE_TIMEOUT_MS = 10_000;
 /** Background pictures wait this long after input, and this long after each other. */
 const PICTURE_INPUT_QUIET_MS = 3000;
 const PICTURE_GAP_MS = 4000;
-/** A pane that could not be pictured, or whose picture went stale, is tried again after this. */
+/** A pane that could not be pictured is tried again after this. */
 const PICTURE_RETRY_MS = 5 * 60_000;
 
 export interface PanePosition {
@@ -55,6 +57,7 @@ export function createPaneLifecycleStore(
   let queue: string[] = [];
   let wanted = new Set<string>();
   let waitingFor: string | null = null;
+  let commitTimer: ReturnType<typeof setTimeout> | null = null;
   let idleCallback: number | null = null;
   let quietTimer: ReturnType<typeof setTimeout> | null = null;
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +66,10 @@ export function createPaneLifecycleStore(
   let lastInput = 0;
   let clock = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
+  let freshPictures = new Set<string>();
+  let picturesReady = true;
+  let storedPicturesTimer: ReturnType<typeof setTimeout> | null = null;
+  let storedPicturesWaited = false;
   // A pane mounted only so it can be pictured, and the panes already tried.
   let picturing: { paneId: string; since: number } | null = null;
   const pictureAttempted = new Map<string, number>();
@@ -81,7 +88,24 @@ export function createPaneLifecycleStore(
     return true;
   };
 
+  const clearCommitWait = () => {
+    waitingFor = null;
+    if (commitTimer !== null) clearTimeout(commitTimer);
+    commitTimer = null;
+  };
+
+  const mountPrepared = (paneId: string) => {
+    clearCommitWait();
+    waitingFor = paneId;
+    commitTimer = setTimeout(() => {
+      clearCommitWait();
+      schedule();
+    }, COMMIT_TIMEOUT_MS);
+    mount(paneId);
+  };
+
   const unmount = (paneId: string) => {
+    if (waitingFor === paneId) clearCommitWait();
     if (mounted.delete(paneId)) notify(paneId);
   };
 
@@ -106,7 +130,7 @@ export function createPaneLifecycleStore(
 
   // The nearest pane to focus that has no picture and was not tried yet.
   const nextToPicture = (): string | null => {
-    if (!backgroundPictures) return null;
+    if (!backgroundPictures || !picturesReady) return null;
     const center = focused ? panes.get(focused) : undefined;
     let best: string | null = null;
     let bestDistance = Infinity;
@@ -132,8 +156,9 @@ export function createPaneLifecycleStore(
     if (!picturing) return false;
     const { paneId, since } = picturing;
     const done =
-      hasPicture(paneId) || !panes.has(paneId) || performance.now() - since > PICTURE_TIMEOUT_MS;
+      hasPicture(paneId) || !panes.has(paneId) || performance.now() - since >= PICTURE_TIMEOUT_MS;
     if (!done) return true;
+    if (hasPicture(paneId)) pictureAttempted.delete(paneId);
     if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
     evictBeyond(MAX_MOUNTED, wanted);
@@ -166,8 +191,7 @@ export function createPaneLifecycleStore(
       const paneId = queue.shift()!;
       if (!panes.has(paneId) || mounted.has(paneId)) continue;
       evictBeyond(MAX_MOUNTED - 1 + (picturing ? 1 : 0), wanted);
-      mount(paneId);
-      waitingFor = paneId;
+      mountPrepared(paneId);
       return;
     }
     // With nothing likely to be needed soon, panes without a picture are
@@ -192,9 +216,8 @@ export function createPaneLifecycleStore(
     }
     if (mounted.size >= MAX_MOUNTED + 1) return;
     pictureAttempted.set(paneId, performance.now());
-    mount(paneId);
     picturing = { paneId, since: performance.now() };
-    waitingFor = paneId;
+    mountPrepared(paneId);
   };
 
   const nearestInDirection = (center: PanePosition, dir: Direction): string | null => {
@@ -237,7 +260,7 @@ export function createPaneLifecycleStore(
     }
     // Likely destinations come before panes that are merely on screen, and a
     // pane on screen that a picture already shows does not need its view.
-    const onScreen = [...visible].filter((paneId) => !hasPicture(paneId));
+    const onScreen = picturesReady ? [...visible].filter((paneId) => !hasPicture(paneId)) : [];
     const nearby = neighborsWanted ? neighbors() : [];
     const speculative = [...new Set([...nearby, ...onScreen])].filter(
       (paneId) => paneId !== focused && panes.has(paneId),
@@ -289,7 +312,7 @@ export function createPaneLifecycleStore(
     /** Reports that a pane committed its mounted state. */
     committed: (paneId: string, isMounted: boolean) => {
       if (waitingFor !== paneId || isMounted !== mounted.has(paneId)) return;
-      waitingFor = null;
+      clearCommitWait();
       schedule();
     },
     setFocus: (paneId: string) => {
@@ -307,6 +330,10 @@ export function createPaneLifecycleStore(
               : "up";
       }
       focused = paneId;
+      if (picturing?.paneId === paneId) {
+        picturing = null;
+        pictureAttempted.delete(paneId);
+      }
       cancelSpeculation();
       restartNeighborWait();
       if (settleTimer !== null) clearTimeout(settleTimer);
@@ -324,14 +351,17 @@ export function createPaneLifecycleStore(
       )
         return;
       panes = new Map(nextPanes.map((pane) => [pane.paneId, pane]));
-      for (const paneId of mounted) if (!panes.has(paneId)) mounted.delete(paneId);
+      for (const paneId of mounted) if (!panes.has(paneId)) unmount(paneId);
       for (const paneId of visible) if (!panes.has(paneId)) visible.delete(paneId);
+      for (const paneId of pictureAttempted.keys()) {
+        if (!panes.has(paneId)) pictureAttempted.delete(paneId);
+      }
+      if (picturing && !panes.has(picturing.paneId)) picturing = null;
       if (focused && !panes.has(focused)) focused = null;
       queue = queue.filter((paneId) => panes.has(paneId));
       wanted = new Set([...wanted].filter((paneId) => panes.has(paneId)));
       if (waitingFor !== null && !panes.has(waitingFor)) {
-        waitingFor = null;
-        schedule();
+        clearCommitWait();
       }
       requestSettle();
     },
@@ -341,8 +371,28 @@ export function createPaneLifecycleStore(
       requestSettle();
     },
     /** Tells which panes a picture shows faithfully while they are not mounted. */
-    setPictures: (pictured: (paneId: string) => boolean) => {
+    setPictures: (pictured: (paneId: string) => boolean, loaded = true) => {
       hasPicture = pictured;
+      const ready = loaded || storedPicturesWaited;
+      const next = new Set([...panes.keys()].filter(pictured));
+      const changed =
+        ready !== picturesReady ||
+        next.size !== freshPictures.size ||
+        [...next].some((paneId) => !freshPictures.has(paneId));
+      picturesReady = ready;
+      freshPictures = next;
+      if (ready && storedPicturesTimer !== null) {
+        clearTimeout(storedPicturesTimer);
+        storedPicturesTimer = null;
+      } else if (!ready && storedPicturesTimer === null) {
+        storedPicturesTimer = setTimeout(() => {
+          storedPicturesTimer = null;
+          storedPicturesWaited = true;
+          picturesReady = true;
+          requestSettle();
+        }, STORED_PICTURES_WAIT_MS);
+      }
+      if (!changed) return;
       requestSettle();
     },
     setVisible: (paneId: string, isVisible: boolean) => {
@@ -353,9 +403,11 @@ export function createPaneLifecycleStore(
     },
     dispose: () => {
       cancelSpeculation();
+      clearCommitWait();
       picturing = null;
       if (settleTimer !== null) clearTimeout(settleTimer);
       if (neighborTimer !== null) clearTimeout(neighborTimer);
+      if (storedPicturesTimer !== null) clearTimeout(storedPicturesTimer);
       for (const type of inputEvents) {
         window.removeEventListener(type, noteInput, { capture: true });
       }

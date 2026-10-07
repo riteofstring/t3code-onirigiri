@@ -138,16 +138,16 @@ export function SpatialWorkspace({
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
-  const getCaptureStatus = useCallback(() => workspaceRef.current?.getCaptureStatus() ?? null, []);
   const {
     getPanePicture,
     onLayoutChange,
     onPanePictureCaptured,
     pictureFor,
     hasFreshPicture,
+    picturesLoaded,
     requestSnapshot,
     stageRef,
-  } = useSavedPanePictures(getLayout, getCaptureStatus);
+  } = useSavedPanePictures(getLayout);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -230,8 +230,8 @@ export function SpatialWorkspace({
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useEffect(() => {
-    lifecycle?.setPictures(hasFreshPicture);
-  }, [hasFreshPicture, lifecycle]);
+    lifecycle?.setPictures(hasFreshPicture, picturesLoaded);
+  }, [hasFreshPicture, lifecycle, picturesLoaded]);
   // Panes off screen are laid out only where the browser supports
   // HTML-in-Canvas, so only there can they be pictured without being shown.
   useEffect(() => {

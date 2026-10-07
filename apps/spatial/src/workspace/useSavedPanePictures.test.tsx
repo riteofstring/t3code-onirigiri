@@ -1,8 +1,4 @@
-import type {
-  OnirigiriCaptureStatus,
-  OnirigiriLayout,
-  WorkspacePane,
-} from "@riteofstring/onirigiri";
+import type { OnirigiriLayout, WorkspacePane } from "@riteofstring/onirigiri";
 import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -16,10 +12,8 @@ const store = {
   updatedAt: "u1",
 };
 const snapshot = vi.hoisted(() => vi.fn(async () => new Blob(["snapshot"])));
-const nativeCapture = vi.hoisted(() => ({ available: false }));
 vi.mock("./panePictureSnapshot", () => ({
   snapshotPanePicture: snapshot,
-  canCapturePanes: () => nativeCapture.available,
 }));
 vi.mock("./panePictureStore", () => ({
   MAX_SAVED: 200,
@@ -50,12 +44,10 @@ let resize: (width: number, height: number) => void = () => {};
 let hook: ReturnType<typeof useSavedPanePictures>;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
-let captureStatus = { state: "unavailable" } as OnirigiriCaptureStatus;
 const getLayout = () => currentLayout;
-const getCaptureStatus = () => captureStatus;
 
 function Probe() {
-  const value = useSavedPanePictures(getLayout, getCaptureStatus);
+  const value = useSavedPanePictures(getLayout);
   useEffect(() => {
     hook = value;
   });
@@ -66,8 +58,10 @@ async function mount() {
   await act(async () => {
     renderer = create(<Probe />);
   });
-  hook.stageRef({} as HTMLElement);
-  resize(800, 600);
+  await act(() => {
+    hook.stageRef({} as HTMLElement);
+    resize(800, 600);
+  });
 }
 
 beforeEach(() => {
@@ -99,8 +93,6 @@ afterEach(async () => {
   currentLayout = layout(400);
   markPaneSynced(paneId, false);
   snapshot.mockClear();
-  nativeCapture.available = false;
-  captureStatus = { state: "unavailable" } as OnirigiriCaptureStatus;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -111,10 +103,12 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
   await mount();
   expect(hook.getPanePicture(pane)).toEqual({ image, fit: "fill", replaceable: true });
 
-  hook.onLayoutChange(layout(500));
+  await act(() => hook.onLayoutChange(layout(500)));
   expect(hook.getPanePicture(pane)).toBeNull();
-  hook.onLayoutChange(layout(400));
-  resize(900, 600);
+  await act(() => {
+    hook.onLayoutChange(layout(400));
+    resize(900, 600);
+  });
   expect(hook.getPanePicture(pane)).toBeNull();
 });
 
@@ -135,12 +129,14 @@ it("keeps previously valid cover pixels while treating updated content as needin
   store.saved.set(paneId, { paneId, revision: `u1|dark|${geometry(400)}`, image, savedAt: 1 });
   await mount();
   const resolver = hook.getPanePicture;
+  const cover = hook.pictureFor;
   expect(hook.pictureFor(paneId)).toBe(image);
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
   expect(hook.pictureFor(paneId)).toBe(image);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   expect(hook.getPanePicture).toBe(resolver);
+  expect(hook.pictureFor).toBe(cover);
   expect(resolver(pane)).toBeNull();
 });
 
@@ -170,9 +166,8 @@ it("lets an accepted native capture suppress the pending fallback drawing", asyn
   expect(store.writes[0]?.source).toBe("capture");
 });
 
-it("draws a fallback when the browser exposes native capture but the engine cannot use it", async () => {
+it("draws a fallback after the native grace period when no capture arrives", async () => {
   await mount();
-  nativeCapture.available = true;
   markPaneSynced(paneId, true);
   hook.requestSnapshot(
     paneId,
@@ -187,6 +182,25 @@ it("draws a fallback when the browser exposes native capture but the engine cann
   });
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes[0]?.source).toBe("snapshot");
+});
+
+it("replaces retained cover pixels when a fresh capture arrives", async () => {
+  const previous = new Blob(["previous"]);
+  store.saved.set(paneId, {
+    paneId,
+    revision: `u1|dark|${geometry(400)}`,
+    image: previous,
+    savedAt: 1,
+  });
+  await mount();
+  expect(hook.pictureFor(paneId)).toBe(previous);
+  store.updatedAt = "u2";
+  await act(() => renderer!.update(<Probe />));
+  const replacement = new Blob(["replacement"]);
+  markPaneSynced(paneId, true);
+  await act(() => hook.onPanePictureCaptured(pane, replacement));
+  expect(hook.pictureFor(paneId)).toBe(replacement);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
 it("does not draw pending pictures after the workspace unmounts", async () => {
