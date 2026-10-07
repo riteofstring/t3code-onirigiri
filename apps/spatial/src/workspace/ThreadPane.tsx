@@ -21,13 +21,12 @@ import {
   useComposerHandleContext,
 } from "@t3tools/web/src/composerHandleContext";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
-import { useTheme } from "@t3tools/web/src/hooks/useTheme";
 import { useThreadDetail, useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { usePaneMounted } from "./paneLifecycle";
 import { canCapturePanes } from "./panePictureSnapshot";
-import { PaneSnapshotContext, markPaneSynced } from "./useSavedPanePictures";
+import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
 export interface ThreadPaneThread {
   readonly environmentId: EnvironmentId;
@@ -95,23 +94,23 @@ function usePaneContent(
   const detailUpdatedAt = detail?.updatedAt ?? null;
   const status = useThreadStatus(mounted ? thread : null);
   const synced = status === "live" || status === "deleted";
-  const { theme, resolvedTheme } = useTheme();
+  const pictureTheme = usePanePictureTheme();
   const running = shell?.latestTurn?.state === "running";
   const nextContentRevision = `${updatedAt}|${detailUpdatedAt}`;
   const [contentRevision, setContentRevision] = useState(nextContentRevision);
   if (!running && contentRevision !== nextContentRevision) setContentRevision(nextContentRevision);
-  const revision = `${contentRevision}|${theme}|${resolvedTheme}`;
+  const revision = `${contentRevision}|${pictureTheme}`;
   const [settled, setSettled] = useState(false);
 
   useLayoutEffect(() => {
     markPaneSynced(
       paneId,
       mounted && synced && settled && detailUpdatedAt !== null
-        ? { updatedAt: detailUpdatedAt, theme: resolvedTheme }
+        ? { updatedAt: detailUpdatedAt, theme: pictureTheme }
         : null,
     );
     return () => markPaneSynced(paneId, null);
-  }, [detailUpdatedAt, mounted, paneId, resolvedTheme, settled, synced]);
+  }, [detailUpdatedAt, mounted, paneId, pictureTheme, settled, synced]);
 
   useOnirigiriPaneContentReady(mounted && synced && settled, revision);
 

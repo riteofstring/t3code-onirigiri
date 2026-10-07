@@ -54,6 +54,11 @@ export type RequestPaneSnapshot = (
 
 export const PaneSnapshotContext = createContext<RequestPaneSnapshot | null>(null);
 
+export function usePanePictureTheme(): string {
+  const { theme, resolvedTheme, themeHalves } = useTheme();
+  return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}`;
+}
+
 /** Records the synchronized detail and theme committed by a mounted pane. */
 export function markPaneSynced(paneId: string, content: PaneContentRevision | null) {
   if (content) syncedPanes.set(paneId, content);
@@ -93,7 +98,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   stageRef: (element: HTMLElement | null) => void;
 } {
   const threads = useThreadShells();
-  const { resolvedTheme } = useTheme();
+  const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const widthsRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
@@ -159,10 +164,10 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       new Map(
         threads.map((thread) => [
           threadPaneId(thread.environmentId, thread.id),
-          { updatedAt: thread.updatedAt, theme: resolvedTheme },
+          { updatedAt: thread.updatedAt, theme: pictureTheme },
         ]),
       ),
-    [resolvedTheme, threads],
+    [pictureTheme, threads],
   );
   const contentRevisionsRef = useRef(contentRevisions);
   const runningPanes = useMemo(
