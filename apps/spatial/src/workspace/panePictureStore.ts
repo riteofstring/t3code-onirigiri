@@ -11,6 +11,8 @@ export interface SavedPanePicture {
   readonly revision: string;
   readonly image: Blob;
   readonly savedAt: number;
+  /** A capture by the workspace, or a picture drawn from the pane's DOM. */
+  readonly source?: "capture" | "snapshot";
 }
 
 let database: Promise<IDBDatabase> | null = null;

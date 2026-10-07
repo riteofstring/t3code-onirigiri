@@ -57,7 +57,7 @@ async function mount() {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("window", { devicePixelRatio: 1 });
+  vi.stubGlobal("window", { devicePixelRatio: 1, addEventListener() {} });
   vi.stubGlobal(
     "ResizeObserver",
     class {

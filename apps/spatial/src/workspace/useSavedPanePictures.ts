@@ -142,20 +142,36 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     };
   }, [pictureFor]);
 
+  const savedRef = useRef(saved);
+  useEffect(() => {
+    savedRef.current = saved;
+  }, [saved]);
+  const keepPicture = useCallback((picture: SavedPanePicture) => {
+    setSaved((current) => {
+      const next = new Map(current ?? []).set(picture.paneId, picture);
+      if (next.size <= MAX_SAVED) return next;
+      const newest = [...next.values()].toSorted((a, b) => b.savedAt - a.savedAt);
+      return new Map(newest.slice(0, MAX_SAVED).map((kept) => [kept.paneId, kept]));
+    });
+  }, []);
+
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image) => {
       if (!syncedPanes.has(pane.paneId)) return;
       const content = contentRevisionsRef.current.get(pane.paneId);
       const geometry = geometryRevision(pane.paneId);
       if (!content || !geometry) return;
-      void savePanePicture({
+      const picture = {
         paneId: pane.paneId,
         revision: `${content}|${geometry}`,
         image,
         savedAt: Date.now(),
-      }).catch(() => {});
+        source: "capture" as const,
+      };
+      keepPicture(picture);
+      void savePanePicture(picture).catch(() => {});
     },
-    [geometryRevision],
+    [geometryRevision, keepPicture],
   );
 
   const drawSnapshot = useCallback(
@@ -167,18 +183,25 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       };
       const before = revision();
       if (!before || !element.isConnected || !syncedPanes.has(paneId)) return;
+      // A capture of the same content is more faithful than a drawing.
+      const captured = () => {
+        const kept = savedRef.current?.get(paneId);
+        return kept?.source === "capture" && kept.revision === before;
+      };
+      if (captured()) return;
       const image = await snapshotPanePicture(element);
-      if (!image || revision() !== before) return;
-      const picture = { paneId, revision: before, image, savedAt: Date.now() };
-      setSaved((current) => {
-        const next = new Map(current ?? []).set(paneId, picture);
-        if (next.size <= MAX_SAVED) return next;
-        const newest = [...next.values()].toSorted((a, b) => b.savedAt - a.savedAt);
-        return new Map(newest.slice(0, MAX_SAVED).map((saved) => [saved.paneId, saved]));
-      });
+      if (!image || revision() !== before || captured()) return;
+      const picture = {
+        paneId,
+        revision: before,
+        image,
+        savedAt: Date.now(),
+        source: "snapshot" as const,
+      };
+      keepPicture(picture);
       await savePanePicture(picture);
     },
-    [geometryRevision],
+    [geometryRevision, keepPicture],
   );
   const [snapshots] = useState(createSnapshotQueue);
   useEffect(() => snapshots.setDraw(drawSnapshot), [drawSnapshot, snapshots]);
@@ -195,17 +218,35 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 
 // Draws one requested snapshot at a time while the page is idle; a newer
 // request for a pane replaces one still waiting.
+const SNAPSHOT_INPUT_QUIET_MS = 1000;
+
 function createSnapshotQueue() {
   type Draw = (paneId: string, element: HTMLElement) => Promise<void>;
   const pending = new Map<string, HTMLElement>();
   let draw: Draw | null = null;
   let drawing = false;
+  let lastInput = 0;
+  const noteInput = () => {
+    lastInput = performance.now();
+  };
+  for (const type of ["keydown", "pointerdown", "wheel"] as const) {
+    window.addEventListener(type, noteInput, { capture: true, passive: true });
+  }
   const next = () => {
     if (drawing || pending.size === 0 || !draw) return;
     const current = draw;
     drawing = true;
     requestIdleCallback(
       () => {
+        // Drawing waits until input has been quiet for a moment.
+        const quietFor = performance.now() - lastInput;
+        if (quietFor < SNAPSHOT_INPUT_QUIET_MS) {
+          setTimeout(() => {
+            drawing = false;
+            next();
+          }, SNAPSHOT_INPUT_QUIET_MS - quietFor);
+          return;
+        }
         const [paneId, element] = pending.entries().next().value!;
         pending.delete(paneId);
         void current(paneId, element)

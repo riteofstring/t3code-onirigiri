@@ -6,6 +6,14 @@
  * available to the image, which is what T3 uses.
  */
 
+/** Whether the browser lets the workspace capture panes itself (HTML-in-Canvas). */
+export function canCapturePanes(): boolean {
+  return (
+    typeof (CanvasRenderingContext2D.prototype as { drawElementImage?: unknown })
+      .drawElementImage === "function"
+  );
+}
+
 let pageStyles: { sheets: number; encoded: string } | null = null;
 
 // The page's styles as a URL-encoded style element, built once: they are the

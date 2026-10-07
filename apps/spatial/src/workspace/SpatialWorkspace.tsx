@@ -21,6 +21,7 @@ import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import { FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
+import { canCapturePanes } from "./panePictureSnapshot";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
@@ -39,7 +40,24 @@ const WORKSPACE_ID = "onirigiri-t3";
 function whileEditing(key: string) {
   return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
 }
+// Panes are threads and their side panes, which the workspace places itself,
+// so only navigation shortcuts apply; splitting or moving panes does not.
+const NAVIGATION = new Set([
+  "focusDown",
+  "focusFirstColumn",
+  "focusLastColumn",
+  "focusLeft",
+  "focusRight",
+  "focusUp",
+  "returnHome",
+  "toggleOverview",
+]);
 const SHORTCUTS: OnirigiriShortcutBindings = {
+  ...Object.fromEntries(
+    Object.keys(defaultOnirigiriShortcuts)
+      .filter((action) => !NAVIGATION.has(action))
+      .map((action) => [action, []]),
+  ),
   focusDown: [...defaultOnirigiriShortcuts.focusDown, whileEditing("ArrowDown")],
   focusLeft: [...defaultOnirigiriShortcuts.focusLeft, whileEditing("ArrowLeft")],
   focusRight: [...defaultOnirigiriShortcuts.focusRight, whileEditing("ArrowRight")],
@@ -188,10 +206,7 @@ export function SpatialWorkspace({
   // Panes off screen are laid out only where the browser supports
   // HTML-in-Canvas, so only there can they be pictured without being shown.
   useEffect(() => {
-    lifecycle?.setBackgroundPictures(
-      typeof (CanvasRenderingContext2D.prototype as { drawElementImage?: unknown })
-        .drawElementImage === "function",
-    );
+    lifecycle?.setBackgroundPictures(canCapturePanes());
   }, [lifecycle]);
   useEffect(() => {
     if (panes && lifecycle) {
@@ -314,6 +329,7 @@ export function SpatialWorkspace({
         );
       }
       if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ThreadPaneData} />;
+      if (pane.surfaceKind !== "thread") return null;
       return (
         <ThreadPane
           thread={pane.data as ThreadPaneData}

@@ -26,6 +26,7 @@ import { useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { usePaneMounted } from "./paneLifecycle";
+import { canCapturePanes } from "./panePictureSnapshot";
 import { PaneSnapshotContext, markPaneSynced } from "./useSavedPanePictures";
 
 export interface ThreadPaneThread {
@@ -187,11 +188,13 @@ export const ThreadPane = memo(function ThreadPane({
 
   // A settled, synchronized view is pictured for when it is not mounted, and
   // again when it stops being active, in case it was scrolled meanwhile.
+  // Where the workspace captures panes itself, it pictures those on screen.
   const requestSnapshot = use(PaneSnapshotContext);
   useEffect(() => {
+    if (visible && canCapturePanes()) return;
     if (picturable !== null && contentRef.current) requestSnapshot?.(paneId, contentRef.current);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the active state pictures the view again.
-  }, [active, paneId, picturable, requestSnapshot]);
+  }, [active, paneId, picturable, requestSnapshot, visible]);
 
   useEffect(
     () =>
