@@ -25,7 +25,25 @@ import {
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { threadPaneId } from "./useWorkspacePanes";
 
-const syncedPanes = new Set<string>();
+interface PaneContentRevision {
+  updatedAt: string;
+  theme: string;
+}
+
+const syncedPanes = new Map<string, PaneContentRevision>();
+
+function contentKey(content: PaneContentRevision): string {
+  return `${content.updatedAt}|${content.theme}`;
+}
+
+function paneHasCommittedContent(paneId: string, expected: PaneContentRevision): boolean {
+  const committed = syncedPanes.get(paneId);
+  return (
+    committed !== undefined &&
+    committed.updatedAt >= expected.updatedAt &&
+    committed.theme === expected.theme
+  );
+}
 
 /** Asks for a picture of a mounted pane's content to be drawn when the page is idle. */
 export type RequestPaneSnapshot = (
@@ -36,9 +54,9 @@ export type RequestPaneSnapshot = (
 
 export const PaneSnapshotContext = createContext<RequestPaneSnapshot | null>(null);
 
-/** Records whether a mounted pane shows its thread fully synchronized. */
-export function markPaneSynced(paneId: string, synced: boolean) {
-  if (synced) syncedPanes.add(paneId);
+/** Records the synchronized detail and theme committed by a mounted pane. */
+export function markPaneSynced(paneId: string, content: PaneContentRevision | null) {
+  if (content) syncedPanes.set(paneId, content);
   else syncedPanes.delete(paneId);
 }
 
@@ -141,7 +159,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       new Map(
         threads.map((thread) => [
           threadPaneId(thread.environmentId, thread.id),
-          `${thread.updatedAt}|${resolvedTheme}`,
+          { updatedAt: thread.updatedAt, theme: resolvedTheme },
         ]),
       ),
     [resolvedTheme, threads],
@@ -172,7 +190,8 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       if (!picture) return null;
       const content = contentRevisions.get(paneId);
       const geometry = geometryRevision(paneId);
-      if (!content || !geometry || picture.revision !== `${content}|${geometry}`) return null;
+      if (!content || !geometry || picture.revision !== `${contentKey(content)}|${geometry}`)
+        return null;
       return picture.image;
     },
     [contentRevisions, geometryRevision, saved],
@@ -189,7 +208,9 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       const content = contentRevisionsRef.current.get(paneId);
       const geometry = geometryRevision(paneId);
       const fresh =
-        geometry && picture.revision === `${content}|${geometry}` ? picture.image : null;
+        content && geometry && picture.revision === `${contentKey(content)}|${geometry}`
+          ? picture.image
+          : null;
       if (fresh) lastValidPictures.current.set(paneId, fresh);
       return fresh ?? lastValidPictures.current.get(paneId) ?? null;
     },
@@ -231,13 +252,13 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image) => {
-      if (!syncedPanes.has(pane.paneId) || runningPanesRef.current.has(pane.paneId)) return;
+      if (runningPanesRef.current.has(pane.paneId)) return;
       const content = contentRevisionsRef.current.get(pane.paneId);
       const geometry = geometryRevision(pane.paneId);
-      if (!content || !geometry) return;
+      if (!content || !geometry || !paneHasCommittedContent(pane.paneId, content)) return;
       const picture = {
         paneId: pane.paneId,
-        revision: `${content}|${geometry}`,
+        revision: `${contentKey(content)}|${geometry}`,
         image,
         savedAt: Date.now(),
         source: "capture" as const,
@@ -253,16 +274,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       const revision = () => {
         const content = contentRevisionsRef.current.get(paneId);
         const geometry = geometryRevision(paneId);
-        return content && geometry ? `${content}|${geometry}` : null;
+        return content && geometry && paneHasCommittedContent(paneId, content)
+          ? `${contentKey(content)}|${geometry}`
+          : null;
       };
       const before = revision();
-      if (
-        !before ||
-        !element.isConnected ||
-        !syncedPanes.has(paneId) ||
-        runningPanesRef.current.has(paneId)
-      )
-        return;
+      if (!before || !element.isConnected || runningPanesRef.current.has(paneId)) return;
       const previous = savedRef.current?.get(paneId);
       if (!refresh && previous?.revision === before) return;
       // A capture of the same content is more faithful than a drawing.
@@ -275,7 +292,6 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       if (
         !image ||
         !element.isConnected ||
-        !syncedPanes.has(paneId) ||
         runningPanesRef.current.has(paneId) ||
         revision() !== before ||
         captured()

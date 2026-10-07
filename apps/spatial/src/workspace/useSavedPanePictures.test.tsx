@@ -100,7 +100,7 @@ afterEach(async () => {
   store.updatedAt = "u1";
   store.running = false;
   currentLayout = layout(400);
-  markPaneSynced(paneId, false);
+  markPaneSynced(paneId, null);
   snapshot.mockClear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -127,7 +127,7 @@ it("saves captures only from panes showing a synchronized thread", async () => {
   hook.onPanePictureCaptured(pane, image);
   expect(store.writes).toHaveLength(0);
 
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   hook.onPanePictureCaptured(pane, image);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]).toMatchObject({ paneId, revision: `u1|dark|${geometry(400)}`, image });
@@ -135,7 +135,7 @@ it("saves captures only from panes showing a synchronized thread", async () => {
 
 it("keeps the last completed picture through streaming and saves the completed turn", async () => {
   await mount();
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   const previous = new Blob(["previous"]);
   await act(() => hook.onPanePictureCaptured(pane, previous));
 
@@ -148,6 +148,7 @@ it("keeps the last completed picture through streaming and saves the completed t
 
   store.running = false;
   await act(() => renderer!.update(<Probe />));
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   const completed = new Blob(["completed"]);
   await act(() => hook.onPanePictureCaptured(pane, completed));
   expect(store.writes).toHaveLength(2);
@@ -155,6 +156,32 @@ it("keeps the last completed picture through streaming and saves the completed t
     revision: `u2|dark|${geometry(400)}`,
     image: completed,
   });
+});
+
+it("waits for committed detail to catch up with shell metadata before saving either picture path", async () => {
+  store.updatedAt = "u2";
+  await mount();
+  markPaneSynced(paneId, { updatedAt: "u1", theme: "dark" });
+  const element = { isConnected: true } as HTMLElement;
+  hook.onPanePictureCaptured(pane, new Blob(["old detail"]));
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(store.writes).toHaveLength(0);
+  expect(snapshot).not.toHaveBeenCalled();
+
+  markPaneSynced(paneId, { updatedAt: "u3", theme: "dark" });
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]?.revision).toBe(`u2|dark|${geometry(400)}`);
+
+  markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
+  hook.onPanePictureCaptured(pane, new Blob(["wrong theme"]));
+  expect(store.writes).toHaveLength(1);
 });
 
 it("keeps previously valid cover pixels while treating updated content as needing a fresh picture", async () => {
@@ -186,7 +213,7 @@ it("does not display an old persisted picture that was never valid in this sessi
 
 it("lets an accepted native capture suppress the pending fallback drawing", async () => {
   await mount();
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(async () => {
     hook.onPanePictureCaptured(pane, new Blob(["native"]));
@@ -201,7 +228,7 @@ it("lets an accepted native capture suppress the pending fallback drawing", asyn
 
 it("draws a fallback after the native grace period when no capture arrives", async () => {
   await mount();
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   hook.requestSnapshot(
     paneId,
     {
@@ -230,7 +257,7 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
   const replacement = new Blob(["replacement"]);
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   await act(() => hook.onPanePictureCaptured(pane, replacement));
   expect(hook.pictureFor(paneId)).toBe(replacement);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -238,7 +265,7 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
 
 it("does not draw pending pictures after the workspace unmounts", async () => {
   await mount();
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(() => renderer!.unmount());
   renderer = undefined;
@@ -249,7 +276,7 @@ it("does not draw pending pictures after the workspace unmounts", async () => {
 
 it("reuses a matching snapshot until a departed pane needs its scroll position refreshed", async () => {
   await mount();
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   const element = { isConnected: true } as HTMLElement;
   hook.requestSnapshot(paneId, element);
   await act(async () => {
@@ -271,7 +298,7 @@ it("reuses a matching snapshot until a departed pane needs its scroll position r
 it("waits until a running turn completes before drawing its fallback picture", async () => {
   store.running = true;
   await mount();
-  markPaneSynced(paneId, true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   const element = { isConnected: true } as HTMLElement;
   hook.requestSnapshot(paneId, element);
   await act(async () => {
@@ -282,6 +309,7 @@ it("waits until a running turn completes before drawing its fallback picture", a
   store.running = false;
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark" });
   hook.requestSnapshot(paneId, element);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3500);

@@ -22,7 +22,7 @@ import {
 } from "@t3tools/web/src/composerHandleContext";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
-import { useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
+import { useThreadDetail, useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { usePaneMounted } from "./paneLifecycle";
@@ -90,16 +90,28 @@ function usePaneContent(
 ): { mounted: boolean; preparing: boolean; picturable: string | null } {
   const mounted = usePaneMounted(paneId, visible);
   const shell = useThreadShell(thread);
+  const detail = useThreadDetail(mounted ? thread : null);
   const updatedAt = shell?.updatedAt ?? null;
+  const detailUpdatedAt = detail?.updatedAt ?? null;
   const status = useThreadStatus(thread);
   const synced = status === "live" || status === "deleted";
   const { theme, resolvedTheme } = useTheme();
-  const revision = `${updatedAt}|${theme}|${resolvedTheme}`;
-  useEffect(() => {
-    markPaneSynced(paneId, mounted && synced);
-    return () => markPaneSynced(paneId, false);
-  }, [mounted, paneId, synced]);
+  const running = shell?.latestTurn?.state === "running";
+  const nextContentRevision = `${updatedAt}|${detailUpdatedAt}`;
+  const [contentRevision, setContentRevision] = useState(nextContentRevision);
+  if (!running && contentRevision !== nextContentRevision) setContentRevision(nextContentRevision);
+  const revision = `${contentRevision}|${theme}|${resolvedTheme}`;
   const [settled, setSettled] = useState(false);
+
+  useLayoutEffect(() => {
+    markPaneSynced(
+      paneId,
+      mounted && synced && settled && detailUpdatedAt !== null
+        ? { updatedAt: detailUpdatedAt, theme: resolvedTheme }
+        : null,
+    );
+    return () => markPaneSynced(paneId, null);
+  }, [detailUpdatedAt, mounted, paneId, resolvedTheme, settled, synced]);
 
   useOnirigiriPaneContentReady(mounted && synced && settled, revision);
 
@@ -120,7 +132,15 @@ function usePaneContent(
     mounted,
     preparing: mounted && !settled,
     picturable:
-      mounted && settled && synced && shell?.latestTurn?.state !== "running" ? revision : null,
+      mounted &&
+      settled &&
+      synced &&
+      !running &&
+      detailUpdatedAt !== null &&
+      updatedAt !== null &&
+      detailUpdatedAt >= updatedAt
+        ? revision
+        : null,
   };
 }
 
