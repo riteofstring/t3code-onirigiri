@@ -1,30 +1,43 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
-/** Panes kept mounted around focus besides the visible ones. */
-const RING = 2;
+/** Neighbours of the focused pane prepared ahead of use. */
+const NEIGHBORS = 2;
 /** Most thread views mounted at once; the least recently wanted unmount first. */
 const MAX_MOUNTED = 8;
 /** Quiet time after focus or visibility changes before mounting follows them. */
 const SETTLE_MS = 200;
-/** Quiet time after a focus change before panes around it mount ahead of use. */
+/** Quiet time after a focus change before its neighbours are prepared. */
 const NEIGHBOR_SETTLE_MS = 600;
+/** Speculative mounts wait for this long without keyboard or pointer input. */
+const INPUT_QUIET_MS = 400;
+
+export interface PanePosition {
+  readonly paneId: string;
+  readonly plane: number;
+  readonly slot: number;
+}
+
+type Direction = "left" | "right" | "up" | "down";
 
 /**
- * Decides which thread panes mount a live ChatView: the focused pane, the
- * visible panes and the nearest ones around focus. Everything else is
- * unmounted and shown by its picture or card.
+ * Decides which thread panes mount a live ChatView.
  *
- * The focused and visible panes mount once focus and visibility have been
- * quiet for a moment, so a camera sweep across many panes does not mount each
- * one it passes. The panes around focus mount after focus has rested a little
- * longer, so moving to a neighbour usually lands on a pane that is already
- * live. Mounts
- * happen one at a time, each after the previous one has committed and the
- * page is idle.
+ * Once focus and visibility have been quiet for a moment the focused pane
+ * mounts at once, ahead of any other work; a camera sweep therefore mounts
+ * only where it stops. Visible panes and the focused pane's neighbours, the
+ * next one in the direction of travel first, are prepared speculatively: one
+ * at a time, each after the previous one has committed, only while the page is
+ * idle and input has been quiet. Navigation cancels speculative work that has
+ * not started yet.
  */
-export function createPaneLifecycleStore(order: readonly string[], focusedPaneId: string | null) {
-  let paneOrder = order;
-  let focused = focusedPaneId ?? order[0] ?? null;
+export function createPaneLifecycleStore(
+  initialPanes: readonly PanePosition[],
+  focusedPaneId: string | null,
+) {
+  let panes = new Map(initialPanes.map((pane) => [pane.paneId, pane]));
+  let focused =
+    focusedPaneId && panes.has(focusedPaneId) ? focusedPaneId : (initialPanes[0]?.paneId ?? null);
+  let direction: Direction | null = null;
   const visible = new Set<string>();
   const mounted = new Set<string>(focused ? [focused] : []);
   const lastWanted = new Map<string, number>();
@@ -32,9 +45,11 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
   let queue: string[] = [];
   let waitingFor: string | null = null;
   let idleCallback: number | null = null;
+  let quietTimer: ReturnType<typeof setTimeout> | null = null;
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
   let neighborTimer: ReturnType<typeof setTimeout> | null = null;
   let neighborsWanted = false;
+  let lastInput = 0;
   let clock = 0;
 
   const notify = (paneId: string) => {
@@ -49,8 +64,7 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
   };
 
   const unmount = (paneId: string) => {
-    if (!mounted.delete(paneId)) return;
-    notify(paneId);
+    if (mounted.delete(paneId)) notify(paneId);
   };
 
   // Keeps at most `limit` panes mounted, unmounting the least recently wanted
@@ -62,35 +76,89 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
     while (mounted.size > limit && evictable.length > 0) unmount(evictable.shift()!);
   };
 
+  const cancelSpeculation = () => {
+    queue = [];
+    if (idleCallback !== null) cancelIdleCallback(idleCallback);
+    if (quietTimer !== null) clearTimeout(quietTimer);
+    idleCallback = null;
+    quietTimer = null;
+  };
+
   const schedule = () => {
-    if (waitingFor !== null || idleCallback !== null || queue.length === 0) return;
+    if (waitingFor !== null || idleCallback !== null || quietTimer !== null) return;
+    if (queue.length === 0) return;
+    const sinceInput = performance.now() - lastInput;
+    if (sinceInput < INPUT_QUIET_MS) {
+      quietTimer = setTimeout(() => {
+        quietTimer = null;
+        schedule();
+      }, INPUT_QUIET_MS - sinceInput);
+      return;
+    }
     idleCallback = requestIdleCallback(advance, { timeout: 1000 });
   };
 
   const advance = () => {
     idleCallback = null;
+    if (performance.now() - lastInput < INPUT_QUIET_MS) {
+      schedule();
+      return;
+    }
     while (queue.length > 0) {
       const paneId = queue.shift()!;
-      if (mount(paneId)) {
+      if (panes.has(paneId) && mount(paneId)) {
         waitingFor = paneId;
         return;
       }
     }
   };
 
+  const nearestInDirection = (center: PanePosition, dir: Direction): string | null => {
+    const horizontal = dir === "left" || dir === "right";
+    let best: string | null = null;
+    let bestDistance = Infinity;
+    for (const pane of panes.values()) {
+      const dPlane = pane.plane - center.plane;
+      const dSlot = pane.slot - center.slot;
+      if (horizontal && dPlane !== 0) continue;
+      const along =
+        dir === "left" ? -dSlot : dir === "right" ? dSlot : dir === "up" ? -dPlane : dPlane;
+      if (along <= 0) continue;
+      const distance = along * 1000 + (horizontal ? 0 : Math.abs(dSlot));
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = pane.paneId;
+      }
+    }
+    return best;
+  };
+
+  // The panes adjacent to focus, the next one in the direction of travel first.
+  const neighbors = (): string[] => {
+    const center = focused ? panes.get(focused) : undefined;
+    if (!center) return [];
+    const order: Direction[] = ["right", "left", "down", "up"];
+    if (direction) order.unshift(direction);
+    const adjacent = order.map((dir) => nearestInDirection(center, dir));
+    return [...new Set(adjacent.filter((paneId) => paneId !== null))].slice(0, NEIGHBORS);
+  };
+
   const settle = () => {
+    if (settleTimer !== null) clearTimeout(settleTimer);
     settleTimer = null;
     clock += 1;
-    const wanted = [
-      ...new Set([
-        ...(focused ? [focused] : []),
-        ...paneOrder.filter((paneId) => visible.has(paneId)),
-        ...(neighborsWanted ? paneOrder.slice(0, RING + 1) : []),
-      ]),
-    ].slice(0, MAX_MOUNTED);
+    if (focused && panes.has(focused)) {
+      lastWanted.set(focused, clock);
+      mount(focused);
+    }
+    const speculative = [...new Set([...visible, ...(neighborsWanted ? neighbors() : [])])].filter(
+      (paneId) => paneId !== focused && panes.has(paneId),
+    );
+    const wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
     for (const paneId of wanted) lastWanted.set(paneId, clock);
-    queue = wanted.filter((paneId) => !mounted.has(paneId));
-    evictBeyond(MAX_MOUNTED - queue.length, new Set(wanted));
+    cancelSpeculation();
+    queue = speculative.filter((paneId) => wanted.has(paneId) && !mounted.has(paneId));
+    evictBeyond(MAX_MOUNTED - queue.length, wanted);
     schedule();
   };
 
@@ -108,6 +176,14 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
       settle();
     }, NEIGHBOR_SETTLE_MS);
   };
+
+  const noteInput = () => {
+    lastInput = performance.now();
+  };
+  const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
+  for (const type of inputEvents) {
+    window.addEventListener(type, noteInput, { capture: true, passive: true });
+  }
 
   restartNeighborWait();
 
@@ -127,21 +203,33 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
       waitingFor = null;
       schedule();
     },
-    setFocus: (nextOrder: readonly string[], nextFocusedPaneId: string | null) => {
-      paneOrder = nextOrder;
-      focused = nextFocusedPaneId ?? focused;
-      if (focused) lastWanted.set(focused, ++clock);
+    setFocus: (paneId: string) => {
+      const from = focused ? panes.get(focused) : undefined;
+      const to = panes.get(paneId);
+      if (!to || paneId === focused) return;
+      if (from) {
+        direction =
+          to.plane === from.plane
+            ? to.slot > from.slot
+              ? "right"
+              : "left"
+            : to.plane > from.plane
+              ? "down"
+              : "up";
+      }
+      focused = paneId;
+      cancelSpeculation();
       restartNeighborWait();
       requestSettle();
     },
     /** Follows the workspace's panes as threads come and go. */
-    setPanes: (nextOrder: readonly string[]) => {
-      paneOrder = nextOrder;
-      const present = new Set(nextOrder);
-      for (const paneId of mounted) if (!present.has(paneId)) mounted.delete(paneId);
-      for (const paneId of visible) if (!present.has(paneId)) visible.delete(paneId);
-      queue = queue.filter((paneId) => present.has(paneId));
-      if (waitingFor !== null && !present.has(waitingFor)) {
+    setPanes: (nextPanes: readonly PanePosition[]) => {
+      panes = new Map(nextPanes.map((pane) => [pane.paneId, pane]));
+      for (const paneId of mounted) if (!panes.has(paneId)) mounted.delete(paneId);
+      for (const paneId of visible) if (!panes.has(paneId)) visible.delete(paneId);
+      if (focused && !panes.has(focused)) focused = null;
+      queue = queue.filter((paneId) => panes.has(paneId));
+      if (waitingFor !== null && !panes.has(waitingFor)) {
         waitingFor = null;
         schedule();
       }
@@ -152,6 +240,14 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
       if (isVisible) visible.add(paneId);
       else visible.delete(paneId);
       requestSettle();
+    },
+    dispose: () => {
+      cancelSpeculation();
+      if (settleTimer !== null) clearTimeout(settleTimer);
+      if (neighborTimer !== null) clearTimeout(neighborTimer);
+      for (const type of inputEvents) {
+        window.removeEventListener(type, noteInput, { capture: true });
+      }
     },
   };
 }

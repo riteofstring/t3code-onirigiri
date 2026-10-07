@@ -16,7 +16,7 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
+import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
@@ -52,23 +52,14 @@ function readWorkspaceOptions() {
   };
 }
 
-// Thread panes nearest the focused one first.
-function threadPanesByDistance(
-  panes: readonly OnirigiriPaneDefinition[],
-  focusedPaneId: string | null,
-): readonly string[] {
-  const threads = panes.filter((pane) => pane.surfaceKind === "thread");
-  const focused = threads.find((pane) => pane.paneId === focusedPaneId) ?? threads[0];
-  if (!focused) return [];
-  const distance = (pane: OnirigiriPaneDefinition) => [
-    Math.abs((pane.planeIndex ?? 0) - (focused.planeIndex ?? 0)) +
-      Math.abs((pane.slotIndex ?? 0) - (focused.slotIndex ?? 0)),
-    Math.abs((pane.planeIndex ?? 0) - (focused.planeIndex ?? 0)),
-  ];
-  return threads
-    .map((pane) => ({ paneId: pane.paneId, key: distance(pane) }))
-    .toSorted((a, b) => a.key[0]! - b.key[0]! || a.key[1]! - b.key[1]!)
-    .map((pane) => pane.paneId);
+function threadPanePositions(panes: readonly OnirigiriPaneDefinition[]): PanePosition[] {
+  return panes
+    .filter((pane) => pane.surfaceKind === "thread")
+    .map((pane) => ({
+      paneId: pane.paneId,
+      plane: pane.planeIndex ?? 0,
+      slot: pane.slotIndex ?? 0,
+    }));
 }
 
 function paneMembership(panes: readonly OnirigiriPaneDefinition[]) {
@@ -112,9 +103,7 @@ export function SpatialWorkspace({
     null,
   );
   if (lifecycle === null && initialPanes !== null) {
-    setLifecycle(
-      createPaneLifecycleStore(threadPanesByDistance(initialPanes, routePaneId), routePaneId),
-    );
+    setLifecycle(createPaneLifecycleStore(threadPanePositions(initialPanes), routePaneId));
   }
 
   // Threads appearing, leaving or moving rebuild the arrangement around the
@@ -151,9 +140,10 @@ export function SpatialWorkspace({
     }
   }, [layoutMode, panes]);
 
+  useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useEffect(() => {
     if (panes && lifecycle) {
-      lifecycle.setPanes(threadPanesByDistance(panes, focusedPaneIdRef.current));
+      lifecycle.setPanes(threadPanePositions(panes));
     }
   }, [lifecycle, panes]);
 
@@ -188,7 +178,7 @@ export function SpatialWorkspace({
       if (!data) return;
       const paneId = frame.paneId;
       focusedPaneIdRef.current = paneId;
-      lifecycle?.setFocus(threadPanesByDistance(panesRef.current ?? [], paneId), paneId);
+      lifecycle?.setFocus(paneId);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       routeTimerRef.current = setTimeout(() => {
         routeTimerRef.current = null;

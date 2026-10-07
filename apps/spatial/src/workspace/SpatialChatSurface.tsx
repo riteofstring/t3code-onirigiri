@@ -3,6 +3,10 @@ import { useLocation } from "@tanstack/react-router";
 import type { ChatSurfaceProps } from "@t3tools/web/src/components/chatSurface";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { SidebarInset } from "@t3tools/web/src/components/ui/sidebar";
+import {
+  useAllEnvironmentShellsBootstrapped,
+  useThreadShells,
+} from "@t3tools/web/src/state/entities";
 
 import { SpatialWorkspace } from "./SpatialWorkspace";
 
@@ -10,14 +14,18 @@ import { SpatialWorkspace } from "./SpatialWorkspace";
  * The chat area of T3's shell. The workspace shows every chat route except a
  * draft and the pull-requests page, which cover it while it stays mounted.
  * The app's index shows the workspace, whose focus then sets the route,
- * rather than T3's landing draft.
+ * rather than T3's landing draft; with no threads at all it shows T3's own
+ * landing, which starts one.
  */
 function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
   const onOtherPage = useLocation({
     select: (location) => location.pathname.startsWith("/pull-requests"),
   });
   const threadTarget = target?.kind === "server" ? target : null;
-  const workspaceShown = target?.kind !== "draft" && !onOtherPage;
+  const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const hasThreads = useThreadShells().some((thread) => thread.archivedAt === null);
+  const workspaceShown =
+    target?.kind !== "draft" && !onOtherPage && (target !== null || !bootstrapped || hasThreads);
   return (
     <>
       <SidebarInset
