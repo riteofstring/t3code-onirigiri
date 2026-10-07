@@ -19,6 +19,12 @@ import {
 export interface ChatViewActivity {
   readonly isActive: () => boolean;
   readonly subscribe: (listener: () => void) => () => void;
+  /**
+   * Whether becoming active, or the window regaining focus, moves focus into
+   * the composer. A host whose arrow keys navigate between views turns this
+   * off; typing still reaches the composer through type-to-focus.
+   */
+  readonly autofocusComposer?: boolean;
 }
 
 const alwaysActive: ChatViewActivity = {

@@ -54,6 +54,7 @@ function createPaneActivity(initial: boolean) {
   let active = initial;
   const listeners = new Set<() => void>();
   const activity: ChatViewActivity & { set: (next: boolean) => void } = {
+    autofocusComposer: false,
     isActive: () => active,
     subscribe: (listener) => {
       listeners.add(listener);
@@ -153,9 +154,16 @@ export const ThreadPane = memo(function ThreadPane({
   const appComposerRef = useComposerHandleContext();
   const paneComposerRef = useRef<ChatComposerHandle | null>(null);
 
+  // A pane that stops being active gives up keyboard focus, so typing and
+  // workspace navigation reach the active pane rather than this one.
+  const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     activity.set(active);
     if (active && appComposerRef) appComposerRef.current = paneComposerRef.current;
+    const focused = document.activeElement;
+    if (!active && focused instanceof HTMLElement && contentRef.current?.contains(focused)) {
+      focused.blur();
+    }
   }, [active, activity, appComposerRef]);
 
   useEffect(
@@ -172,6 +180,7 @@ export const ThreadPane = memo(function ThreadPane({
     <ChatViewActivityContext value={activity}>
       <ComposerHandleContext value={paneComposerRef}>
         <div
+          ref={contentRef}
           className="spatial-thread-pane h-full w-full"
           data-spatial-thread={thread.threadId}
           data-spatial-active={String(active)}
