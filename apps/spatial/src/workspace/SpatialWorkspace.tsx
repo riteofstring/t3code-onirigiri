@@ -127,6 +127,10 @@ export function SpatialWorkspace({
   const router = useRouter();
   const [{ layout: layoutMode }] = useState(readWorkspaceOptions);
   const { toolPanes, addEmpty, choose, remove } = useToolPanes();
+  const toolPanesRef = useRef(toolPanes);
+  useEffect(() => {
+    toolPanesRef.current = toolPanes;
+  }, [toolPanes]);
   const panes = useWorkspacePanes(layoutMode, toolPanes);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
@@ -188,6 +192,9 @@ export function SpatialWorkspace({
         panes.find((pane) => pane.paneId === pendingFocusPaneIdRef.current) ??
         panes.find((pane) => pane.paneId === focusedPaneIdRef.current) ??
         panes.find((pane) => pane.surfaceKind === "thread");
+      const added = panes.some((pane) => pane.paneId === pendingFocusPaneIdRef.current)
+        ? pendingFocusPaneIdRef.current
+        : null;
       pendingFocusPaneIdRef.current = null;
       const layout = serializeWorkspaceLayout(scene, {
         column: focused?.slotIndex ?? 0,
@@ -197,6 +204,10 @@ export function SpatialWorkspace({
       workspace.restoreLayout(keepColumnWidths(layout, workspace.getScene()), {
         keepPresentation: true,
       });
+      // A pane just added is for using now: leave overview to show it.
+      if (added && workspace.getSnapshot().presentationMode === "overview") {
+        workspace.focusPane(added, { exitOverview: true });
+      }
       return;
     }
     const previousById = new Map(previous.map((pane) => [pane.paneId, pane]));
@@ -264,16 +275,19 @@ export function SpatialWorkspace({
       if (!frame || frame.paneId === focusedPaneIdRef.current || !activeRef.current) return;
       const paneId = frame.paneId;
       focusedPaneIdRef.current = paneId;
-      const data = paneData.get(paneId);
+      // A terminal or diff pane acts for its thread, which the route follows.
+      const tool = toolPanesRef.current.find((pane) => pane.paneId === paneId);
+      const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
+      const data = paneData.get(routeTarget);
       if (!data) return;
-      lifecycle?.setFocus(paneId);
+      if (!tool) lifecycle?.setFocus(paneId);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       const follow = () => {
         if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
         routeTimerRef.current = null;
         pendingRouteRef.current = null;
-        if (paneId === routePaneIdRef.current || focusedPaneIdRef.current !== paneId) return;
-        requestedRoutesRef.current.add(paneId);
+        if (routeTarget === routePaneIdRef.current || focusedPaneIdRef.current !== paneId) return;
+        requestedRoutesRef.current.add(routeTarget);
         void router.navigate({ to: "/$environmentId/$threadId", params: data });
       };
       pendingRouteRef.current = follow;
@@ -375,6 +389,38 @@ export function SpatialWorkspace({
     );
   }, [addEmpty, paneData, toolPanes]);
 
+  // Terminals consume the keys they receive, so the Control+Option moves
+  // that work while typing are taken before a terminal pane sees them.
+  useEffect(() => {
+    if (!active) return;
+    const directions: Record<string, "left" | "right" | "up" | "down"> = {
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      ArrowUp: "up",
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      if (
+        !(target instanceof Element) ||
+        !target.closest('[data-onirigiri-surface-kind="terminal"]')
+      ) {
+        return;
+      }
+      const direction = directions[event.key];
+      if (!direction && event.code !== "KeyO") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (target instanceof HTMLElement) target.blur();
+      const workspace = workspaceRef.current;
+      if (direction) workspace?.focus(direction);
+      else workspace?.toggleOverview();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [active]);
+
   useEffect(() => {
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -420,6 +466,7 @@ export function SpatialWorkspace({
         return (
           <EmptyPane
             threadTitle={pane.subtitle}
+            focused={state.focused}
             onChoose={(kind) => choose(pane.paneId, kind)}
             onClose={() => void workspaceRef.current?.closePane(pane.paneId)}
           />

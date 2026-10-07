@@ -8,10 +8,11 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { Suspense, createContext, use, useState } from "react";
+import { Suspense, createContext, use, useMemo, useState } from "react";
 
 import DiffPanel from "@t3tools/web/src/components/DiffPanel";
 import { TerminalViewport } from "@t3tools/web/src/components/ThreadTerminalDrawer";
+import { latestWorkspaceMutationId } from "@t3tools/web/src/hooks/useWorkspaceMutationRefresh";
 import { useProject, useThread } from "@t3tools/web/src/state/entities";
 import { primaryServerKeybindingsAtom } from "@t3tools/web/src/state/server";
 
@@ -66,12 +67,34 @@ export function TerminalPane({
 
 const DiffThreadContext = createContext<SidePaneThread | null>(null);
 
+// The same revision ChatView gives its diff, so agent edits refresh the pane.
+function useWorkspaceMutationId(thread: SidePaneThread): string | null {
+  const detail = useThread(thread);
+  const activities = detail?.activities;
+  const latestCheckpointCompletedAt = detail?.checkpoints.at(-1)?.completedAt ?? null;
+  return useMemo(() => {
+    const activityId = activities ? latestWorkspaceMutationId(activities) : null;
+    return activityId === null && latestCheckpointCompletedAt === null
+      ? null
+      : JSON.stringify([activityId, latestCheckpointCompletedAt]);
+  }, [activities, latestCheckpointCompletedAt]);
+}
+
 function DiffThreadRoute() {
   const thread = use(DiffThreadContext);
   if (!thread) return null;
+  return <DiffThreadPanel thread={thread} />;
+}
+
+function DiffThreadPanel({ thread }: { thread: SidePaneThread }) {
+  const workspaceMutationId = useWorkspaceMutationId(thread);
   return (
     <Suspense fallback={null}>
-      <DiffPanel mode="embedded" composerDraftTarget={thread} workspaceMutationId={null} />
+      <DiffPanel
+        mode="embedded"
+        composerDraftTarget={thread}
+        workspaceMutationId={workspaceMutationId}
+      />
     </Suspense>
   );
 }

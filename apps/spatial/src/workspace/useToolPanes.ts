@@ -1,5 +1,7 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+import { PANE_TERMINAL_ID_PREFIX } from "@t3tools/web/src/terminalOwnership";
 
 const STORAGE_KEY = "onirigiri-t3:tool-panes";
 
@@ -17,10 +19,32 @@ export interface ToolPane {
   readonly terminalId?: string;
 }
 
+function isToolPane(value: unknown): value is ToolPane {
+  if (typeof value !== "object" || value === null) return false;
+  const pane = value as Record<string, unknown>;
+  const kindValid =
+    pane.kind === "empty" ||
+    pane.kind === "diff" ||
+    (pane.kind === "terminal" && typeof pane.terminalId === "string");
+  return (
+    kindValid &&
+    typeof pane.paneId === "string" &&
+    typeof pane.environmentId === "string" &&
+    typeof pane.threadId === "string"
+  );
+}
+
+// Stored records that are malformed or repeat a pane are dropped.
 function readToolPanes(): ToolPane[] {
   try {
     const stored: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
-    return Array.isArray(stored) ? (stored as ToolPane[]) : [];
+    if (!Array.isArray(stored)) return [];
+    const seen = new Set<string>();
+    return stored.filter((pane): pane is ToolPane => {
+      if (!isToolPane(pane) || seen.has(pane.paneId)) return false;
+      seen.add(pane.paneId);
+      return true;
+    });
   } catch {
     return [];
   }
@@ -37,18 +61,15 @@ function writeToolPanes(panes: readonly ToolPane[]) {
 let created = 0;
 function newId(prefix: string) {
   created += 1;
-  return `${prefix}-${Date.now().toString(36)}-${created}`;
+  return `${prefix}${Date.now().toString(36)}-${created}`;
 }
 
 /** The panes the user added, in order, remembered across reloads. */
 export function useToolPanes() {
   const [toolPanes, setToolPanes] = useState(readToolPanes);
+  useEffect(() => writeToolPanes(toolPanes), [toolPanes]);
   const update = useCallback((change: (panes: readonly ToolPane[]) => ToolPane[]) => {
-    setToolPanes((current) => {
-      const next = change(current);
-      writeToolPanes(next);
-      return next;
-    });
+    setToolPanes((current) => change(current));
   }, []);
 
   /**
@@ -57,7 +78,7 @@ export function useToolPanes() {
    */
   const addEmpty = useCallback(
     (thread: { environmentId: EnvironmentId; threadId: ThreadId }, afterPaneId: string | null) => {
-      const pane: ToolPane = { paneId: newId("tool"), kind: "empty", ...thread };
+      const pane: ToolPane = { paneId: newId("tool-"), kind: "empty", ...thread };
       update((current) => {
         const after = current.findIndex((existing) => existing.paneId === afterPaneId);
         const first = current.findIndex(
@@ -76,11 +97,10 @@ export function useToolPanes() {
   /** Turns an empty pane into a terminal or the thread's diff. */
   const choose = useCallback(
     (paneId: string, kind: "terminal" | "diff") => {
+      const terminalId = kind === "terminal" ? newId(PANE_TERMINAL_ID_PREFIX) : undefined;
       update((current) =>
         current.map((pane) =>
-          pane.paneId === paneId
-            ? { ...pane, kind, ...(kind === "terminal" ? { terminalId: newId("spatial") } : {}) }
-            : pane,
+          pane.paneId === paneId ? { ...pane, kind, ...(terminalId ? { terminalId } : {}) } : pane,
         ),
       );
     },
