@@ -75,7 +75,14 @@ function paneMembership(panes: readonly OnirigiriPaneDefinition[]) {
   return panes.map((pane) => `${pane.paneId}@${pane.planeIndex}:${pane.slotIndex}`).join("|");
 }
 
-export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null }) {
+export function SpatialWorkspace({
+  target,
+  active,
+}: {
+  target: ThreadRouteTarget | null;
+  /** False while a draft or another route covers the workspace. */
+  active: boolean;
+}) {
   const router = useRouter();
   const [{ layout: layoutMode, sidesThreadId }] = useState(readWorkspaceOptions);
   const panes = useWorkspacePanes(layoutMode, sidesThreadId);
@@ -94,6 +101,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     return byPaneId;
   }, [panes]);
   const panesRef = useRef(panes);
+  const activeRef = useRef(active);
 
   const routePaneId =
     target?.kind === "server"
@@ -143,6 +151,12 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
     }
   }, [layoutMode, panes]);
 
+  useEffect(() => {
+    if (panes && lifecycle) {
+      lifecycle.setPanes(threadPanesByDistance(panes, focusedPaneIdRef.current));
+    }
+  }, [lifecycle, panes]);
+
   // The app route follows the focused thread once the camera rests, so T3's
   // global surfaces act on it. Routes this workspace requested are remembered
   // so they are not mistaken for a navigation elsewhere in the app, which
@@ -150,9 +164,16 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
   const requestedRoutesRef = useRef(new Set<string>());
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routePaneIdRef = useRef(routePaneId);
+  // A route change made elsewhere, or covering the workspace, supersedes a
+  // pending follow of the camera.
   useEffect(() => {
     routePaneIdRef.current = routePaneId;
-  }, [routePaneId]);
+    activeRef.current = active;
+    if (routeTimerRef.current !== null) {
+      clearTimeout(routeTimerRef.current);
+      routeTimerRef.current = null;
+    }
+  }, [routePaneId, active]);
   useEffect(
     () => () => {
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
@@ -162,7 +183,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
 
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null) => {
-      if (!frame || frame.paneId === focusedPaneIdRef.current) return;
+      if (!frame || frame.paneId === focusedPaneIdRef.current || !activeRef.current) return;
       const data = paneData.get(frame.paneId);
       if (!data) return;
       const paneId = frame.paneId;
@@ -259,7 +280,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
             onFocusedPaneFrame={onFocusedPaneFrame}
             renderPane={renderPane}
             renderPanePlaceholder={renderPanePlaceholder}
-            shortcutScope="application"
+            shortcutScope={active ? "application" : "workspace"}
             shortcuts={SHORTCUTS}
             workspaceId={WORKSPACE_ID}
           />

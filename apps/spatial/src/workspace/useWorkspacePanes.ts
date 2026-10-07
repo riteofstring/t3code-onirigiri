@@ -122,8 +122,15 @@ export function useWorkspacePanes(
   }
 
   return useMemo(() => {
-    const layout = arrangement.layout;
-    if (!layout) return null;
+    if (!arrangement.layout) return null;
+    // Rows keep their panes' places but follow the sidebar's project order.
+    const groupOrder = new Map(groups.map((group, index) => [group.projectKey, index]));
+    const layout = {
+      rows: arrangement.layout.rows.toSorted(
+        (a, b) =>
+          (groupOrder.get(a.projectId) ?? Infinity) - (groupOrder.get(b.projectId) ?? Infinity),
+      ),
+    };
     const threadByKey = new Map(
       threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
     );

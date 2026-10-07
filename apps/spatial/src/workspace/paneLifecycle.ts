@@ -47,6 +47,20 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
     return true;
   };
 
+  const unmount = (paneId: string) => {
+    if (!mounted.delete(paneId)) return;
+    notify(paneId);
+  };
+
+  // Keeps at most `limit` panes mounted, unmounting the least recently wanted
+  // ones that are not in `keep`.
+  const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
+    const evictable = [...mounted]
+      .filter((paneId) => !keep.has(paneId))
+      .toSorted((a, b) => (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0));
+    while (mounted.size > limit && evictable.length > 0) unmount(evictable.shift()!);
+  };
+
   const schedule = () => {
     if (waitingFor !== null || idleCallback !== null || queue.length === 0) return;
     idleCallback = requestIdleCallback(advance, { timeout: 1000 });
@@ -75,14 +89,7 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
     ].slice(0, MAX_MOUNTED);
     for (const paneId of wanted) lastWanted.set(paneId, clock);
     queue = wanted.filter((paneId) => !mounted.has(paneId));
-    const evictable = [...mounted]
-      .filter((paneId) => !wanted.includes(paneId))
-      .toSorted((a, b) => (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0));
-    while (mounted.size + queue.length > MAX_MOUNTED && evictable.length > 0) {
-      const paneId = evictable.shift()!;
-      mounted.delete(paneId);
-      notify(paneId);
-    }
+    evictBeyond(MAX_MOUNTED - queue.length, new Set(wanted));
     schedule();
   };
 
@@ -125,8 +132,22 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
       if (focused) {
         lastWanted.set(focused, ++clock);
         mount(focused);
+        evictBeyond(MAX_MOUNTED, new Set([focused]));
       }
       restartNeighborWait();
+      requestSettle();
+    },
+    /** Follows the workspace's panes as threads come and go. */
+    setPanes: (nextOrder: readonly string[]) => {
+      paneOrder = nextOrder;
+      const present = new Set(nextOrder);
+      for (const paneId of mounted) if (!present.has(paneId)) mounted.delete(paneId);
+      for (const paneId of visible) if (!present.has(paneId)) visible.delete(paneId);
+      queue = queue.filter((paneId) => present.has(paneId));
+      if (waitingFor !== null && !present.has(waitingFor)) {
+        waitingFor = null;
+        schedule();
+      }
       requestSettle();
     },
     setVisible: (paneId: string, isVisible: boolean) => {
