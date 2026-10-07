@@ -42,7 +42,7 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
   toggleOverview: [...defaultOnirigiriShortcuts.toggleOverview, whileEditing("o")],
 };
 /** Quiet time after a focus change before the app route follows it. */
-const ROUTE_SETTLE_MS = 150;
+const ROUTE_SETTLE_MS = 450;
 
 function readWorkspaceOptions() {
   const search = new URLSearchParams(window.location.search);
