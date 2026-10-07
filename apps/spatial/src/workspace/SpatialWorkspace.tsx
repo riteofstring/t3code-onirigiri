@@ -201,14 +201,29 @@ export function SpatialWorkspace({
       return;
     }
     pendingRoutePaneRef.current = null;
-    if (focusedPaneIdRef.current !== paneId) {
-      workspaceRef.current?.focusPane(paneId, { exitOverview: true });
-    }
+    workspaceRef.current?.focusPane(paneId, { exitOverview: true });
   });
 
   useEffect(() => {
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
+
+  // Selecting the thread the route already shows changes no route, but still
+  // asks for its pane: in overview, or while the camera rests elsewhere.
+  useEffect(
+    () =>
+      router.subscribe("onBeforeNavigate", (event) => {
+        if (event.hrefChanged) return;
+        const match = router
+          .matchRoutes(event.toLocation)
+          .find((routeMatch) => routeMatch.routeId === "/_chat/$environmentId/$threadId");
+        const params = match?.params as { environmentId?: string; threadId?: string } | undefined;
+        if (params?.environmentId && params.threadId) {
+          focusRoutePane(threadPaneId(params.environmentId, params.threadId));
+        }
+      }),
+    [router],
+  );
 
   useEffect(() => {
     const pending = pendingRoutePaneRef.current;
