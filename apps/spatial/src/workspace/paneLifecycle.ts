@@ -10,6 +10,11 @@ const SETTLE_MS = 200;
 const NEIGHBOR_SETTLE_MS = 600;
 /** Speculative mounts wait for this long without keyboard or pointer input. */
 const INPUT_QUIET_MS = 400;
+/** How long a pane mounted only to be pictured may take before it is let go. */
+const PICTURE_TIMEOUT_MS = 10_000;
+/** Background pictures wait this long after input, and this long after each other. */
+const PICTURE_INPUT_QUIET_MS = 3000;
+const PICTURE_GAP_MS = 4000;
 
 export interface PanePosition {
   readonly paneId: string;
@@ -28,7 +33,9 @@ type Direction = "left" | "right" | "up" | "down";
  * direction of travel first, and then visible panes without a picture are
  * prepared speculatively: one
  * at a time, each after the previous one has committed, only while the page is
- * idle and input has been quiet. Navigation cancels speculative work that has
+ * idle and input has been quiet. When nothing else is wanted, panes without a
+ * picture are mounted the same way, nearest first, until they are pictured.
+ * Navigation cancels speculative work that has
  * not started yet.
  */
 export function createPaneLifecycleStore(
@@ -54,6 +61,12 @@ export function createPaneLifecycleStore(
   let lastInput = 0;
   let clock = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
+  // A pane mounted only so it can be pictured, and the panes already tried.
+  let picturing: { paneId: string; since: number } | null = null;
+  const pictureAttempted = new Set<string>();
+  let pictureTimer: ReturnType<typeof setTimeout> | null = null;
+  let backgroundPictures = false;
+  let nextPictureAt = 0;
 
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
@@ -83,13 +96,50 @@ export function createPaneLifecycleStore(
     queue = [];
     if (idleCallback !== null) cancelIdleCallback(idleCallback);
     if (quietTimer !== null) clearTimeout(quietTimer);
+    if (pictureTimer !== null) clearTimeout(pictureTimer);
     idleCallback = null;
     quietTimer = null;
+    pictureTimer = null;
+  };
+
+  // The nearest pane to focus that has no picture and was not tried yet.
+  const nextToPicture = (): string | null => {
+    if (!backgroundPictures) return null;
+    const center = focused ? panes.get(focused) : undefined;
+    let best: string | null = null;
+    let bestDistance = Infinity;
+    for (const pane of panes.values()) {
+      if (mounted.has(pane.paneId) || pictureAttempted.has(pane.paneId)) continue;
+      if (hasPicture(pane.paneId)) continue;
+      const distance = center
+        ? Math.abs(pane.plane - center.plane) * 1000 + Math.abs(pane.slot - center.slot)
+        : 0;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = pane.paneId;
+      }
+    }
+    return best;
+  };
+
+  // Lets go of the pane being pictured once it has a picture or took too long;
+  // true while it is still being pictured.
+  const picturingPending = () => {
+    if (!picturing) return false;
+    const { paneId, since } = picturing;
+    const done =
+      hasPicture(paneId) || !panes.has(paneId) || performance.now() - since > PICTURE_TIMEOUT_MS;
+    if (!done) return true;
+    if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
+    picturing = null;
+    nextPictureAt = performance.now() + PICTURE_GAP_MS;
+    return false;
   };
 
   const schedule = () => {
     if (waitingFor !== null || idleCallback !== null || quietTimer !== null) return;
-    if (queue.length === 0) return;
+    if (pictureTimer !== null) return;
+    if (queue.length === 0 && picturing === null && nextToPicture() === null) return;
     const sinceInput = performance.now() - lastInput;
     if (sinceInput < INPUT_QUIET_MS) {
       quietTimer = setTimeout(() => {
@@ -115,6 +165,32 @@ export function createPaneLifecycleStore(
       waitingFor = paneId;
       return;
     }
+    // With nothing likely to be needed soon, panes without a picture are
+    // mounted one at a time so they can be pictured, nearest first.
+    const waitForPicture = (ms: number) => {
+      pictureTimer = setTimeout(() => {
+        pictureTimer = null;
+        schedule();
+      }, ms);
+    };
+    if (picturingPending()) {
+      waitForPicture(1000);
+      return;
+    }
+    const paneId = nextToPicture();
+    if (paneId === null) return;
+    const now = performance.now();
+    const wait = Math.max(nextPictureAt - now, lastInput + PICTURE_INPUT_QUIET_MS - now);
+    if (wait > 0) {
+      waitForPicture(wait);
+      return;
+    }
+    evictBeyond(MAX_MOUNTED - 1, wanted);
+    if (mounted.size >= MAX_MOUNTED) return;
+    pictureAttempted.add(paneId);
+    mount(paneId);
+    picturing = { paneId, since: performance.now() };
+    waitingFor = paneId;
   };
 
   const nearestInDirection = (center: PanePosition, dir: Direction): string | null => {
@@ -249,6 +325,11 @@ export function createPaneLifecycleStore(
       }
       requestSettle();
     },
+    /** Whether panes without a picture are mounted in the background to picture them. */
+    setBackgroundPictures: (enabled: boolean) => {
+      backgroundPictures = enabled;
+      requestSettle();
+    },
     /** Tells which panes a picture shows faithfully while they are not mounted. */
     setPictures: (pictured: (paneId: string) => boolean) => {
       hasPicture = pictured;
@@ -262,6 +343,7 @@ export function createPaneLifecycleStore(
     },
     dispose: () => {
       cancelSpeculation();
+      picturing = null;
       if (settleTimer !== null) clearTimeout(settleTimer);
       if (neighborTimer !== null) clearTimeout(neighborTimer);
       for (const type of inputEvents) {

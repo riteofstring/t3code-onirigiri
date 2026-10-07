@@ -39,6 +39,7 @@ function mountedOf(store: ReturnType<typeof createPaneLifecycleStore>, panes: Pa
 it("mounts the focused pane at once and its neighbours after a rest", () => {
   const panes = row(6);
   const store = createPaneLifecycleStore(panes, "p0-2");
+  store.setPictures((paneId) => paneId !== "p0-1" && paneId !== "p0-3");
   expect(mountedOf(store, panes)).toEqual(["p0-2"]);
   drain(store, panes);
   expect(mountedOf(store, panes)).toEqual(["p0-1", "p0-2", "p0-3"]);
@@ -48,6 +49,7 @@ it("mounts the focused pane at once and its neighbours after a rest", () => {
 it("prepares the next pane in the direction of travel even with many panes on screen", () => {
   const panes = [...row(4, 0), ...row(12, 1)];
   const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId.startsWith("p0-") && paneId !== "p0-2");
   for (const { paneId } of row(12, 1)) store.setVisible(paneId, true);
   store.setFocus("p0-1");
   drain(store, panes);
@@ -62,6 +64,7 @@ it("keeps at most eight views, unmounting the least recently wanted only to make
   const panes = row(20);
   const store = createPaneLifecycleStore(panes, "p0-0");
   for (let slot = 1; slot < 12; slot++) {
+    store.setPictures((paneId) => paneId !== `p0-${slot + 1}` && paneId !== `p0-${slot - 1}`);
     store.setFocus(`p0-${slot}`);
     drain(store, panes);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
@@ -95,5 +98,35 @@ it("prepares only the next pictured neighbour in the direction of travel", () =>
   store.setFocus("p0-3");
   drain(store, panes);
   expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3", "p0-4"]);
+  store.dispose();
+});
+
+it("mounts panes without a picture one at a time to picture them, then lets them go", () => {
+  const panes = row(5);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const pictured = new Set(["p0-0", "p0-1"]);
+  store.setPictures((paneId) => pictured.has(paneId));
+  store.setBackgroundPictures(true);
+  const step = (ms: number) => {
+    for (let elapsed = 0; elapsed < ms; elapsed += 500) {
+      vi.advanceTimersByTime(500);
+      for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+    }
+  };
+  step(5000);
+  // The nearest unpictured pane is mounted and waits for its picture.
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2"]);
+  pictured.add("p0-2");
+  store.setPictures((paneId) => pictured.has(paneId));
+  step(1000);
+  // The next one waits a moment after the last.
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
+  step(6000);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
+  // A pane that never gets a picture is let go after a while and not retried.
+  step(12_000);
+  expect(store.isMounted("p0-3")).toBe(false);
+  step(60_000);
+  expect(store.isMounted("p0-3")).toBe(false);
   store.dispose();
 });

@@ -9,7 +9,7 @@ import {
   createRouter,
   useParams,
 } from "@tanstack/react-router";
-import { memo, use, useEffect, useRef, useState } from "react";
+import { memo, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   ChatViewActivityContext,
@@ -169,6 +169,19 @@ export const ThreadPane = memo(function ThreadPane({
       focused.blur();
     }
   }, [active, activity, appComposerRef]);
+
+  // Onirigiri skips laying out content off screen. A view mounted there, to
+  // be prepared or pictured, is laid out anyway so it renders and measures as
+  // it will when shown.
+  useLayoutEffect(() => {
+    if (!mounted || visible) return;
+    const host = contentRef.current?.closest<HTMLElement>(".onirigiri-pane__live-content");
+    if (!host) return;
+    host.style.contentVisibility = "visible";
+    return () => {
+      host.style.contentVisibility = "";
+    };
+  }, [mounted, visible]);
 
   // A settled, synchronized view is pictured for when it is not mounted, and
   // again when it stops being active, in case it was scrolled meanwhile.

@@ -185,6 +185,14 @@ export function SpatialWorkspace({
   useEffect(() => {
     lifecycle?.setPictures((paneId) => pictureFor(paneId) !== null);
   }, [lifecycle, pictureFor]);
+  // Panes off screen are laid out only where the browser supports
+  // HTML-in-Canvas, so only there can they be pictured without being shown.
+  useEffect(() => {
+    lifecycle?.setBackgroundPictures(
+      typeof (CanvasRenderingContext2D.prototype as { drawElementImage?: unknown })
+        .drawElementImage === "function",
+    );
+  }, [lifecycle]);
   useEffect(() => {
     if (panes && lifecycle) {
       lifecycle.setPanes(threadPanePositions(panes));
