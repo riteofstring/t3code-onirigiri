@@ -268,7 +268,7 @@ import {
   useClientSettingsHydrated,
   useEnvironmentSettings,
 } from "../hooks/useSettings";
-import { useNowMinute } from "../hooks/useNowMinute";
+import { useInstantReached } from "../hooks/useInstantReached";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
@@ -405,7 +405,7 @@ import { ComposerSurface } from "./chat/ComposerSurface";
 import {
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
-  shouldOfferResumeCompaction,
+  resumeCompactionOfferAt,
 } from "./chat/ContextWindowMeter.logic";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
 import {
@@ -6037,7 +6037,6 @@ export default function ChatView(props: ChatViewProps) {
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
   const activeThreadPinned = supportsPinning && activeThreadShell?.pinnedAt != null;
-  const nowMinute = useNowMinute();
   const snoozeNow = new Date().toISOString();
   const activeThreadSnoozed =
     activeThreadShell !== null &&
@@ -6433,6 +6432,16 @@ export default function ChatView(props: ChatViewProps) {
         ? "Compaction is unavailable for this provider"
         : "Compacting is unavailable right now"
     : null;
+  // Only the instant the offer becomes due re-renders the view, not a clock.
+  const resumeCompactionDue = useInstantReached(
+    activeContextWindow
+      ? resumeCompactionOfferAt({
+          provider: selectedProvider,
+          usedTokens: activeContextWindow.usedTokens,
+          updatedAt: activeContextWindow.updatedAt,
+        })
+      : null,
+  );
   const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (
       !activeThread ||
@@ -6443,12 +6452,7 @@ export default function ChatView(props: ChatViewProps) {
       nativeResumeCompactionDismissed ||
       pendingUserInputs.length > 0 ||
       phase === "running" ||
-      !shouldOfferResumeCompaction({
-        provider: selectedProvider,
-        usedTokens: activeContextWindow.usedTokens,
-        updatedAt: activeContextWindow.updatedAt,
-        now: `${nowMinute}:00.000Z`,
-      })
+      !resumeCompactionDue
     ) {
       return null;
     }
@@ -6493,12 +6497,11 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
     dismissedResumeCompactionKeys,
     nativeResumeCompactionDismissed,
-    nowMinute,
     pendingUserInputs.length,
     phase,
     resumeCompactionKey,
+    resumeCompactionDue,
     resumeCompactionPermanentlyDismissed,
-    selectedProvider,
   ]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {

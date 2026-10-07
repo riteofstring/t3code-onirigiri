@@ -60,26 +60,31 @@ export function hasDismissedResumeCompaction(
   });
 }
 
+/** When resuming with less context becomes worth offering, or null if never. */
+export function resumeCompactionOfferAt(input: {
+  readonly provider: string | null | undefined;
+  readonly usedTokens: number | null | undefined;
+  readonly updatedAt: string | null | undefined;
+}): number | null {
+  if (
+    input.provider !== "claudeAgent" ||
+    (input.usedTokens ?? 0) < CLAUDE_RESUME_COMPACTION_TOKENS
+  ) {
+    return null;
+  }
+  const updatedAt = Date.parse(input.updatedAt ?? "");
+  return Number.isFinite(updatedAt) ? updatedAt + CLAUDE_RESUME_COMPACTION_MINUTES * 60_000 : null;
+}
+
 export function shouldOfferResumeCompaction(input: {
   readonly provider: string | null | undefined;
   readonly usedTokens: number | null | undefined;
   readonly updatedAt: string | null | undefined;
   readonly now: string;
 }): boolean {
-  if (
-    input.provider !== "claudeAgent" ||
-    (input.usedTokens ?? 0) < CLAUDE_RESUME_COMPACTION_TOKENS
-  ) {
-    return false;
-  }
-
-  const updatedAt = Date.parse(input.updatedAt ?? "");
+  const offerAt = resumeCompactionOfferAt(input);
   const now = Date.parse(input.now);
-  return (
-    Number.isFinite(updatedAt) &&
-    Number.isFinite(now) &&
-    now - updatedAt >= CLAUDE_RESUME_COMPACTION_MINUTES * 60_000
-  );
+  return offerAt !== null && Number.isFinite(now) && now >= offerAt;
 }
 
 export function resolveContextWindowModelDisplayName(
