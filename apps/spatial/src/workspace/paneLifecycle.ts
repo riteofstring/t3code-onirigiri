@@ -1,21 +1,25 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
 /** Panes kept mounted around focus besides the visible ones. */
-const RING = 4;
+const RING = 2;
 /** Most thread views mounted at once; the least recently wanted unmount first. */
 const MAX_MOUNTED = 8;
 /** Quiet time after focus or visibility changes before mounting follows them. */
 const SETTLE_MS = 200;
+/** Quiet time after a focus change before panes around it mount ahead of use. */
+const NEIGHBOR_SETTLE_MS = 1500;
 
 /**
  * Decides which thread panes mount a live ChatView: the focused pane, the
  * visible panes and the nearest ones around focus. Everything else is
  * unmounted and shown by its picture or card.
  *
- * The focused pane mounts at once. Other changes wait until focus and
+ * The focused pane mounts at once and the visible panes once focus and
  * visibility have been quiet for a moment, so a camera sweep across many panes
- * does not mount each one it passes, and then mount one at a time, each after
- * the previous one has committed and the page is idle.
+ * does not mount each one it passes. The panes around focus mount only after
+ * focus has rested longer, so they never compete with the pane in use. Mounts
+ * happen one at a time, each after the previous one has committed and the
+ * page is idle.
  */
 export function createPaneLifecycleStore(order: readonly string[], focusedPaneId: string | null) {
   let paneOrder = order;
@@ -28,6 +32,8 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
   let waitingFor: string | null = null;
   let idleCallback: number | null = null;
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
+  let neighborTimer: ReturnType<typeof setTimeout> | null = null;
+  let neighborsWanted = false;
   let clock = 0;
 
   const notify = (paneId: string) => {
@@ -64,7 +70,7 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
       ...new Set([
         ...(focused ? [focused] : []),
         ...paneOrder.filter((paneId) => visible.has(paneId)),
-        ...paneOrder.slice(0, RING + 1),
+        ...(neighborsWanted ? paneOrder.slice(0, RING + 1) : []),
       ]),
     ].slice(0, MAX_MOUNTED);
     for (const paneId of wanted) lastWanted.set(paneId, clock);
@@ -84,6 +90,18 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
     if (settleTimer !== null) clearTimeout(settleTimer);
     settleTimer = setTimeout(settle, SETTLE_MS);
   };
+
+  const restartNeighborWait = () => {
+    neighborsWanted = false;
+    if (neighborTimer !== null) clearTimeout(neighborTimer);
+    neighborTimer = setTimeout(() => {
+      neighborTimer = null;
+      neighborsWanted = true;
+      settle();
+    }, NEIGHBOR_SETTLE_MS);
+  };
+
+  restartNeighborWait();
 
   return {
     isMounted: (paneId: string) => mounted.has(paneId),
@@ -108,6 +126,7 @@ export function createPaneLifecycleStore(order: readonly string[], focusedPaneId
         lastWanted.set(focused, ++clock);
         mount(focused);
       }
+      restartNeighborWait();
       requestSettle();
     },
     setVisible: (paneId: string, isVisible: boolean) => {

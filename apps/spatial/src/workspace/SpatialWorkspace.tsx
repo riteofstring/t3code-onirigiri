@@ -1,6 +1,8 @@
 import {
   OnirigiriWorkspace,
   createWorkspaceScene,
+  defaultOnirigiriShortcuts,
+  type OnirigiriShortcutBindings,
   serializeWorkspaceLayout,
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
@@ -26,6 +28,19 @@ import {
 } from "./useWorkspacePanes";
 
 const WORKSPACE_ID = "onirigiri-t3";
+
+// A thread's composer usually holds focus, so moving between panes and
+// overview also answer to Control+Alt chords, which never edit text.
+function whileEditing(key: string) {
+  return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
+}
+const SHORTCUTS: OnirigiriShortcutBindings = {
+  focusDown: [...defaultOnirigiriShortcuts.focusDown, whileEditing("ArrowDown")],
+  focusLeft: [...defaultOnirigiriShortcuts.focusLeft, whileEditing("ArrowLeft")],
+  focusRight: [...defaultOnirigiriShortcuts.focusRight, whileEditing("ArrowRight")],
+  focusUp: [...defaultOnirigiriShortcuts.focusUp, whileEditing("ArrowUp")],
+  toggleOverview: [...defaultOnirigiriShortcuts.toggleOverview, whileEditing("o")],
+};
 /** Quiet time after a focus change before the app route follows it. */
 const ROUTE_SETTLE_MS = 150;
 
@@ -245,6 +260,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
             renderPane={renderPane}
             renderPanePlaceholder={renderPanePlaceholder}
             shortcutScope="application"
+            shortcuts={SHORTCUTS}
             workspaceId={WORKSPACE_ID}
           />
         </PaneLifecycleContext>
