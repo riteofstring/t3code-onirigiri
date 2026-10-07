@@ -183,6 +183,9 @@ export function SpatialWorkspace({
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useEffect(() => {
+    lifecycle?.setPictures((paneId) => pictureFor(paneId) !== null);
+  }, [lifecycle, pictureFor]);
+  useEffect(() => {
     if (panes && lifecycle) {
       lifecycle.setPanes(threadPanePositions(panes));
     }

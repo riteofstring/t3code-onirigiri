@@ -73,3 +73,18 @@ it("keeps at most eight views, unmounting the least recently wanted only to make
   expect(mounted.length).toBe(8);
   store.dispose();
 });
+
+it("leaves panes on screen that a picture shows unmounted", () => {
+  const panes = [...row(4, 0), ...row(4, 1)];
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId.startsWith("p1-"));
+  for (const { paneId } of row(4, 1)) store.setVisible(paneId, true);
+  store.setVisible("p0-3", true);
+  drain(store, panes);
+  const mounted = mountedOf(store, panes);
+  // The pane below is a likely destination and is prepared even with a picture.
+  expect(mounted.filter((paneId) => paneId.startsWith("p1-"))).toEqual(["p1-0"]);
+  expect(mounted).toContain("p0-3");
+  expect(mounted).toContain("p0-1");
+  store.dispose();
+});

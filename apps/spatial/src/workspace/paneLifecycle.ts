@@ -25,7 +25,8 @@ type Direction = "left" | "right" | "up" | "down";
  * Once focus and visibility have been quiet for a moment the focused pane
  * mounts at once, ahead of any other work; a camera sweep therefore mounts
  * only where it stops. The focused pane's neighbours, the next one in the
- * direction of travel first, and then visible panes are prepared speculatively: one
+ * direction of travel first, and then visible panes without a picture are
+ * prepared speculatively: one
  * at a time, each after the previous one has committed, only while the page is
  * idle and input has been quiet. Navigation cancels speculative work that has
  * not started yet.
@@ -52,6 +53,7 @@ export function createPaneLifecycleStore(
   let neighborsWanted = false;
   let lastInput = 0;
   let clock = 0;
+  let hasPicture: (paneId: string) => boolean = () => false;
 
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
@@ -153,8 +155,10 @@ export function createPaneLifecycleStore(
       lastWanted.set(focused, clock);
       mount(focused);
     }
-    // Likely destinations come before panes that are merely on screen.
-    const speculative = [...new Set([...(neighborsWanted ? neighbors() : []), ...visible])].filter(
+    // Likely destinations come before panes that are merely on screen, and a
+    // pane on screen that a picture already shows does not need its view.
+    const onScreen = [...visible].filter((paneId) => !hasPicture(paneId));
+    const speculative = [...new Set([...(neighborsWanted ? neighbors() : []), ...onScreen])].filter(
       (paneId) => paneId !== focused && panes.has(paneId),
     );
     wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
@@ -238,6 +242,11 @@ export function createPaneLifecycleStore(
         waitingFor = null;
         schedule();
       }
+      requestSettle();
+    },
+    /** Tells which panes a picture shows faithfully while they are not mounted. */
+    setPictures: (pictured: (paneId: string) => boolean) => {
+      hasPicture = pictured;
       requestSettle();
     },
     setVisible: (paneId: string, isVisible: boolean) => {
