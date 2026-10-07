@@ -42,12 +42,12 @@ it("turns true once at the instant without re-rendering before it", () => {
   expect(renders).toBe(2);
 });
 
-it("reports an instant already passed and never reaches null", () => {
+it("reports an instant already passed on the first render and never reaches null", () => {
   act(() => {
     renderer = create(<Probe at={-1} />);
   });
-  act(() => vi.advanceTimersByTime(0));
   expect(reached).toBe(true);
+  expect(renders).toBe(1);
   act(() => renderer.update(<Probe at={null} />));
   act(() => vi.advanceTimersByTime(600_000));
   expect(reached).toBe(false);

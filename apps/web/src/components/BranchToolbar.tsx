@@ -507,11 +507,15 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
       childList: true,
       subtree: true,
     });
+    // Typography preferences change inherited variables on the root element.
+    const typography = new MutationObserver(scheduleMeasure);
+    typography.observe(document.documentElement, { attributes: true });
     document.fonts.addEventListener("loadingdone", scheduleMeasure);
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
       observer.disconnect();
       mutations.disconnect();
+      typography.disconnect();
       document.fonts.removeEventListener("loadingdone", scheduleMeasure);
     };
   }, [element, measure]);
