@@ -1,8 +1,9 @@
 import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo } from "react";
+import { use, useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { ChatSurfaceContext } from "../components/chatSurface";
 import { ThreadRouteView } from "../components/ThreadRouteView";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
@@ -213,10 +214,19 @@ function ChatRouteLayout() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
+  const ChatSurface = use(ChatSurfaceContext);
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
+      {ChatSurface ? (
+        <ChatSurface target={threadTarget}>
+          <Outlet />
+        </ChatSurface>
+      ) : threadTarget ? (
+        <ThreadRouteView target={threadTarget} />
+      ) : (
+        <Outlet />
+      )}
     </>
   );
 }
