@@ -133,6 +133,30 @@ it("saves captures only from panes showing a synchronized thread", async () => {
   expect(store.writes[0]).toMatchObject({ paneId, revision: `u1|dark|${geometry(400)}`, image });
 });
 
+it("keeps the last completed picture through streaming and saves the completed turn", async () => {
+  await mount();
+  markPaneSynced(paneId, true);
+  const previous = new Blob(["previous"]);
+  await act(() => hook.onPanePictureCaptured(pane, previous));
+
+  store.running = true;
+  store.updatedAt = "u2";
+  await act(() => renderer!.update(<Probe />));
+  await act(() => hook.onPanePictureCaptured(pane, new Blob(["partial"])));
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]?.image).toBe(previous);
+
+  store.running = false;
+  await act(() => renderer!.update(<Probe />));
+  const completed = new Blob(["completed"]);
+  await act(() => hook.onPanePictureCaptured(pane, completed));
+  expect(store.writes).toHaveLength(2);
+  expect(store.writes[1]).toMatchObject({
+    revision: `u2|dark|${geometry(400)}`,
+    image: completed,
+  });
+});
+
 it("keeps previously valid cover pixels while treating updated content as needing a fresh picture", async () => {
   const image = new Blob(["png"]);
   store.saved.set(paneId, { paneId, revision: `u1|dark|${geometry(400)}`, image, savedAt: 1 });

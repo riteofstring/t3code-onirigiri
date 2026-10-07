@@ -87,7 +87,7 @@ function usePaneContent(
   paneId: string,
   thread: ThreadPaneThread,
   visible: boolean,
-): { mounted: boolean; picturable: string | null } {
+): { mounted: boolean; preparing: boolean; picturable: string | null } {
   const mounted = usePaneMounted(paneId, visible);
   const shell = useThreadShell(thread);
   const updatedAt = shell?.updatedAt ?? null;
@@ -118,6 +118,7 @@ function usePaneContent(
 
   return {
     mounted,
+    preparing: mounted && !settled,
     picturable:
       mounted && settled && synced && shell?.latestTurn?.state !== "running" ? revision : null,
   };
@@ -156,7 +157,7 @@ export const ThreadPane = memo(function ThreadPane({
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
-  const { mounted, picturable } = usePaneContent(paneId, thread, visible);
+  const { mounted, preparing, picturable } = usePaneContent(paneId, thread, visible);
 
   // The app shares one composer handle (the command palette provides it).
   // Each pane's ChatView gets its own, and the shared one follows focus.
@@ -177,18 +178,17 @@ export const ThreadPane = memo(function ThreadPane({
     }
   }, [active, activity, appComposerRef]);
 
-  // Onirigiri skips laying out content off screen. A view mounted there, to
-  // be prepared or pictured, is laid out anyway so it renders and measures as
-  // it will when shown.
+  // Initial preparation needs layout even off screen. Once settled, retained
+  // views can skip layout until they are shown or explicitly captured.
   useLayoutEffect(() => {
-    if (!mounted || visible) return;
+    if (!preparing) return;
     const host = contentRef.current?.closest<HTMLElement>(".onirigiri-pane__live-content");
     if (!host) return;
-    host.style.contentVisibility = "visible";
+    host.dataset.spatialPreparing = "";
     return () => {
-      host.style.contentVisibility = "";
+      delete host.dataset.spatialPreparing;
     };
-  }, [mounted, visible]);
+  }, [preparing]);
 
   // A settled, synchronized view is pictured for when it is not mounted, and
   // again when it stops being active, in case it was scrolled meanwhile.
@@ -196,11 +196,16 @@ export const ThreadPane = memo(function ThreadPane({
   // when a browser exposes the API but cannot capture this content.
   const requestSnapshot = use(PaneSnapshotContext);
   const wasActive = useRef(false);
+  const refreshPending = useRef(false);
   useEffect(() => {
-    const refresh = wasActive.current && !active;
+    if (wasActive.current && !active) refreshPending.current = true;
     wasActive.current = active;
-    if (picturable !== null && contentRef.current) {
-      requestSnapshot?.(paneId, contentRef.current, { preferNative: canCapturePanes(), refresh });
+    if (picturable !== null && contentRef.current && requestSnapshot) {
+      requestSnapshot(paneId, contentRef.current, {
+        preferNative: canCapturePanes(),
+        refresh: refreshPending.current,
+      });
+      refreshPending.current = false;
     }
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Visibility retries a previously unmeasurable pane.
   }, [active, paneId, picturable, requestSnapshot, visible]);

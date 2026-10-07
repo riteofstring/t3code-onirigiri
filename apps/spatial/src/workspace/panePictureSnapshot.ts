@@ -106,6 +106,22 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 
 /** A PNG of `element` as it is now drawn, or null when it has no size. */
 export async function snapshotPanePicture(element: HTMLElement): Promise<Blob | null> {
+  const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
+  if (host) host.dataset.spatialSnapshot = "";
+  try {
+    // Let hidden content and its resize observers settle before reading its
+    // dimensions and scroll offsets. Only this queued capture needs layout.
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    if (!element.isConnected) return null;
+    return await drawPanePicture(element);
+  } finally {
+    if (host) delete host.dataset.spatialSnapshot;
+  }
+}
+
+async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
   const width = element.offsetWidth;
   const height = element.offsetHeight;
   if (width === 0 || height === 0) return null;

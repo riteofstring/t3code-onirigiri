@@ -231,7 +231,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image) => {
-      if (!syncedPanes.has(pane.paneId)) return;
+      if (!syncedPanes.has(pane.paneId) || runningPanesRef.current.has(pane.paneId)) return;
       const content = contentRevisionsRef.current.get(pane.paneId);
       const geometry = geometryRevision(pane.paneId);
       if (!content || !geometry) return;
