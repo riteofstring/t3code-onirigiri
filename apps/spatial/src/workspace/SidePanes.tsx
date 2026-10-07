@@ -11,10 +11,13 @@ import {
 import { Suspense, createContext, use, useMemo, useState } from "react";
 
 import DiffPanel from "@t3tools/web/src/components/DiffPanel";
+import { Button } from "@t3tools/web/src/components/ui/button";
 import { TerminalViewport } from "@t3tools/web/src/components/ThreadTerminalDrawer";
 import { latestWorkspaceMutationId } from "@t3tools/web/src/hooks/useWorkspaceMutationRefresh";
 import { useProject, useThread } from "@t3tools/web/src/state/entities";
 import { primaryServerKeybindingsAtom } from "@t3tools/web/src/state/server";
+import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
+import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 
 export interface SidePaneThread {
   readonly environmentId: EnvironmentId;
@@ -29,7 +32,10 @@ function useThreadCwd(thread: SidePaneThread): string | null {
   return detail?.worktreePath ?? project?.workspaceRoot ?? null;
 }
 
-/** One terminal of a thread, rendered as its own workspace pane. */
+/**
+ * One terminal of a thread, rendered as its own workspace pane. When its
+ * shell exits the pane offers to start it again.
+ */
 export function TerminalPane({
   thread,
   terminalId,
@@ -43,24 +49,41 @@ export function TerminalPane({
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const cwd = useThreadCwd(thread);
+  const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
+  const [session, setSession] = useState({ attempt: 0, exited: false });
   if (!cwd) return null;
+  const restart = () => {
+    void openTerminal({
+      environmentId: thread.environmentId,
+      input: { threadId: thread.threadId, terminalId, cwd },
+    }).then(() => setSession((current) => ({ attempt: current.attempt + 1, exited: false })));
+  };
   return (
-    <div className="h-full w-full" data-terminal-owner="drawer">
+    <div className="relative h-full w-full" data-terminal-owner="drawer">
       <TerminalViewport
+        key={session.attempt}
         advancedTypography={false}
         threadRef={thread}
         threadId={thread.threadId}
         terminalId={terminalId}
         terminalLabel={terminalId}
         cwd={cwd}
-        onSessionExited={() => {}}
+        onSessionExited={() => setSession((current) => ({ ...current, exited: true }))}
         focusRequestId={0}
-        autoFocus={focused}
+        autoFocus={focused && !session.exited}
         visible={live}
         resizeEpoch={0}
         drawerHeight={0}
         keybindings={keybindings}
       />
+      {session.exited ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/85 text-foreground">
+          <p className="text-sm">The shell exited.</p>
+          <Button size="sm" variant="outline" onClick={restart}>
+            Restart
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
