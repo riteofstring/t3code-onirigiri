@@ -73,6 +73,8 @@ function useSidebarProjectGroups() {
  * the strip puts every thread on one plane in the same order. Each thread
  * update reconciles the previous arrangement, so panes keep their places,
  * threads new since then lead their project's row and archived ones leave.
+ * Surface ids follow pane ids, so rebuilding the arrangement keeps the
+ * pictures panes already have.
  */
 export function useWorkspacePanes(
   layoutMode: WorkspaceLayoutMode,
@@ -149,8 +151,10 @@ export function useWorkspacePanes(
           const thread = threadByKey.get(pane.threadId);
           if (!thread) return [];
           const data: ThreadPaneData = { environmentId: thread.environmentId, threadId: thread.id };
+          const paneId = threadPaneId(thread.environmentId, thread.id);
           const threadPane = {
-            paneId: threadPaneId(thread.environmentId, thread.id),
+            paneId,
+            surfaceId: `surface:${paneId}`,
             surfaceKind: "thread",
             title: thread.title,
             subtitle: titleByGroup.get(row.projectId) ?? "",
@@ -177,6 +181,7 @@ const TOOL_TITLES: Record<ToolPane["kind"], string> = {
 function toolPaneDefinition(tool: ToolPane, threadTitle: string) {
   return {
     paneId: tool.paneId,
+    surfaceId: `surface:${tool.paneId}:${tool.kind}`,
     surfaceKind: tool.kind,
     title: TOOL_TITLES[tool.kind],
     subtitle: threadTitle,
