@@ -80,10 +80,8 @@ const PaneRouter = memo(function PaneRouter({
 
 /**
  * Mounts the pane's ChatView while the workspace keeps it live, and reports its
- * content ready two frames after mounting, once the view has laid out. The
- * thread's last update, whether it has finished synchronizing and the app's
- * theme form the content revision, so a picture taken before any of them
- * changed never stands in for the pane.
+ * content ready two frames after synchronization, once the view has laid out. The
+ * thread's last update and the app's theme form the content revision.
  */
 function usePaneContent(
   paneId: string,
@@ -95,16 +93,17 @@ function usePaneContent(
   const status = useThreadStatus(thread);
   const synced = status === "live" || status === "deleted";
   const { theme, resolvedTheme } = useTheme();
-  const revision = `${updatedAt}|${synced}|${theme}|${resolvedTheme}`;
+  const revision = `${updatedAt}|${theme}|${resolvedTheme}`;
   useEffect(() => {
     markPaneSynced(paneId, mounted && synced);
+    return () => markPaneSynced(paneId, false);
   }, [mounted, paneId, synced]);
   const [settled, setSettled] = useState(false);
 
-  useOnirigiriPaneContentReady(mounted && settled, revision);
+  useOnirigiriPaneContentReady(mounted && synced && settled, revision);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !synced) return;
     let second = 0;
     const first = requestAnimationFrame(() => {
       second = requestAnimationFrame(() => setSettled(true));
@@ -114,7 +113,7 @@ function usePaneContent(
       cancelAnimationFrame(second);
       setSettled(false);
     };
-  }, [mounted]);
+  }, [mounted, synced]);
 
   return { mounted, picturable: mounted && settled && synced ? revision : null };
 }
