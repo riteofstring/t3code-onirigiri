@@ -1,23 +1,26 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserHistory, RouterProvider } from "@tanstack/react-router";
+import { createBrowserHistory } from "@tanstack/react-router";
+import { AppRoot } from "@t3tools/web/src/AppRoot";
+import { ChatSurfaceContext } from "@t3tools/web/src/components/chatSurface";
 import { prepareProviderAuthDelivery } from "@t3tools/web/src/providerAuthDelivery";
-import { AppAtomRegistryProvider } from "@t3tools/web/src/rpc/atomRegistry";
+import { getRouter } from "@t3tools/web/src/router";
 
 import "./index.css";
 
-import { getRouter } from "./router";
+import { SpatialChatSurface } from "./workspace/SpatialChatSurface";
 
 prepareProviderAuthDelivery();
 
+// T3's own router and app shell; only the chat area is replaced.
 const router = getRouter(createBrowserHistory());
 
 export const startup = router.load().then(() => {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <AppAtomRegistryProvider>
-        <RouterProvider router={router} />
-      </AppAtomRegistryProvider>
+      <ChatSurfaceContext value={SpatialChatSurface}>
+        <AppRoot router={router} />
+      </ChatSurfaceContext>
     </React.StrictMode>,
   );
 });

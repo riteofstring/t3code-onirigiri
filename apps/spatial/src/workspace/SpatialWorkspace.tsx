@@ -288,7 +288,7 @@ export function SpatialWorkspace({ target }: { target: ThreadRouteTarget | null 
   );
 
   return (
-    <div className="spatial-workspace h-dvh w-full">
+    <div className="spatial-workspace h-full w-full">
       {initialPanes && liveBudget ? (
         <LiveBudgetContext value={liveBudget}>
           <OnirigiriWorkspace
