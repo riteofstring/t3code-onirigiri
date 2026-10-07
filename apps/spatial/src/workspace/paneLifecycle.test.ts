@@ -82,9 +82,18 @@ it("leaves panes on screen that a picture shows unmounted", () => {
   store.setVisible("p0-3", true);
   drain(store, panes);
   const mounted = mountedOf(store, panes);
-  // The pane below is a likely destination and is prepared even with a picture.
-  expect(mounted.filter((paneId) => paneId.startsWith("p1-"))).toEqual(["p1-0"]);
+  expect(mounted.filter((paneId) => paneId.startsWith("p1-"))).toEqual([]);
   expect(mounted).toContain("p0-3");
   expect(mounted).toContain("p0-1");
+  store.dispose();
+});
+
+it("prepares only the next pictured neighbour in the direction of travel", () => {
+  const panes = row(6);
+  const store = createPaneLifecycleStore(panes, "p0-2");
+  store.setPictures(() => true);
+  store.setFocus("p0-3");
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3", "p0-4"]);
   store.dispose();
 });

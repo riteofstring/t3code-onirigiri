@@ -157,8 +157,13 @@ export function createPaneLifecycleStore(
     }
     // Likely destinations come before panes that are merely on screen, and a
     // pane on screen that a picture already shows does not need its view.
+    // Of the neighbours a picture shows, only the next one in the direction of
+    // travel is prepared.
     const onScreen = [...visible].filter((paneId) => !hasPicture(paneId));
-    const speculative = [...new Set([...(neighborsWanted ? neighbors() : []), ...onScreen])].filter(
+    const nearby = (neighborsWanted ? neighbors() : []).filter(
+      (paneId, index) => index === 0 || !hasPicture(paneId),
+    );
+    const speculative = [...new Set([...nearby, ...onScreen])].filter(
       (paneId) => paneId !== focused && panes.has(paneId),
     );
     wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
