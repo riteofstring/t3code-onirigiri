@@ -482,20 +482,26 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
     [],
   );
 
-  // Label widths can change without the strip box moving (font family or
-  // size preferences), so re-measure on every render as well as on resize
-  // and font loads.
+  // Label widths can change without the strip box moving: label text and
+  // controls change in the DOM, and font preferences change on font loads.
+  // Measuring on those changes rather than on every render keeps a toolbar
+  // from forcing layout each time its ChatView renders.
   useLayoutEffect(() => {
-    measure();
-  });
-
-  useEffect(() => {
     if (!element) return;
+    measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    const mutations = new MutationObserver(measure);
+    mutations.observe(element, {
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
     document.fonts.addEventListener("loadingdone", measure);
     return () => {
       observer.disconnect();
+      mutations.disconnect();
       document.fonts.removeEventListener("loadingdone", measure);
     };
   }, [element, measure]);
