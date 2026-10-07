@@ -18,6 +18,7 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
+import { FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { ThreadCard } from "./ThreadCard";
@@ -107,6 +108,8 @@ export function SpatialWorkspace({
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
+  const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
+  const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
   const { getPanePicture, onLayoutChange, onPanePictureCaptured, stageRef } =
     useSavedPanePictures(getLayout);
@@ -313,14 +316,21 @@ export function SpatialWorkspace({
   }, []);
 
   return (
-    <div ref={stageRef} className="spatial-workspace h-full w-full">
+    <div ref={stageRef} className="spatial-workspace flex h-full w-full flex-col">
+      <div className="flex shrink-0 items-center justify-end bg-[color-mix(in_oklch,var(--background)_94%,var(--foreground))]">
+        <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={toggleFocusAnchor} />
+        <div ref={setControlsContainer} />
+      </div>
       {initialPanes && lifecycle ? (
         <PaneLifecycleContext value={lifecycle}>
           <OnirigiriWorkspace
             ref={workspaceRef}
             ariaLabel="Onirigiri for T3 Code"
+            className="min-h-0 flex-1"
             cursorRunway={0}
             cursorTargets="panes"
+            desktopControlsContainer={controlsContainer}
+            focusAnchor={focusAnchor}
             getPanePicture={getPanePicture}
             gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
             initialPanes={initialPanes}
