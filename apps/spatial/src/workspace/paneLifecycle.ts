@@ -311,7 +311,7 @@ export function createPaneLifecycleStore(
         paneListeners.delete(listener);
       };
     },
-    /** Reports that a pane committed its mounted state. */
+    /** Acknowledges the router shell before its route mounts synchronously. */
     committed: (paneId: string, isMounted: boolean) => {
       if (waitingFor !== paneId || isMounted !== mounted.has(paneId)) return;
       clearCommitWait();
@@ -445,8 +445,5 @@ export function usePaneMounted(paneId: string, visible: boolean): boolean {
   useEffect(() => {
     store?.setVisible(paneId, visible);
   }, [store, paneId, visible]);
-  useEffect(() => {
-    store?.committed(paneId, mounted);
-  }, [store, paneId, mounted]);
   return mounted;
 }

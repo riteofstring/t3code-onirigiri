@@ -9,7 +9,7 @@ import {
   createRouter,
   useParams,
 } from "@tanstack/react-router";
-import { memo, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, startTransition, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   ChatViewActivityContext,
@@ -24,7 +24,7 @@ import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { useThreadDetail, useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { usePaneMounted } from "./paneLifecycle";
+import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { canCapturePanes } from "./panePictureSnapshot";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
@@ -78,21 +78,40 @@ const PaneRouter = memo(function PaneRouter({
 });
 
 /**
- * Mounts the pane's ChatView while the workspace keeps it live, and reports its
- * content ready two frames after synchronization, once the view has laid out. The
- * thread's last update and the app's theme form the content revision.
+ * Background panes fetch detail before creating their router shell. Route content
+ * mounts synchronously through the router store; readiness follows synchronization
+ * and two layout frames. The thread's update and theme form the content revision.
  */
 function usePaneContent(
   paneId: string,
   thread: ThreadPaneThread,
   visible: boolean,
+  focused: boolean,
 ): { mounted: boolean; preparing: boolean; picturable: string | null } {
+  const lifecycle = use(PaneLifecycleContext);
   const mounted = usePaneMounted(paneId, visible);
   const shell = useThreadShell(thread);
   const detail = useThreadDetail(mounted ? thread : null);
   const updatedAt = shell?.updatedAt ?? null;
   const detailUpdatedAt = detail?.updatedAt ?? null;
   const status = useThreadStatus(mounted ? thread : null);
+  const [contentMounted, setContentMounted] = useState(false);
+  const contentAvailable = focused || detail !== null || status === "deleted";
+  const renderContent = mounted && contentMounted;
+  useEffect(() => {
+    if (!mounted) setContentMounted(false);
+    else if (contentAvailable && !contentMounted) {
+      const show = () => startTransition(() => setContentMounted(true));
+      if (focused) show();
+      else {
+        const idle = requestIdleCallback(show, { timeout: 1000 });
+        return () => cancelIdleCallback(idle);
+      }
+    }
+  }, [contentAvailable, contentMounted, focused, mounted]);
+  useEffect(() => {
+    lifecycle?.committed(paneId, renderContent);
+  }, [lifecycle, paneId, renderContent]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = shell?.latestTurn?.state === "running";
@@ -105,17 +124,17 @@ function usePaneContent(
   useLayoutEffect(() => {
     markPaneSynced(
       paneId,
-      mounted && synced && settled && detailUpdatedAt !== null
+      renderContent && synced && settled && detailUpdatedAt !== null
         ? { updatedAt: detailUpdatedAt, theme: pictureTheme }
         : null,
     );
     return () => markPaneSynced(paneId, null);
-  }, [detailUpdatedAt, mounted, paneId, pictureTheme, settled, synced]);
+  }, [detailUpdatedAt, paneId, pictureTheme, renderContent, settled, synced]);
 
-  useOnirigiriPaneContentReady(mounted && synced && settled, revision);
+  useOnirigiriPaneContentReady(renderContent && synced && settled, revision);
 
   useEffect(() => {
-    if (!mounted || !synced) return;
+    if (!renderContent || !synced) return;
     let second = 0;
     const first = requestAnimationFrame(() => {
       second = requestAnimationFrame(() => setSettled(true));
@@ -125,13 +144,13 @@ function usePaneContent(
       cancelAnimationFrame(second);
       setSettled(false);
     };
-  }, [mounted, synced]);
+  }, [renderContent, synced]);
 
   return {
-    mounted,
-    preparing: mounted && !settled,
+    mounted: renderContent,
+    preparing: renderContent && !settled,
     picturable:
-      mounted &&
+      renderContent &&
       settled &&
       synced &&
       !running &&
@@ -176,7 +195,7 @@ export const ThreadPane = memo(function ThreadPane({
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
-  const { mounted, preparing, picturable } = usePaneContent(paneId, thread, visible);
+  const { mounted, preparing, picturable } = usePaneContent(paneId, thread, visible, focused);
 
   // The app shares one composer handle (the command palette provides it).
   // Each pane's ChatView gets its own, and the shared one follows focus.
