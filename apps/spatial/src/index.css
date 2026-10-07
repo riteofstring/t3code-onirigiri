@@ -23,8 +23,13 @@
   --onirigiri-minimap-background: var(--card);
 }
 
-/* A thread's own header names it, so its pane drops the workspace titlebar
-   outside overview. */
+/* Overview chrome overlays the thread's own header without resizing its content. */
+.spatial-workspace [data-onirigiri-surface-kind="thread"] > .onirigiri-pane__titlebar {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+}
+
 .spatial-workspace
   [data-onirigiri-surface-kind="thread"]:not([data-presentation-mode="overview"])
   > .onirigiri-pane__titlebar {
