@@ -22,6 +22,7 @@ import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } fro
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadPane } from "./ThreadPane";
+import { useSavedPanePictures } from "./useSavedPanePictures";
 import {
   threadPaneId,
   useWorkspacePanes,
@@ -106,6 +107,7 @@ export function SpatialWorkspace({
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
+  const { getPanePicture, onPanePictureCaptured } = useSavedPanePictures();
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -306,10 +308,12 @@ export function SpatialWorkspace({
             ariaLabel="Onirigiri for T3 Code"
             cursorRunway={0}
             cursorTargets="panes"
+            getPanePicture={getPanePicture}
             gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
             initialPanes={initialPanes}
             liveContent
             onFocusedPaneFrame={onFocusedPaneFrame}
+            onPanePictureCaptured={onPanePictureCaptured}
             renderPane={renderPane}
             renderPanePlaceholder={renderPanePlaceholder}
             shortcutScope={active ? "application" : "workspace"}
