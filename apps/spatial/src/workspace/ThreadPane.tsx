@@ -89,7 +89,8 @@ function usePaneContent(
   visible: boolean,
 ): { mounted: boolean; picturable: string | null } {
   const mounted = usePaneMounted(paneId, visible);
-  const updatedAt = useThreadShell(thread)?.updatedAt ?? null;
+  const shell = useThreadShell(thread);
+  const updatedAt = shell?.updatedAt ?? null;
   const status = useThreadStatus(thread);
   const synced = status === "live" || status === "deleted";
   const { theme, resolvedTheme } = useTheme();
@@ -115,7 +116,11 @@ function usePaneContent(
     };
   }, [mounted, synced]);
 
-  return { mounted, picturable: mounted && settled && synced ? revision : null };
+  return {
+    mounted,
+    picturable:
+      mounted && settled && synced && shell?.latestTurn?.state !== "running" ? revision : null,
+  };
 }
 
 function createPaneRouter(threadPath: string) {
