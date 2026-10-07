@@ -7,7 +7,8 @@ import type { Plugin } from "vite";
  * selector, so any matching DOM change restyles the whole document. The
  * equivalent `A X` has the same matches and specificity, and Chromium scopes it
  * to the subtrees of elements matching A. Only `:is()` holding one complex
- * selector that ends in a descendant or child `*` is rewritten.
+ * selector that ends in a descendant or child `*`, in the first compound of
+ * its selector, is rewritten.
  */
 export function rewriteAncestorIsSelectors(css: string): string {
   let out = "";
@@ -20,12 +21,21 @@ export function rewriteAncestorIsSelectors(css: string): string {
     const argument = css.slice(start + 4, end);
     const ancestor = ancestorOf(argument);
     const compoundStart = compoundStartBefore(css, start);
-    if (ancestor === null || compoundStart < index || !argument.includes(":has(")) {
+    if (
+      ancestor === null ||
+      compoundStart < index ||
+      !opensSelector(css, compoundStart) ||
+      !argument.includes(":has(")
+    ) {
       out += css.slice(index, end + 1);
       index = end + 1;
       continue;
     }
-    out += css.slice(index, compoundStart) + ancestor + css.slice(compoundStart, start);
+    const rest = css.slice(compoundStart, start);
+    // A compound left with nothing but pseudo-elements, or nothing, keeps `*`.
+    const subject =
+      rest === "" && !/^[.#[\w-]|^:(?!:)/.test(css.slice(end + 1, end + 3)) ? "*" : "";
+    out += css.slice(index, compoundStart) + ancestor + rest + subject;
     index = end + 1;
   }
   return out + css.slice(index);
@@ -59,6 +69,15 @@ function ancestorOf(argument: string): string | null {
   const match = /^(.*\S)\s*(>\s*)?\*$/s.exec(argument);
   if (!match) return null;
   return match[2] ? `${match[1]} > ` : `${match[1]} `;
+}
+
+// Whether the compound at `start` is the first of its complex selector: only
+// then does `X:is(A *)` equal `A X`. After a combinator, as in `.p > X`, A would
+// land between the combinator and X and change the matches.
+function opensSelector(css: string, start: number): boolean {
+  let i = start - 1;
+  while (i >= 0 && /\s/.test(css[i]!)) i--;
+  return i < 0 || css[i] === "," || css[i] === "{" || css[i] === "}";
 }
 
 // Start of the top-level compound selector that contains position `at`, or
