@@ -6,8 +6,11 @@
   height: 100%;
 }
 
+.spatial-workspace .onirigiri-pane__live-content[data-spatial-snapshot],
 .spatial-workspace
-  .onirigiri-pane__live-content:is([data-spatial-preparing], [data-spatial-snapshot]) {
+  .onirigiri-pane__live-content:has(
+    > .onirigiri-pane__content-frame > .spatial-thread-pane[data-spatial-preparing]
+  ) {
   content-visibility: visible;
 }
 

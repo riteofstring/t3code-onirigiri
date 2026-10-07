@@ -198,18 +198,6 @@ export const ThreadPane = memo(function ThreadPane({
     }
   }, [active, activity, appComposerRef]);
 
-  // Initial preparation needs layout even off screen. Once settled, retained
-  // views can skip layout until they are shown or explicitly captured.
-  useLayoutEffect(() => {
-    if (!preparing) return;
-    const host = contentRef.current?.closest<HTMLElement>(".onirigiri-pane__live-content");
-    if (!host) return;
-    host.dataset.spatialPreparing = "";
-    return () => {
-      delete host.dataset.spatialPreparing;
-    };
-  }, [preparing]);
-
   // A settled, synchronized view is pictured for when it is not mounted, and
   // again when it stops being active, in case it was scrolled meanwhile.
   // Native capture gets the first opportunity; the drawing remains a fallback
@@ -249,6 +237,7 @@ export const ThreadPane = memo(function ThreadPane({
           className="spatial-thread-pane h-full w-full"
           data-spatial-thread={thread.threadId}
           data-spatial-active={String(active)}
+          data-spatial-preparing={preparing ? "" : undefined}
         >
           {mounted ? <PaneRouter router={router} /> : null}
         </div>
