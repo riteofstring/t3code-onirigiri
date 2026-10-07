@@ -3,5 +3,5 @@
   "compilerOptions": {
     "composite": false
   },
-  "include": ["src", "vite.config.ts", "../web/src/vite-env.d.ts"]
+  "include": ["src", "vite.config.ts", "scopeHasSelectors.ts", "../web/src/vite-env.d.ts"]
 }

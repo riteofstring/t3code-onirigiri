@@ -3,6 +3,7 @@ import type { PluginOption } from "vite";
 import { defineConfig } from "vite-plus";
 
 import webConfig from "../web/vite.config";
+import { scopeHasSelectors } from "./scopeHasSelectors";
 
 const webSource = new URL("../web/src/", import.meta.url).pathname;
 
@@ -33,6 +34,7 @@ export default defineConfig(async (env) => {
         generatedRouteTree: `${webSource}routeTree.gen.ts`,
       }),
       ...plugins.slice(routerIndex).filter((plugin) => !isRouterPlugin(plugin)),
+      scopeHasSelectors(),
     ],
     publicDir: new URL("../web/public", import.meta.url).pathname,
     server: {
