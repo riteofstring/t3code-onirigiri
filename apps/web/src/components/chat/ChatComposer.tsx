@@ -1044,7 +1044,13 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
     });
   }, [controls, useControlsAsHost]);
 
-  useLayoutEffect(measure, [measure, host]);
+  const activity = useChatViewActivity();
+  // A passive view waits for the observer's first notifications, so a mount
+  // does not force a layout of its own.
+  useLayoutEffect(() => {
+    if (activity.isActive()) measure();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `measure` reads the host through a ref; a new host still needs a measurement.
+  }, [activity, measure, host]);
   useEffect(() => {
     const currentHost = useControlsAsHost ? controls : host;
     if (!currentHost || !controls) return;
@@ -1058,7 +1064,6 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
           "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
         )
         .forEach((element) => observer.observe(element));
-      measure();
     };
     observeControls();
     const mutations = new MutationObserver(observeControls);

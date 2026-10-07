@@ -1,5 +1,7 @@
 import { useLayoutEffect, useState } from "react";
 
+import { useChatViewActivity } from "../chatViewActivity";
+
 export function measureComposerMultilinePrompt(body: HTMLElement): boolean | null {
   const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
   if (!editor || editor.clientWidth === 0) return null;
@@ -22,6 +24,7 @@ export function measureComposerMultilinePrompt(body: HTMLElement): boolean | nul
 
 export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
   const [isMultiline, setIsMultiline] = useState(false);
+  const activity = useChatViewActivity();
 
   useLayoutEffect(() => {
     if (!body) return;
@@ -48,7 +51,9 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
     };
     const resizeObserver = new ResizeObserver(scheduleMeasure);
     resizeObserver.observe(body);
-    measure();
+    // A passive view waits for the observer's first notification, so a
+    // mount does not force a layout of its own.
+    if (activity.isActive()) measure();
     const mutationObserver = new MutationObserver(scheduleMeasure);
     mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
     return () => {
@@ -56,7 +61,7 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
       resizeObserver.disconnect();
       mutationObserver.disconnect();
     };
-  }, [body]);
+  }, [activity, body]);
 
   return isMultiline;
 }

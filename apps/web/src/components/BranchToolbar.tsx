@@ -55,6 +55,7 @@ import { Separator } from "./ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { ComposerSurface } from "./chat/ComposerSurface";
+import { useChatViewActivity } from "./chatViewActivity";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { measureRestingComposerControls } from "./chat/restingComposerControlsMeasurement";
 import { resolveRestingComposerControlsNaturalWidth } from "./composerFooterLayout";
@@ -486,9 +487,12 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
   // controls change in the DOM, and font preferences change on font loads.
   // Measuring on those changes rather than on every render keeps a toolbar
   // from forcing layout each time its ChatView renders.
+  const activity = useChatViewActivity();
   useLayoutEffect(() => {
     if (!element) return;
-    measure();
+    // A passive view waits for the observer's first notification, so a
+    // mount does not force a layout of its own.
+    if (activity.isActive()) measure();
     // Changes arrive in bursts while a ChatView mounts; one measurement per
     // frame, still before paint, covers them.
     let frame: number | null = null;
@@ -518,7 +522,7 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
       typography.disconnect();
       document.fonts.removeEventListener("loadingdone", scheduleMeasure);
     };
-  }, [element, measure]);
+  }, [activity, element, measure]);
 
   return overflows;
 }

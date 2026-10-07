@@ -2,6 +2,7 @@ import { InfoIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+import { useChatViewActivity } from "../chatViewActivity";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
@@ -247,6 +248,7 @@ function NoticeDescription({ children, compact }: { children: ReactNode; compact
   const descriptionRef = useRef<HTMLSpanElement>(null);
   const detailsRef = useRef<HTMLButtonElement>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const activity = useChatViewActivity();
 
   useLayoutEffect(() => {
     const description = descriptionRef.current;
@@ -263,7 +265,9 @@ function NoticeDescription({ children, compact }: { children: ReactNode; compact
           ),
       );
     };
-    measure();
+    // A passive view waits for the observer's first notification, so a
+    // mount does not force a layout of its own.
+    if (activity.isActive()) measure();
     // One measurement per frame, still before paint, covers bursts of changes.
     let frame: number | null = null;
     const scheduleMeasure = () => {
@@ -282,7 +286,7 @@ function NoticeDescription({ children, compact }: { children: ReactNode; compact
       observer.disconnect();
       mutations.disconnect();
     };
-  }, []);
+  }, [activity]);
 
   return (
     <span className={compact ? "contents" : "flex min-w-8 flex-1 items-center gap-1"}>
