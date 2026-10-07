@@ -107,7 +107,9 @@ export function SpatialWorkspace({
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
-  const { getPanePicture, onPanePictureCaptured } = useSavedPanePictures();
+  const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
+  const { getPanePicture, onLayoutChange, onPanePictureCaptured, stageRef } =
+    useSavedPanePictures(getLayout);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -311,7 +313,7 @@ export function SpatialWorkspace({
   }, []);
 
   return (
-    <div className="spatial-workspace h-full w-full">
+    <div ref={stageRef} className="spatial-workspace h-full w-full">
       {initialPanes && lifecycle ? (
         <PaneLifecycleContext value={lifecycle}>
           <OnirigiriWorkspace
@@ -324,6 +326,7 @@ export function SpatialWorkspace({
             initialPanes={initialPanes}
             liveContent
             onFocusedPaneFrame={onFocusedPaneFrame}
+            onLayoutChange={onLayoutChange}
             onPanePictureCaptured={onPanePictureCaptured}
             renderPane={renderPane}
             renderPanePlaceholder={renderPanePlaceholder}

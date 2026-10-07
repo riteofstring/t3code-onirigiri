@@ -1,11 +1,13 @@
-/** Pictures kept across reloads; the least recently saved go first. */
+/** Saved pictures are kept within both limits; the least recently saved go first. */
 const MAX_SAVED = 48;
-const DATABASE = "onirigiri-t3-pictures";
+const MAX_SAVED_BYTES = 64 * 1024 * 1024;
+const DATABASE = "onirigiri-t3-pane-pictures";
 const STORE = "pictures";
+const BY_SAVED_AT = "savedAt";
 
 export interface SavedPanePicture {
   readonly paneId: string;
-  /** What the picture shows: the thread's revision, theme and viewport. */
+  /** What the picture shows: the thread's revision, theme and pane geometry. */
   readonly revision: string;
   readonly image: Blob;
   readonly savedAt: number;
@@ -13,14 +15,31 @@ export interface SavedPanePicture {
 
 let database: Promise<IDBDatabase> | null = null;
 
+// A failed or closed connection is opened again on next use.
 function openDatabase(): Promise<IDBDatabase> {
-  database ??= new Promise((resolve, reject) => {
+  database ??= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE, 1);
     request.addEventListener("upgradeneeded", () => {
-      request.result.createObjectStore(STORE, { keyPath: "paneId" });
+      const store = request.result.createObjectStore(STORE, { keyPath: "paneId" });
+      store.createIndex(BY_SAVED_AT, "savedAt");
     });
-    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("success", () => {
+      const db = request.result;
+      const forget = () => {
+        database = null;
+      };
+      db.addEventListener("close", forget);
+      db.addEventListener("versionchange", () => {
+        db.close();
+        forget();
+      });
+      resolve(db);
+    });
     request.addEventListener("error", () => reject(request.error));
+    request.addEventListener("blocked", () => reject(new Error("picture database blocked")));
+  }).catch((error: unknown) => {
+    database = null;
+    throw error;
   });
   return database;
 }
@@ -43,21 +62,23 @@ export async function loadPanePictures(): Promise<Map<string, SavedPanePicture>>
   return new Map(pictures.map((picture) => [picture.paneId, picture]));
 }
 
-/** Saves a pane's picture, keeping only the most recently saved ones. */
+/** Saves a pane's picture, then drops the oldest pictures beyond the limits. */
 export async function savePanePicture(picture: SavedPanePicture): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction(STORE, "readwrite");
   const store = transaction.objectStore(STORE);
   store.put(picture);
-  const all = store.getAll();
-  all.addEventListener("success", () => {
-    const saved = (all.result as SavedPanePicture[]).toSorted((a, b) => b.savedAt - a.savedAt);
-    for (const stale of saved.slice(MAX_SAVED)) store.delete(stale.paneId);
+  let count = 0;
+  let bytes = 0;
+  const cursor = store.index(BY_SAVED_AT).openCursor(null, "prev");
+  cursor.addEventListener("success", () => {
+    const current = cursor.result;
+    if (!current) return;
+    const saved = current.value as SavedPanePicture;
+    count += 1;
+    bytes += saved.image.size;
+    if (count > MAX_SAVED || bytes > MAX_SAVED_BYTES) current.delete();
+    current.continue();
   });
   await completed(transaction);
-}
-
-/** The viewport part of a picture revision: pictures only fit the size they were taken at. */
-export function viewportRevision(): string {
-  return `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`;
 }

@@ -22,10 +22,11 @@ import {
 } from "@t3tools/web/src/composerHandleContext";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
-import { useThreadShell } from "@t3tools/web/src/state/entities";
+import { useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { usePaneMounted } from "./paneLifecycle";
+import { markPaneSynced } from "./useSavedPanePictures";
 
 export interface ThreadPaneThread {
   readonly environmentId: EnvironmentId;
@@ -78,14 +79,20 @@ const PaneRouter = memo(function PaneRouter({
 /**
  * Mounts the pane's ChatView while the workspace keeps it live, and reports its
  * content ready two frames after mounting, once the view has laid out. The
- * thread's last update and the app's theme form the content revision, so a
- * picture taken before either changed never stands in for the pane.
+ * thread's last update, whether it has finished synchronizing and the app's
+ * theme form the content revision, so a picture taken before any of them
+ * changed never stands in for the pane.
  */
 function usePaneContent(paneId: string, thread: ThreadPaneThread, visible: boolean): boolean {
   const mounted = usePaneMounted(paneId, visible);
   const updatedAt = useThreadShell(thread)?.updatedAt ?? null;
+  const status = useThreadStatus(thread);
+  const synced = status === "live" || status === "deleted";
   const { theme, resolvedTheme } = useTheme();
-  const revision = `${updatedAt}|${theme}|${resolvedTheme}`;
+  const revision = `${updatedAt}|${synced}|${theme}|${resolvedTheme}`;
+  useEffect(() => {
+    markPaneSynced(paneId, mounted && synced);
+  }, [mounted, paneId, synced]);
   const [settled, setSettled] = useState(false);
 
   useOnirigiriPaneContentReady(mounted && settled, revision);
