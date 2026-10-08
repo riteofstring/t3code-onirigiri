@@ -550,16 +550,17 @@ function SortableThreadRow(props: {
   disabled: boolean;
   children: (bag: SortableThreadRowBag) => ReactNode;
 }) {
-  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { listeners, setNodeRef, transform, transition, isDragging, isSorting } = useSortable({
     id: props.id,
     disabled: { draggable: props.disabled },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
   // dnd-kit memoizes each field but not the bag, so the memoized row would
   // rerender on every shell update without this.
+  const dragTransition = isSorting ? transition : undefined;
   const bag = useMemo(
-    () => ({ listeners, setNodeRef, transform, transition, isDragging }),
-    [listeners, setNodeRef, transform, transition, isDragging],
+    () => ({ listeners, setNodeRef, transform, transition: dragTransition, isDragging }),
+    [listeners, setNodeRef, transform, dragTransition, isDragging],
   );
   return props.children(bag);
 }
@@ -580,7 +581,7 @@ function SortableSidebarMarker(props: {
   children?: ReactNode;
   "data-testid"?: string;
 }) {
-  const { setNodeRef, transform, transition } = useSortable({
+  const { setNodeRef, transform, transition, isSorting } = useSortable({
     id: sidebarMarkerId(props.marker),
     disabled: { draggable: true },
     animateLayoutChanges: animateSidebarLayoutChanges,
@@ -594,7 +595,11 @@ function SortableSidebarMarker(props: {
       style={{
         transform: CSS.Translate.toString(transform),
         // A newly revealed target must not slide from its hidden position.
-        transition: props.marker.endsWith("-placeholder") ? "none" : transition,
+        transition: props.marker.endsWith("-placeholder")
+          ? "none"
+          : isSorting
+            ? transition
+            : undefined,
         visibility: transform?.scaleY === 0 ? "hidden" : undefined,
       }}
     >
