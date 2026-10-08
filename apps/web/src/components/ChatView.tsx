@@ -7012,8 +7012,8 @@ export default function ChatView(props: ChatViewProps) {
     const keyHandler = (event: KeyboardEvent) => {
       if (!chatViewActivity.isActive()) return;
       if (
-        shouldRedirectInputToComposer(event) &&
-        isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
+        isPasteAsTextShortcut(event, isMacPlatform(navigator.platform)) &&
+        shouldRedirectInputToComposer(event)
       ) {
         pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
       }
