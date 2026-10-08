@@ -1,8 +1,21 @@
-import { act, useLayoutEffect } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { usePanelNavigationSuppression } from "./panelAnimations";
+import {
+  PanelAnimationSuppressionProvider,
+  usePanelAnimationSettings,
+  usePanelNavigationSuppression,
+  usePanelPresence,
+} from "./panelAnimations";
+
+vi.mock("./hooks/useSettings", () => ({
+  useClientSettings: (select: (settings: { panelAnimationDurationMs: number }) => unknown) =>
+    select({ panelAnimationDurationMs: 200 }),
+}));
+vi.mock("./hooks/useMediaQuery", () => ({
+  useMediaQuery: () => false,
+}));
 
 let renderer: ReactTestRenderer | null = null;
 let pendingFrames: FrameRequestCallback[] = [];
@@ -17,6 +30,7 @@ function SuppressionProbe({ navigationKey }: { navigationKey: string }) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   pendingFrames = [];
   observed = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -26,12 +40,15 @@ beforeEach(() => {
       return pendingFrames.length;
     }),
     cancelAnimationFrame: vi.fn(),
+    setTimeout,
+    clearTimeout,
   });
 });
 
 afterEach(async () => {
   await act(() => renderer?.unmount());
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function paintPendingFrame() {
@@ -61,4 +78,46 @@ describe("usePanelNavigationSuppression", () => {
     await paintPendingFrame();
     expect(observed.at(-1)).toBe(false);
   });
+});
+
+it("applies route suppression to its own closing panels without reopening them on release", async () => {
+  let closePanel: () => void = () => {};
+  function PanelProbe() {
+    const [open, setOpen] = useState(true);
+    const { active, durationMs } = usePanelAnimationSettings();
+    const panel = usePanelPresence(open, true, active, "thread-one", durationMs);
+    useLayoutEffect(() => {
+      closePanel = () => setOpen(false);
+      observed.push(panel.present);
+    }, [panel.present]);
+    return null;
+  }
+
+  await act(() => {
+    renderer = create(
+      <PanelAnimationSuppressionProvider value={false}>
+        <PanelProbe />
+      </PanelAnimationSuppressionProvider>,
+    );
+  });
+  await act(() => closePanel());
+  expect(observed.at(-1)).toBe(true);
+
+  await act(() => {
+    renderer?.update(
+      <PanelAnimationSuppressionProvider value={true}>
+        <PanelProbe />
+      </PanelAnimationSuppressionProvider>,
+    );
+  });
+  expect(observed.at(-1)).toBe(false);
+
+  await act(() => {
+    renderer?.update(
+      <PanelAnimationSuppressionProvider value={false}>
+        <PanelProbe />
+      </PanelAnimationSuppressionProvider>,
+    );
+  });
+  expect(observed.at(-1)).toBe(false);
 });

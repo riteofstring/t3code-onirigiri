@@ -1,12 +1,35 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { type PanelAnimationDurationMs } from "@t3tools/contracts/settings";
 
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useClientSettings } from "./hooks/useSettings";
 
-const PanelAnimationSuppressionContext = createContext(false);
+const DefaultPanelAnimationSuppressionContext = createContext(false);
+const PanelAnimationScopeContext = createContext(DefaultPanelAnimationSuppressionContext);
 
-export const PanelAnimationSuppressionProvider = PanelAnimationSuppressionContext.Provider;
+export function PanelAnimationSuppressionProvider({
+  value,
+  children,
+}: {
+  value: boolean;
+  children: ReactNode;
+}) {
+  // A separate context identity keeps outer navigation from scheduling retained pane consumers.
+  const [scope] = useState(() => createContext(false));
+  return createElement(
+    PanelAnimationScopeContext,
+    { value: scope },
+    createElement(scope, { value }, children),
+  );
+}
 
 /**
  * Suppresses panel motion for the first painted frame of an initial route or navigation.
@@ -74,7 +97,8 @@ export function usePanelAnimationSettings(): {
 } {
   const durationMs = useClientSettings((settings) => settings.panelAnimationDurationMs);
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const suppressed = useContext(PanelAnimationSuppressionContext);
+  const scope = useContext(PanelAnimationScopeContext);
+  const suppressed = useContext(scope);
   return { active: durationMs > 0 && !prefersReducedMotion && !suppressed, durationMs };
 }
 

@@ -4,6 +4,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
+import { PanelAnimationSuppressionProvider } from "@t3tools/web/src/panelAnimations";
+
 import { ThreadPane } from "./ThreadPane";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
 
@@ -11,6 +13,9 @@ const state = vi.hoisted(() => ({
   mounted: true,
   detail: null as { updatedAt: string } | null,
   status: "synchronizing" as "synchronizing" | "live" | "deleted",
+  panelDurationMs: 200,
+  reducedMotion: false,
+  panelRenders: 0,
 }));
 
 vi.mock("@riteofstring/onirigiri", () => ({
@@ -34,34 +39,61 @@ vi.mock("./useSavedPanePictures", async () => {
     usePanePictureTheme: () => "default|dark",
   };
 });
-vi.mock("@t3tools/web/src/components/ThreadRouteView", () => ({
-  ThreadRouteView: () => <textarea aria-label="Draft" />,
+vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
+  useClientSettings: (select: (settings: { panelAnimationDurationMs: number }) => unknown) =>
+    select({ panelAnimationDurationMs: state.panelDurationMs }),
 }));
+vi.mock("@t3tools/web/src/hooks/useMediaQuery", () => ({
+  useMediaQuery: () => state.reducedMotion,
+}));
+vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
+  const { useState } = await import("react");
+  const { usePanelAnimationSettings, usePanelPresence } =
+    await import("@t3tools/web/src/panelAnimations");
+  return {
+    ThreadRouteView: () => {
+      state.panelRenders++;
+      const [open, setOpen] = useState(true);
+      const { active, durationMs } = usePanelAnimationSettings();
+      const panel = usePanelPresence(open, "Restored panel", active, "thread-one", durationMs);
+      return (
+        <>
+          <textarea aria-label="Draft" />
+          <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
+          {panel.present ? <aside aria-label="Thread panel">{panel.value}</aside> : null}
+        </>
+      );
+    },
+  };
+});
 
 let root: Root;
 let container: HTMLDivElement;
 let lifecycle: PaneLifecycleStore | null;
 let paneId: string;
+let appSuppressed: boolean;
 
-async function render(focused = false) {
+async function render(focused = false, paintFrames = true) {
   await act(async () => {
     root.render(
-      <PaneLifecycleContext value={lifecycle}>
-        <ThreadPane
-          paneId={paneId}
-          thread={{
-            environmentId: "environment-one" as EnvironmentId,
-            threadId: "thread-one" as ThreadId,
-          }}
-          focused={focused}
-          visible={focused}
-          onNavigateAway={() => {}}
-        />
-      </PaneLifecycleContext>,
+      <PanelAnimationSuppressionProvider value={appSuppressed}>
+        <PaneLifecycleContext value={lifecycle}>
+          <ThreadPane
+            paneId={paneId}
+            thread={{
+              environmentId: "environment-one" as EnvironmentId,
+              threadId: "thread-one" as ThreadId,
+            }}
+            focused={focused}
+            visible={focused}
+            onNavigateAway={() => {}}
+          />
+        </PaneLifecycleContext>
+      </PanelAnimationSuppressionProvider>,
     );
   });
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(32);
+    if (paintFrames) await vi.advanceTimersByTimeAsync(32);
   });
 }
 
@@ -80,6 +112,10 @@ beforeEach(() => {
   state.mounted = true;
   state.detail = null;
   state.status = "synchronizing";
+  state.panelDurationMs = 200;
+  state.reducedMotion = false;
+  state.panelRenders = 0;
+  appSuppressed = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -130,6 +166,66 @@ it("keeps the focused view available while its first detail loads", async () => 
   expect(container.querySelector("textarea")).toBe(editor);
   expect(editor.value).toBe("Draft while connecting");
 });
+
+it("keeps a closing panel present when the app route follows another pane", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep this draft";
+  await act(() => container.querySelector("button")!.click());
+  expect(container.querySelector("aside")).not.toBeNull();
+  const panelRenders = state.panelRenders;
+
+  appSuppressed = true;
+  await render(true, false);
+  expect(container.querySelector("aside")).not.toBeNull();
+  appSuppressed = false;
+  await render(true, false);
+  expect(state.panelRenders).toBe(panelRenders);
+  await act(() => vi.advanceTimersByTimeAsync(199));
+  expect(container.querySelector("aside")).not.toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(container.querySelector("aside")).toBeNull();
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep this draft");
+});
+
+it("suppresses panel motion until the pane's own initial paint, including after remount", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true, false);
+  await act(() => container.querySelector("button")!.click());
+  expect(container.querySelector("aside")).toBeNull();
+
+  state.mounted = false;
+  await render(true);
+  state.mounted = true;
+  await render(true, false);
+  expect(container.querySelector("aside")).not.toBeNull();
+  await act(() => container.querySelector("button")!.click());
+  expect(container.querySelector("aside")).toBeNull();
+
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  await act(() => container.querySelector("button")!.click());
+  await act(() => container.querySelector("button")!.click());
+  expect(container.querySelector("aside")).not.toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(200));
+  expect(container.querySelector("aside")).toBeNull();
+});
+
+it.each([
+  { panelDurationMs: 0, reducedMotion: false },
+  { panelDurationMs: 200, reducedMotion: true },
+])(
+  "closes panels immediately with $panelDurationMs ms and reduced motion $reducedMotion",
+  async (settings) => {
+    Object.assign(state, settings, { detail: { updatedAt: "u1" }, status: "live" });
+    await render(true);
+    await act(() => container.querySelector("button")!.click());
+    expect(container.querySelector("aside")).toBeNull();
+  },
+);
 
 it("starts the next queued preparation only after the deferred view commits", async () => {
   const { createPaneLifecycleStore } =

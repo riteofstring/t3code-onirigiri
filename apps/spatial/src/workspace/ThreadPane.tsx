@@ -23,6 +23,10 @@ import {
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { useThreadDetail, useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
+import {
+  PanelAnimationSuppressionProvider,
+  usePanelNavigationSuppression,
+} from "@t3tools/web/src/panelAnimations";
 
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { canCapturePanes } from "./panePictureSnapshot";
@@ -71,10 +75,18 @@ function createPaneActivity(initial: boolean) {
 
 const PaneRouter = memo(function PaneRouter({
   router,
+  threadPath,
 }: {
   router: ReturnType<typeof createPaneRouter>;
+  threadPath: string;
 }) {
-  return <RouterProvider router={router} />;
+  // The app route follows workspace focus; this retained thread has not navigated.
+  const suppressed = usePanelNavigationSuppression(threadPath);
+  return (
+    <PanelAnimationSuppressionProvider value={suppressed}>
+      <RouterProvider router={router} />
+    </PanelAnimationSuppressionProvider>
+  );
 });
 
 /**
@@ -257,7 +269,7 @@ export const ThreadPane = memo(function ThreadPane({
           data-spatial-active={String(active)}
           data-spatial-preparing={preparing ? "" : undefined}
         >
-          {mounted ? <PaneRouter router={router} /> : null}
+          {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
         </div>
       </ComposerHandleContext>
     </ChatViewActivityContext>
