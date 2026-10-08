@@ -643,7 +643,7 @@ export function useThreadJumpHintVisibility(): {
   const [showThreadJumpHints, setShowThreadJumpHints] = React.useState(false);
   const controllerRef = React.useRef<ThreadJumpHintVisibilityController | null>(null);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const controller = createThreadJumpHintVisibilityController({
       delayMs: THREAD_JUMP_HINT_SHOW_DELAY_MS,
       onVisibilityChange: (visible) => {
