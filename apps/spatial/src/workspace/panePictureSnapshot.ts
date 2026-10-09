@@ -118,7 +118,8 @@ export async function snapshotPanePicture(
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
     if (!element.isConnected || !canSnapshot()) return null;
-    return await drawPanePicture(element);
+    // Drawing clones the live DOM synchronously; encoding no longer needs its layout.
+    return drawPanePicture(element);
   } finally {
     if (host) delete host.dataset.spatialSnapshot;
   }
