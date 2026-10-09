@@ -14,9 +14,8 @@ const COMMIT_TIMEOUT_MS = 2000;
 const STORED_PICTURES_WAIT_MS = 2000;
 /** How long a pane mounted only to be pictured may take before it is let go. */
 const PICTURE_TIMEOUT_MS = 10_000;
-/** Background pictures wait this long after input, and this long after each other. */
+/** Background pictures wait this long after input. */
 const PICTURE_INPUT_QUIET_MS = 3000;
-const PICTURE_GAP_MS = 4000;
 /** A pane that could not be pictured is tried again after this. */
 const PICTURE_RETRY_MS = 5 * 60_000;
 
@@ -79,7 +78,6 @@ export function createPaneLifecycleStore(
   const pictureAttempted = new Map<string, number>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundPictures = false;
-  let nextPictureAt = 0;
 
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
@@ -167,7 +165,6 @@ export function createPaneLifecycleStore(
     if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
     evictBeyond(MAX_MOUNTED, wanted);
-    nextPictureAt = performance.now() + PICTURE_GAP_MS;
     return false;
   };
 
@@ -214,7 +211,7 @@ export function createPaneLifecycleStore(
     const paneId = nextToPicture();
     if (paneId === null) return;
     const now = performance.now();
-    const wait = Math.max(nextPictureAt - now, lastInput + PICTURE_INPUT_QUIET_MS - now);
+    const wait = lastInput + PICTURE_INPUT_QUIET_MS - now;
     if (wait > 0) {
       waitForPicture(wait);
       return;

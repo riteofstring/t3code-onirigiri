@@ -164,9 +164,6 @@ it("mounts panes without a picture one at a time to picture them, then lets them
   pictured.add("p0-2");
   store.setPictures((paneId) => pictured.has(paneId));
   step(1000);
-  // The next one waits a moment after the last.
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
-  step(6000);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
   // A pane that never gets a picture is let go after a while and not retried.
   step(12_000);
@@ -175,6 +172,33 @@ it("mounts panes without a picture one at a time to picture them, then lets them
   expect(store.isMounted("p0-3")).toBe(false);
   store.dispose();
 });
+
+it.each(["keydown", "pointerdown", "wheel"])(
+  "waits for input to quiet after %s between background pictures",
+  (type) => {
+    const window = new EventTarget();
+    vi.stubGlobal("window", window);
+    const panes = row(4);
+    const store = createPaneLifecycleStore(panes, "p0-0");
+    for (const { paneId } of panes) {
+      store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+    }
+    const pictured = new Set(["p0-0", "p0-1"]);
+    store.setPictures((paneId) => pictured.has(paneId));
+    store.setBackgroundPictures(true);
+    vi.advanceTimersByTime(3500);
+    expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2"]);
+
+    pictured.add("p0-2");
+    store.setPictures((paneId) => pictured.has(paneId));
+    window.dispatchEvent(new Event(type));
+    vi.advanceTimersByTime(2900);
+    expect(store.isMounted("p0-3")).toBe(false);
+    vi.advanceTimersByTime(200);
+    expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
+    store.dispose();
+  },
+);
 
 it("continues preparing when a view never reports a React commit", () => {
   const panes = row(6);
