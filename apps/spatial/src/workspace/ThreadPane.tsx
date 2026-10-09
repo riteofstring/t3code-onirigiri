@@ -15,6 +15,7 @@ import {
   ChatViewActivityContext,
   type ChatViewActivity,
 } from "@t3tools/web/src/components/chatViewActivity";
+import { ChatViewContentReadyContext } from "@t3tools/web/src/components/chatViewContentReady";
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
 import {
   ComposerHandleContext,
@@ -92,14 +93,20 @@ const PaneRouter = memo(function PaneRouter({
 /**
  * Background panes fetch detail before creating their router shell. Route content
  * mounts synchronously through the router store; readiness follows synchronization
- * and two layout frames. The thread's update and theme form the content revision.
+ * and the composer's initial presentation, then two layout frames. The thread's
+ * update and theme form the content revision.
  */
 function usePaneContent(
   paneId: string,
   thread: ThreadPaneThread,
   visible: boolean,
   focused: boolean,
-): { mounted: boolean; preparing: boolean; picturable: string | null } {
+): {
+  mounted: boolean;
+  preparing: boolean;
+  picturable: string | null;
+  onContentReadyChange: (ready: boolean) => void;
+} {
   const lifecycle = use(PaneLifecycleContext);
   const mounted = usePaneMounted(paneId, visible);
   const shell = useThreadShell(thread);
@@ -132,21 +139,24 @@ function usePaneContent(
   if (!running && contentRevision !== nextContentRevision) setContentRevision(nextContentRevision);
   const revision = `${contentRevision}|${pictureTheme}`;
   const [settled, setSettled] = useState(false);
+  const [viewReady, setViewReady] = useState(false);
+  const contentReady = status === "deleted" || viewReady;
+  const prepared = renderContent && synced && contentReady && settled;
 
   useLayoutEffect(() => {
     markPaneSynced(
       paneId,
-      renderContent && synced && settled && detailUpdatedAt !== null
+      prepared && detailUpdatedAt !== null
         ? { updatedAt: detailUpdatedAt, theme: pictureTheme }
         : null,
     );
     return () => markPaneSynced(paneId, null);
-  }, [detailUpdatedAt, paneId, pictureTheme, renderContent, settled, synced]);
+  }, [detailUpdatedAt, paneId, pictureTheme, prepared]);
 
-  useOnirigiriPaneContentReady(renderContent && synced && settled, revision);
+  useOnirigiriPaneContentReady(prepared, revision);
 
   useEffect(() => {
-    if (!renderContent || !synced) return;
+    if (!renderContent || !synced || !contentReady) return;
     let second = 0;
     const first = requestAnimationFrame(() => {
       second = requestAnimationFrame(() => setSettled(true));
@@ -156,15 +166,14 @@ function usePaneContent(
       cancelAnimationFrame(second);
       setSettled(false);
     };
-  }, [renderContent, synced]);
+  }, [contentReady, renderContent, synced]);
 
   return {
     mounted: renderContent,
-    preparing: renderContent && !settled,
+    preparing: renderContent && !prepared,
+    onContentReadyChange: setViewReady,
     picturable:
-      renderContent &&
-      settled &&
-      synced &&
+      prepared &&
       !running &&
       detailUpdatedAt !== null &&
       updatedAt !== null &&
@@ -207,7 +216,12 @@ export const ThreadPane = memo(function ThreadPane({
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
-  const { mounted, preparing, picturable } = usePaneContent(paneId, thread, visible, focused);
+  const { mounted, preparing, picturable, onContentReadyChange } = usePaneContent(
+    paneId,
+    thread,
+    visible,
+    focused,
+  );
 
   // The app shares one composer handle (the command palette provides it).
   // Each pane's ChatView gets its own, and the shared one follows focus.
@@ -269,7 +283,9 @@ export const ThreadPane = memo(function ThreadPane({
           data-spatial-active={String(active)}
           data-spatial-preparing={preparing ? "" : undefined}
         >
-          {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+          <ChatViewContentReadyContext value={onContentReadyChange}>
+            {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+          </ChatViewContentReadyContext>
         </div>
       </ComposerHandleContext>
     </ChatViewActivityContext>

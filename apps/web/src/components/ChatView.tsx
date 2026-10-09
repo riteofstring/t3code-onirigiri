@@ -202,6 +202,7 @@ import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { useActiveChatViewEffect, useChatViewActivity } from "./chatViewActivity";
+import { useChatViewContentReady } from "./chatViewContentReady";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -3743,7 +3744,16 @@ export default function ChatView(props: ChatViewProps) {
       rememberCheckoutIsRepo(environmentId, gitStatusCwd, liveIsGitRepo);
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
-  const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
+  const recalledIsGitRepo = recallCheckoutIsRepo(environmentId, gitStatusCwd);
+  const isGitRepo = liveIsGitRepo ?? recalledIsGitRepo ?? true;
+  const onComposerSyncReadyChange = useChatViewContentReady(
+    routeThreadKey,
+    gitStatusCwd === null ||
+      liveIsGitRepo !== undefined ||
+      recalledIsGitRepo !== undefined ||
+      gitStatusQuery.error !== null,
+    activeEnvironmentUnavailable,
+  );
   // Keep a hidden, off-flow strip mounted for existing threads so the composer
   // can measure whether its relocated controls fit. The visible chrome remains
   // content-driven: Git/environment context or controls that actually fit.
@@ -10090,6 +10100,7 @@ export default function ChatView(props: ChatViewProps) {
                             activeTasksProgress={activeComposerTasksProgress}
                             activeTaskSteps={activeComposerTaskSteps}
                             threadSyncPhase={activeEnvironmentUnavailable ? null : threadSyncPhase}
+                            onSyncReadyChange={onComposerSyncReadyChange}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             lockedProvider={lockedProvider}

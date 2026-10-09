@@ -983,7 +983,7 @@ import {
   resolveProviderSlashCommandsForCwd,
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
-import { useDelayedStatus } from "../../hooks/useDelayedStatus";
+import { useComposerSyncPhase } from "../chatViewContentReady";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -1442,6 +1442,7 @@ export interface ChatComposerProps {
    * effect, so it is current before the chat view measures the overlay.
    */
   onRestingChange: (resting: boolean) => void;
+  onSyncReadyChange?: ((ready: boolean) => void) | undefined;
 
   // Refs the parent needs kept in sync
   promptRef: React.RefObject<string>;
@@ -1598,7 +1599,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Opening a running thread resyncs for a few frames. Show the sync row, and
   // hide the tasks row for it, only when the sync lasts. Logic that depends on
   // the real phase keeps reading `props.threadSyncPhase`.
-  const shownSyncPhase = useDelayedStatus(composerDraftTargetKey, props.threadSyncPhase);
+  const shownSyncPhase = useComposerSyncPhase(
+    composerDraftTargetKey,
+    props.threadSyncPhase,
+    props.onSyncReadyChange,
+  );
   const activeTasksProgress = shownSyncPhase === null ? props.activeTasksProgress : null;
   const activeTaskSteps = shownSyncPhase === null ? props.activeTaskSteps : null;
   // ------------------------------------------------------------------
