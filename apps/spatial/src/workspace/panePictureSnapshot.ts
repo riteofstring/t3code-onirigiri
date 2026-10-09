@@ -136,10 +136,10 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
   const rootClass = document.documentElement.className;
   const rootFontSize = getComputedStyle(document.documentElement).fontSize;
   const markup = new XMLSerializer().serializeToString(clone);
-  // Keep the page's media queries and rem units, including panes larger than its viewport.
+  // Rem units use the image document's root, independently of the inner content's font size.
   const open =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${window.innerWidth}" height="${window.innerHeight}" ` +
-    `viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="font-size:${escapeAttribute(rootFontSize)}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `style="font-size:${escapeAttribute(rootFontSize)}">` +
     `<foreignObject width="100%" height="100%">` +
     `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
     `style="${escapeAttribute(rootVariables())};width:${width}px;height:${height}px;overflow:hidden">`;
