@@ -24,7 +24,7 @@ import {
   ChatViewActivityContext,
   type ChatViewActivity,
 } from "@t3tools/web/src/components/chatViewActivity";
-import { ChatViewContentReadyContext } from "@t3tools/web/src/components/chatViewContentReady";
+import { ChatViewContentReadyProvider } from "@t3tools/web/src/components/chatViewContentReady";
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
 import {
   ComposerHandleContext,
@@ -290,9 +290,9 @@ export const ThreadPane = memo(function ThreadPane({
           data-spatial-active={String(active)}
           data-spatial-preparing={preparing ? "" : undefined}
         >
-          <ChatViewContentReadyContext value={onContentReadyChange}>
+          <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
             {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
-          </ChatViewContentReadyContext>
+          </ChatViewContentReadyProvider>
         </div>
       </ComposerHandleContext>
     </ChatViewActivityContext>

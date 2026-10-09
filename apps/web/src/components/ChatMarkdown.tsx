@@ -55,6 +55,7 @@ import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/m
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
+import { ChatViewPendingContent } from "./chatViewContentReady";
 import React, {
   Children,
   Suspense,
@@ -3332,6 +3333,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           <Suspense
             fallback={
               <pre {...props} className="invisible" aria-hidden>
+                <ChatViewPendingContent />
                 {children}
               </pre>
             }

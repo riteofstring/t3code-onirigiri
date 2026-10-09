@@ -3746,12 +3746,24 @@ export default function ChatView(props: ChatViewProps) {
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const recalledIsGitRepo = recallCheckoutIsRepo(environmentId, gitStatusCwd);
   const isGitRepo = liveIsGitRepo ?? recalledIsGitRepo ?? true;
+  const [timelineReadiness, setTimelineReadiness] = useState<{
+    threadKey: string;
+    ready: boolean;
+  } | null>(null);
+  const onTimelineReadyChange = useCallback((ready: boolean, threadKey: string) => {
+    setTimelineReadiness((current) =>
+      current?.threadKey === threadKey && current.ready === ready ? current : { threadKey, ready },
+    );
+  }, []);
   const onComposerSyncReadyChange = useChatViewContentReady(
     routeThreadKey,
     gitStatusCwd === null ||
       liveIsGitRepo !== undefined ||
       recalledIsGitRepo !== undefined ||
       gitStatusQuery.error !== null,
+    !paintOnlyDisplayedTimeline &&
+      timelineReadiness?.threadKey === displayedTimelineKey &&
+      timelineReadiness.ready,
     activeEnvironmentUnavailable,
   );
   // Keep a hidden, off-flow strip mounted for existing threads so the composer
@@ -9874,6 +9886,7 @@ export default function ChatView(props: ChatViewProps) {
             <div className="relative flex min-h-0 flex-1 flex-col bg-background">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
+                {...(onComposerSyncReadyChange ? { onReadyChange: onTimelineReadyChange } : {})}
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
                 citationHistoryLoading={threadDetailLoading}
                 {...(!paintOnlyDisplayedTimeline

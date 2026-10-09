@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   reducedMotion: false,
   panelRenders: 0,
   checkoutReady: true,
+  timelineReady: true,
   hasChatView: true,
   listeners: new Set<() => void>(),
 }));
@@ -97,7 +98,11 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     const [open, setOpen] = useState(true);
     const { active, durationMs } = usePanelAnimationSettings();
     const panel = usePanelPresence(open, "Restored panel", active, "thread-one", durationMs);
-    const onSyncReadyChange = useChatViewContentReady("thread-one", state.checkoutReady);
+    const onSyncReadyChange = useChatViewContentReady(
+      "thread-one",
+      state.checkoutReady,
+      state.timelineReady,
+    );
     const shownSyncPhase = useComposerSyncPhase(
       "thread-one",
       state.status === "synchronizing" ? "syncing" : null,
@@ -120,7 +125,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
           return () => state.listeners.delete(listener);
         },
         () =>
-          `${state.status}:${state.checkoutReady}:${state.hasChatView}:${state.composerVersion}`,
+          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}`,
       );
       return state.hasChatView ? <ChatContent /> : null;
     },
@@ -192,6 +197,7 @@ beforeEach(() => {
   state.reducedMotion = false;
   state.panelRenders = 0;
   state.checkoutReady = true;
+  state.timelineReady = true;
   state.hasChatView = true;
   requestSnapshot = vi.fn();
   appSuppressed = false;
@@ -246,30 +252,33 @@ it("keeps the focused view available while its first detail loads", async () => 
   expect(editor.value).toBe("Draft while connecting");
 });
 
-it("keeps the cover and postpones capture until the initial checkout layout settles", async () => {
-  state.detail = { updatedAt: "u1" };
-  state.status = "live";
-  state.checkoutReady = false;
-  await render(true);
-  const editor = container.querySelector("textarea")!;
-  editor.value = "Prepared draft";
-  await act(() => vi.advanceTimersByTimeAsync(2000));
-  expect(container.querySelector("[data-spatial-preparing]")).not.toBeNull();
-  expect(requestSnapshot).not.toHaveBeenCalled();
+it.each(["checkoutReady", "timelineReady"] as const)(
+  "keeps the cover and postpones capture until %s settles",
+  async (readiness) => {
+    state.detail = { updatedAt: "u1" };
+    state.status = "live";
+    state[readiness] = false;
+    await render(true);
+    const editor = container.querySelector("textarea")!;
+    editor.value = "Prepared draft";
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(container.querySelector("[data-spatial-preparing]")).not.toBeNull();
+    expect(requestSnapshot).not.toHaveBeenCalled();
 
-  state.checkoutReady = true;
-  await render(true, false);
-  expect(requestSnapshot).not.toHaveBeenCalled();
-  await act(() => vi.advanceTimersByTimeAsync(32));
-  expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
-  expect(requestSnapshot).toHaveBeenCalledOnce();
-  expect(container.querySelector("textarea")).toBe(editor);
-  expect(editor.value).toBe("Prepared draft");
+    state[readiness] = true;
+    await render(true, false);
+    expect(requestSnapshot).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(32));
+    expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+    expect(requestSnapshot).toHaveBeenCalledOnce();
+    expect(container.querySelector("textarea")).toBe(editor);
+    expect(editor.value).toBe("Prepared draft");
 
-  state.checkoutReady = false;
-  await render(true);
-  expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
-});
+    state.checkoutReady = false;
+    await render(true);
+    expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+  },
+);
 
 it("waits for the displayed sync row to clear before revealing or capturing the composer", async () => {
   await render(true, false);

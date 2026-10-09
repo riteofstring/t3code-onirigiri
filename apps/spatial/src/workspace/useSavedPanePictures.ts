@@ -369,7 +369,7 @@ export function createSnapshotQueue() {
   let drawing = false;
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let lastInput = 0;
+  let lastInput = performance.now();
   const noteInput = () => {
     lastInput = performance.now();
   };
@@ -421,9 +421,7 @@ export function createSnapshotQueue() {
   const request: RequestPaneSnapshot = (paneId, element, options = {}) => {
     pending.set(paneId, {
       element,
-      after:
-        performance.now() +
-        (options.preferNative ? NATIVE_CAPTURE_GRACE_MS : SNAPSHOT_INPUT_QUIET_MS),
+      after: performance.now() + (options.preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
       refresh: options.refresh === true || pending.get(paneId)?.refresh === true,
     });
     if (timer !== null) clearTimeout(timer);

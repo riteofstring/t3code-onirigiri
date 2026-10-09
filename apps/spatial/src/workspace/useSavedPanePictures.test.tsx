@@ -311,6 +311,81 @@ it("draws a fallback after the native grace period when no capture arrives", asy
   expect(store.writes[0]?.source).toBe("snapshot");
 });
 
+it("preserves an already idle pane before its view is released", async () => {
+  await mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  const element = { isConnected: true } as HTMLElement;
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  markPaneSynced(paneId, null);
+  Object.defineProperty(element, "isConnected", { value: false });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it("lets a newly opened workspace settle even when the page has been open a while", async () => {
+  await vi.advanceTimersByTimeAsync(5000);
+  window.dispatchEvent(new Event("pointerdown"));
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2999);
+  });
+  expect(snapshot).not.toHaveBeenCalled();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2);
+  });
+  expect(store.writes).toHaveLength(1);
+});
+
+it("gives native capture its grace period even when input is already quiet", async () => {
+  await mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1900);
+  });
+  expect(snapshot).not.toHaveBeenCalled();
+  await act(() => hook.onPanePictureCaptured(pane, new Blob(["native"])));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]?.source).toBe("capture");
+});
+
+it("waits for recent input to settle before preserving a newly ready pane", async () => {
+  await mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  window.dispatchEvent(new Event("keydown"));
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2999);
+  });
+  expect(snapshot).not.toHaveBeenCalled();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2);
+  });
+  expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
 it("replaces retained cover pixels when a fresh capture arrives", async () => {
   const previous = new Blob(["previous"]);
   store.saved.set(paneId, {

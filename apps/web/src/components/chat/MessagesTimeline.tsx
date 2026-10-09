@@ -396,6 +396,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
 // ---------------------------------------------------------------------------
 
 interface MessagesTimelineProps {
+  onReadyChange?: (ready: boolean, threadKey: string) => void;
   citationRequest?: AssistantCitationRequest | null;
   citationHistoryLoading?: boolean;
   onCiteAssistantText?: (
@@ -475,6 +476,7 @@ interface MessagesTimelineProps {
 // ---------------------------------------------------------------------------
 
 export const MessagesTimeline = memo(function MessagesTimeline({
+  onReadyChange,
   citationRequest = null,
   citationHistoryLoading = false,
   onCiteAssistantText,
@@ -958,6 +960,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     onManualNavigation,
   });
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
+  const [listLoaded, setListLoaded] = useState(false);
+  const showEmptyState = rows.length === 0 && !isWorking;
+  if (onReadyChange && listLoaded && showEmptyState) setListLoaded(false);
+  const onListLoad = useCallback(() => {
+    onCitationListLoad();
+    if (onReadyChange) setListLoaded(true);
+  }, [onCitationListLoad, onReadyChange]);
+  const timelineReady = showEmptyState || (listLoaded && !restoringThreadPosition);
+  useLayoutEffect(() => {
+    onReadyChange?.(timelineReady, listIdentityKey);
+  }, [onReadyChange, timelineReady, listIdentityKey]);
+  useLayoutEffect(
+    () => () => onReadyChange?.(false, listIdentityKey),
+    [onReadyChange, listIdentityKey],
+  );
   const alwaysRender = citationAlwaysRender ?? restoringAlwaysRender;
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
@@ -1262,7 +1279,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [],
   );
 
-  if (rows.length === 0 && !isWorking) {
+  if (showEmptyState) {
     if (hideEmptyPlaceholder) {
       // Occupy the pane with the theme surface so a thread switch cannot
       // punch a hole through to the window chrome (white in light mode).
@@ -1302,7 +1319,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             // Legend needs a data refresh to mount new pins without a scroll event.
             dataVersion={readyCitationRequest?.key ?? listIdentityKey}
             {...(alwaysRender ? { alwaysRender } : {})}
-            onLoad={onCitationListLoad}
+            onLoad={onListLoad}
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
             maintainScrollAtEnd={
