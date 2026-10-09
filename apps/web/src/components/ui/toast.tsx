@@ -556,8 +556,9 @@ function Toasts({ position }: { position: ToastPosition }) {
     }
   }, [toasts]);
 
+  // Keep slot markers inside the portal; body-level slots widen sibling invalidation.
   return (
-    <Toast.Portal data-slot="toast-portal">
+    <Toast.Portal>
       <Toast.Viewport
         className={cn(
           "fixed z-100 mx-auto flex w-[calc(100%-var(--toast-inset)*2)] max-w-90 [--toast-header-offset:var(--workspace-topbar-height)] [--toast-inset:--spacing(4)] sm:[--toast-inset:--spacing(8)]",
@@ -716,7 +717,7 @@ function AnchoredToasts() {
   const activeThreadRef = useActiveThreadRefFromRoute();
 
   return (
-    <Toast.Portal data-slot="toast-portal-anchored">
+    <Toast.Portal>
       <Toast.Viewport className="outline-none" data-slot="toast-viewport-anchored">
         {toasts
           .filter((toast) => shouldRenderThreadScopedToast(toast.data, activeThreadRef))
