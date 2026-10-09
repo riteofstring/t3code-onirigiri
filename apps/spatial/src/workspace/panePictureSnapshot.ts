@@ -134,9 +134,12 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
     editor.replaceChildren(document.createElement("p"));
   }
   const rootClass = document.documentElement.className;
+  const rootFontSize = getComputedStyle(document.documentElement).fontSize;
   const markup = new XMLSerializer().serializeToString(clone);
+  // Keep the page's media queries and rem units, including panes larger than its viewport.
   const open =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${window.innerWidth}" height="${window.innerHeight}" ` +
+    `viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="font-size:${escapeAttribute(rootFontSize)}">` +
     `<foreignObject width="100%" height="100%">` +
     `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
     `style="${escapeAttribute(rootVariables())};width:${width}px;height:${height}px;overflow:hidden">`;
