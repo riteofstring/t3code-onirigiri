@@ -290,7 +290,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   );
 
   const drawSnapshot = useCallback(
-    async (paneId: string, element: HTMLElement, refresh: boolean) => {
+    async (paneId: string, element: HTMLElement, refresh: boolean, canStart: () => boolean) => {
       const revision = () => {
         const content = contentRevisionsRef.current.get(paneId);
         const geometry = geometryRevision(paneId);
@@ -305,7 +305,8 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
           !runningPanesRef.current.has(paneId) &&
           revision() === before &&
           content !== undefined &&
-          paneHasCommittedContent(paneId, content)
+          paneHasCommittedContent(paneId, content) &&
+          canStart()
         );
       };
       if (!canSnapshot()) return;
@@ -357,7 +358,12 @@ const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const NATIVE_CAPTURE_GRACE_MS = 2000;
 
 export function createSnapshotQueue() {
-  type Draw = (paneId: string, element: HTMLElement, refresh: boolean) => Promise<void>;
+  type Draw = (
+    paneId: string,
+    element: HTMLElement,
+    refresh: boolean,
+    canStart: () => boolean,
+  ) => Promise<void>;
   const pending = new Map<string, { element: HTMLElement; after: number; refresh: boolean }>();
   let draw: Draw | null = null;
   let drawing = false;
@@ -390,10 +396,22 @@ export function createSnapshotQueue() {
         }
         pending.delete(paneId);
         drawing = true;
-        void current(paneId, request.element, request.refresh)
+        let deferred = false;
+        const canStart = () => {
+          if (performance.now() - lastInput < SNAPSHOT_INPUT_QUIET_MS) deferred = true;
+          return !deferred && draw === current;
+        };
+        void current(paneId, request.element, request.refresh, canStart)
           .catch(() => {})
           .finally(() => {
             drawing = false;
+            if (deferred && draw === current) {
+              const latest = pending.get(paneId);
+              pending.set(paneId, {
+                ...(latest ?? request),
+                refresh: request.refresh || latest?.refresh === true,
+              });
+            }
             next();
           });
       },

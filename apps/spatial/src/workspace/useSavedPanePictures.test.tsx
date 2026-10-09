@@ -107,7 +107,7 @@ beforeEach(() => {
       }
     },
   );
-  vi.stubGlobal("window", { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal("window", Object.assign(new EventTarget(), { devicePixelRatio: 1 }));
   vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 1));
   vi.stubGlobal("cancelIdleCallback", (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
   vi.stubGlobal(
@@ -362,7 +362,75 @@ it("reuses a matching snapshot until a departed pane needs its scroll position r
   expect(snapshot).toHaveBeenCalledTimes(2);
 });
 
-it("keeps an immutable picture that finishes encoding after its pane is evicted", async () => {
+it.each(["keydown", "pointerdown", "wheel"])(
+  "postpones a picture when %s arrives before cloning, then retries after quiet input",
+  async (type) => {
+    const layout = pendingPicture();
+    snapshot.mockImplementationOnce(async (_element, canSnapshot) => {
+      await layout.promise;
+      return canSnapshot() ? new Blob(["interrupted picture"]) : null;
+    });
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3500);
+    });
+    window.dispatchEvent(new Event(type));
+    await act(async () => layout.resolve(null));
+    expect(store.writes).toHaveLength(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    window.dispatchEvent(new Event(type));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2999);
+    });
+    expect(snapshot).toHaveBeenCalledOnce();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
+    });
+    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(store.writes).toHaveLength(1);
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+  },
+);
+
+it("retries an interrupted refresh with the latest pane element", async () => {
+  const old = new Blob(["previous scroll position"]);
+  store.saved.set(paneId, {
+    paneId,
+    revision: `u1|dark|dark|${geometry(400)}`,
+    image: old,
+    savedAt: 1,
+  });
+  const layout = pendingPicture();
+  snapshot.mockImplementationOnce(async (_element, canSnapshot) => {
+    await layout.promise;
+    return canSnapshot() ? new Blob(["interrupted picture"]) : null;
+  });
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { refresh: true });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  window.dispatchEvent(new Event("wheel"));
+  const replacement = { isConnected: true } as HTMLElement;
+  hook.requestSnapshot(paneId, replacement);
+  await act(async () => layout.resolve(null));
+  expect(store.writes).toHaveLength(0);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledTimes(2);
+  expect(snapshot.mock.calls[1]?.[0]).toBe(replacement);
+  expect(store.writes).toHaveLength(1);
+  expect(hook.pictureFor(paneId)).not.toBe(old);
+});
+
+it("keeps an immutable picture that finishes encoding after input and pane eviction", async () => {
   const encoding = pendingPicture();
   snapshot.mockReturnValueOnce(encoding.promise);
   await mount();
@@ -375,6 +443,7 @@ it("keeps an immutable picture that finishes encoding after its pane is evicted"
   expect(snapshot).toHaveBeenCalledOnce();
   expect(snapshot.mock.calls[0]![1]()).toBe(true);
 
+  window.dispatchEvent(new Event("keydown"));
   markPaneSynced(paneId, null);
   Object.defineProperty(element, "isConnected", { value: false });
   const image = new Blob(["completed after eviction"]);
@@ -384,6 +453,10 @@ it("keeps an immutable picture that finishes encoding after its pane is evicted"
   expect(store.writes).toHaveLength(1);
   expect(hook.pictureFor(paneId)).toBe(image);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
 });
 
 it.each(["content", "theme", "stage", "column", "running"] as const)(
