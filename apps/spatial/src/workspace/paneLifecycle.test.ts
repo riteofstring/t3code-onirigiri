@@ -304,3 +304,66 @@ it("does not repeatedly mount a running thread just to update its background pic
   expect(store.isMounted("p0-2")).toBe(true);
   store.dispose();
 });
+
+it("cancels background picturing while covered and retries the interrupted pane on return", () => {
+  const panes = row(5);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setBackgroundPictures(true);
+  for (let step = 0; step < 5; step++) {
+    vi.advanceTimersByTime(1000);
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect(store.isMounted("p0-2")).toBe(true);
+
+  store.setBackgroundPictures(false);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-2")).toBe(false);
+  vi.advanceTimersByTime(20_000);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
+
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(5000);
+  expect(store.isMounted("p0-2")).toBe(true);
+  expect(store.isMounted("p0-3")).toBe(false);
+  store.dispose();
+});
+
+it("retains a visible view when its background picturing is disabled", () => {
+  const panes = row(5);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setBackgroundPictures(true);
+  for (let step = 0; step < 5; step++) {
+    vi.advanceTimersByTime(1000);
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  store.setVisible("p0-2", true);
+  vi.advanceTimersByTime(250);
+  store.setBackgroundPictures(false);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.setFocus("p0-2");
+  vi.advanceTimersByTime(250);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.dispose();
+});
+
+it("retries a cancelled picture mount before the old commit deadline", () => {
+  const panes = row(5);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const transitions: boolean[] = [];
+  store.subscribe("p0-2", () => transitions.push(store.isMounted("p0-2")));
+  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(1000);
+  store.committed("p0-1", true);
+  vi.advanceTimersByTime(2200);
+  expect(transitions).toEqual([true]);
+  store.setBackgroundPictures(false);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(500);
+  expect(transitions).toEqual([true, false, true]);
+  expect(store.isMounted("p0-0")).toBe(true);
+  store.dispose();
+});

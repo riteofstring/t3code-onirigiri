@@ -370,6 +370,12 @@ export function createPaneLifecycleStore(
     /** Whether panes without a picture are mounted in the background to picture them. */
     setBackgroundPictures: (enabled: boolean) => {
       backgroundPictures = enabled;
+      if (!enabled && picturing) {
+        const { paneId } = picturing;
+        picturing = null;
+        pictureAttempted.delete(paneId);
+        if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
+      }
       requestSettle();
     },
     /** Tells which panes a picture shows faithfully while they are not mounted. */

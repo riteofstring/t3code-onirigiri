@@ -14,6 +14,9 @@ const store = {
   theme: "dark",
   themeHalves: null as { dark?: string; light?: string } | null,
 };
+const decodedUrls: string[] = [];
+const revokedUrls: string[] = [];
+
 const snapshot = vi.hoisted(() => vi.fn(async () => new Blob(["snapshot"])));
 vi.mock("./panePictureSnapshot", () => ({
   snapshotPanePicture: snapshot,
@@ -77,6 +80,21 @@ async function mount() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
+  let nextUrl = 0;
+  vi.stubGlobal("URL", {
+    createObjectURL: () => `blob:picture-${++nextUrl}`,
+    revokeObjectURL: (url: string) => revokedUrls.push(url),
+  });
+  vi.stubGlobal(
+    "Image",
+    class {
+      src = "";
+      decode() {
+        decodedUrls.push(this.src);
+        return Promise.resolve();
+      }
+    },
+  );
   vi.stubGlobal("window", { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 1));
   vi.stubGlobal("cancelIdleCallback", (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
@@ -97,6 +115,8 @@ beforeEach(() => {
 afterEach(async () => {
   if (renderer) await act(() => renderer!.unmount());
   renderer = undefined;
+  decodedUrls.length = 0;
+  revokedUrls.length = 0;
   store.saved.clear();
   store.writes.length = 0;
   store.updatedAt = "u1";
@@ -351,4 +371,83 @@ it("waits until a running turn completes before drawing its fallback picture", a
   });
   expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.canBackgroundPicture(paneId)).toBe(true);
+});
+
+it("warms only pictures valid for current panes and releases their URLs on unmount", async () => {
+  const valid = new Blob(["valid"]);
+  store.saved.set(paneId, {
+    paneId,
+    revision: `u1|dark|dark|${geometry(400)}`,
+    image: valid,
+    savedAt: 1,
+  });
+  store.saved.set("absent-pane", {
+    paneId: "absent-pane",
+    revision: `u1|dark|dark|${geometry(400)}`,
+    image: new Blob(["absent"]),
+    savedAt: 1,
+  });
+  await mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5);
+  });
+  const url = hook.preparedPictureUrl(valid);
+  expect(url).toBe("blob:picture-1");
+  expect(decodedUrls).toEqual([url]);
+  expect(hook.pictureUrl(valid)).toBe(url);
+  await act(() => renderer!.unmount());
+  renderer = undefined;
+  expect(revokedUrls).toEqual([url]);
+});
+
+it("does not decode a stored picture that was never valid in this session", async () => {
+  const invalid = new Blob(["old geometry"]);
+  store.saved.set(paneId, {
+    paneId,
+    revision: `u1|dark|dark|${geometry(600)}`,
+    image: invalid,
+    savedAt: 1,
+  });
+  await mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5);
+  });
+  expect(hook.preparedPictureUrl(invalid)).toBeNull();
+  expect(decodedUrls).toEqual([]);
+});
+
+it("retains the decoded cover through refresh and releases it after the next cover takes over", async () => {
+  const previous = new Blob(["previous"]);
+  store.saved.set(paneId, {
+    paneId,
+    revision: `u1|dark|dark|${geometry(400)}`,
+    image: previous,
+    savedAt: 1,
+  });
+  await mount();
+  expect(hook.pictureFor(paneId)).toBe(previous);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5);
+  });
+  const previousUrl = hook.preparedPictureUrl(previous)!;
+  store.updatedAt = "u2";
+  await act(() => renderer!.update(<Probe />));
+  expect(hook.pictureFor(paneId)).toBe(previous);
+  expect(hook.preparedPictureUrl(previous)).toBe(previousUrl);
+  expect(revokedUrls).not.toContain(previousUrl);
+
+  const replacement = new Blob(["replacement"]);
+  markPaneSynced(paneId, { updatedAt: "u2", theme: "dark|dark" });
+  await act(() => hook.onPanePictureCaptured(pane, replacement));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5);
+  });
+  expect(hook.pictureFor(paneId)).toBe(replacement);
+  const nextUrl = hook.preparedPictureUrl(replacement)!;
+  expect(nextUrl).not.toBe(previousUrl);
+  store.updatedAt = "u3";
+  await act(() => renderer!.update(<Probe />));
+  expect(revokedUrls).toContain(previousUrl);
+  expect(revokedUrls).not.toContain(nextUrl);
+  expect(hook.pictureFor(paneId)).toBe(replacement);
 });

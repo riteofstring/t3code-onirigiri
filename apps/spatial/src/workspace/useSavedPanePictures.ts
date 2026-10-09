@@ -23,6 +23,7 @@ import {
   type SavedPanePicture,
 } from "./panePictureStore";
 import { snapshotPanePicture } from "./panePictureSnapshot";
+import { createPanePictureUrls } from "./panePictureUrls";
 import { threadPaneId } from "./useWorkspacePanes";
 
 interface PaneContentRevision {
@@ -91,6 +92,8 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   onLayoutChange: (layout: OnirigiriLayout) => void;
   /** A picture validated in this session, retained as cover while its thread refreshes. */
   pictureFor: (paneId: string) => Blob | null;
+  preparedPictureUrl: (image: Blob) => string | null;
+  pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
   canBackgroundPicture: (paneId: string) => boolean;
   picturesLoaded: boolean;
@@ -203,6 +206,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   );
 
   const lastValidPictures = useRef(new Map<string, Blob>());
+  const [pictureUrls] = useState(createPanePictureUrls);
   const pictureFor = useCallback(
     (paneId: string): Blob | null => {
       if (!saved?.has(paneId) || !contentRevisionsRef.current.has(paneId)) {
@@ -227,7 +231,18 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         lastValidPictures.current.delete(paneId);
       }
     }
-  }, [contentRevisions, saved]);
+    pictureUrls.retain(
+      new Set([
+        ...[...contentRevisions.keys()].flatMap((paneId) => {
+          const image = freshPictureFor(paneId);
+          return image ? [image] : [];
+        }),
+        ...lastValidPictures.current.values(),
+      ]),
+    );
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry changes can replace the retained cover read during render.
+  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, saved]);
+  useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
     (paneId: string) => freshPictureFor(paneId) !== null,
     // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
@@ -322,6 +337,8 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     onPanePictureCaptured,
     onLayoutChange,
     pictureFor,
+    preparedPictureUrl: pictureUrls.preparedUrl,
+    pictureUrl: pictureUrls.urlFor,
     hasFreshPicture,
     canBackgroundPicture,
     picturesLoaded: saved !== null,

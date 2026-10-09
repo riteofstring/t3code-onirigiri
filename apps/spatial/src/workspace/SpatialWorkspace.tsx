@@ -24,7 +24,6 @@ import { EmptyPane } from "./EmptyPane";
 import { AddPaneButton, FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
-import { canCapturePanes } from "./panePictureSnapshot";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
@@ -143,6 +142,8 @@ export function SpatialWorkspace({
     onLayoutChange,
     onPanePictureCaptured,
     pictureFor,
+    preparedPictureUrl,
+    pictureUrl,
     hasFreshPicture,
     canBackgroundPicture,
     picturesLoaded,
@@ -233,11 +234,11 @@ export function SpatialWorkspace({
   useEffect(() => {
     lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
   }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
-  // Panes off screen are laid out only where the browser supports
-  // HTML-in-Canvas, so only there can they be pictured without being shown.
+  // Preparation and snapshot drawing explicitly lay out offscreen content.
+  // Covered workspaces have no measurable viewport and must not start captures.
   useEffect(() => {
-    lifecycle?.setBackgroundPictures(canCapturePanes());
-  }, [lifecycle]);
+    lifecycle?.setBackgroundPictures(active);
+  }, [active, lifecycle]);
   useEffect(() => {
     if (panes && lifecycle) {
       lifecycle.setPanes(threadPanePositions(panes));
@@ -512,9 +513,18 @@ export function SpatialWorkspace({
       const data = pane.data as ThreadPaneData;
       const card = <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
       const image = pictureFor(pane.paneId);
-      return image ? <SavedPanePicture image={image} summary={card} /> : card;
+      return image ? (
+        <SavedPanePicture
+          image={image}
+          preparedUrl={preparedPictureUrl(image)}
+          pictureUrl={pictureUrl}
+          summary={card}
+        />
+      ) : (
+        card
+      );
     },
-    [pictureFor],
+    [pictureFor, pictureUrl, preparedPictureUrl],
   );
 
   return (
