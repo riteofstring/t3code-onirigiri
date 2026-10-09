@@ -9,7 +9,16 @@ import {
   createRouter,
   useParams,
 } from "@tanstack/react-router";
-import { memo, startTransition, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  memo,
+  startTransition,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   ChatViewActivityContext,
@@ -19,6 +28,7 @@ import { ChatViewContentReadyContext } from "@t3tools/web/src/components/chatVie
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
 import {
   ComposerHandleContext,
+  type ComposerHandleRef,
   useComposerHandleContext,
 } from "@t3tools/web/src/composerHandleContext";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
@@ -32,6 +42,8 @@ import {
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { canCapturePanes } from "./panePictureSnapshot";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
+
+export const SpatialWorkspaceActiveContext = createContext(true);
 
 export interface ThreadPaneThread {
   readonly environmentId: EnvironmentId;
@@ -212,7 +224,8 @@ export const ThreadPane = memo(function ThreadPane({
   onNavigateAway: (href: string) => void;
 }) {
   const interactive = useOnirigiriPaneInteractive();
-  const active = focused && interactive;
+  const workspaceActive = use(SpatialWorkspaceActiveContext);
+  const active = workspaceActive && focused && interactive;
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
@@ -223,24 +236,18 @@ export const ThreadPane = memo(function ThreadPane({
     focused,
   );
 
-  // The app shares one composer handle (the command palette provides it).
-  // Each pane's ChatView gets its own, and the shared one follows focus.
-  const appComposerRef = useComposerHandleContext();
-  const paneComposerRef = useRef<ChatComposerHandle | null>(null);
+  const paneComposerRef = usePaneComposerHandle(active);
 
   // A pane that stops being active gives up keyboard focus, so typing and
   // workspace navigation reach the active pane rather than this one.
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     activity.set(active);
-    // The app's handle forwards every call to this pane's current handle,
-    // which the composer replaces as its state changes.
-    if (active && appComposerRef) appComposerRef.current = forwardComposerHandle(paneComposerRef);
     const focused = document.activeElement;
     if (!active && focused instanceof HTMLElement && contentRef.current?.contains(focused)) {
       focused.blur();
     }
-  }, [active, activity, appComposerRef]);
+  }, [active, activity]);
 
   // A settled, synchronized view is pictured for when it is not mounted, and
   // again when it stops being active, in case it was scrolled meanwhile.
@@ -292,16 +299,36 @@ export const ThreadPane = memo(function ThreadPane({
   );
 });
 
-function forwardComposerHandle(target: {
-  readonly current: ChatComposerHandle | null;
-}): ChatComposerHandle {
-  return new Proxy({} as ChatComposerHandle, {
-    get: (_, key) => {
-      const handle = target.current as Record<PropertyKey, unknown> | null;
-      const value = handle?.[key];
-      return typeof value === "function" ? value.bind(handle) : value;
-    },
+// Shared commands see the real handle or null, including composer replacements.
+function usePaneComposerHandle(active: boolean): ComposerHandleRef {
+  const appComposerRef = useComposerHandleContext();
+  const [pane] = useState(() => {
+    let handle: ChatComposerHandle | null = null;
+    let connected: ComposerHandleRef | null = null;
+    return {
+      ref: {
+        get current() {
+          return handle;
+        },
+        set current(next: ChatComposerHandle | null) {
+          if (connected && connected.current === handle) connected.current = next;
+          handle = next;
+        },
+      },
+      connect(app: ComposerHandleRef) {
+        connected = app;
+        app.current = handle;
+        return () => {
+          if (connected && connected.current === handle) connected.current = null;
+          connected = null;
+        };
+      },
+    };
   });
+  useLayoutEffect(() => {
+    if (active && appComposerRef) return pane.connect(appComposerRef);
+  }, [active, appComposerRef, pane]);
+  return pane.ref;
 }
 
 // Escape in the composer leaves it, so the workspace's arrow-key navigation

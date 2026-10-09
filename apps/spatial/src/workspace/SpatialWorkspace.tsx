@@ -27,7 +27,7 @@ import { DiffPane, TerminalPane } from "./SidePanes";
 import { canCapturePanes } from "./panePictureSnapshot";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { ThreadCard } from "./ThreadCard";
-import { ThreadPane } from "./ThreadPane";
+import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { useToolPanes, type ToolPane } from "./useToolPanes";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
@@ -525,32 +525,34 @@ export function SpatialWorkspace({
         <div ref={setControlsContainer} />
       </div>
       {initialPanes && lifecycle ? (
-        <PaneLifecycleContext value={lifecycle}>
-          <PaneSnapshotContext value={requestSnapshot}>
-            <OnirigiriWorkspace
-              ref={workspaceRef}
-              ariaLabel="Onirigiri for T3 Code"
-              className="min-h-0 flex-1"
-              cursorRunway={0}
-              cursorTargets="panes"
-              desktopControlsContainer={controlsContainer}
-              focusAnchor={focusAnchor}
-              getPanePicture={getPanePicture}
-              gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
-              initialPanes={initialPanes}
-              liveContent
-              onFocusedPaneFrame={onFocusedPaneFrame}
-              onLayoutChange={onLayoutChange}
-              onPaneClose={onPaneClose}
-              onPanePictureCaptured={onPanePictureCaptured}
-              renderPane={renderPane}
-              renderPanePlaceholder={renderPanePlaceholder}
-              shortcutScope={active ? "application" : "workspace"}
-              shortcuts={SHORTCUTS}
-              workspaceId={WORKSPACE_ID}
-            />
-          </PaneSnapshotContext>
-        </PaneLifecycleContext>
+        <SpatialWorkspaceActiveContext value={active}>
+          <PaneLifecycleContext value={lifecycle}>
+            <PaneSnapshotContext value={requestSnapshot}>
+              <OnirigiriWorkspace
+                ref={workspaceRef}
+                ariaLabel="Onirigiri for T3 Code"
+                className="min-h-0 flex-1"
+                cursorRunway={0}
+                cursorTargets="panes"
+                desktopControlsContainer={controlsContainer}
+                focusAnchor={focusAnchor}
+                getPanePicture={getPanePicture}
+                gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
+                initialPanes={initialPanes}
+                liveContent
+                onFocusedPaneFrame={onFocusedPaneFrame}
+                onLayoutChange={onLayoutChange}
+                onPaneClose={onPaneClose}
+                onPanePictureCaptured={onPanePictureCaptured}
+                renderPane={renderPane}
+                renderPanePlaceholder={renderPanePlaceholder}
+                shortcutScope={active ? "application" : "workspace"}
+                shortcuts={SHORTCUTS}
+                workspaceId={WORKSPACE_ID}
+              />
+            </PaneSnapshotContext>
+          </PaneLifecycleContext>
+        </SpatialWorkspaceActiveContext>
       ) : null}
     </div>
   );

@@ -6,12 +6,22 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { PanelAnimationSuppressionProvider } from "@t3tools/web/src/panelAnimations";
 
-import { ThreadPane } from "./ThreadPane";
+import {
+  ComposerHandleContext,
+  type ComposerHandleRef,
+} from "@t3tools/web/src/composerHandleContext";
+import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
+
+import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
 import { PaneSnapshotContext, type RequestPaneSnapshot } from "./useSavedPanePictures";
 
 const state = vi.hoisted(() => ({
   mounted: true,
+  interactive: false,
+  composerVersion: 0,
+  composerActions: [] as number[],
+  activeKeys: 0,
   detail: null as { updatedAt: string } | null,
   status: "synchronizing" as "synchronizing" | "live" | "deleted",
   panelDurationMs: 200,
@@ -24,7 +34,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@riteofstring/onirigiri", () => ({
   useOnirigiriPaneContentReady: () => {},
-  useOnirigiriPaneInteractive: () => false,
+  useOnirigiriPaneInteractive: () => state.interactive,
 }));
 vi.mock("./paneLifecycle", async () => {
   const { createContext } = await import("react");
@@ -52,12 +62,35 @@ vi.mock("@t3tools/web/src/hooks/useMediaQuery", () => ({
   useMediaQuery: () => state.reducedMotion,
 }));
 vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
-  const { useLayoutEffect, useState, useSyncExternalStore } = await import("react");
+  const { useImperativeHandle, useLayoutEffect, useState, useSyncExternalStore } =
+    await import("react");
+  const { useComposerHandleContext } = await import("@t3tools/web/src/composerHandleContext");
   const { usePanelAnimationSettings, usePanelPresence } =
     await import("@t3tools/web/src/panelAnimations");
   const { useChatViewContentReady, useComposerSyncPhase } =
     await import("@t3tools/web/src/components/chatViewContentReady");
+  const { useActiveChatViewEffect } = await import("@t3tools/web/src/components/chatViewActivity");
   function ChatContent() {
+    useActiveChatViewEffect(() => {
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === "x") state.activeKeys += 1;
+      };
+      window.addEventListener("keydown", onKeyDown);
+      return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
+    const composerRef = useComposerHandleContext();
+    const version = state.composerVersion;
+    useImperativeHandle(
+      composerRef,
+      () =>
+        ({
+          isModelPickerOpen: () => version % 2 === 1,
+          focusAtEnd: () => {
+            state.composerActions.push(version);
+          },
+        }) as ChatComposerHandle,
+      [version],
+    );
     useLayoutEffect(() => {
       state.panelRenders++;
     });
@@ -86,7 +119,8 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
           state.listeners.add(listener);
           return () => state.listeners.delete(listener);
         },
-        () => `${state.status}:${state.checkoutReady}:${state.hasChatView}`,
+        () =>
+          `${state.status}:${state.checkoutReady}:${state.hasChatView}:${state.composerVersion}`,
       );
       return state.hasChatView ? <ChatContent /> : null;
     },
@@ -99,27 +133,33 @@ let lifecycle: PaneLifecycleStore | null;
 let paneId: string;
 let appSuppressed: boolean;
 let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
+let appComposerRef: ComposerHandleRef;
+let workspaceActive: boolean;
 
 async function render(focused = false, paintFrames = true) {
   await act(async () => {
     for (const listener of state.listeners) listener();
     root.render(
-      <PanelAnimationSuppressionProvider value={appSuppressed}>
-        <PaneLifecycleContext value={lifecycle}>
-          <PaneSnapshotContext value={requestSnapshot}>
-            <ThreadPane
-              paneId={paneId}
-              thread={{
-                environmentId: "environment-one" as EnvironmentId,
-                threadId: "thread-one" as ThreadId,
-              }}
-              focused={focused}
-              visible={focused}
-              onNavigateAway={() => {}}
-            />
-          </PaneSnapshotContext>
-        </PaneLifecycleContext>
-      </PanelAnimationSuppressionProvider>,
+      <SpatialWorkspaceActiveContext value={workspaceActive}>
+        <ComposerHandleContext value={appComposerRef}>
+          <PanelAnimationSuppressionProvider value={appSuppressed}>
+            <PaneLifecycleContext value={lifecycle}>
+              <PaneSnapshotContext value={requestSnapshot}>
+                <ThreadPane
+                  paneId={paneId}
+                  thread={{
+                    environmentId: "environment-one" as EnvironmentId,
+                    threadId: "thread-one" as ThreadId,
+                  }}
+                  focused={focused}
+                  visible={focused}
+                  onNavigateAway={() => {}}
+                />
+              </PaneSnapshotContext>
+            </PaneLifecycleContext>
+          </PanelAnimationSuppressionProvider>
+        </ComposerHandleContext>
+      </SpatialWorkspaceActiveContext>,
     );
   });
   await act(async () => {
@@ -140,6 +180,12 @@ beforeEach(() => {
   lifecycle = null;
   paneId = "thread:environment-one:thread-one";
   state.mounted = true;
+  state.interactive = false;
+  state.composerVersion = 0;
+  state.composerActions = [];
+  state.activeKeys = 0;
+  appComposerRef = { current: null };
+  workspaceActive = true;
   state.detail = null;
   state.status = "synchronizing";
   state.panelDurationMs = 200;
@@ -367,4 +413,130 @@ it("starts the next queued preparation only after the deferred view commits", as
     await vi.advanceTimersToNextTimerAsync();
   });
   expect(lifecycle.isMounted("p2")).toBe(true);
+});
+
+it("keeps command-palette actions bound to the active composer's latest handle", async () => {
+  state.interactive = true;
+  await render(true);
+  expect(appComposerRef.current?.isModelPickerOpen()).toBe(false);
+  appComposerRef.current?.focusAtEnd();
+
+  state.composerVersion = 1;
+  await render(true);
+  expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
+  appComposerRef.current?.focusAtEnd();
+  expect(state.composerActions).toEqual([0, 1]);
+});
+
+it("releases command-palette actions while content is shielded and restores them on arrival", async () => {
+  state.interactive = true;
+  await render(true);
+  expect(appComposerRef.current).not.toBeNull();
+
+  state.interactive = false;
+  await render(true);
+  expect(appComposerRef.current?.isModelPickerOpen() ?? false).toBe(false);
+  appComposerRef.current?.focusAtEnd();
+  expect(state.composerActions).toEqual([]);
+
+  state.composerVersion = 1;
+  state.interactive = true;
+  await render(true);
+  expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
+  appComposerRef.current?.focusAtEnd();
+  expect(state.composerActions).toEqual([1]);
+});
+
+it("leaves no stale composer handle after its view is evicted and accepts its replacement", async () => {
+  state.interactive = true;
+  await render(true);
+  const previous = appComposerRef.current;
+
+  state.mounted = false;
+  await render(true);
+  expect(appComposerRef.current?.isModelPickerOpen() ?? false).toBe(false);
+  expect(appComposerRef.current).toBeNull();
+
+  state.mounted = true;
+  state.composerVersion = 1;
+  await render(true);
+  expect(appComposerRef.current).not.toBe(previous);
+  expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
+});
+
+it("does not clear the next pane's composer when the departing pane releases its view", async () => {
+  state.interactive = true;
+  await render(true);
+  const nextFocus = vi.fn<() => void>();
+  const next = {
+    isModelPickerOpen: (): boolean => true,
+    focusAtEnd: () => nextFocus(),
+  } as ChatComposerHandle;
+  appComposerRef.current = next;
+
+  state.interactive = false;
+  state.mounted = false;
+  await render(false);
+  expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
+  appComposerRef.current?.focusAtEnd();
+  expect(nextFocus).toHaveBeenCalledOnce();
+});
+
+it("yields to a draft covering the workspace and reclaims its composer on return", async () => {
+  state.interactive = true;
+  await render(true);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+  expect(state.activeKeys).toBe(1);
+  workspaceActive = false;
+  await render(true);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+  expect(state.activeKeys).toBe(1);
+  expect(appComposerRef.current).toBeNull();
+
+  const draftFocus = vi.fn<() => void>();
+  const draft = {
+    isModelPickerOpen: (): boolean => true,
+    focusAtEnd: () => draftFocus(),
+  } as ChatComposerHandle;
+  appComposerRef.current = draft;
+  state.composerVersion = 2;
+  await render(true);
+  expect(appComposerRef.current).toBe(draft);
+  appComposerRef.current?.focusAtEnd();
+  expect(draftFocus).toHaveBeenCalledOnce();
+  expect(state.composerActions).toEqual([]);
+
+  Object.assign(appComposerRef, { current: null });
+  workspaceActive = true;
+  await render(true);
+  appComposerRef.current?.focusAtEnd();
+  expect(state.composerActions).toEqual([2]);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+  expect(state.activeKeys).toBe(2);
+});
+
+it("releases the active composer when the workspace unmounts", async () => {
+  state.interactive = true;
+  await render(true);
+  expect(appComposerRef.current).not.toBeNull();
+  await act(() => root.render(null));
+  expect(appComposerRef.current).toBeNull();
+});
+
+it("returns from a covered eviction before a replacement composer is available", async () => {
+  state.interactive = true;
+  await render(true);
+  const previous = appComposerRef.current;
+  workspaceActive = false;
+  state.mounted = false;
+  await render(true);
+  workspaceActive = true;
+  await render(true);
+  expect(appComposerRef.current).toBeNull();
+
+  state.composerVersion = 1;
+  state.mounted = true;
+  await render(true);
+  expect(appComposerRef.current).not.toBe(previous);
+  expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
 });
