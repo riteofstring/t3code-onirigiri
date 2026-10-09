@@ -9,6 +9,7 @@ import { markPaneSynced, useSavedPanePictures } from "./useSavedPanePictures";
 const store = {
   saved: new Map<string, SavedPanePicture>(),
   writes: [] as SavedPanePicture[],
+  threadIds: ["t1"],
   updatedAt: "u1",
   running: false,
   theme: "dark",
@@ -36,14 +37,13 @@ vi.mock("@t3tools/web/src/hooks/useTheme", () => ({
   useTheme: () => ({ resolvedTheme: "dark", theme: store.theme, themeHalves: store.themeHalves }),
 }));
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThreadShells: () => [
-    {
+  useThreadShells: () =>
+    store.threadIds.map((id) => ({
       environmentId: "e",
-      id: "t1",
+      id,
       updatedAt: store.updatedAt,
       latestTurn: { state: store.running ? "running" : "completed" },
-    },
-  ],
+    })),
 }));
 vi.mock("./useWorkspacePanes", () => ({
   threadPaneId: (environmentId: string, threadId: string) => `thread:${environmentId}:${threadId}`,
@@ -53,7 +53,10 @@ const paneId = "thread:e:t1";
 const pane = { paneId } as WorkspacePane;
 const layout = (width: number) =>
   ({
-    columns: [{ cells: [{ paneId }], widthSpec: { unit: "px", value: width } }],
+    columns: store.threadIds.map((id) => ({
+      cells: [{ paneId: `thread:e:${id}` }],
+      widthSpec: { unit: "px", value: width },
+    })),
   }) as unknown as OnirigiriLayout;
 const geometry = (width: number) => `800x600@1|{"unit":"px","value":${width}}`;
 
@@ -131,6 +134,8 @@ afterEach(async () => {
   revokedUrls.length = 0;
   store.saved.clear();
   store.writes.length = 0;
+  for (const id of store.threadIds) markPaneSynced(`thread:e:${id}`, null);
+  store.threadIds = ["t1"];
   store.updatedAt = "u1";
   store.running = false;
   store.theme = "dark";
@@ -156,6 +161,51 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
   });
   expect(hook.getPanePicture(pane)).toBeNull();
 });
+
+function fillPictureCache() {
+  store.threadIds = Array.from({ length: 201 }, (_, i) => `t${i + 1}`);
+  currentLayout = layout(400);
+  for (let i = 0; i < 200; i++) {
+    const id = `thread:e:${store.threadIds[i]}`;
+    store.saved.set(id, {
+      paneId: id,
+      revision: `u1|dark|dark|${geometry(400)}`,
+      image: new Blob([String(i)]),
+      savedAt: i + 1,
+    });
+  }
+}
+
+it.each(["native", "fallback"])(
+  "does not refill its own evictions but still captures visited panes through %s",
+  async (source) => {
+    fillPictureCache();
+    await mount();
+    const nextId = "thread:e:t201";
+    expect(hook.canBackgroundPicture(nextId)).toBe(false);
+    expect(hook.canBackgroundPicture(paneId)).toBe(true);
+    markPaneSynced(nextId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    if (source === "native") {
+      await act(() =>
+        hook.onPanePictureCaptured({ paneId: nextId } as WorkspacePane, new Blob(["new"])),
+      );
+    } else {
+      hook.requestSnapshot(nextId, { isConnected: true } as HTMLElement);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3500);
+      });
+    }
+    expect(hook.hasFreshPicture(nextId)).toBe(true);
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    expect(hook.canBackgroundPicture(paneId)).toBe(false);
+
+    store.updatedAt = "u2";
+    await act(() => renderer!.update(<Probe />));
+    expect(hook.hasFreshPicture(nextId)).toBe(false);
+    expect(hook.canBackgroundPicture(nextId)).toBe(true);
+    expect(hook.canBackgroundPicture(paneId)).toBe(false);
+  },
+);
 
 it("saves captures only from panes showing a synchronized thread", async () => {
   await mount();

@@ -95,6 +95,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   preparedPictureUrl: (image: Blob) => string | null;
   pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
+  /** Passive preparation fills free slots or refreshes existing pictures. */
   canBackgroundPicture: (paneId: string) => boolean;
   runningPanes: ReadonlySet<string>;
   picturesLoaded: boolean;
@@ -184,8 +185,9 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     [threads],
   );
   const canBackgroundPicture = useCallback(
-    (paneId: string) => !runningPanes.has(paneId),
-    [runningPanes],
+    (paneId: string) =>
+      !runningPanes.has(paneId) && (saved === null || saved.size < MAX_SAVED || saved.has(paneId)),
+    [runningPanes, saved],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
