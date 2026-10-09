@@ -30,11 +30,17 @@ const state = vi.hoisted(() => ({
   checkoutReady: true,
   timelineReady: true,
   hasChatView: true,
+  suspended: false,
+  engineReady: false,
+  engineRevision: "",
   listeners: new Set<() => void>(),
 }));
 
 vi.mock("@riteofstring/onirigiri", () => ({
-  useOnirigiriPaneContentReady: () => {},
+  useOnirigiriPaneContentReady: (ready: boolean, revision: string) => {
+    state.engineReady = ready;
+    state.engineRevision = revision;
+  },
   useOnirigiriPaneInteractive: () => state.interactive,
 }));
 vi.mock("./paneLifecycle", async () => {
@@ -50,7 +56,7 @@ vi.mock("./useSavedPanePictures", async () => {
   const { createContext } = await import("react");
   return {
     PaneSnapshotContext: createContext(null),
-    markPaneSynced: () => {},
+    markPaneSynced: vi.fn(),
     usePanePictureTheme: () => "default|dark",
   };
 });
@@ -68,7 +74,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
   const { useComposerHandleContext } = await import("@t3tools/web/src/composerHandleContext");
   const { usePanelAnimationSettings, usePanelPresence } =
     await import("@t3tools/web/src/panelAnimations");
-  const { useChatViewContentReady, useComposerSyncPhase } =
+  const { ChatViewPendingContent, useChatViewContentReady, useComposerSyncPhase } =
     await import("@t3tools/web/src/components/chatViewContentReady");
   const { useActiveChatViewEffect } = await import("@t3tools/web/src/components/chatViewActivity");
   function ChatContent() {
@@ -110,6 +116,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     );
     return (
       <>
+        {state.suspended ? <ChatViewPendingContent /> : null}
         <textarea aria-label="Draft" />
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
         <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
@@ -125,7 +132,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
           return () => state.listeners.delete(listener);
         },
         () =>
-          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}`,
+          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}:${state.suspended}`,
       );
       return state.hasChatView ? <ChatContent /> : null;
     },
@@ -199,6 +206,9 @@ beforeEach(() => {
   state.checkoutReady = true;
   state.timelineReady = true;
   state.hasChatView = true;
+  state.suspended = false;
+  state.engineReady = false;
+  state.engineRevision = "";
   requestSnapshot = vi.fn();
   appSuppressed = false;
   container = document.createElement("div");
@@ -332,6 +342,54 @@ it("releases deleted content without waiting for a ChatView readiness report", a
   await render(true);
   expect(container.querySelector("textarea")).toBeNull();
   expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+});
+
+it("keeps a live editor presented while suspended content postpones new pictures", async () => {
+  const { markPaneSynced } = await import("./useSavedPanePictures");
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep this draft while highlighting";
+  const revision = state.engineRevision;
+  expect(state.engineReady).toBe(true);
+  requestSnapshot.mockClear();
+
+  state.suspended = true;
+  await render(true);
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(revision);
+  expect(markPaneSynced).toHaveBeenLastCalledWith(paneId, null);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep this draft while highlighting");
+
+  state.suspended = false;
+  await render(true, false);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).toBe(revision);
+  expect(markPaneSynced).toHaveBeenLastCalledWith(paneId, {
+    updatedAt: "u1",
+    theme: "default|dark",
+  });
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+
+  state.mounted = false;
+  await render(true);
+  expect(state.engineReady).toBe(false);
+  expect(state.engineRevision).toBe(revision);
+  state.mounted = true;
+  state.suspended = true;
+  await render(true);
+  expect(state.engineReady).toBe(false);
+  expect(state.engineRevision).toBe(revision);
+  expect(container.querySelector("textarea")).not.toBe(editor);
+  state.suspended = false;
+  await render(true);
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).toBe(revision);
 });
 
 it("keeps a closing panel present when the app route follows another pane", async () => {

@@ -154,6 +154,9 @@ function usePaneContent(
   const [viewReady, setViewReady] = useState(false);
   const contentReady = status === "deleted" || viewReady;
   const prepared = renderContent && synced && contentReady && settled;
+  const [presented, setPresented] = useState(false);
+  if (presented && !renderContent) setPresented(false);
+  else if (!presented && prepared) setPresented(true);
 
   useLayoutEffect(() => {
     markPaneSynced(
@@ -165,7 +168,8 @@ function usePaneContent(
     return () => markPaneSynced(paneId, null);
   }, [detailUpdatedAt, paneId, pictureTheme, prepared]);
 
-  useOnirigiriPaneContentReady(prepared, revision);
+  // Later async work can delay a new picture without covering a live editor.
+  useOnirigiriPaneContentReady(renderContent && presented, `${revision}|${presented && !prepared}`);
 
   useEffect(() => {
     if (!renderContent || !synced || !contentReady) return;
