@@ -41,6 +41,8 @@ type Direction = "left" | "right" | "up" | "down";
  * picture are mounted the same way, nearest first, until they are pictured.
  * Navigation cancels speculative work that has
  * not started yet.
+ * Running conversations use spare retained slots after likely destinations;
+ * a workspace with more running views than those slots cannot keep them all live.
  */
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
@@ -50,6 +52,7 @@ export function createPaneLifecycleStore(
   let focused =
     focusedPaneId && panes.has(focusedPaneId) ? focusedPaneId : (initialPanes[0]?.paneId ?? null);
   let direction: Direction | null = null;
+  let running: ReadonlySet<string> = new Set();
   const visible = new Set<string>();
   const mounted = new Set<string>(focused ? [focused] : []);
   const lastWanted = new Map<string, number>();
@@ -264,7 +267,15 @@ export function createPaneLifecycleStore(
     // pane on screen that a picture already shows does not need its view.
     const onScreen = picturesReady ? [...visible].filter((paneId) => !hasPicture(paneId)) : [];
     const nearby = neighborsWanted ? neighbors() : [];
-    const speculative = [...new Set([...nearby, ...onScreen])].filter(
+    const center = focused ? panes.get(focused) : undefined;
+    const distance = (pane: PanePosition) =>
+      Math.abs(pane.plane - (center?.plane ?? 0)) * 1000 +
+      Math.abs(pane.slot - (center?.slot ?? 0));
+    const live = [...panes.values()]
+      .filter((pane) => running.has(pane.paneId) && (neighborsWanted || mounted.has(pane.paneId)))
+      .toSorted((a, b) => distance(a) - distance(b) || a.plane - b.plane || a.slot - b.slot)
+      .map((pane) => pane.paneId);
+    const speculative = [...new Set([...nearby, ...onScreen, ...live])].filter(
       (paneId) => paneId !== focused && panes.has(paneId),
     );
     wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
@@ -376,6 +387,11 @@ export function createPaneLifecycleStore(
         pictureAttempted.delete(paneId);
         if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
       }
+      requestSettle();
+    },
+    setRunning: (next: ReadonlySet<string>) => {
+      if (next.size === running.size && [...next].every((paneId) => running.has(paneId))) return;
+      running = new Set(next);
       requestSettle();
     },
     /** Tells which panes a picture shows faithfully while they are not mounted. */

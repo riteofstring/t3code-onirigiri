@@ -96,6 +96,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
   canBackgroundPicture: (paneId: string) => boolean;
+  runningPanes: ReadonlySet<string>;
   picturesLoaded: boolean;
   requestSnapshot: RequestPaneSnapshot;
   stageRef: (element: HTMLElement | null) => void;
@@ -346,6 +347,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     pictureUrl: pictureUrls.urlFor,
     hasFreshPicture,
     canBackgroundPicture,
+    runningPanes,
     picturesLoaded: saved !== null,
     requestSnapshot: snapshots.request,
     stageRef,

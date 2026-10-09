@@ -593,6 +593,7 @@ it("waits until a running turn completes before drawing its fallback picture", a
   });
   expect(snapshot).not.toHaveBeenCalled();
   expect(hook.canBackgroundPicture(paneId)).toBe(false);
+  expect(hook.runningPanes).toEqual(new Set([paneId]));
   store.running = false;
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
@@ -603,6 +604,7 @@ it("waits until a running turn completes before drawing its fallback picture", a
   });
   expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.canBackgroundPicture(paneId)).toBe(true);
+  expect(hook.runningPanes.size).toBe(0);
 });
 
 it("warms only pictures valid for current panes and releases their URLs on unmount", async () => {

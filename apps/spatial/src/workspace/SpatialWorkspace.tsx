@@ -146,6 +146,7 @@ export function SpatialWorkspace({
     pictureUrl,
     hasFreshPicture,
     canBackgroundPicture,
+    runningPanes,
     picturesLoaded,
     requestSnapshot,
     stageRef,
@@ -234,6 +235,9 @@ export function SpatialWorkspace({
   useEffect(() => {
     lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
   }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
+  useEffect(() => {
+    lifecycle?.setRunning(active ? runningPanes : new Set());
+  }, [active, lifecycle, runningPanes]);
   // Preparation and snapshot drawing explicitly lay out offscreen content.
   // Covered workspaces have no measurable viewport and must not start captures.
   useEffect(() => {

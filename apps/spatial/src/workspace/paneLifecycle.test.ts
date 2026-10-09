@@ -305,6 +305,132 @@ it("does not repeatedly mount a running thread just to update its background pic
   store.dispose();
 });
 
+it("prepares a distant running view after neighbors and retains it through focus changes", () => {
+  const panes = row(20);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const mounts: string[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => {
+      if (store.isMounted(paneId)) mounts.push(paneId);
+    });
+  }
+  store.setPictures(() => true);
+  store.setRunning(new Set(["p0-19"]));
+  drain(store, panes);
+  expect(mounts.slice(0, 2)).toEqual(["p0-1", "p0-19"]);
+  for (let slot = 1; slot <= 10; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(250);
+    expect(store.isMounted("p0-19")).toBe(true);
+    drain(store, panes);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  }
+  expect(mounts.filter((paneId) => paneId === "p0-19")).toHaveLength(1);
+  store.dispose();
+});
+
+it("uses spare capacity for running views without displacing neighbors or visible unpictured content", () => {
+  const panes = row(14);
+  const store = createPaneLifecycleStore(panes, "p0-5");
+  const unpictured = new Set(["p0-0", "p0-1", "p0-2", "p0-3", "p0-8", "p0-13"]);
+  for (const paneId of unpictured) if (paneId !== "p0-13") store.setVisible(paneId, true);
+  store.setPictures((paneId) => !unpictured.has(paneId));
+  store.setRunning(new Set(["p0-13"]));
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual([
+    "p0-0",
+    "p0-1",
+    "p0-2",
+    "p0-3",
+    "p0-4",
+    "p0-5",
+    "p0-6",
+    "p0-8",
+  ]);
+  unpictured.delete("p0-0");
+  store.setPictures((paneId) => !unpictured.has(paneId));
+  drain(store, panes);
+  expect(store.isMounted("p0-13")).toBe(true);
+  expect(store.isMounted("p0-4")).toBe(true);
+  expect(store.isMounted("p0-6")).toBe(true);
+  expect(mountedOf(store, panes)).toHaveLength(8);
+  store.dispose();
+});
+
+it("chooses the closest running views with stable geometric tie breaking", () => {
+  const panes = [...row(5, 0), ...row(5, 1), ...row(5, 2)];
+  const store = createPaneLifecycleStore(panes, "p1-2");
+  const unpictured = new Set(["p0-0", "p2-4"]);
+  for (const paneId of unpictured) store.setVisible(paneId, true);
+  store.setPictures((paneId) => !unpictured.has(paneId));
+  store.setRunning(new Set(["p2-1", "p0-1", "p0-4"]));
+  drain(store, panes);
+  expect(store.isMounted("p0-1")).toBe(true);
+  expect(store.isMounted("p2-1")).toBe(false);
+  expect(store.isMounted("p0-4")).toBe(false);
+  expect(mountedOf(store, panes)).toHaveLength(8);
+  store.dispose();
+});
+
+it("releases finished and removed running views through ordinary retention", () => {
+  const panes = row(26);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setRunning(new Set(["p0-25"]));
+  drain(store, panes);
+  store.setRunning(new Set());
+  drain(store, panes);
+  expect(store.isMounted("p0-25")).toBe(true);
+  for (let slot = 1; slot <= 10; slot++) {
+    store.setFocus(`p0-${slot}`);
+    drain(store, panes);
+  }
+  expect(store.isMounted("p0-25")).toBe(false);
+  store.setRunning(new Set(["p0-25"]));
+  drain(store, panes);
+  expect(store.isMounted("p0-25")).toBe(true);
+  store.setPanes(panes.slice(0, -1));
+  drain(store, panes.slice(0, -1));
+  expect(store.isMounted("p0-25")).toBe(false);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  store.dispose();
+});
+
+it("does not restart preparation when running membership is unchanged", () => {
+  const panes = row(8);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setRunning(new Set(["p0-7"]));
+  for (let step = 0; step < 20; step++) {
+    vi.advanceTimersByTime(50);
+    store.setRunning(new Set(["p0-7"]));
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-7"]);
+  store.dispose();
+});
+
+it("retains a background view that starts running before its picture finishes", () => {
+  const panes = row(8);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId !== "p0-7");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(3000);
+  for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-7")).toBe(true);
+  store.setRunning(new Set(["p0-7"]));
+  store.setPictures(
+    (paneId) => paneId !== "p0-7",
+    true,
+    (paneId) => paneId !== "p0-7",
+  );
+  drain(store, panes);
+  expect(store.isMounted("p0-7")).toBe(true);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  store.dispose();
+});
+
 it("cancels background picturing while covered and retries the interrupted pane on return", () => {
   const panes = row(5);
   const store = createPaneLifecycleStore(panes, "p0-0");
