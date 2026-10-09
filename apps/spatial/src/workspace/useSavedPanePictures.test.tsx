@@ -17,7 +17,11 @@ const store = {
 const decodedUrls: string[] = [];
 const revokedUrls: string[] = [];
 
-const snapshot = vi.hoisted(() => vi.fn(async () => new Blob(["snapshot"])));
+const snapshot = vi.hoisted(() =>
+  vi.fn(async (_element: HTMLElement, canSnapshot: () => boolean): Promise<Blob | null> =>
+    canSnapshot() ? new Blob(["snapshot"]) : null,
+  ),
+);
 vi.mock("./panePictureSnapshot", () => ({
   snapshotPanePicture: snapshot,
 }));
@@ -75,6 +79,14 @@ async function mount() {
     hook.stageRef({} as HTMLElement);
     resize(800, 600);
   });
+}
+
+function pendingPicture() {
+  let resolve!: (image: Blob | null) => void;
+  const promise = new Promise<Blob | null>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 beforeEach(() => {
@@ -348,6 +360,78 @@ it("reuses a matching snapshot until a departed pane needs its scroll position r
     await vi.advanceTimersByTimeAsync(3500);
   });
   expect(snapshot).toHaveBeenCalledTimes(2);
+});
+
+it("keeps an immutable picture that finishes encoding after its pane is evicted", async () => {
+  const encoding = pendingPicture();
+  snapshot.mockReturnValueOnce(encoding.promise);
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  const element = { isConnected: true } as HTMLElement;
+  hook.requestSnapshot(paneId, element);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(snapshot.mock.calls[0]![1]()).toBe(true);
+
+  markPaneSynced(paneId, null);
+  Object.defineProperty(element, "isConnected", { value: false });
+  const image = new Blob(["completed after eviction"]);
+  await act(async () => {
+    encoding.resolve(image);
+  });
+  expect(store.writes).toHaveLength(1);
+  expect(hook.pictureFor(paneId)).toBe(image);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it.each(["content", "theme", "stage", "column", "running"] as const)(
+  "rejects a pending picture when its %s changes",
+  async (change) => {
+    const encoding = pendingPicture();
+    snapshot.mockReturnValueOnce(encoding.promise);
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3500);
+    });
+    expect(snapshot).toHaveBeenCalledOnce();
+    await act(() => {
+      if (change === "content") store.updatedAt = "u2";
+      if (change === "theme") store.theme = "ocean";
+      if (change === "running") store.running = true;
+      if (change === "stage") resize(900, 600);
+      if (change === "column") hook.onLayoutChange(layout(500));
+      renderer!.update(<Probe />);
+    });
+    expect(snapshot.mock.calls[0]![1]()).toBe(false);
+    await act(async () => {
+      encoding.resolve(new Blob(["obsolete picture"]));
+    });
+    expect(store.writes).toHaveLength(0);
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+  },
+);
+
+it("retains a native capture that arrives while its fallback is encoding", async () => {
+  const encoding = pendingPicture();
+  snapshot.mockReturnValueOnce(encoding.promise);
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  const native = new Blob(["native"]);
+  await act(() => hook.onPanePictureCaptured(pane, native));
+  await act(async () => {
+    encoding.resolve(new Blob(["fallback"]));
+  });
+  expect(store.writes).toHaveLength(1);
+  expect(hook.pictureFor(paneId)).toBe(native);
 });
 
 it("waits until a running turn completes before drawing its fallback picture", async () => {

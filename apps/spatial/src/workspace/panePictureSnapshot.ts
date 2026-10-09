@@ -104,8 +104,11 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** A PNG of `element` as it is now drawn, or null when it has no size. */
-export async function snapshotPanePicture(element: HTMLElement): Promise<Blob | null> {
+/** A PNG after layout settles, or null when the pane is no longer valid or has no size. */
+export async function snapshotPanePicture(
+  element: HTMLElement,
+  canSnapshot: () => boolean,
+): Promise<Blob | null> {
   const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
   if (host) host.dataset.spatialSnapshot = "";
   try {
@@ -114,7 +117,7 @@ export async function snapshotPanePicture(element: HTMLElement): Promise<Blob | 
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
-    if (!element.isConnected) return null;
+    if (!element.isConnected || !canSnapshot()) return null;
     return await drawPanePicture(element);
   } finally {
     if (host) delete host.dataset.spatialSnapshot;

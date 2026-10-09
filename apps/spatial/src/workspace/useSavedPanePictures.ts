@@ -294,12 +294,21 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       const revision = () => {
         const content = contentRevisionsRef.current.get(paneId);
         const geometry = geometryRevision(paneId);
-        return content && geometry && paneHasCommittedContent(paneId, content)
-          ? `${contentKey(content)}|${geometry}`
-          : null;
+        return content && geometry ? `${contentKey(content)}|${geometry}` : null;
       };
       const before = revision();
-      if (!before || !element.isConnected || runningPanesRef.current.has(paneId)) return;
+      if (before === null) return;
+      const canSnapshot = () => {
+        const content = contentRevisionsRef.current.get(paneId);
+        return (
+          element.isConnected &&
+          !runningPanesRef.current.has(paneId) &&
+          revision() === before &&
+          content !== undefined &&
+          paneHasCommittedContent(paneId, content)
+        );
+      };
+      if (!canSnapshot()) return;
       const previous = savedRef.current?.get(paneId);
       if (!refresh && previous?.revision === before) return;
       // A capture of the same content is more faithful than a drawing.
@@ -308,14 +317,9 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         return kept?.source === "capture" && kept.revision === before;
       };
       if (captured()) return;
-      const image = await snapshotPanePicture(element);
-      if (
-        !image ||
-        !element.isConnected ||
-        runningPanesRef.current.has(paneId) ||
-        revision() !== before ||
-        captured()
-      )
+      const image = await snapshotPanePicture(element, canSnapshot);
+      // The clone no longer depends on a mounted pane while its pixels are encoded.
+      if (!image || runningPanesRef.current.has(paneId) || revision() !== before || captured())
         return;
       const picture = {
         paneId,
