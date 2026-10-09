@@ -1046,12 +1046,22 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       const row = index === undefined ? undefined : state.elementAtIndex(index);
       const element = listRef.current?.getScrollableNode();
       if (row && element) {
+        let measuredHeight = 0;
+        let measuredCount = 0;
+        for (const { average, count } of Object.values(state.getAverageItemSizes())) {
+          measuredHeight += average * count;
+          measuredCount += count;
+        }
         rememberTimelinePosition(listIdentityKey, {
           ...position,
           // DOM geometry includes the header and the virtualizer's layout adjustment.
           offsetWithinRow: element.getBoundingClientRect().top - row.getBoundingClientRect().top,
           scrollOffset: element.scrollTop,
           atEnd: isAtEnd,
+          estimatedRowSize:
+            measuredCount > 0 && measuredHeight > 0
+              ? measuredHeight / measuredCount
+              : (rememberedPosition?.estimatedRowSize ?? 90),
           disclosures: {
             turns: paintedExpandedTurnIds,
             workGroups: paintedExpandedWorkGroupIds,
@@ -1109,6 +1119,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     workGroupViewState,
     rows,
     listIdentityKey,
+    rememberedPosition?.estimatedRowSize,
     restoringThreadPosition,
     listRef,
     minimapItems,
@@ -1314,7 +1325,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             keyExtractor={keyExtractor}
             getItemType={getItemType}
             renderItem={renderItem}
-            estimatedItemSize={90}
+            estimatedItemSize={rememberedPosition?.estimatedRowSize ?? 90}
             initialScrollAtEnd={citationRequest === null && rememberedPosition?.atEnd !== false}
             // Legend needs a data refresh to mount new pins without a scroll event.
             dataVersion={readyCitationRequest?.key ?? listIdentityKey}
