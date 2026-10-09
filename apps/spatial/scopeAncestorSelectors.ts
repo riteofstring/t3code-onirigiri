@@ -1,14 +1,15 @@
 import type { Plugin } from "vite";
 
 /**
- * Tailwind writes ancestor variants such as `group-has-*` and `has-*:**` as
+ * Tailwind writes ancestor variants such as `group-has-*`,
+ * `group-focus-visible:*` and `has-*:**` as
  * `X:is(A *)`: the element matches X and has an ancestor matching A. When A
- * contains `:has()`, Chromium cannot scope the invalidation of that nested
- * selector, so any matching DOM change restyles the whole document. The
- * equivalent `A X` has the same matches and specificity, and Chromium scopes it
- * to the subtrees of elements matching A. Only `:is()` holding one complex
- * selector that ends in a descendant or child `*`, in the first compound of
- * its selector, is rewritten.
+ * contains `:has()` or `:focus-visible`, Chromium cannot scope the invalidation
+ * of that nested selector, so DOM changes or workspace focus can restyle
+ * unrelated panes. The equivalent `A X` has the same matches and specificity,
+ * and Chromium scopes it to the subtrees of elements matching A. Only `:is()`
+ * holding one complex selector ending in a universal selector after a
+ * combinator, in the first compound of a flat selector, is rewritten.
  */
 export function rewriteAncestorIsSelectors(css: string): string {
   let out = "";
@@ -25,7 +26,7 @@ export function rewriteAncestorIsSelectors(css: string): string {
       ancestor === null ||
       compoundStart < index ||
       !opensSelector(css, compoundStart) ||
-      !argument.includes(":has(")
+      (!argument.includes(":has(") && !argument.includes(":focus-visible"))
     ) {
       out += css.slice(index, end + 1);
       index = end + 1;
@@ -43,10 +44,15 @@ export function rewriteAncestorIsSelectors(css: string): string {
 
 function matchingParen(text: string, open: number): number {
   let depth = 0;
+  let quote = "";
   for (let i = open; i < text.length; i++) {
     const char = text[i];
     if (char === "\\") {
       i++;
+    } else if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") {
+      quote = char;
     } else if (char === "(") {
       depth++;
     } else if (char === ")" && --depth === 0) {
@@ -56,19 +62,21 @@ function matchingParen(text: string, open: number): number {
   return -1;
 }
 
-// "A *" -> "A ", "A > *" -> "A > "; null for lists or other shapes.
+// Remove only the final universal selector, preserving its combinator.
 function ancestorOf(argument: string): string | null {
   let depth = 0;
+  let quote = "";
   for (let i = 0; i < argument.length; i++) {
     const char = argument[i];
     if (char === "\\") i++;
+    else if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") quote = char;
     else if (char === "(") depth++;
     else if (char === ")") depth--;
     else if (char === "," && depth === 0) return null;
   }
-  const match = /^(.*\S)\s*(>\s*)?\*$/s.exec(argument);
-  if (!match) return null;
-  return match[2] ? `${match[1]} > ` : `${match[1]} `;
+  return /^(.*(?:\s|[>+~]))\*$/s.exec(argument)?.[1] ?? null;
 }
 
 // Whether the compound at `start` is the first of its complex selector: only
@@ -84,10 +92,14 @@ function opensSelector(css: string, start: number): boolean {
 // -1 when `at` sits inside another function such as `:not()`.
 function compoundStartBefore(css: string, at: number): number {
   let depth = 0;
+  let quote = "";
   for (let i = at - 1; i >= 0; i--) {
     const char = css[i]!;
     if (css[i - 1] === "\\") continue;
-    if (char === ")" || char === "]") depth++;
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === ")" || char === "]") depth++;
     else if (char === "(" || char === "[") {
       if (depth === 0) return -1;
       depth--;
@@ -98,17 +110,28 @@ function compoundStartBefore(css: string, at: number): number {
   return 0;
 }
 
-export function scopeHasSelectors(): Plugin {
+export function scopeAncestorSelectors(): Plugin {
   return {
-    name: "spatial:scope-has-selectors",
-    apply: "build",
-    enforce: "post",
-    generateBundle(_options, bundle) {
-      for (const output of Object.values(bundle)) {
-        if (output.type === "asset" && output.fileName.endsWith(".css")) {
-          output.source = rewriteAncestorIsSelectors(String(output.source));
-        }
-      }
+    name: "spatial:scope-ancestor-selectors",
+    config() {
+      return {
+        css: {
+          postcss: {
+            plugins: [
+              {
+                postcssPlugin: "spatial:scope-ancestor-selectors",
+                Rule(rule) {
+                  let parent = rule.parent;
+                  while (parent?.type === "atrule") parent = parent.parent;
+                  if (parent?.type !== "root") return;
+                  const selector = rewriteAncestorIsSelectors(rule.selector);
+                  if (selector !== rule.selector) rule.selector = selector;
+                },
+              },
+            ],
+          },
+        },
+      };
     },
   };
 }

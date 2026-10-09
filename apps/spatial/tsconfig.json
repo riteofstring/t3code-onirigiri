@@ -6,8 +6,8 @@
   "include": [
     "src",
     "vite.config.ts",
-    "scopeHasSelectors.ts",
-    "scopeHasSelectors.test.ts",
+    "scopeAncestorSelectors.ts",
+    "scopeAncestorSelectors.test.ts",
     "../web/src/vite-env.d.ts"
   ]
 }
