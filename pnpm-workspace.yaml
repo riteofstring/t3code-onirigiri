@@ -232,9 +232,6 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
-  # Pair these patches: detach editor content before cleanup and skip detached selection tracking.
-  "@tiptap/react@3.31.3": patches/@tiptap__react@3.31.3.patch
-  prosemirror-view@1.42.3: patches/prosemirror-view@1.42.3.patch
   alchemy@2.0.0-beta.79: patches/alchemy@2.0.0-beta.79.patch
   expo-glass-effect@58.0.3: patches/expo-glass-effect@58.0.3.patch
   expo-blur@58.0.3: patches/expo-blur@58.0.3.patch
