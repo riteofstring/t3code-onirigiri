@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
+import { useClientSettings } from "@t3tools/web/src/hooks/useSettings";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
 
 import {
@@ -61,7 +62,18 @@ export const PaneSnapshotContext = createContext<RequestPaneSnapshot | null>(nul
 
 export function usePanePictureTheme(): string {
   const { theme, resolvedTheme, themeHalves } = useTheme();
-  return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}`;
+  const fonts = useClientSettings((settings) =>
+    JSON.stringify([
+      settings.fontFamilySans,
+      settings.fontFamilyCode,
+      settings.fontFamilyComposer,
+      settings.fontSizeInterface,
+      settings.fontSizePrompt,
+      settings.fontSizeCode,
+      settings.fontSmoothing,
+    ]),
+  );
+  return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}`;
 }
 
 /** Records the synchronized detail and theme committed by a mounted pane. */

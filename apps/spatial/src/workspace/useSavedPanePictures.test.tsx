@@ -4,7 +4,19 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { SavedPanePicture } from "./panePictureStore";
-import { markPaneSynced, useSavedPanePictures } from "./useSavedPanePictures";
+import { markPaneSynced, usePanePictureTheme, useSavedPanePictures } from "./useSavedPanePictures";
+
+const defaultFontSettings = {
+  fontFamilySans: "",
+  fontFamilyCode: "",
+  fontFamilyComposer: "",
+  fontSizeInterface: 16,
+  fontSizePrompt: 14,
+  fontSizeCode: 13,
+  fontSmoothing: true,
+  panelAnimationDurationMs: 200,
+};
+const fontRevision = '["","","",16,14,13,true]';
 
 const store = {
   saved: new Map<string, SavedPanePicture>(),
@@ -14,6 +26,7 @@ const store = {
   running: false,
   theme: "dark",
   themeHalves: null as { dark?: string; light?: string } | null,
+  fontSettings: { ...defaultFontSettings },
 };
 const decodedUrls: string[] = [];
 const revokedUrls: string[] = [];
@@ -35,6 +48,10 @@ vi.mock("./panePictureStore", () => ({
 }));
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({
   useTheme: () => ({ resolvedTheme: "dark", theme: store.theme, themeHalves: store.themeHalves }),
+}));
+vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
+  useClientSettings: (select: (settings: typeof defaultFontSettings) => unknown) =>
+    select(store.fontSettings),
 }));
 vi.mock("@t3tools/web/src/state/entities", () => ({
   useThreadShells: () =>
@@ -62,14 +79,17 @@ const geometry = (width: number) => `800x600@1|{"unit":"px","value":${width}}`;
 
 let resize: (width: number, height: number) => void = () => {};
 let hook: ReturnType<typeof useSavedPanePictures>;
+let appearance: string;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 const getLayout = () => currentLayout;
 
 function Probe() {
+  const pictureAppearance = usePanePictureTheme();
   const value = useSavedPanePictures(getLayout);
   useEffect(() => {
     hook = value;
+    appearance = pictureAppearance;
   });
   return null;
 }
@@ -140,6 +160,7 @@ afterEach(async () => {
   store.running = false;
   store.theme = "dark";
   store.themeHalves = null;
+  store.fontSettings = { ...defaultFontSettings };
   currentLayout = layout(400);
   markPaneSynced(paneId, null);
   snapshot.mockClear();
@@ -151,7 +172,7 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
   const image = new Blob(["png"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image,
     savedAt: 1,
     source: "capture",
@@ -175,7 +196,7 @@ function fillPictureCache() {
     const id = `thread:e:${store.threadIds[i]}`;
     store.saved.set(id, {
       paneId: id,
-      revision: `u1|dark|dark|${geometry(400)}`,
+      revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
       image: new Blob([String(i)]),
       savedAt: i + 1,
       source: "capture",
@@ -191,7 +212,7 @@ it.each(["native", "fallback"])(
     const nextId = "thread:e:t201";
     expect(hook.canBackgroundPicture(nextId)).toBe(false);
     expect(hook.canBackgroundPicture(paneId)).toBe(true);
-    markPaneSynced(nextId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    markPaneSynced(nextId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     if (source === "native") {
       await act(() =>
         hook.onPanePictureCaptured({ paneId: nextId } as WorkspacePane, new Blob(["new"])),
@@ -220,19 +241,19 @@ it("saves captures only from panes showing a synchronized thread", async () => {
   hook.onPanePictureCaptured(pane, image);
   expect(store.writes).toHaveLength(0);
 
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.onPanePictureCaptured(pane, image);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]).toMatchObject({
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image,
   });
 });
 
 it("keeps the last completed picture through streaming and saves the completed turn", async () => {
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const previous = new Blob(["previous"]);
   await act(() => hook.onPanePictureCaptured(pane, previous));
 
@@ -245,19 +266,19 @@ it("keeps the last completed picture through streaming and saves the completed t
 
   store.running = false;
   await act(() => renderer!.update(<Probe />));
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const completed = new Blob(["completed"]);
   await act(() => hook.onPanePictureCaptured(pane, completed));
   expect(store.writes).toHaveLength(2);
   expect(store.writes[1]).toMatchObject({
-    revision: `u2|dark|dark|${geometry(400)}`,
+    revision: `u2|dark|dark|${fontRevision}|${geometry(400)}`,
     image: completed,
   });
 });
 
 it("refreshes pictures when the palette changes within the same appearance", async () => {
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const previous = new Blob(["previous palette"]);
   await act(() => hook.onPanePictureCaptured(pane, previous));
   expect(hook.pictureFor(paneId)).toBe(previous);
@@ -269,23 +290,23 @@ it("refreshes pictures when the palette changes within the same appearance", asy
   await act(() => hook.onPanePictureCaptured(pane, new Blob(["old palette"])));
   expect(store.writes).toHaveLength(1);
 
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "ocean|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `ocean|dark|${fontRevision}` });
   await act(() => hook.onPanePictureCaptured(pane, new Blob(["ocean"])));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 
   store.themeHalves = { dark: "iris" };
   await act(() => renderer!.update(<Probe />));
   expect(hook.hasFreshPicture(paneId)).toBe(false);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "iris|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `iris|dark|${fontRevision}` });
   await act(() => hook.onPanePictureCaptured(pane, new Blob(["iris"])));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  expect(store.writes[2]?.revision).toBe(`u1|iris|dark|${geometry(400)}`);
+  expect(store.writes[2]?.revision).toBe(`u1|iris|dark|${fontRevision}|${geometry(400)}`);
 });
 
 it("waits for committed detail to catch up with shell metadata before saving either picture path", async () => {
   store.updatedAt = "u2";
   await mount();
-  markPaneSynced(paneId, { updatedAt: "u1", theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: "u1", theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.onPanePictureCaptured(pane, new Blob(["old detail"]));
   hook.requestSnapshot(paneId, element);
@@ -295,13 +316,15 @@ it("waits for committed detail to catch up with shell metadata before saving eit
   expect(store.writes).toHaveLength(0);
   expect(snapshot).not.toHaveBeenCalled();
 
-  markPaneSynced(paneId, { updatedAt: "u3", theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: "u3", theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, element);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3500);
   });
   expect(store.writes).toHaveLength(1);
-  expect(store.writes[0]?.revision).toBe(`u2|dark|dark|${geometry(400)}|responsive-css-4`);
+  expect(store.writes[0]?.revision).toBe(
+    `u2|dark|dark|${fontRevision}|${geometry(400)}|responsive-css-4`,
+  );
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
   hook.onPanePictureCaptured(pane, new Blob(["wrong theme"]));
@@ -312,7 +335,7 @@ it("keeps previously valid cover pixels while treating updated content as needin
   const image = new Blob(["png"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image,
     savedAt: 1,
     source: "capture",
@@ -333,7 +356,7 @@ it("keeps previously valid cover pixels while treating updated content as needin
 it("does not display an old persisted picture that was never valid in this session", async () => {
   store.saved.set(paneId, {
     paneId,
-    revision: `old|dark|dark|${geometry(400)}`,
+    revision: `old|dark|dark|${fontRevision}|${geometry(400)}`,
     image: new Blob(["png"]),
     savedAt: 1,
     source: "capture",
@@ -348,7 +371,7 @@ it.each(["capture", "snapshot", undefined] as const)(
     const image = new Blob(["previous picture"]);
     store.saved.set(paneId, {
       paneId,
-      revision: `u1|dark|dark|${geometry(400)}`,
+      revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
       image,
       savedAt: 1,
       ...(source ? { source } : {}),
@@ -356,7 +379,7 @@ it.each(["capture", "snapshot", undefined] as const)(
     await mount();
     expect(hook.hasFreshPicture(paneId)).toBe(source === "capture");
     expect(hook.pictureFor(paneId)).toBe(source === "capture" ? image : null);
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     const element = { isConnected: true } as HTMLElement;
     hook.requestSnapshot(paneId, element);
     await act(async () => {
@@ -387,7 +410,7 @@ it.each(["capture", "snapshot", undefined] as const)(
 
 it("lets an accepted native capture suppress the pending fallback drawing", async () => {
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(async () => {
     hook.onPanePictureCaptured(pane, new Blob(["native"]));
@@ -402,7 +425,7 @@ it("lets an accepted native capture suppress the pending fallback drawing", asyn
 
 it("draws a fallback after the native grace period when no capture arrives", async () => {
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(
     paneId,
     {
@@ -423,7 +446,7 @@ it("preserves an already idle pane before its view is released", async () => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5000);
   });
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.requestSnapshot(paneId, element);
   await act(async () => {
@@ -442,7 +465,7 @@ it("lets a newly opened workspace settle even when the page has been open a whil
   await vi.advanceTimersByTimeAsync(5000);
   window.dispatchEvent(new Event("pointerdown"));
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2999);
@@ -459,7 +482,7 @@ it("gives native capture its grace period even when input is already quiet", asy
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5000);
   });
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1900);
@@ -480,7 +503,7 @@ it("waits for recent input to settle before preserving a newly ready pane", asyn
     await vi.advanceTimersByTimeAsync(5000);
   });
   window.dispatchEvent(new Event("keydown"));
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2999);
@@ -497,7 +520,7 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
   const previous = new Blob(["previous"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image: previous,
     savedAt: 1,
     source: "capture",
@@ -507,7 +530,7 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
   const replacement = new Blob(["replacement"]);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   await act(() => hook.onPanePictureCaptured(pane, replacement));
   expect(hook.pictureFor(paneId)).toBe(replacement);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -515,7 +538,7 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
 
 it("does not draw pending pictures after the workspace unmounts", async () => {
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
   await act(() => renderer!.unmount());
   renderer = undefined;
@@ -526,7 +549,7 @@ it("does not draw pending pictures after the workspace unmounts", async () => {
 
 it("reuses a matching snapshot until a departed pane needs its scroll position refreshed", async () => {
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.requestSnapshot(paneId, element);
   await act(async () => {
@@ -554,7 +577,7 @@ it.each(["keydown", "pointerdown", "wheel"])(
       return canSnapshot() ? new Blob(["interrupted picture"]) : null;
     });
     await mount();
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3500);
@@ -584,7 +607,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   const old = new Blob(["previous scroll position"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}|responsive-css-4`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}|responsive-css-4`,
     image: old,
     savedAt: 1,
     source: "snapshot",
@@ -596,7 +619,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   });
   await mount();
   expect(hook.pictureFor(paneId)).toBe(old);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement, { refresh: true });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3500);
@@ -619,7 +642,7 @@ it("keeps an immutable picture that finishes encoding after input and pane evict
   const encoding = pendingPicture();
   snapshot.mockReturnValueOnce(encoding.promise);
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.requestSnapshot(paneId, element);
   await act(async () => {
@@ -644,13 +667,13 @@ it("keeps an immutable picture that finishes encoding after input and pane evict
   expect(snapshot).toHaveBeenCalledOnce();
 });
 
-it.each(["content", "theme", "stage", "column", "running"] as const)(
+it.each(["content", "theme", "fonts", "stage", "column", "running"] as const)(
   "rejects a pending picture when its %s changes",
   async (change) => {
     const encoding = pendingPicture();
     snapshot.mockReturnValueOnce(encoding.promise);
     await mount();
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3500);
@@ -659,6 +682,7 @@ it.each(["content", "theme", "stage", "column", "running"] as const)(
     await act(() => {
       if (change === "content") store.updatedAt = "u2";
       if (change === "theme") store.theme = "ocean";
+      if (change === "fonts") store.fontSettings.fontSmoothing = false;
       if (change === "running") store.running = true;
       if (change === "stage") resize(900, 600);
       if (change === "column") hook.onLayoutChange(layout(500));
@@ -677,7 +701,7 @@ it("retains a native capture that arrives while its fallback is encoding", async
   const encoding = pendingPicture();
   snapshot.mockReturnValueOnce(encoding.promise);
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, { isConnected: true } as HTMLElement);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3500);
@@ -695,7 +719,7 @@ it("retains a native capture that arrives while its fallback is encoding", async
 it("waits until a running turn completes before drawing its fallback picture", async () => {
   store.running = true;
   await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.requestSnapshot(paneId, element);
   await act(async () => {
@@ -707,7 +731,7 @@ it("waits until a running turn completes before drawing its fallback picture", a
   store.running = false;
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.requestSnapshot(paneId, element);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3500);
@@ -721,14 +745,14 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
   const valid = new Blob(["valid"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image: valid,
     savedAt: 1,
     source: "capture",
   });
   store.saved.set("absent-pane", {
     paneId: "absent-pane",
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image: new Blob(["absent"]),
     savedAt: 1,
     source: "capture",
@@ -750,7 +774,7 @@ it("does not decode a stored picture that was never valid in this session", asyn
   const invalid = new Blob(["old geometry"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(600)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(600)}`,
     image: invalid,
     savedAt: 1,
     source: "capture",
@@ -767,7 +791,7 @@ it("retains the decoded cover through refresh and releases it after the next cov
   const previous = new Blob(["previous"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
     image: previous,
     savedAt: 1,
     source: "capture",
@@ -785,7 +809,7 @@ it("retains the decoded cover through refresh and releases it after the next cov
   expect(revokedUrls).not.toContain(previousUrl);
 
   const replacement = new Blob(["replacement"]);
-  markPaneSynced(paneId, { updatedAt: "u2", theme: "dark|dark" });
+  markPaneSynced(paneId, { updatedAt: "u2", theme: `dark|dark|${fontRevision}` });
   await act(() => hook.onPanePictureCaptured(pane, replacement));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5);
@@ -798,4 +822,47 @@ it("retains the decoded cover through refresh and releases it after the next cov
   expect(revokedUrls).toContain(previousUrl);
   expect(revokedUrls).not.toContain(nextUrl);
   expect(hook.pictureFor(paneId)).toBe(replacement);
+});
+
+it.each([
+  { fontFamilySans: "serif" },
+  { fontFamilyCode: "monospace" },
+  { fontFamilyComposer: "Arial" },
+  { fontSizeInterface: 18 },
+  { fontSizePrompt: 18 },
+  { fontSizeCode: 16 },
+  { fontSmoothing: false },
+])("refreshes pictures after font preferences change: %j", async (change) => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const previous = new Blob(["previous font setting"]);
+  await act(() => hook.onPanePictureCaptured(pane, previous));
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.pictureFor(paneId)).toBe(previous);
+
+  store.fontSettings = { ...store.fontSettings, ...change };
+  await act(() => renderer!.update(<Probe />));
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.getPanePicture(pane)).toBeNull();
+  expect(hook.pictureFor(paneId)).toBe(previous);
+  await act(() => hook.onPanePictureCaptured(pane, new Blob(["old font setting"])));
+  expect(store.writes).toHaveLength(1);
+
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const current = new Blob(["new font setting"]);
+  await act(() => hook.onPanePictureCaptured(pane, current));
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.pictureFor(paneId)).toBe(current);
+});
+
+it("keeps a picture current when an unrelated setting changes", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const previous = new Blob(["same appearance"]);
+  await act(() => hook.onPanePictureCaptured(pane, previous));
+  store.fontSettings.panelAnimationDurationMs = 500;
+  await act(() => renderer!.update(<Probe />));
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.getPanePicture(pane)).toEqual({ image: previous, fit: "fill", replaceable: true });
+  expect(store.writes).toHaveLength(1);
 });
