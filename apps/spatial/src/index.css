@@ -31,27 +31,6 @@
   --onirigiri-minimap-background: var(--card);
 }
 
-/* Whole-cell translations keep T3's dotted texture reusable while the grid recenters.
-   The engine phases are the negatives of the grid's world coordinates. */
-@supports (transform: translateX(round(down, 1px, 1px))) {
-  .spatial-workspace .onirigiri-workspace__world-grid {
-    --onirigiri-grid-cell-size: 18px;
-    --onirigiri-grid-offset: 8px;
-    left: 0 !important;
-    top: 0 !important;
-    box-sizing: content-box;
-    padding-right: var(--onirigiri-grid-cell-size);
-    padding-bottom: var(--onirigiri-grid-cell-size);
-    background-position: var(--onirigiri-grid-offset) var(--onirigiri-grid-offset);
-    transform: translate3d(
-      round(down, calc(-1 * var(--world-grid-phase-x)), var(--onirigiri-grid-cell-size)),
-      round(down, calc(-1 * var(--world-grid-phase-y)), var(--onirigiri-grid-cell-size)),
-      0
-    );
-    will-change: transform;
-  }
-}
-
 /* Overview chrome overlays the thread's own header without resizing its content. */
 .spatial-workspace [data-onirigiri-surface-kind="thread"] > .onirigiri-pane__titlebar {
   position: absolute;
