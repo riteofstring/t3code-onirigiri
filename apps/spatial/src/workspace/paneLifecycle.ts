@@ -53,8 +53,11 @@ export function createPaneLifecycleStore(
     focusedPaneId && panes.has(focusedPaneId) ? focusedPaneId : (initialPanes[0]?.paneId ?? null);
   let direction: Direction | null = null;
   let running: ReadonlySet<string> = new Set();
+  let retained: ReadonlySet<string> = new Set();
   const visible = new Set<string>();
   const mounted = new Set<string>(focused ? [focused] : []);
+  // Only an owner presented to the user needs lifetime retention.
+  const viewed = new Set(mounted);
   const lastWanted = new Map<string, number>();
   const listeners = new Map<string, Set<() => void>>();
   const motionListeners = new Set<() => void>();
@@ -90,6 +93,7 @@ export function createPaneLifecycleStore(
   const mount = (paneId: string) => {
     if (mounted.has(paneId)) return false;
     mounted.add(paneId);
+    if (paneId === focused || visible.has(paneId)) viewed.add(paneId);
     notify(paneId);
     return true;
   };
@@ -114,9 +118,15 @@ export function createPaneLifecycleStore(
     mount(paneId);
   };
 
+  const mustRetain = (paneId: string) => retained.has(paneId) && viewed.has(paneId);
+
   const unmount = (paneId: string) => {
+    if (panes.has(paneId) && mustRetain(paneId)) return;
     if (waitingFor === paneId) clearCommitWait();
-    if (mounted.delete(paneId)) notify(paneId);
+    if (mounted.delete(paneId)) {
+      viewed.delete(paneId);
+      notify(paneId);
+    }
   };
 
   const distance = (paneId: string) => {
@@ -133,7 +143,11 @@ export function createPaneLifecycleStore(
     return (
       [...mounted]
         .filter(
-          (paneId) => !keep.has(paneId) && !visible.has(paneId) && paneId !== picturing?.paneId,
+          (paneId) =>
+            !mustRetain(paneId) &&
+            !keep.has(paneId) &&
+            !visible.has(paneId) &&
+            paneId !== picturing?.paneId,
         )
         .toSorted(
           (a, b) =>
@@ -186,7 +200,10 @@ export function createPaneLifecycleStore(
     if (!picturing) return false;
     const { paneId, since } = picturing;
     const done =
-      hasPicture(paneId) || !panes.has(paneId) || performance.now() - since >= PICTURE_TIMEOUT_MS;
+      retained.has(paneId) ||
+      hasPicture(paneId) ||
+      !panes.has(paneId) ||
+      performance.now() - since >= PICTURE_TIMEOUT_MS;
     if (!done) return true;
     if (hasPicture(paneId)) pictureAttempted.delete(paneId);
     if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
@@ -247,6 +264,7 @@ export function createPaneLifecycleStore(
     if (retiring !== null) {
       waitForCommit(retiring);
       mounted.delete(retiring);
+      viewed.delete(retiring);
       notify(retiring);
       return;
     }
@@ -270,7 +288,10 @@ export function createPaneLifecycleStore(
       waitForPicture(wait);
       return;
     }
-    if (mounted.size >= MAX_MOUNTED + 1) return;
+    const retainedCount = [...retained].filter(
+      (paneId) => panes.has(paneId) && mustRetain(paneId) && paneId !== focused,
+    ).length;
+    if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
     pictureAttempted.set(paneId, performance.now());
     picturing = { paneId, since: performance.now() };
     mountPrepared(paneId);
@@ -333,6 +354,7 @@ export function createPaneLifecycleStore(
       ...[...visible]
         .filter((paneId) => panes.has(paneId))
         .toSorted((a, b) => distance(a) - distance(b)),
+      ...[...retained].filter((paneId) => panes.has(paneId) && mustRetain(paneId)),
     ]);
     const nearby = neighbors().filter((paneId) => neighborsWanted || mounted.has(paneId));
     const live = [...panes.values()]
@@ -431,6 +453,7 @@ export function createPaneLifecycleStore(
               : "up";
       }
       focused = paneId;
+      if (paneId !== null && mounted.has(paneId)) viewed.add(paneId);
       if (paneId !== null && picturing?.paneId === paneId) {
         picturing = null;
         pictureAttempted.delete(paneId);
@@ -455,6 +478,7 @@ export function createPaneLifecycleStore(
       panes = new Map(nextPanes.map((pane) => [pane.paneId, pane]));
       for (const paneId of mounted) if (!panes.has(paneId)) unmount(paneId);
       for (const paneId of visible) if (!panes.has(paneId)) visible.delete(paneId);
+      for (const paneId of viewed) if (!panes.has(paneId)) viewed.delete(paneId);
       for (const paneId of pictureAttempted.keys()) {
         if (!panes.has(paneId)) pictureAttempted.delete(paneId);
       }
@@ -481,6 +505,11 @@ export function createPaneLifecycleStore(
     setRunning: (next: ReadonlySet<string>) => {
       if (next.size === running.size && [...next].every((paneId) => running.has(paneId))) return;
       running = new Set(next);
+      requestSettle();
+    },
+    setRetainedPanes: (next: ReadonlySet<string>) => {
+      if (next.size === retained.size && [...next].every((paneId) => retained.has(paneId))) return;
+      retained = next;
       requestSettle();
     },
     /** Tells which panes a picture shows faithfully while they are not mounted. */
@@ -518,8 +547,10 @@ export function createPaneLifecycleStore(
     },
     setVisible: (paneId: string, isVisible: boolean) => {
       if (visible.has(paneId) === isVisible) return;
-      if (isVisible) visible.add(paneId);
-      else visible.delete(paneId);
+      if (isVisible) {
+        visible.add(paneId);
+        if (mounted.has(paneId)) viewed.add(paneId);
+      } else visible.delete(paneId);
       requestSettle();
     },
     dispose: () => {

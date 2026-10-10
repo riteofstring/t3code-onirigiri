@@ -14,6 +14,22 @@ export function canCapturePanes(): boolean {
   );
 }
 
+/** These surfaces cannot be reconstructed by the static-chat fallback. */
+export function hasLivePaneProducer(element: Element): boolean {
+  const visit = (node: Element) =>
+    node.matches("canvas, video, iframe, object, embed, webview, [data-browser-surface-slot]") ||
+    node.localName.includes("-") ||
+    node.shadowRoot !== null;
+  if (visit(element)) return true;
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
+  let child = walker.nextNode();
+  while (child) {
+    if (visit(child as Element)) return true;
+    child = walker.nextNode();
+  }
+  return false;
+}
+
 // SVG images can round mixed-font line boxes differently from live text.
 // Adjust only when the same fonts reproduce both native height and width.
 const TEXT_SAMPLE_ROWS = 10;
@@ -372,7 +388,7 @@ export async function snapshotPanePicture(
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
-    if (!element.isConnected || !canSnapshot()) return null;
+    if (!element.isConnected || !canSnapshot() || hasLivePaneProducer(element)) return null;
     // Drawing clones the live DOM synchronously; encoding no longer needs its layout.
     return drawPanePicture(element, canSnapshot);
   } finally {

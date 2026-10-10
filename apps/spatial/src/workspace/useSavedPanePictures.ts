@@ -2,6 +2,7 @@ import type {
   OnirigiriLayout,
   OnirigiriPanePictureCaptureListener,
   OnirigiriPanePictureResolver,
+  PanePresentationResolver,
 } from "@riteofstring/onirigiri";
 import {
   createContext,
@@ -20,6 +21,7 @@ import { useThreadShells } from "@t3tools/web/src/state/entities";
 import {
   MAX_SAVED,
   loadPanePictures,
+  deletePanePicture,
   savePanePicture,
   type SavedPanePicture,
 } from "./panePictureStore";
@@ -66,6 +68,7 @@ export type RequestPaneSnapshot = (
 interface PaneSnapshots {
   request: RequestPaneSnapshot;
   invalidate: (paneId: string) => void;
+  setLiveProducer: (paneId: string, present: boolean) => number;
 }
 
 export const PaneSnapshotContext = createContext<PaneSnapshots | null>(null);
@@ -118,6 +121,7 @@ function columnWidths(layout: OnirigiriLayout): Map<string, string> {
  */
 export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   getPanePicture: OnirigiriPanePictureResolver;
+  getPanePresentation: PanePresentationResolver;
   onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
   onLayoutChange: (layout: OnirigiriLayout) => void;
   /** A picture validated in this session, retained as cover while its thread refreshes. */
@@ -128,6 +132,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   /** Passive preparation fills free slots or refreshes existing pictures. */
   canBackgroundPicture: (paneId: string) => boolean;
   runningPanes: ReadonlySet<string>;
+  retainedPaneIds: ReadonlySet<string>;
   picturesLoaded: boolean;
   paneSnapshots: PaneSnapshots;
   stageRef: (element: HTMLElement | null) => void;
@@ -136,6 +141,19 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const savedRef = useRef(saved);
+  // A removed producer still needs its live view until current static pixels exist.
+  type Retention = "live" | "awaiting-picture";
+  const [retained, setRetained] = useState<ReadonlyMap<string, Retention>>(new Map());
+  const retainedRef = useRef(retained);
+  const updateRetained = useCallback((next: ReadonlyMap<string, Retention>) => {
+    retainedRef.current = next;
+    setRetained(next);
+  }, []);
+  const retainedPaneIds = useMemo(() => new Set(retained.keys()), [retained]);
+  const getPanePresentation = useCallback<PanePresentationResolver>(
+    (pane) => (retained.get(pane.paneId) === "live" ? "dom" : "auto"),
+    [retained],
+  );
   const updateSaved = useCallback((pictures: Map<string, SavedPanePicture>) => {
     const next =
       pictures.size <= MAX_SAVED
@@ -171,7 +189,13 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     loadPanePictures()
       .catch(() => new Map<string, SavedPanePicture>())
       .then((pictures) => {
-        if (current) updateSaved(new Map([...pictures, ...(savedRef.current ?? [])]));
+        if (current)
+          updateSaved(
+            new Map([
+              ...[...pictures].filter(([paneId]) => !retainedRef.current.has(paneId)),
+              ...(savedRef.current ?? []),
+            ]),
+          );
       });
     return () => {
       current = false;
@@ -195,17 +219,23 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     stageObserverRef.current = observer;
   }, []);
 
-  const onLayoutChange = useCallback((layout: OnirigiriLayout) => {
-    const next = columnWidths(layout);
-    const previous = widthsRef.current;
-    widthsRef.current = next;
-    if (
-      !previous ||
-      previous.size !== next.size ||
-      [...next].some(([paneId, width]) => previous.get(paneId) !== width)
-    )
-      setGeometryVersion((version) => version + 1);
-  }, []);
+  const onLayoutChange = useCallback(
+    (layout: OnirigiriLayout) => {
+      const next = columnWidths(layout);
+      const previous = widthsRef.current;
+      widthsRef.current = next;
+      if (
+        !previous ||
+        previous.size !== next.size ||
+        [...next].some(([paneId, width]) => previous.get(paneId) !== width)
+      )
+        setGeometryVersion((version) => version + 1);
+      if ([...retainedRef.current.keys()].some((paneId) => !next.has(paneId))) {
+        updateRetained(new Map([...retainedRef.current].filter(([paneId]) => next.has(paneId))));
+      }
+    },
+    [updateRetained],
+  );
 
   const geometryRevision = useCallback(
     (paneId: string) => {
@@ -243,8 +273,10 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   );
   const canBackgroundPicture = useCallback(
     (paneId: string) =>
-      !runningPanes.has(paneId) && (saved === null || saved.size < MAX_SAVED || saved.has(paneId)),
-    [runningPanes, saved],
+      retained.get(paneId) !== "live" &&
+      !runningPanes.has(paneId) &&
+      (saved === null || saved.size < MAX_SAVED || saved.has(paneId)),
+    [retained, runningPanes, saved],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
@@ -254,6 +286,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 
   const freshPictureFor = useCallback(
     (paneId: string): Blob | null => {
+      if (retainedRef.current.has(paneId)) return null;
       const picture = saved?.get(paneId);
       if (!picture) return null;
       const content = contentRevisions.get(paneId);
@@ -273,7 +306,11 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   const [pictureUrls] = useState(createPanePictureUrls);
   const pictureFor = useCallback(
     (paneId: string): Blob | null => {
-      if (!saved?.has(paneId) || !contentRevisionsRef.current.has(paneId)) {
+      if (
+        retainedRef.current.has(paneId) ||
+        !saved?.has(paneId) ||
+        !contentRevisionsRef.current.has(paneId)
+      ) {
         lastValidPictures.current.delete(paneId);
         return null;
       }
@@ -293,7 +330,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   );
   useEffect(() => {
     for (const paneId of lastValidPictures.current.keys()) {
-      if (!saved?.has(paneId) || !contentRevisions.has(paneId)) {
+      if (retainedRef.current.has(paneId) || !saved?.has(paneId) || !contentRevisions.has(paneId)) {
         lastValidPictures.current.delete(paneId);
       }
     }
@@ -307,7 +344,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       ]),
     );
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry changes can replace the retained cover read during render.
-  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, saved]);
+  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, retained, saved]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
     (paneId: string) => freshPictureFor(paneId) !== null,
@@ -326,14 +363,30 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
       pictureVisualRevisions.current.set(picture.image, revision);
+      if (retainedRef.current.get(picture.paneId) === "awaiting-picture") {
+        const next = new Map(retainedRef.current);
+        next.delete(picture.paneId);
+        updateRetained(next);
+      }
       updateSaved(new Map(savedRef.current ?? []).set(picture.paneId, picture));
+      return savePanePicture(
+        picture,
+        () =>
+          retainedRef.current.get(picture.paneId) !== "live" &&
+          visualRevision(picture.paneId) === revision &&
+          savedRef.current?.get(picture.paneId)?.image === picture.image,
+      );
     },
-    [updateSaved],
+    [updateRetained, updateSaved, visualRevision],
   );
 
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image) => {
-      if (runningPanesRef.current.has(pane.paneId)) return;
+      if (
+        retainedRef.current.get(pane.paneId) === "live" ||
+        runningPanesRef.current.has(pane.paneId)
+      )
+        return;
       const content = contentRevisionsRef.current.get(pane.paneId);
       const geometry = geometryRevision(pane.paneId);
       const currentVisualRevision = visualRevision(pane.paneId);
@@ -350,8 +403,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         savedAt: Date.now(),
         source: "capture" as const,
       };
-      keepPicture(picture, currentVisualRevision);
-      void savePanePicture(picture).catch(() => {});
+      void keepPicture(picture, currentVisualRevision).catch(() => {});
     },
     [geometryRevision, keepPicture, visualRevision],
   );
@@ -370,6 +422,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         const content = contentRevisionsRef.current.get(paneId);
         return (
           element.isConnected &&
+          retainedRef.current.get(paneId) !== "live" &&
           !runningPanesRef.current.has(paneId) &&
           revision() === before &&
           visualRevision(paneId) === beforeVisualRevision &&
@@ -399,6 +452,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       // The clone no longer depends on a mounted pane while its pixels are encoded.
       if (
         !image ||
+        retainedRef.current.get(paneId) === "live" ||
         runningPanesRef.current.has(paneId) ||
         revision() !== before ||
         visualRevision(paneId) !== beforeVisualRevision ||
@@ -412,28 +466,58 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         savedAt: Date.now(),
         source: "snapshot" as const,
       };
-      keepPicture(picture, beforeVisualRevision);
-      await savePanePicture(picture);
+      await keepPicture(picture, beforeVisualRevision);
     },
     [geometryRevision, keepPicture, pictureMatchesVisualRevision, visualRevision],
   );
+  const drawSnapshotRef = useRef(drawSnapshot);
+  useLayoutEffect(() => {
+    drawSnapshotRef.current = drawSnapshot;
+  }, [drawSnapshot]);
   const [snapshots] = useState(createSnapshotQueue);
-  useEffect(() => snapshots.setDraw(drawSnapshot), [drawSnapshot, snapshots]);
+  useEffect(
+    () =>
+      snapshots.setDraw(
+        (...args) => drawSnapshotRef.current(...args),
+        (paneId) =>
+          retainedRef.current.get(paneId) === "awaiting-picture" &&
+          contentRevisionsRef.current.has(paneId) &&
+          syncedPanes.has(paneId),
+      ),
+    [snapshots],
+  );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
       invalidate: (paneId) => {
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
+      },
+      setLiveProducer: (paneId, present) => {
+        const previous = retainedRef.current.get(paneId);
+        if (present === (previous === "live")) return visualRevision(paneId);
+        const next = new Map(retainedRef.current);
+        next.set(paneId, present ? "live" : "awaiting-picture");
+        updateRetained(next);
+        visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
+        lastValidPictures.current.delete(paneId);
+        if (savedRef.current?.has(paneId)) {
+          const pictures = new Map(savedRef.current);
+          pictures.delete(paneId);
+          updateSaved(pictures);
+        }
+        if (present) void deletePanePicture(paneId).catch(() => {});
+        return visualRevision(paneId);
       },
       request: (paneId, element, options) => {
         snapshots.request(paneId, element, options?.preferNative === true);
         return visualRevision(paneId);
       },
     }),
-    [snapshots, visualRevision],
+    [snapshots, updateRetained, updateSaved, visualRevision],
   );
 
   return {
     getPanePicture,
+    getPanePresentation,
     onPanePictureCaptured,
     onLayoutChange,
     pictureFor,
@@ -442,6 +526,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     hasFreshPicture,
     canBackgroundPicture,
     runningPanes,
+    retainedPaneIds,
     picturesLoaded: saved !== null,
     paneSnapshots,
     stageRef,
@@ -452,11 +537,13 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 // request for a pane replaces one still waiting.
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const NATIVE_CAPTURE_GRACE_MS = 2000;
+const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
 export function createSnapshotQueue() {
   type Draw = (paneId: string, element: HTMLElement, canStart: () => boolean) => Promise<void>;
-  const pending = new Map<string, { element: HTMLElement; after: number }>();
+  const pending = new Map<string, { element: HTMLElement; after: number; retryAfter: number }>();
   let draw: Draw | null = null;
+  let needsPicture: (paneId: string) => boolean = () => false;
   let drawing = false;
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -496,9 +583,15 @@ export function createSnapshotQueue() {
           .catch(() => {})
           .finally(() => {
             drawing = false;
-            if (deferred && draw === current) {
-              const latest = pending.get(paneId);
-              pending.set(paneId, latest ?? request);
+            if (draw === current && !pending.has(paneId)) {
+              if (deferred) pending.set(paneId, request);
+              else if (request.element.isConnected && needsPicture(paneId)) {
+                pending.set(paneId, {
+                  ...request,
+                  after: performance.now() + request.retryAfter,
+                  retryAfter: Math.min(request.retryAfter * 2, SNAPSHOT_RETRY_LIMIT_MS),
+                });
+              }
             }
             next();
           });
@@ -510,13 +603,15 @@ export function createSnapshotQueue() {
     pending.set(paneId, {
       element,
       after: performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
+      retryAfter: SNAPSHOT_INPUT_QUIET_MS,
     });
     if (timer !== null) clearTimeout(timer);
     timer = null;
     next();
   };
-  const setDraw = (nextDraw: Draw) => {
+  const setDraw = (nextDraw: Draw, nextNeedsPicture: (paneId: string) => boolean) => {
     draw = nextDraw;
+    needsPicture = nextNeedsPicture;
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });
     }

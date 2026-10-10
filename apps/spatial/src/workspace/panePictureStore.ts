@@ -65,8 +65,12 @@ export async function loadPanePictures(): Promise<Map<string, SavedPanePicture>>
 }
 
 /** Saves a pane's picture, then drops the oldest pictures beyond the limits. */
-export async function savePanePicture(picture: SavedPanePicture): Promise<void> {
+export async function savePanePicture(
+  picture: SavedPanePicture,
+  canSave: () => boolean,
+): Promise<void> {
   const db = await openDatabase();
+  if (!canSave()) return;
   const transaction = db.transaction(STORE, "readwrite");
   const store = transaction.objectStore(STORE);
   store.put(picture);
@@ -82,5 +86,12 @@ export async function savePanePicture(picture: SavedPanePicture): Promise<void> 
     if (count > MAX_SAVED || bytes > MAX_SAVED_BYTES) current.delete();
     current.continue();
   });
+  await completed(transaction);
+}
+
+export async function deletePanePicture(paneId: string): Promise<void> {
+  const db = await openDatabase();
+  const transaction = db.transaction(STORE, "readwrite");
+  transaction.objectStore(STORE).delete(paneId);
   await completed(transaction);
 }

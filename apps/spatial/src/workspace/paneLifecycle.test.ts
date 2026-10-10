@@ -733,3 +733,135 @@ it("retries a cancelled picture mount before the old commit deadline", () => {
   expect(store.isMounted("p0-0")).toBe(true);
   store.dispose();
 });
+
+it("retains producers beyond eight warm views and releases them after replacement pictures", () => {
+  const panes = row(16);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const retained = new Set(panes.slice(0, 10).map((pane) => pane.paneId));
+  for (const paneId of retained) store.setVisible(paneId, true);
+  store.setRetainedPanes(retained);
+  store.setPictures((paneId) => !retained.has(paneId));
+  drain(store, panes);
+  for (const paneId of retained) store.setVisible(paneId, false);
+  store.setFocus("p0-15");
+  drain(store, panes);
+  expect([...retained].every(store.isMounted)).toBe(true);
+  expect(store.isMounted("p0-15")).toBe(true);
+  expect(mountedOf(store, panes)).toHaveLength(11);
+
+  store.setPanes(panes.slice(1));
+  expect(store.isMounted("p0-0")).toBe(false);
+  store.setPictures(() => true);
+  store.setRetainedPanes(new Set());
+  drain(store, panes);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  expect(store.isMounted("p0-15")).toBe(true);
+  store.dispose();
+});
+
+it("keeps a prepared producer after it becomes visible through disable and timeout", () => {
+  const panes = row(6);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setBackgroundPictures(true);
+  for (let step = 0; step < 5; step++) {
+    vi.advanceTimersByTime(1000);
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.setVisible("p0-2", true);
+  store.setRetainedPanes(new Set(["p0-2"]));
+  store.setVisible("p0-2", false);
+  store.setBackgroundPictures(false);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.setBackgroundPictures(true);
+  store.setPictures(
+    (paneId) => paneId === "p0-0" || paneId === "p0-1",
+    true,
+    (paneId) => paneId !== "p0-2",
+  );
+  let nextPrepared = false;
+  for (let step = 0; step < 20; step++) {
+    vi.advanceTimersByTime(1000);
+    expect(store.isMounted("p0-2")).toBe(true);
+    nextPrepared ||= store.isMounted("p0-3");
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect(nextPrepared).toBe(true);
+  store.dispose();
+});
+
+it("still prepares one static picture when retained producers exceed the warm target", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const retained = new Set(panes.slice(0, 10).map((pane) => pane.paneId));
+  for (const paneId of retained) store.setVisible(paneId, true);
+  store.setRetainedPanes(retained);
+  drain(store, panes);
+  for (const paneId of retained) store.setVisible(paneId, false);
+  store.setPictures(
+    () => false,
+    true,
+    (paneId) => !retained.has(paneId),
+  );
+  store.setBackgroundPictures(true);
+  let pictured = false;
+  for (let step = 0; step < 30; step++) {
+    vi.advanceTimersByTime(1000);
+    pictured ||= store.isMounted("p0-10");
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(11);
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect([...retained].every(store.isMounted)).toBe(true);
+  expect(pictured).toBe(true);
+  store.dispose();
+});
+
+it("does not retain never-visible producers discovered by passive picture preparation", () => {
+  const panes = row(25);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const discovered = new Set<string>();
+  for (const { paneId } of panes.slice(2)) {
+    store.setVisible(paneId, true);
+    store.setVisible(paneId, false);
+    store.setFocus(paneId);
+    store.setFocus("p0-0");
+    expect(store.isMounted(paneId)).toBe(false);
+  }
+  store.setBackgroundPictures(true);
+  for (let step = 0; step < 120; step++) {
+    vi.advanceTimersByTime(1000);
+    for (const { paneId } of panes) {
+      if (store.isMounted(paneId)) discovered.add(paneId);
+      store.committed(paneId, store.isMounted(paneId));
+    }
+    store.setRetainedPanes(new Set(discovered));
+    store.setPictures(
+      () => false,
+      true,
+      (paneId) => !discovered.has(paneId),
+    );
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+  }
+  expect(discovered.size).toBe(25);
+  store.setFocus("p0-10");
+  drain(store, panes);
+  store.setFocus("p0-20");
+  drain(store, panes);
+  expect(store.isMounted("p0-10")).toBe(true);
+  expect(store.isMounted("p0-20")).toBe(true);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  store.dispose();
+});
+
+it("does not add speculative picture mounts beyond a large visible overview", () => {
+  const panes = row(20);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  for (const pane of panes.slice(0, 18)) store.setVisible(pane.paneId, true);
+  store.setBackgroundPictures(true);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toHaveLength(18);
+  expect(store.isMounted("p0-18")).toBe(false);
+  expect(store.isMounted("p0-19")).toBe(false);
+  store.dispose();
+});

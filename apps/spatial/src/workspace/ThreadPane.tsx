@@ -40,7 +40,7 @@ import {
 } from "@t3tools/web/src/panelAnimations";
 
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
-import { canCapturePanes } from "./panePictureSnapshot";
+import { canCapturePanes, hasLivePaneProducer } from "./panePictureSnapshot";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
 export const SpatialWorkspaceActiveContext = createContext(true);
@@ -280,16 +280,31 @@ export const ThreadPane = memo(function ThreadPane({
   // Native capture gets the first opportunity; drawing remains its fallback.
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
+  const producerInspected = useRef(false);
   useLayoutEffect(() => {
     const element = contentRef.current;
     if (!element) return;
     if (!mounted) {
       snapshotPrepared.current = false;
+      producerInspected.current = false;
       return;
     }
-    if (!snapshotPrepared.current && picturable === null) return;
-    snapshotPrepared.current = true;
+    const inspectProducer = () => {
+      if (snapshots)
+        setVisualRevision(snapshots.setLiveProducer(paneId, hasLivePaneProducer(element)));
+    };
+    if (!producerInspected.current) {
+      inspectProducer();
+      producerInspected.current = true;
+    }
+    const producerChanged = (record: MutationRecord) =>
+      record.attributeName === "data-browser-surface-slot" ||
+      [...record.addedNodes, ...record.removedNodes].some(
+        (node) => node instanceof Element && hasLivePaneProducer(node),
+      );
+    if (picturable !== null) snapshotPrepared.current = true;
     const invalidate = () => {
+      if (!snapshotPrepared.current) return;
       snapshots?.invalidate(paneId);
       if (active || picturable === null || !snapshots) return;
       setVisualRevision(snapshots.request(paneId, element, { preferNative: canCapturePanes() }));
@@ -326,6 +341,7 @@ export const ThreadPane = memo(function ThreadPane({
       });
     };
     const observer = new MutationObserver((records) => {
+      if (records.some(producerChanged)) inspectProducer();
       if (contentChanged(records)) invalidate();
     });
     observer.observe(element, {
@@ -352,7 +368,10 @@ export const ThreadPane = memo(function ThreadPane({
     return () => {
       const pending = observer.takeRecords();
       // Releasing the router removes its DOM; that does not change its saved pixels.
-      if (element.childElementCount > 0 && contentChanged(pending)) snapshots?.invalidate(paneId);
+      if (element.childElementCount > 0) {
+        if (pending.some(producerChanged)) inspectProducer();
+        if (snapshotPrepared.current && contentChanged(pending)) snapshots?.invalidate(paneId);
+      }
       observer.disconnect();
       element.removeEventListener("keydown", onKeyDown, true);
       for (const event of events) element.removeEventListener(event, invalidate, true);

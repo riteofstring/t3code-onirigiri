@@ -60,7 +60,10 @@ vi.mock("./useSavedPanePictures", async () => {
     usePanePictureTheme: () => "default|dark",
   };
 });
-vi.mock("./panePictureSnapshot", () => ({ canCapturePanes: () => false }));
+vi.mock("./panePictureSnapshot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./panePictureSnapshot")>()),
+  canCapturePanes: () => false,
+}));
 vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: { panelAnimationDurationMs: number }) => unknown) =>
     select({ panelAnimationDurationMs: state.panelDurationMs }),
@@ -146,7 +149,12 @@ let paneId: string;
 let appSuppressed: boolean;
 let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
 let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
-let snapshots: { request: RequestPaneSnapshot; invalidate: (paneId: string) => void };
+let snapshots: {
+  request: RequestPaneSnapshot;
+  invalidate: (paneId: string) => void;
+  setLiveProducer: (paneId: string, present: boolean) => number;
+};
+let liveProducer: boolean;
 let appComposerRef: ComposerHandleRef;
 let workspaceActive: boolean;
 
@@ -216,7 +224,16 @@ beforeEach(() => {
   invalidateSnapshot = vi.fn(() => {
     visualRevision++;
   });
-  snapshots = { request: requestSnapshot, invalidate: invalidateSnapshot };
+  liveProducer = false;
+  snapshots = {
+    request: requestSnapshot,
+    invalidate: invalidateSnapshot,
+    setLiveProducer: (_paneId, present) => {
+      if (present !== liveProducer) visualRevision++;
+      liveProducer = present;
+      return visualRevision;
+    },
+  };
   appSuppressed = false;
   container = document.createElement("div");
   document.body.append(container);

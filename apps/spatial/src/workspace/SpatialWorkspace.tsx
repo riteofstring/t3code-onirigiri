@@ -14,7 +14,15 @@ import {
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
 import {
@@ -143,6 +151,7 @@ export function SpatialWorkspace({
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
   const {
     getPanePicture,
+    getPanePresentation,
     onLayoutChange,
     onPanePictureCaptured,
     pictureFor,
@@ -151,6 +160,7 @@ export function SpatialWorkspace({
     hasFreshPicture,
     canBackgroundPicture,
     runningPanes,
+    retainedPaneIds,
     picturesLoaded,
     paneSnapshots,
     stageRef,
@@ -254,6 +264,9 @@ export function SpatialWorkspace({
   }, [layoutMode, panes]);
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
+  useLayoutEffect(() => {
+    lifecycle?.setRetainedPanes(retainedPaneIds);
+  }, [lifecycle, retainedPaneIds]);
   useEffect(() => {
     lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
   }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
@@ -583,6 +596,7 @@ export function SpatialWorkspace({
                   desktopControlsContainer={controlsContainer}
                   focusAnchor={focusAnchor}
                   getPanePicture={getPanePicture}
+                  getPanePresentation={getPanePresentation}
                   gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
                   initialPanes={initialPanes}
                   liveContent
