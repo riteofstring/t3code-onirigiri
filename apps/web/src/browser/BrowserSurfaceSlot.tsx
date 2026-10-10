@@ -1,8 +1,13 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useContext, useLayoutEffect, useRef } from "react";
 
 import { acquireBrowserSurface } from "./browserSurfaceStore";
+import {
+  BrowserSurfaceProjectionContext,
+  browserSurfaceAncestors,
+  measureBrowserSurfaceProjection,
+} from "./browserSurfaceProjection";
 
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
@@ -25,59 +30,89 @@ export function BrowserSurfaceSlot(props: {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const presentationRef = useRef({ visible, cornerRadius, zIndex });
   const updateRef = useRef<(() => void) | null>(null);
+  const projectionPolicy = useContext(BrowserSurfaceProjectionContext);
 
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
-    const update = () => {
+    let observed: readonly HTMLElement[] = [];
+    let lastProjection: ReturnType<typeof measureBrowserSurfaceProjection>["projection"] | null =
+      null;
+    const onFocus = () => projectionPolicy?.focus(element);
+    const observer = new ResizeObserver(() => update());
+    // Camera transforms do not resize the slot. Observe presented ancestor
+    // writes, including moves that do not affect the focused pane.
+    const transforms = projectionPolicy ? new MutationObserver(() => update()) : null;
+    const update = (reclaim = false) => {
       const rect = element.getBoundingClientRect();
       const presentation = presentationRef.current;
-      const presented = lease.present(
-        {
-          x: Math.round(rect.x),
-          y: Math.round(rect.y),
-          width: Math.max(1, Math.round(rect.width)),
-          height: Math.max(1, Math.round(rect.height)),
-        },
-        presentation.visible && rect.width > 0 && rect.height > 0,
-        presentation.cornerRadius,
-        presentation.zIndex,
-      );
-      if (presentation.visible && !presented) {
-        lease.release();
-        lease = acquireBrowserSurface(tabId, fitSourceContent);
-        lease.present(
-          {
+      const ancestors = projectionPolicy ? browserSurfaceAncestors(element) : [];
+      const panel = element.closest<HTMLElement>('[data-preview-panel-mode="inline"]');
+      const nextObserved = projectionPolicy
+        ? [...ancestors, ...projectionPolicy.occluders(element)]
+        : [element, ...(panel ? [panel] : [])];
+      if (
+        nextObserved.length !== observed.length ||
+        nextObserved.some((node, i) => node !== observed[i])
+      ) {
+        observer.disconnect();
+        transforms?.disconnect();
+        for (const node of nextObserved) {
+          observer.observe(node);
+          transforms?.observe(node, { attributes: true, childList: true });
+        }
+        observed = nextObserved;
+      }
+      const projected = projectionPolicy
+        ? measureBrowserSurfaceProjection(element, rect, ancestors, projectionPolicy, onFocus)
+        : null;
+      if (
+        projected &&
+        (projected.visible ||
+          (lastProjection === null && element.clientWidth > 0 && element.clientHeight > 0))
+      ) {
+        lastProjection = projected.projection;
+      }
+      const projection = projected?.visible ? projected.projection : lastProjection;
+      const bounds = projected
+        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        : {
             x: Math.round(rect.x),
             y: Math.round(rect.y),
             width: Math.max(1, Math.round(rect.width)),
             height: Math.max(1, Math.round(rect.height)),
-          },
-          rect.width > 0 && rect.height > 0,
-          presentation.cornerRadius,
-          presentation.zIndex,
-        );
+          };
+      const showing =
+        presentation.visible && (projected?.visible ?? (rect.width > 0 && rect.height > 0));
+      const presented = lease.present(
+        bounds,
+        showing,
+        presentation.cornerRadius,
+        presentation.zIndex,
+        projection,
+      );
+      if (reclaim && presentation.visible && !presented) {
+        lease.release();
+        lease = acquireBrowserSurface(tabId, fitSourceContent);
+        lease.present(bounds, showing, presentation.cornerRadius, presentation.zIndex, projection);
       }
     };
-    updateRef.current = update;
+    const present = () => update(true);
+    updateRef.current = present;
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    // Inline panels animate their outer width while keeping the content at
-    // full width. The slot moves without resizing, so measure on shell resizes too.
-    const panel = element.closest('[data-preview-panel-mode="inline"]');
-    if (panel) observer.observe(panel);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    const measure = () => update();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-      if (updateRef.current === update) updateRef.current = null;
+      transforms?.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      if (updateRef.current === present) updateRef.current = null;
       lease.release();
     };
-  }, [fitSourceContent, tabId]);
+  }, [fitSourceContent, projectionPolicy, tabId]);
 
   useLayoutEffect(() => {
     presentationRef.current = { visible, cornerRadius, zIndex };

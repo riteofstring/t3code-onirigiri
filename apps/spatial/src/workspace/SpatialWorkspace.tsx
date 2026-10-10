@@ -17,6 +17,10 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
+import {
+  BrowserSurfaceProjectionContext,
+  type BrowserSurfaceProjectionPolicy,
+} from "@t3tools/web/src/browser/browserSurfaceProjection";
 import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
@@ -166,6 +170,24 @@ export function SpatialWorkspace({
   }, [panes]);
   const panesRef = useRef(panes);
   const activeRef = useRef(active);
+  const browserProjection = useMemo<BrowserSurfaceProjectionPolicy>(
+    () => ({
+      occluders: (slot) => [
+        ...(slot
+          .closest(".onirigiri-workspace")
+          ?.querySelectorAll<HTMLElement>(".onirigiri-workspace__minimap") ?? []),
+      ],
+      interactive: (slot) =>
+        !slot.closest('[data-onirigiri-shielded="true"], [data-runtime-state="frozen"]'),
+      focus: (slot) => {
+        // Use the same focus-without-camera-movement path as native pane content.
+        slot.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+        );
+      },
+    }),
+    [],
+  );
 
   const routePaneId =
     target?.kind === "server"
@@ -541,7 +563,7 @@ export function SpatialWorkspace({
   );
 
   return (
-    <div ref={stageRef} className="spatial-workspace flex h-full w-full flex-col">
+    <div ref={stageRef} inert={!active} className="spatial-workspace flex h-full w-full flex-col">
       <div className="flex shrink-0 items-center justify-end bg-[color-mix(in_oklch,var(--background)_94%,var(--foreground))]">
         <AddPaneButton onAdd={addPane} />
         <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={toggleFocusAnchor} />
@@ -551,28 +573,30 @@ export function SpatialWorkspace({
         <SpatialWorkspaceActiveContext value={active}>
           <PaneLifecycleContext value={lifecycle}>
             <PaneSnapshotContext value={requestSnapshot}>
-              <OnirigiriWorkspace
-                ref={workspaceRef}
-                ariaLabel="Onirigiri for T3 Code"
-                className="min-h-0 flex-1"
-                cursorRunway={0}
-                cursorTargets="panes"
-                desktopControlsContainer={controlsContainer}
-                focusAnchor={focusAnchor}
-                getPanePicture={getPanePicture}
-                gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
-                initialPanes={initialPanes}
-                liveContent
-                onFocusedPaneFrame={onFocusedPaneFrame}
-                onLayoutChange={onLayoutChange}
-                onPaneClose={onPaneClose}
-                onPanePictureCaptured={onPanePictureCaptured}
-                renderPane={renderPane}
-                renderPanePlaceholder={renderPanePlaceholder}
-                shortcutScope={active ? "application" : "workspace"}
-                shortcuts={SHORTCUTS}
-                workspaceId={WORKSPACE_ID}
-              />
+              <BrowserSurfaceProjectionContext value={browserProjection}>
+                <OnirigiriWorkspace
+                  ref={workspaceRef}
+                  ariaLabel="Onirigiri for T3 Code"
+                  className="min-h-0 flex-1"
+                  cursorRunway={0}
+                  cursorTargets="panes"
+                  desktopControlsContainer={controlsContainer}
+                  focusAnchor={focusAnchor}
+                  getPanePicture={getPanePicture}
+                  gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
+                  initialPanes={initialPanes}
+                  liveContent
+                  onFocusedPaneFrame={onFocusedPaneFrame}
+                  onLayoutChange={onLayoutChange}
+                  onPaneClose={onPaneClose}
+                  onPanePictureCaptured={onPanePictureCaptured}
+                  renderPane={renderPane}
+                  renderPanePlaceholder={renderPanePlaceholder}
+                  shortcutScope={active ? "application" : "workspace"}
+                  shortcuts={SHORTCUTS}
+                  workspaceId={WORKSPACE_ID}
+                />
+              </BrowserSurfaceProjectionContext>
             </PaneSnapshotContext>
           </PaneLifecycleContext>
         </SpatialWorkspaceActiveContext>

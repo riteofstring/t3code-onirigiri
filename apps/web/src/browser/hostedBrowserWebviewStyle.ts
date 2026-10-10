@@ -1,4 +1,5 @@
 import type { BrowserSurfaceRect } from "./browserSurfaceStore";
+import type { BrowserSurfaceProjection } from "./browserSurfaceProjection";
 
 export interface HostedBrowserWebviewSize {
   readonly width: number;
@@ -14,6 +15,9 @@ export interface HostedBrowserWebviewWrapperStyle {
   readonly pointerEvents: "auto" | "none";
   readonly borderRadius?: number;
   readonly visibility?: "hidden" | "visible";
+  readonly transform?: string;
+  readonly transformOrigin?: string;
+  readonly clipPath?: string;
 }
 
 export const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
@@ -26,6 +30,7 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly zIndex?: number;
   readonly rect: BrowserSurfaceRect | null;
   readonly hiddenSize: HostedBrowserWebviewSize;
+  readonly projection?: BrowserSurfaceProjection | null;
 }): HostedBrowserWebviewWrapperStyle {
   const {
     active,
@@ -33,6 +38,7 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
     hiddenSize,
     keepPaintableWhenInactive = false,
     rect,
+    projection,
     renderingActive,
     zIndex = 30,
   } = input;
@@ -40,10 +46,17 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
     return {
       left: rect.x,
       top: rect.y,
-      width: rect.width,
-      height: rect.height,
+      width: projection?.width ?? rect.width,
+      height: projection?.height ?? rect.height,
       zIndex,
-      pointerEvents: "auto",
+      pointerEvents: projection?.interactive === false ? "none" : "auto",
+      ...(projection
+        ? {
+            transform: `scale(${projection.scaleX}, ${projection.scaleY})`,
+            transformOrigin: "0 0",
+            clipPath: projection.clipPath,
+          }
+        : {}),
       ...(cornerRadius > 0 ? { borderRadius: cornerRadius } : {}),
     };
   }

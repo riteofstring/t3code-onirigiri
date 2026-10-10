@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   BROWSER_HISTORY_MAX_ENTRIES_PER_PROJECT,
@@ -170,8 +171,12 @@ export function PreviewView({
   // as "every profile".
   const activeProfileId = snapshot?.profileId ?? DEFAULT_BROWSER_PROFILE_ID;
   const activeProfileName = previewProfileName(browserDefaults.profiles, activeProfileId);
-  const panelRect = useBrowserSurfaceStore((state) =>
-    runtimeTabId ? (state.byTabId[runtimeTabId]?.rect ?? null) : null,
+  const panelRect = useBrowserSurfaceStore(
+    useShallow((state) => {
+      const surface = runtimeTabId ? state.byTabId[runtimeTabId] : null;
+      const size = surface?.projection ?? surface?.rect;
+      return size ? { width: size.width, height: size.height } : null;
+    }),
   );
 
   const navUrl = navStatus._tag === "Success" ? navStatus.url : null;

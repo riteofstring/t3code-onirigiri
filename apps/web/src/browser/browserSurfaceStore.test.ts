@@ -106,6 +106,7 @@ describe("browserSurfaceStore", () => {
         {
           hidden: {
             rect: staleRect,
+            projection: null,
             visible: false,
             zIndex: 30,
             content: null,
@@ -117,6 +118,7 @@ describe("browserSurfaceStore", () => {
           },
           active: {
             rect: liveRect,
+            projection: null,
             visible: true,
             zIndex: 30,
             content: null,

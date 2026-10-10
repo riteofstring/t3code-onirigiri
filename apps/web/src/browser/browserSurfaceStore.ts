@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { BrowserSurfaceProjection } from "./browserSurfaceProjection";
+
 export interface BrowserSurfaceRect {
   readonly x: number;
   readonly y: number;
@@ -9,6 +11,7 @@ export interface BrowserSurfaceRect {
 
 export interface BrowserSurfacePresentation {
   readonly rect: BrowserSurfaceRect | null;
+  readonly projection: BrowserSurfaceProjection | null;
   readonly visible: boolean;
   readonly zIndex: number;
   readonly content: BrowserSurfaceContentPresentation | null;
@@ -41,6 +44,7 @@ interface BrowserSurfaceStoreState {
     visible: boolean,
     cornerRadius: number,
     zIndex: number,
+    projection?: BrowserSurfaceProjection | null,
   ) => void;
   readonly presentContent: (tabId: string, content: BrowserSurfaceContentPresentation) => void;
   readonly release: (tabId: string, owner: symbol) => void;
@@ -52,6 +56,7 @@ export interface BrowserSurfaceLease {
     visible: boolean,
     cornerRadius?: number,
     zIndex?: number,
+    projection?: BrowserSurfaceProjection | null,
   ) => boolean;
   readonly release: () => void;
 }
@@ -70,6 +75,21 @@ const rectEquals = (left: BrowserSurfaceRect | null, right: BrowserSurfaceRect):
   left.y === right.y &&
   left.width === right.width &&
   left.height === right.height;
+
+const projectionEquals = (
+  left: BrowserSurfaceProjection | null,
+  right: BrowserSurfaceProjection | null,
+): boolean =>
+  left === right ||
+  (left !== null &&
+    right !== null &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.scaleX === right.scaleX &&
+    left.scaleY === right.scaleY &&
+    left.clipPath === right.clipPath &&
+    left.interactive === right.interactive &&
+    left.onFocus === right.onFocus);
 
 export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) => ({
   activityByTabId: {},
@@ -103,6 +123,7 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
           ...state.byTabId,
           [tabId]: {
             rect: current?.rect ?? null,
+            projection: null,
             visible: false,
             zIndex: current?.zIndex ?? 30,
             content: current?.content ?? null,
@@ -115,7 +136,7 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
         },
       };
     }),
-  present: (tabId, owner, rect, visible, cornerRadius, zIndex) =>
+  present: (tabId, owner, rect, visible, cornerRadius, zIndex, projection = null) =>
     set((state) => {
       const current = state.byTabId[tabId];
       if (current?.owner !== owner) return state;
@@ -124,14 +145,23 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
         current.visible === visible &&
         current.cornerRadius === cornerRadius &&
         current.zIndex === zIndex &&
-        rectEquals(current.rect, rect)
+        rectEquals(current.rect, rect) &&
+        projectionEquals(current.projection, projection)
       ) {
         return state;
       }
       return {
         byTabId: {
           ...state.byTabId,
-          [tabId]: { ...current, rect, visible, cornerRadius, zIndex, updatedAt: Date.now() },
+          [tabId]: {
+            ...current,
+            rect,
+            projection,
+            visible,
+            cornerRadius,
+            zIndex,
+            updatedAt: Date.now(),
+          },
         },
       };
     }),
@@ -144,6 +174,7 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
             ...state.byTabId,
             [tabId]: {
               rect: null,
+              projection: null,
               visible: false,
               zIndex: 30,
               content,
@@ -216,10 +247,12 @@ export function acquireBrowserSurface(
   useBrowserSurfaceStore.getState().claim(tabId, owner, fitSourceContent);
 
   return {
-    present: (rect, visible, cornerRadius = 0, zIndex = 30) => {
+    present: (rect, visible, cornerRadius = 0, zIndex = 30, projection = null) => {
       if (released) return false;
       if (useBrowserSurfaceStore.getState().byTabId[tabId]?.owner !== owner) return false;
-      useBrowserSurfaceStore.getState().present(tabId, owner, rect, visible, cornerRadius, zIndex);
+      useBrowserSurfaceStore
+        .getState()
+        .present(tabId, owner, rect, visible, cornerRadius, zIndex, projection);
       return true;
     },
     release: () => {

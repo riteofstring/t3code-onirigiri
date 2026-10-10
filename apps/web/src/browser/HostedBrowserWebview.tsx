@@ -84,6 +84,7 @@ export function HostedBrowserWebview(props: {
         fitSourceContent: current?.fitSourceContent ?? false,
         fittedSourceContent: current?.fittedSourceContent ?? null,
         rect: resolveBrowserSurfacePanelRect(state.byTabId, runtimeTabId),
+        projection: current?.projection ?? null,
         visible: current?.visible ?? false,
         zIndex: current?.zIndex ?? 30,
       };
@@ -160,14 +161,20 @@ export function HostedBrowserWebview(props: {
     // event, so open menus and popovers never see the outside press that
     // would dismiss them. Replay it as a pointerdown on the webview itself.
     const dismissHostPopups = () => {
+      const projected = useBrowserSurfaceStore.getState().byTabId[runtimeTabId]?.projection;
+      if (projected?.interactive) projected.onFocus();
       webview.dispatchEvent(
         new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }),
       );
+    };
+    const onHostBlur = () => {
+      if (document.activeElement === webview) dismissHostPopups();
     };
     webview.addEventListener("did-attach", register);
     webview.addEventListener("dom-ready", register);
     webview.addEventListener("render-process-gone", recoverGuest);
     webview.addEventListener("focus", dismissHostPopups);
+    window.addEventListener("blur", onHostBlur);
     register();
     return () => {
       disposed = true;
@@ -176,11 +183,13 @@ export function HostedBrowserWebview(props: {
       webview.removeEventListener("dom-ready", register);
       webview.removeEventListener("render-process-gone", recoverGuest);
       webview.removeEventListener("focus", dismissHostPopups);
+      window.removeEventListener("blur", onHostBlur);
     };
   }, [clientSettingsHydrated, config, initialSrc, runtimeTabId, webviewGeneration]);
 
   const active = presentation.visible && presentation.rect !== null;
   const lastRect = presentation.rect;
+  const logicalSize = presentation.projection ?? lastRect;
   const normalizedZoomFactor = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
   const viewportWidth = viewport._tag === "fill" ? null : viewport.width;
   const viewportHeight = viewport._tag === "fill" ? null : viewport.height;
@@ -204,10 +213,10 @@ export function HostedBrowserWebview(props: {
           height: viewport.height * normalizedZoomFactor,
         }
       : {
-          width: hiddenContentSize?.width ?? lastRect?.width ?? 1280,
-          height: hiddenContentSize?.height ?? lastRect?.height ?? 800,
+          width: hiddenContentSize?.width ?? logicalSize?.width ?? 1280,
+          height: hiddenContentSize?.height ?? logicalSize?.height ?? 800,
         };
-  const containerSize = active && lastRect ? lastRect : hiddenSize;
+  const containerSize = active && logicalSize ? logicalSize : hiddenSize;
   const deviceToolbarVisible = active && viewport._tag !== "fill" && !presentation.fitSourceContent;
   const {
     activeDrag,
@@ -233,8 +242,8 @@ export function HostedBrowserWebview(props: {
         )
       : null;
   const layout =
-    fittedSourceViewport && lastRect
-      ? resolveBrowserViewportLayout(lastRect, fittedSourceViewport, normalizedZoomFactor)
+    fittedSourceViewport && logicalSize
+      ? resolveBrowserViewportLayout(logicalSize, fittedSourceViewport, normalizedZoomFactor)
       : viewportLayout;
 
   const syncContentPresentation = useCallback(() => {
@@ -275,6 +284,7 @@ export function HostedBrowserWebview(props: {
     cornerRadius: presentation.cornerRadius,
     zIndex: presentation.zIndex,
     rect: lastRect,
+    projection: presentation.projection,
     hiddenSize,
   });
 
@@ -283,6 +293,7 @@ export function HostedBrowserWebview(props: {
       ref={wrapperRef}
       className="fixed overflow-hidden bg-muted/35"
       style={{ ...wrapperStyle, overscrollBehavior: "contain" }}
+      inert={presentation.projection !== null && (!active || !presentation.projection.interactive)}
       onScroll={syncContentPresentation}
       data-preview-rendering={renderingActive ? "active" : "suspended"}
       data-preview-viewport={runtimeTabId}

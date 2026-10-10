@@ -257,8 +257,14 @@ export const ThreadPane = memo(function ThreadPane({
   useEffect(() => {
     activity.set(active);
     const focused = document.activeElement;
-    if (!active && focused instanceof HTMLElement && contentRef.current?.contains(focused)) {
-      focused.blur();
+    if (!active && focused instanceof HTMLElement) {
+      const ownsGuest =
+        focused.tagName === "WEBVIEW" &&
+        [
+          ...(contentRef.current?.querySelectorAll<HTMLElement>("[data-browser-surface-slot]") ??
+            []),
+        ].some((slot) => slot.dataset.browserSurfaceSlot === focused.dataset.previewTab);
+      if (ownsGuest || contentRef.current?.contains(focused)) focused.blur();
     }
   }, [active, activity]);
 
