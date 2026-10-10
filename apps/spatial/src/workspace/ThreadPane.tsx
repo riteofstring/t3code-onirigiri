@@ -133,16 +133,25 @@ function usePaneContent(
     if (!mounted) setContentMounted(false);
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
-      if (focused) show();
-      else {
-        const idle = requestIdleCallback(show, { timeout: 1000 });
-        return () => cancelIdleCallback(idle);
-      }
+      let idle: number | null = null;
+      const prepare = () => {
+        if (idle !== null) cancelIdleCallback(idle);
+        idle = null;
+        if (!focused && lifecycle?.isMoving()) return;
+        if (focused || visible) show();
+        else idle = requestIdleCallback(show, { timeout: 1000 });
+      };
+      const unsubscribe = lifecycle?.subscribeMotion(prepare);
+      prepare();
+      return () => {
+        unsubscribe?.();
+        if (idle !== null) cancelIdleCallback(idle);
+      };
     }
-  }, [contentAvailable, contentMounted, focused, mounted]);
+  }, [contentAvailable, contentMounted, focused, lifecycle, mounted, visible]);
   useEffect(() => {
     lifecycle?.committed(paneId, renderContent);
-  }, [lifecycle, paneId, renderContent]);
+  }, [lifecycle, mounted, paneId, renderContent]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = shell?.latestTurn?.state === "running";

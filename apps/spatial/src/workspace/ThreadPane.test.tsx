@@ -148,7 +148,7 @@ let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
 let appComposerRef: ComposerHandleRef;
 let workspaceActive: boolean;
 
-async function render(focused = false, paintFrames = true) {
+async function render(focused = false, paintFrames = true, visible = focused) {
   await act(async () => {
     for (const listener of state.listeners) listener();
     root.render(
@@ -164,7 +164,7 @@ async function render(focused = false, paintFrames = true) {
                     threadId: "thread-one" as ThreadId,
                   }}
                   focused={focused}
-                  visible={focused}
+                  visible={visible}
                   onNavigateAway={() => {}}
                 />
               </PaneSnapshotContext>
@@ -630,6 +630,36 @@ it("starts the next queued preparation only after the deferred view commits", as
     await vi.advanceTimersToNextTimerAsync();
   });
   expect(lifecycle.isMounted("p2")).toBe(true);
+});
+
+it("holds a visible prepared view through motion and renders at rest without waiting for idle", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  lifecycle.setMoving(true);
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  vi.stubGlobal("requestIdleCallback", () => 99);
+  await render(false, false, true);
+  expect(container.querySelector("textarea")).toBeNull();
+  await act(() => lifecycle!.setMoving(false));
+  expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it("cancels an offscreen content mount if motion starts before its idle callback", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 100));
+  await render(false, false);
+  await act(() => lifecycle!.setMoving(true));
+  await act(() => vi.advanceTimersByTimeAsync(150));
+  expect(container.querySelector("textarea")).toBeNull();
+  await act(() => lifecycle!.setMoving(false));
+  await act(() => vi.advanceTimersByTimeAsync(100));
+  expect(container.querySelector("textarea")).not.toBeNull();
 });
 
 it("keeps command-palette actions bound to the active composer's latest handle", async () => {

@@ -2,7 +2,7 @@ import { createContext, startTransition, use, useEffect, useState } from "react"
 
 /** Neighbours of the focused pane prepared ahead of use. */
 const NEIGHBORS = 4;
-/** Retained views; one temporary background capture may exceed this budget. */
+/** Warm retention target; visible views and one background capture may exceed it. */
 const MAX_MOUNTED = 8;
 /** Quiet time after focus or visibility changes before mounting follows them. */
 const SETTLE_MS = 200;
@@ -33,11 +33,11 @@ type Direction = "left" | "right" | "up" | "down";
  * Once focus and visibility have been quiet for a moment the focused pane
  * mounts ahead of any other work. A saved picture bridges camera motion before
  * mounting; a destination without one still prepares early. The focused pane's
- * neighbours, the next one in the direction of travel first, and then visible
- * panes without a picture are
- * prepared speculatively: one
- * at a time, each after the previous one has committed, only while the page is
- * idle and input has been quiet. When nothing else is wanted, panes without a
+ * visible peers mount next, one at a time after each commit, regardless of
+ * saved pictures. Visible views are never evicted to meet the retention target.
+ * Neighbours, the next one in the direction of travel first, are prepared in
+ * spare slots only while the page is idle and input has been quiet.
+ * When nothing else is wanted, panes without a
  * picture are mounted the same way, nearest first, until they are pictured.
  * Navigation cancels speculative work that has
  * not started yet.
@@ -57,6 +57,7 @@ export function createPaneLifecycleStore(
   const mounted = new Set<string>(focused ? [focused] : []);
   const lastWanted = new Map<string, number>();
   const listeners = new Map<string, Set<() => void>>();
+  const motionListeners = new Set<() => void>();
   let queue: string[] = [];
   let wanted = new Set<string>();
   let waitingFor: string | null = null;
@@ -99,13 +100,17 @@ export function createPaneLifecycleStore(
     commitTimer = null;
   };
 
-  const mountPrepared = (paneId: string) => {
+  const waitForCommit = (paneId: string) => {
     clearCommitWait();
     waitingFor = paneId;
     commitTimer = setTimeout(() => {
       clearCommitWait();
       schedule();
     }, COMMIT_TIMEOUT_MS);
+  };
+
+  const mountPrepared = (paneId: string) => {
+    waitForCommit(paneId);
     mount(paneId);
   };
 
@@ -114,13 +119,32 @@ export function createPaneLifecycleStore(
     if (mounted.delete(paneId)) notify(paneId);
   };
 
-  // Keeps at most `limit` panes mounted, unmounting the least recently wanted
-  // ones that are not in `keep`.
+  const distance = (paneId: string) => {
+    const center = focused ? panes.get(focused) : undefined;
+    const pane = panes.get(paneId);
+    return pane
+      ? Math.abs(pane.plane - (center?.plane ?? 0)) * 1000 +
+          Math.abs(pane.slot - (center?.slot ?? 0))
+      : Infinity;
+  };
+
+  const evictionCandidate = (limit: number, keep: ReadonlySet<string>) => {
+    if (mounted.size <= limit) return null;
+    return (
+      [...mounted]
+        .filter(
+          (paneId) => !keep.has(paneId) && !visible.has(paneId) && paneId !== picturing?.paneId,
+        )
+        .toSorted(
+          (a, b) =>
+            (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0) || distance(b) - distance(a),
+        )[0] ?? null
+    );
+  };
+
   const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
-    const evictable = [...mounted]
-      .filter((paneId) => !keep.has(paneId) && paneId !== picturing?.paneId)
-      .toSorted((a, b) => (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0));
-    while (mounted.size > limit && evictable.length > 0) unmount(evictable.shift()!);
+    const paneId = evictionCandidate(limit, keep);
+    if (paneId !== null) unmount(paneId);
   };
 
   const cancelSpeculation = () => {
@@ -165,17 +189,32 @@ export function createPaneLifecycleStore(
       hasPicture(paneId) || !panes.has(paneId) || performance.now() - since >= PICTURE_TIMEOUT_MS;
     if (!done) return true;
     if (hasPicture(paneId)) pictureAttempted.delete(paneId);
-    if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
+    if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
     evictBeyond(MAX_MOUNTED, wanted);
     return false;
   };
 
+  const visibleQueued = () => queue.some((paneId) => visible.has(paneId) && !mounted.has(paneId));
+
   const schedule = () => {
     if (moving) return;
     if (waitingFor !== null || idleCallback !== null || quietTimer !== null) return;
     if (pictureTimer !== null) return;
-    if (queue.length === 0 && picturing === null && nextToPicture() === null) return;
+    if (
+      queue.length === 0 &&
+      picturing === null &&
+      nextToPicture() === null &&
+      evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted) === null
+    )
+      return;
+    if (visibleQueued()) {
+      quietTimer = setTimeout(() => {
+        quietTimer = null;
+        advance();
+      }, 0);
+      return;
+    }
     const sinceInput = performance.now() - lastInput;
     if (sinceInput < INPUT_QUIET_MS) {
       quietTimer = setTimeout(() => {
@@ -190,15 +229,25 @@ export function createPaneLifecycleStore(
   const advance = () => {
     idleCallback = null;
     if (moving) return;
-    if (performance.now() - lastInput < INPUT_QUIET_MS) {
+    queue = queue.filter((paneId) => panes.has(paneId) && !mounted.has(paneId));
+    if (!visibleQueued() && performance.now() - lastInput < INPUT_QUIET_MS) {
       schedule();
       return;
     }
-    while (queue.length > 0) {
-      const paneId = queue.shift()!;
-      if (!panes.has(paneId) || mounted.has(paneId)) continue;
+    if (queue.length > 0) {
+      const visibleIndex = queue.findIndex((paneId) => visible.has(paneId));
+      const paneId = queue.splice(Math.max(0, visibleIndex), 1)[0]!;
       evictBeyond(MAX_MOUNTED - 1 + (picturing ? 1 : 0), wanted);
       mountPrepared(paneId);
+      return;
+    }
+    // Leaving overview releases excess offscreen views one commit at a time,
+    // only during idle input, instead of unmounting them all on the last frame.
+    const retiring = evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
+    if (retiring !== null) {
+      waitForCommit(retiring);
+      mounted.delete(retiring);
+      notify(retiring);
       return;
     }
     // With nothing likely to be needed soon, panes without a picture are
@@ -279,27 +328,29 @@ export function createPaneLifecycleStore(
       lastWanted.set(focused, clock);
       if (!mounted.has(focused)) mountPrepared(focused);
     }
-    // Likely destinations come before panes that are merely on screen, and a
-    // pane on screen that a picture already shows does not need its view.
-    const onScreen = picturesReady ? [...visible].filter((paneId) => !hasPicture(paneId)) : [];
-    const nearby = neighborsWanted ? neighbors() : [];
-    const center = focused ? panes.get(focused) : undefined;
-    const distance = (pane: PanePosition) =>
-      Math.abs(pane.plane - (center?.plane ?? 0)) * 1000 +
-      Math.abs(pane.slot - (center?.slot ?? 0));
+    const required = new Set([
+      ...(focused ? [focused] : []),
+      ...[...visible]
+        .filter((paneId) => panes.has(paneId))
+        .toSorted((a, b) => distance(a) - distance(b)),
+    ]);
+    const nearby = neighbors().filter((paneId) => neighborsWanted || mounted.has(paneId));
     const live = [...panes.values()]
       .filter((pane) => running.has(pane.paneId) && (neighborsWanted || mounted.has(pane.paneId)))
-      .toSorted((a, b) => distance(a) - distance(b) || a.plane - b.plane || a.slot - b.slot)
+      .toSorted(
+        (a, b) => distance(a.paneId) - distance(b.paneId) || a.plane - b.plane || a.slot - b.slot,
+      )
       .map((pane) => pane.paneId);
-    const speculative = [...new Set([...nearby, ...onScreen, ...live])].filter(
-      (paneId) => paneId !== focused && panes.has(paneId),
+    const speculative = [...new Set([...nearby, ...live])].filter(
+      (paneId) => !required.has(paneId) && panes.has(paneId),
     );
-    wanted = new Set([...(focused ? [focused] : []), ...speculative].slice(0, MAX_MOUNTED));
+    wanted = new Set([
+      ...required,
+      ...speculative.slice(0, Math.max(0, MAX_MOUNTED - required.size)),
+    ]);
     for (const paneId of wanted) lastWanted.set(paneId, clock);
     cancelSpeculation();
-    queue = speculative.filter((paneId) => wanted.has(paneId) && !mounted.has(paneId));
-    // Views stay warm until a mount needs their place.
-    evictBeyond(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
+    queue = [...wanted].filter((paneId) => !mounted.has(paneId));
     schedule();
   };
 
@@ -330,6 +381,13 @@ export function createPaneLifecycleStore(
 
   return {
     isMounted: (paneId: string) => mounted.has(paneId),
+    isMoving: () => moving,
+    subscribeMotion: (listener: () => void) => {
+      motionListeners.add(listener);
+      return () => {
+        motionListeners.delete(listener);
+      };
+    },
     subscribe: (paneId: string, listener: () => void) => {
       let paneListeners = listeners.get(paneId);
       if (!paneListeners) listeners.set(paneId, (paneListeners = new Set()));
@@ -348,6 +406,7 @@ export function createPaneLifecycleStore(
     setMoving: (next: boolean) => {
       if (moving === next) return;
       moving = next;
+      for (const listener of motionListeners) listener();
       if (moving) {
         cancelSpeculation();
         requestSettle();
@@ -415,7 +474,7 @@ export function createPaneLifecycleStore(
         const { paneId } = picturing;
         picturing = null;
         pictureAttempted.delete(paneId);
-        if (!wanted.has(paneId) && paneId !== focused) unmount(paneId);
+        if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
       }
       requestSettle();
     },
@@ -467,6 +526,7 @@ export function createPaneLifecycleStore(
       cancelSpeculation();
       clearCommitWait();
       picturing = null;
+      motionListeners.clear();
       if (settleTimer !== null) clearTimeout(settleTimer);
       if (neighborTimer !== null) clearTimeout(neighborTimer);
       if (storedPicturesTimer !== null) clearTimeout(storedPicturesTimer);
