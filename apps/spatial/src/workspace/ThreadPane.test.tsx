@@ -117,7 +117,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     return (
       <>
         {state.suspended ? <ChatViewPendingContent /> : null}
-        <textarea aria-label="Draft" />
+        <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
         <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
         {panel.present ? <aside aria-label="Thread panel">{panel.value}</aside> : null}
@@ -390,6 +390,156 @@ it("keeps a live editor presented while suspended content postpones new pictures
   await render(true);
   expect(state.engineReady).toBe(true);
   expect(state.engineRevision).toBe(revision);
+});
+
+it("reuses an unchanged picture through repeated focus changes without replacing the editor", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(requestSnapshot.mock.calls[0]?.[2]?.refresh).toBe(false);
+  editor.value = "Keep this unsent draft";
+  requestSnapshot.mockClear();
+
+  await render(false);
+  await render(true);
+  await render(false);
+
+  expect(requestSnapshot).toHaveBeenCalledTimes(3);
+  expect(requestSnapshot.mock.calls.every(([, , options]) => options?.refresh === false)).toBe(
+    true,
+  );
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep this unsent draft");
+});
+
+it("defers a picture refresh after scroll input until departure and reuses an unchanged visit", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  requestSnapshot.mockClear();
+  await act(() => editor.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 80 })));
+  await act(() => vi.advanceTimersByTimeAsync(4000));
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  await render(false);
+  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+
+  await render(true);
+  requestSnapshot.mockClear();
+  await render(false);
+  expect(requestSnapshot.mock.calls.every(([, , options]) => options?.refresh === false)).toBe(
+    true,
+  );
+});
+
+it("reuses pictures when navigation starts in the composer but refreshes keyboard scrolling", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.focus();
+  await act(async () => editor.classList.add("ProseMirror-focused"));
+  requestSnapshot.mockClear();
+  await act(() => {
+    for (const key of ["Control", "Alt", "ArrowRight"])
+      editor.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          code: key,
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+        }),
+      );
+  });
+  await render(false);
+  await act(async () => editor.classList.remove("ProseMirror-focused"));
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(requestSnapshot.mock.calls.every(([, , options]) => options?.refresh === false)).toBe(
+    true,
+  );
+  expect(document.activeElement).not.toBe(editor);
+
+  requestSnapshot.mockClear();
+  await act(async () => editor.classList.add("text-lg"));
+  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+
+  for (const options of [
+    { key: "Home", ctrlKey: true },
+    { key: "ArrowDown", altKey: true },
+    { key: "ArrowUp", altKey: true, shiftKey: true },
+  ]) {
+    await render(true);
+    requestSnapshot.mockClear();
+    await act(() =>
+      editor.dispatchEvent(new KeyboardEvent("keydown", { ...options, bubbles: true })),
+    );
+    await render(false);
+    expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(
+      true,
+    );
+  }
+});
+
+it("ignores repeated and temporary attribute writes but refreshes a changed presentation", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  await render(false);
+  const panel = container.querySelector("aside")!;
+  const input = document.createElement("input");
+  input.type = "file";
+  await act(async () => panel.append(input));
+  requestSnapshot.mockClear();
+
+  await act(async () => {
+    input.name = "";
+    input.type = "file";
+    input.removeAttribute("name");
+    panel.setAttribute("aria-label", "Thread panel");
+  });
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  await act(async () => {
+    panel.setAttribute("aria-label", "Thread panel");
+    panel.setAttribute("style", "color: red");
+    panel.setAttribute("aria-label", "Updated panel");
+  });
+  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+});
+
+it("refreshes a picture when background content changes without a new message revision", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  await render(false);
+  expect(state.engineReady).toBe(true);
+  const revision = state.engineRevision;
+  requestSnapshot.mockClear();
+  const panel = container.querySelector("aside")!;
+  await act(async () => {
+    panel.textContent = "Asynchronous content is ready";
+  });
+  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+  expect(state.engineRevision).toBe(revision);
+});
+
+it("refreshes a picture after a same-source image finishes loading in the background", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  await render(false);
+  expect(state.engineReady).toBe(true);
+  const image = document.createElement("img");
+  await act(async () => container.querySelector("aside")!.append(image));
+  requestSnapshot.mockClear();
+  await act(() => image.dispatchEvent(new Event("load")));
+  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
 });
 
 it("keeps a closing panel present when the app route follows another pane", async () => {

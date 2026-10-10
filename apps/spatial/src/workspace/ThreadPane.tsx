@@ -253,16 +253,91 @@ export const ThreadPane = memo(function ThreadPane({
     }
   }, [active, activity]);
 
-  // A settled, synchronized view is pictured for when it is not mounted, and
-  // again when it stops being active, in case it was scrolled meanwhile.
-  // Native capture gets the first opportunity; the drawing remains a fallback
-  // when a browser exposes the API but cannot capture this content.
+  // Reuse pictures across focus changes. Observe actual content changes and
+  // input that can change scroll position without forcing hidden content layout.
+  // Native capture gets the first opportunity; drawing remains its fallback.
   const requestSnapshot = use(PaneSnapshotContext);
-  const wasActive = useRef(false);
   const refreshPending = useRef(false);
+  const snapshotPrepared = useRef(false);
+  useLayoutEffect(() => {
+    const element = contentRef.current;
+    if (!element) return;
+    if (!mounted) {
+      snapshotPrepared.current = false;
+      refreshPending.current = false;
+      return;
+    }
+    if (!snapshotPrepared.current && picturable === null) return;
+    snapshotPrepared.current = true;
+    const invalidate = () => {
+      refreshPending.current = true;
+      if (active || picturable === null || !requestSnapshot) return;
+      requestSnapshot(paneId, element, { preferNative: canCapturePanes(), refresh: true });
+      refreshPending.current = false;
+    };
+    const contentChanged = (records: MutationRecord[]) => {
+      const attributes = new Map<Element, Set<string>>();
+      return records.some((record) => {
+        const { target, type, attributeName, oldValue } = record;
+        if (type !== "attributes" || !(target instanceof Element) || attributeName === null)
+          return true;
+        if (
+          target === element &&
+          (attributeName === "data-spatial-active" || attributeName === "data-spatial-preparing")
+        )
+          return false;
+        let seen = attributes.get(target);
+        if (!seen) attributes.set(target, (seen = new Set()));
+        if (seen.has(attributeName)) return false;
+        seen.add(attributeName);
+        // React can temporarily clear an input's name while updating its type.
+        // Compare the batch's initial value with its final value.
+        const currentValue = target.getAttribute(attributeName);
+        if (attributeName === "class" && target.matches('[data-testid="composer-editor"]')) {
+          // Focus changes selection inside draft content, which pictures omit.
+          const pictureClasses = (value: string | null) =>
+            (value ?? "")
+              .split(/\s+/)
+              .filter((name) => name !== "ProseMirror-focused")
+              .join(" ")
+              .trim();
+          return pictureClasses(oldValue) !== pictureClasses(currentValue);
+        }
+        return oldValue !== currentValue;
+      });
+    };
+    const observer = new MutationObserver((records) => {
+      if (contentChanged(records)) invalidate();
+    });
+    observer.observe(element, {
+      attributes: true,
+      attributeOldValue: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    const onKeyDown = (event: KeyboardEvent) => {
+      const modifierOnly = ["Alt", "Control", "Meta", "Shift"].includes(event.key);
+      const navigating =
+        event.ctrlKey &&
+        event.altKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        (event.key.startsWith("Arrow") || event.code === "KeyO");
+      if (!modifierOnly && !navigating) invalidate();
+    };
+    const events = ["wheel", "pointerdown", "input", "drop", "load"] as const;
+    element.addEventListener("keydown", onKeyDown, true);
+    for (const event of events)
+      element.addEventListener(event, invalidate, { capture: true, passive: true });
+    return () => {
+      if (contentChanged(observer.takeRecords())) refreshPending.current = true;
+      observer.disconnect();
+      element.removeEventListener("keydown", onKeyDown, true);
+      for (const event of events) element.removeEventListener(event, invalidate, true);
+    };
+  }, [active, mounted, paneId, picturable, requestSnapshot]);
   useEffect(() => {
-    if (wasActive.current && !active) refreshPending.current = true;
-    wasActive.current = active;
     if (picturable !== null && contentRef.current && requestSnapshot) {
       requestSnapshot(paneId, contentRef.current, {
         preferNative: canCapturePanes(),
