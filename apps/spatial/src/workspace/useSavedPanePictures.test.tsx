@@ -301,7 +301,7 @@ it("waits for committed detail to catch up with shell metadata before saving eit
     await vi.advanceTimersByTimeAsync(3500);
   });
   expect(store.writes).toHaveLength(1);
-  expect(store.writes[0]?.revision).toBe(`u2|dark|dark|${geometry(400)}|responsive-css-2`);
+  expect(store.writes[0]?.revision).toBe(`u2|dark|dark|${geometry(400)}|responsive-css-3`);
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
   hook.onPanePictureCaptured(pane, new Blob(["wrong theme"]));
@@ -584,7 +584,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   const old = new Blob(["previous scroll position"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${geometry(400)}|responsive-css-2`,
+    revision: `u1|dark|dark|${geometry(400)}|responsive-css-3`,
     image: old,
     savedAt: 1,
     source: "snapshot",

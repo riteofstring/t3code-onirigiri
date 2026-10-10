@@ -14,6 +14,171 @@ export function canCapturePanes(): boolean {
   );
 }
 
+// SVG images can round mixed-font line boxes differently from live text.
+// Adjust only when the same fonts reproduce both native height and width.
+const TEXT_SAMPLE_ROWS = 10;
+const TEXT_PIXEL_TOLERANCE = 1.25;
+
+let textLayout: {
+  key: string;
+  height: number;
+  width: number;
+  scale: number;
+  geometric: boolean;
+} | null = null;
+
+function fontStyles(style: CSSStyleDeclaration): string {
+  return [
+    `font:${style.font}`,
+    `letter-spacing:${style.letterSpacing}`,
+    `word-spacing:${style.wordSpacing}`,
+    `font-feature-settings:${style.fontFeatureSettings}`,
+    `font-variation-settings:${style.fontVariationSettings}`,
+    `font-kerning:${style.fontKerning}`,
+    `font-optical-sizing:${style.fontOpticalSizing}`,
+  ].join(";");
+}
+
+async function matchTextLayout(
+  source: HTMLElement,
+  clone: HTMLElement,
+  canSnapshot: () => boolean,
+): Promise<void> {
+  const code = source.querySelector(".chat-markdown :is(p,li) > code");
+  const prose = code?.closest(".chat-markdown");
+  if (!code || !prose) return;
+  const proseStyle = getComputedStyle(prose);
+  const codeStyle = getComputedStyle(code);
+  if (
+    !proseStyle.font ||
+    !codeStyle.font ||
+    proseStyle.textRendering !== "auto" ||
+    codeStyle.textRendering !== "auto"
+  )
+    return;
+  const strong = prose.querySelector("strong");
+  const strongStyle = strong ? getComputedStyle(strong) : null;
+  if (strongStyle && (!strongStyle.font || strongStyle.textRendering !== "auto")) return;
+  const proseFont = fontStyles(proseStyle);
+  const codeFont = fontStyles(codeStyle);
+  const strongFont = strongStyle ? fontStyles(strongStyle) : "";
+  const key = [proseFont, codeFont, codeStyle.padding, codeStyle.borderWidth, strongFont].join(";");
+  const copies = [...clone.querySelectorAll<HTMLElement>(".chat-markdown")];
+  const matching = [...source.querySelectorAll(".chat-markdown")].flatMap((element, index) => {
+    const style = getComputedStyle(element);
+    return style.textRendering === "auto" && fontStyles(style) === proseFont && copies[index]
+      ? [copies[index]!]
+      : [];
+  });
+  const holder = document.createElement("div");
+  holder.setAttribute("aria-hidden", "true");
+  holder.style.cssText =
+    "all:initial;position:fixed;left:-10000px;top:0;visibility:hidden;contain:strict;width:300px;height:1px";
+  const sample = document.createElement("div");
+  sample.style.cssText = `all:initial;display:block;text-rendering:inherit;width:300px;${proseFont};white-space:nowrap;color:black;background:white`;
+  const end = document.createElement("span");
+  end.style.cssText =
+    "all:initial;display:inline-block;width:3px;height:3px;background:rgb(21,87,173)";
+  for (let index = 0; index < TEXT_SAMPLE_ROWS; index++) {
+    const row = document.createElement("div");
+    row.style.cssText = "all:unset;display:block";
+    const inlineCode = document.createElement("span");
+    inlineCode.style.cssText = `all:unset;${codeFont};padding:${codeStyle.padding};border-style:solid;border-width:${codeStyle.borderWidth}`;
+    inlineCode.textContent = "Bp";
+    row.append("Ag", inlineCode);
+    if (strongStyle) {
+      const bold = document.createElement("span");
+      bold.style.cssText = `all:unset;${strongFont}`;
+      bold.textContent = "Cm";
+      row.append(bold);
+    }
+    if (index === 0) row.append(end);
+    sample.append(row);
+  }
+  const marker = document.createElement("div");
+  marker.style.cssText = "all:initial;display:block;width:3px;height:3px;background:rgb(161,35,69)";
+  sample.append(marker);
+  holder.append(sample);
+  document.body.append(holder);
+  const scale = window.devicePixelRatio || 1;
+  let height: number;
+  let width: number;
+  let markup: string;
+  try {
+    const rect = sample.getBoundingClientRect();
+    height = (marker.getBoundingClientRect().y - rect.y) * scale;
+    width = (end.getBoundingClientRect().x - rect.x) * scale;
+    markup = new XMLSerializer().serializeToString(sample);
+  } finally {
+    holder.remove();
+  }
+  if (
+    !textLayout ||
+    textLayout.key !== key ||
+    textLayout.height !== height ||
+    textLayout.width !== width ||
+    textLayout.scale !== scale
+  ) {
+    const errors: number[] = [];
+    const imageHeight = Math.ceil(height / scale + 32);
+    try {
+      for (const rendering of ["auto", "geometricPrecision"]) {
+        if (!canSnapshot()) return;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="${imageHeight}" style="text-rendering:${rendering}"><foreignObject width="300" height="${imageHeight}">${markup}</foreignObject></svg>`;
+        const image = await loadImage(
+          `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+        );
+        const canvas = document.createElement("canvas");
+        try {
+          if (!canSnapshot()) return;
+          canvas.width = Math.ceil(300 * scale);
+          canvas.height = Math.ceil(imageHeight * scale);
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return;
+          context.scale(scale, scale);
+          context.drawImage(image, 0, 0);
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          let imageY = Number.NaN;
+          let imageX = Number.NaN;
+          for (let offset = 0; offset < pixels.length; offset += 4) {
+            if (
+              Number.isNaN(imageY) &&
+              pixels[offset] === 161 &&
+              pixels[offset + 1] === 35 &&
+              pixels[offset + 2] === 69
+            )
+              imageY = Math.floor(offset / 4 / canvas.width);
+            if (
+              Number.isNaN(imageX) &&
+              pixels[offset] === 21 &&
+              pixels[offset + 1] === 87 &&
+              pixels[offset + 2] === 173
+            )
+              imageX = (offset / 4) % canvas.width;
+            if (!Number.isNaN(imageY) && !Number.isNaN(imageX)) break;
+          }
+          errors.push(Math.max(Math.abs(imageY - height), Math.abs(imageX - width)));
+        } finally {
+          canvas.width = canvas.height = 0;
+          image.removeAttribute("src");
+        }
+      }
+    } catch {
+      return;
+    }
+    textLayout = {
+      key,
+      height,
+      width,
+      scale,
+      geometric: errors[0]! > TEXT_PIXEL_TOLERANCE && errors[1]! <= TEXT_PIXEL_TOLERANCE,
+    };
+  }
+  if (textLayout.geometric) {
+    for (const markdown of matching) markdown.style.textRendering = "geometricPrecision";
+  }
+}
+
 let pageStyles: {
   sheets: { sheet: CSSStyleSheet; disabled: boolean; media: string }[];
   media: { query: MediaQueryList; matches: boolean }[];
@@ -101,6 +266,9 @@ function inheritedStyles(element: HTMLElement): string {
     `font-size:${style.fontSize}`,
     `line-height:${style.lineHeight}`,
     `color:${style.color}`,
+    `color-scheme:${style.colorScheme}`,
+    `tab-size:${style.tabSize}`,
+    `text-rendering:${style.textRendering}`,
     `-webkit-font-smoothing:antialiased`,
   );
   return declarations.join(";");
@@ -206,13 +374,16 @@ export async function snapshotPanePicture(
     );
     if (!element.isConnected || !canSnapshot()) return null;
     // Drawing clones the live DOM synchronously; encoding no longer needs its layout.
-    return drawPanePicture(element);
+    return drawPanePicture(element, canSnapshot);
   } finally {
     if (host) delete host.dataset.spatialSnapshot;
   }
 }
 
-async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
+async function drawPanePicture(
+  element: HTMLElement,
+  canSnapshot: () => boolean,
+): Promise<Blob | null> {
   const width = element.offsetWidth;
   const height = element.offsetHeight;
   if (width === 0 || height === 0) return null;
@@ -227,20 +398,23 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
       editor.replaceChildren(document.createElement("p"));
     }
   }
-  const rootClass = document.documentElement.className;
+  const wrapper = document.documentElement.cloneNode(false) as HTMLElement;
+  wrapper.style.cssText = `${inheritedStyles(element)};width:${width}px;height:${height}px;overflow:hidden`;
+  wrapper.append(clone);
   const rootFontSize = getComputedStyle(document.documentElement).fontSize;
-  const markup = new XMLSerializer().serializeToString(clone);
+  const styles = encodedPageStyles();
+  await matchTextLayout(element, clone, canSnapshot);
+  if (!element.isConnected || !canSnapshot()) return null;
+  const markup = new XMLSerializer().serializeToString(wrapper);
   // Rem units use the image document's root, independently of the inner content's font size.
   const open =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
     `style="font-size:${escapeAttribute(rootFontSize)}">` +
     new XMLSerializer().serializeToString(definitions) +
-    `<foreignObject width="100%" height="100%">` +
-    `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
-    `style="${escapeAttribute(inheritedStyles(element))};width:${width}px;height:${height}px;overflow:hidden">`;
-  const close = `</div></foreignObject></svg>`;
+    `<foreignObject width="100%" height="100%">`;
+  const close = `</foreignObject></svg>`;
   const image = await loadImage(
-    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${encodedPageStyles()}` +
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${styles}` +
       `${encodeURIComponent(markup + close)}`,
   );
   const scale = window.devicePixelRatio || 1;
