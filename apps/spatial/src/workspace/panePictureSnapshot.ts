@@ -14,40 +14,93 @@ export function canCapturePanes(): boolean {
   );
 }
 
-let pageStyles: { sheets: number; encoded: string } | null = null;
+let pageStyles: {
+  sheets: { sheet: CSSStyleSheet; disabled: boolean; media: string }[];
+  media: { query: MediaQueryList; matches: boolean }[];
+  encoded: string;
+} | null = null;
 
-// The page's styles as a URL-encoded style element, built once: they are the
-// bulk of every picture's markup.
+// Media conditions belong to the live window, not the smaller SVG viewport.
+// Cache their resolved styles until the sheets or matching conditions change.
 function encodedPageStyles(): string {
-  const sheets = document.styleSheets.length;
-  if (pageStyles !== null && pageStyles.sheets === sheets) return pageStyles.encoded;
+  const sheets = Array.from(document.styleSheets, (sheet) => ({
+    sheet,
+    disabled: sheet.disabled,
+    media: sheet.media.mediaText,
+  }));
+  if (
+    pageStyles !== null &&
+    pageStyles.sheets.length === sheets.length &&
+    pageStyles.sheets.every((previous, index) => {
+      const current = sheets[index]!;
+      return (
+        previous.sheet === current.sheet &&
+        previous.disabled === current.disabled &&
+        previous.media === current.media
+      );
+    }) &&
+    pageStyles.media.every(({ query, matches }) => query.matches === matches)
+  )
+    return pageStyles.encoded;
+
+  const media = new Map<string, { query: MediaQueryList; matches: boolean }>();
+  const matches = (condition: string) => {
+    let state = media.get(condition);
+    if (!state) {
+      const query = matchMedia(condition);
+      state = { query, matches: query.matches };
+      media.set(condition, state);
+    }
+    return state.matches;
+  };
   const rules: string[] = [];
-  for (const sheet of document.styleSheets) {
+  for (const { sheet, disabled, media: condition } of sheets) {
+    if (disabled || (condition && !matches(condition))) continue;
     try {
-      for (const rule of sheet.cssRules) rules.push(rule.cssText);
+      for (const rule of sheet.cssRules) {
+        if (!(rule instanceof CSSImportRule)) rules.push(rule.cssText);
+      }
     } catch {
       // Cross-origin sheets cannot be read; T3 serves its own.
     }
   }
-  const css = rules.join("\n").replaceAll("]]>", "]]]]><![CDATA[>");
-  pageStyles = { sheets, encoded: encodeURIComponent(`<style><![CDATA[${css}]]></style>`) };
+  const copy = new CSSStyleSheet();
+  copy.replaceSync(rules.join("\n"));
+  const resolveMedia = (rules: CSSRuleList) => {
+    for (const rule of rules) {
+      if (rule instanceof CSSMediaRule) {
+        const enabled = matches(rule.conditionText);
+        rule.media.mediaText = enabled ? "all" : "not all";
+        if (!enabled) continue;
+      }
+      if ("cssRules" in rule) resolveMedia((rule as CSSGroupingRule).cssRules);
+    }
+  };
+  resolveMedia(copy.cssRules);
+  const css = Array.from(copy.cssRules, (rule) => rule.cssText)
+    .join("\n")
+    .replaceAll("]]>", "]]]]><![CDATA[>");
+  pageStyles = {
+    sheets,
+    media: [...media.values()],
+    encoded: encodeURIComponent(`<style><![CDATA[${css}]]></style>`),
+  };
   return pageStyles.encoded;
 }
 
-// Theme variables live on the root element, which the image does not have.
-function rootVariables(): string {
-  const style = getComputedStyle(document.documentElement);
+// Theme variables and inherited type styles live outside the cloned pane.
+function inheritedStyles(element: HTMLElement): string {
+  const style = getComputedStyle(element.parentElement ?? element);
   const declarations: string[] = [];
   for (let index = 0; index < style.length; index++) {
     const name = style[index]!;
     if (name.startsWith("--")) declarations.push(`${name}:${style.getPropertyValue(name)}`);
   }
-  const body = getComputedStyle(document.body);
   declarations.push(
-    `font-family:${body.fontFamily}`,
-    `font-size:${body.fontSize}`,
-    `line-height:${body.lineHeight}`,
-    `color:${body.color}`,
+    `font-family:${style.fontFamily}`,
+    `font-size:${style.fontSize}`,
+    `line-height:${style.lineHeight}`,
+    `color:${style.color}`,
     `-webkit-font-smoothing:antialiased`,
   );
   return declarations.join(";");
@@ -155,7 +208,7 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
     `style="font-size:${escapeAttribute(rootFontSize)}">` +
     `<foreignObject width="100%" height="100%">` +
     `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
-    `style="${escapeAttribute(rootVariables())};width:${width}px;height:${height}px;overflow:hidden">`;
+    `style="${escapeAttribute(inheritedStyles(element))};width:${width}px;height:${height}px;overflow:hidden">`;
   const close = `</div></foreignObject></svg>`;
   const image = await loadImage(
     `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${encodedPageStyles()}` +

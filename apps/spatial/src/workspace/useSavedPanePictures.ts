@@ -37,6 +37,10 @@ function contentKey(content: PaneContentRevision): string {
   return `${content.updatedAt}|${content.theme}`;
 }
 
+function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
+  return source === "capture" ? revision : `${revision}|responsive-css-1`;
+}
+
 function paneHasCommittedContent(paneId: string, expected: PaneContentRevision): boolean {
   const committed = syncedPanes.get(paneId);
   return (
@@ -201,7 +205,11 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       if (!picture) return null;
       const content = contentRevisions.get(paneId);
       const geometry = geometryRevision(paneId);
-      if (!content || !geometry || picture.revision !== `${contentKey(content)}|${geometry}`)
+      if (
+        !content ||
+        !geometry ||
+        picture.revision !== pictureRevision(`${contentKey(content)}|${geometry}`, picture.source)
+      )
         return null;
       return picture.image;
     },
@@ -220,7 +228,9 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       const content = contentRevisionsRef.current.get(paneId);
       const geometry = geometryRevision(paneId);
       const fresh =
-        content && geometry && picture.revision === `${contentKey(content)}|${geometry}`
+        content &&
+        geometry &&
+        picture.revision === pictureRevision(`${contentKey(content)}|${geometry}`, picture.source)
           ? picture.image
           : null;
       if (fresh) lastValidPictures.current.set(paneId, fresh);
@@ -314,7 +324,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       };
       if (!canSnapshot()) return;
       const previous = savedRef.current?.get(paneId);
-      if (!refresh && previous?.revision === before) return;
+      if (!refresh && previous?.revision === pictureRevision(before, previous?.source)) return;
       // A capture of the same content is more faithful than a drawing.
       const captured = () => {
         const kept = savedRef.current?.get(paneId);
@@ -327,7 +337,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         return;
       const picture = {
         paneId,
-        revision: before,
+        revision: pictureRevision(before, "snapshot"),
         image,
         savedAt: Date.now(),
         source: "snapshot" as const,
