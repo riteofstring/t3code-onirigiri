@@ -154,11 +154,17 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
   );
   const scale = window.devicePixelRatio || 1;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  const context = canvas.getContext("2d");
-  if (!context) return null;
-  context.scale(scale, scale);
-  context.drawImage(image, 0, 0, width, height);
-  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  try {
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.scale(scale, scale);
+    context.drawImage(image, 0, 0, width, height);
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+    image.removeAttribute("src");
+  }
 }
