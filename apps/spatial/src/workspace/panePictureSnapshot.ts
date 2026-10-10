@@ -144,6 +144,31 @@ function inlineImages(source: Element, clone: Element) {
   });
 }
 
+// Shared icon symbols live outside the pane, but image references must be local.
+function copySvgReferences(source: Element, clone: Element): SVGDefsElement {
+  const references = [...clone.querySelectorAll("use")];
+  const visited = new Set<string>();
+  const definitions = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  for (const reference of references) {
+    const href = reference.getAttribute("href") ?? reference.getAttribute("xlink:href");
+    if (!href?.startsWith("#") || href.length === 1) continue;
+    const id = href.slice(1);
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const selector = `#${CSS.escape(id)}`;
+    if (clone.id === id || clone.querySelector(selector) || definitions.querySelector(selector)) {
+      continue;
+    }
+    const target = source.ownerDocument.getElementById(id);
+    if (!(target instanceof SVGElement)) continue;
+    const copy = target.cloneNode(true) as SVGElement;
+    definitions.append(copy);
+    if (copy instanceof SVGUseElement) references.push(copy);
+    references.push(...copy.querySelectorAll("use"));
+  }
+  return definitions;
+}
+
 function escapeAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 }
@@ -194,10 +219,13 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
   const clone = element.cloneNode(true) as HTMLElement;
   copyScrollOffsets(element, clone);
   inlineImages(element, clone);
-  for (const node of clone.querySelectorAll("script, iframe, video, canvas")) node.remove();
-  // Unsent drafts stay out of saved pictures.
-  for (const editor of clone.querySelectorAll('[data-testid="composer-editor"]')) {
-    editor.replaceChildren(document.createElement("p"));
+  const definitions = copySvgReferences(element, clone);
+  for (const root of [clone, definitions]) {
+    for (const node of root.querySelectorAll("script, iframe, video, canvas")) node.remove();
+    // Unsent drafts stay out of saved pictures.
+    for (const editor of root.querySelectorAll('[data-testid="composer-editor"]')) {
+      editor.replaceChildren(document.createElement("p"));
+    }
   }
   const rootClass = document.documentElement.className;
   const rootFontSize = getComputedStyle(document.documentElement).fontSize;
@@ -206,6 +234,7 @@ async function drawPanePicture(element: HTMLElement): Promise<Blob | null> {
   const open =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
     `style="font-size:${escapeAttribute(rootFontSize)}">` +
+    new XMLSerializer().serializeToString(definitions) +
     `<foreignObject width="100%" height="100%">` +
     `<div xmlns="http://www.w3.org/1999/xhtml" class="${escapeAttribute(rootClass)}" ` +
     `style="${escapeAttribute(inheritedStyles(element))};width:${width}px;height:${height}px;overflow:hidden">`;
