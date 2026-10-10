@@ -31,9 +31,10 @@ type Direction = "left" | "right" | "up" | "down";
  * Decides which thread panes mount a live ChatView.
  *
  * Once focus and visibility have been quiet for a moment the focused pane
- * mounts at once, ahead of any other work; a camera sweep therefore mounts
- * only where it stops. The focused pane's neighbours, the next one in the
- * direction of travel first, and then visible panes without a picture are
+ * mounts ahead of any other work. A saved picture bridges camera motion before
+ * mounting; a destination without one still prepares early. The focused pane's
+ * neighbours, the next one in the direction of travel first, and then visible
+ * panes without a picture are
  * prepared speculatively: one
  * at a time, each after the previous one has committed, only while the page is
  * idle and input has been quiet. When nothing else is wanted, panes without a
@@ -63,6 +64,8 @@ export function createPaneLifecycleStore(
   let idleCallback: number | null = null;
   let quietTimer: ReturnType<typeof setTimeout> | null = null;
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
+  let settleDue = false;
+  let moving = false;
   let neighborTimer: ReturnType<typeof setTimeout> | null = null;
   let neighborsWanted = false;
   let lastInput = 0;
@@ -169,6 +172,7 @@ export function createPaneLifecycleStore(
   };
 
   const schedule = () => {
+    if (moving) return;
     if (waitingFor !== null || idleCallback !== null || quietTimer !== null) return;
     if (pictureTimer !== null) return;
     if (queue.length === 0 && picturing === null && nextToPicture() === null) return;
@@ -185,6 +189,7 @@ export function createPaneLifecycleStore(
 
   const advance = () => {
     idleCallback = null;
+    if (moving) return;
     if (performance.now() - lastInput < INPUT_QUIET_MS) {
       schedule();
       return;
@@ -255,6 +260,20 @@ export function createPaneLifecycleStore(
   const settle = () => {
     if (settleTimer !== null) clearTimeout(settleTimer);
     settleTimer = null;
+    if (moving) {
+      settleDue = true;
+      if (focused && panes.has(focused) && !hasPicture(focused) && !mounted.has(focused)) {
+        clock += 1;
+        lastWanted.set(focused, clock);
+        mountPrepared(focused);
+        evictBeyond(
+          MAX_MOUNTED + (picturing ? 1 : 0),
+          new Set([focused, ...wanted].slice(0, MAX_MOUNTED)),
+        );
+      }
+      return;
+    }
+    settleDue = false;
     clock += 1;
     if (focused && panes.has(focused)) {
       lastWanted.set(focused, clock);
@@ -285,7 +304,7 @@ export function createPaneLifecycleStore(
   };
 
   const requestSettle = () => {
-    if (settleTimer !== null) return;
+    if (settleTimer !== null || settleDue) return;
     settleTimer = setTimeout(settle, SETTLE_MS);
   };
 
@@ -325,11 +344,24 @@ export function createPaneLifecycleStore(
       clearCommitWait();
       schedule();
     },
-    setFocus: (paneId: string) => {
+    /** Saved pictures bridge camera motion before expensive view mounts resume. */
+    setMoving: (next: boolean) => {
+      if (moving === next) return;
+      moving = next;
+      if (moving) {
+        cancelSpeculation();
+        requestSettle();
+      } else if (settleDue) {
+        settleTimer = setTimeout(settle, 0);
+      } else {
+        schedule();
+      }
+    },
+    setFocus: (paneId: string | null) => {
       const from = focused ? panes.get(focused) : undefined;
-      const to = panes.get(paneId);
-      if (!to || paneId === focused) return;
-      if (from) {
+      const to = paneId ? panes.get(paneId) : undefined;
+      if ((paneId !== null && !to) || paneId === focused) return;
+      if (from && to) {
         direction =
           to.plane === from.plane
             ? to.slot > from.slot
@@ -340,7 +372,7 @@ export function createPaneLifecycleStore(
               : "up";
       }
       focused = paneId;
-      if (picturing?.paneId === paneId) {
+      if (paneId !== null && picturing?.paneId === paneId) {
         picturing = null;
         pictureAttempted.delete(paneId);
       }
@@ -348,6 +380,7 @@ export function createPaneLifecycleStore(
       restartNeighborWait();
       if (settleTimer !== null) clearTimeout(settleTimer);
       settleTimer = null;
+      settleDue = false;
       requestSettle();
     },
     /** Follows the workspace's panes as threads come and go. */

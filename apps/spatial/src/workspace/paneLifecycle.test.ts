@@ -55,6 +55,113 @@ it("prepares all four neighboring destinations even when saved pictures exist", 
   store.dispose();
 });
 
+it("keeps a saved picture through motion and mounts its view after the final frame", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setMoving(true);
+  store.setFocus("p0-9");
+  vi.advanceTimersByTime(1200);
+  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
+  store.setMoving(false);
+  expect(store.isMounted("p0-9")).toBe(false);
+  vi.advanceTimersByTime(0);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-9"]);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-8", "p0-9", "p0-10"]);
+  store.dispose();
+});
+
+it("prepares a destination without a picture during motion and keeps retention bounded", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setMoving(true);
+  for (let slot = 1; slot < 12; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(200);
+    expect(store.isMounted(`p0-${slot}`)).toBe(true);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+    store.committed(`p0-${slot}`, true);
+  }
+  store.dispose();
+});
+
+it("still waits for quiet focus when motion finishes before the mount delay", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setMoving(true);
+  store.setFocus("p0-9");
+  vi.advanceTimersByTime(50);
+  store.setMoving(false);
+  vi.advanceTimersByTime(149);
+  expect(store.isMounted("p0-9")).toBe(false);
+  vi.advanceTimersByTime(1);
+  expect(store.isMounted("p0-9")).toBe(true);
+  store.dispose();
+});
+
+it("discards a deferred destination when focus changes before the posted mount", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setMoving(true);
+  store.setFocus("p0-8");
+  vi.advanceTimersByTime(250);
+  store.setMoving(false);
+  store.setFocus("p0-10");
+  vi.advanceTimersByTime(199);
+  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
+  vi.advanceTimersByTime(1);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-10"]);
+  store.dispose();
+});
+
+it("pauses neighbor and background preparation through same-pane camera motion", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures((paneId) => paneId !== "p0-11");
+  store.setBackgroundPictures(true);
+  drain(store, panes);
+  const warm = mountedOf(store, panes);
+  store.setPictures((paneId) => paneId !== "p0-10");
+  store.setMoving(true);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(warm);
+  store.setMoving(false);
+  vi.advanceTimersByTime(0);
+  vi.advanceTimersByTime(1);
+  expect(store.isMounted("p0-10")).toBe(true);
+  store.dispose();
+});
+
+it("cancels a deferred focused mount on disposal", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setMoving(true);
+  store.setFocus("p0-9");
+  vi.advanceTimersByTime(250);
+  store.setMoving(false);
+  store.dispose();
+  vi.runAllTimers();
+  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
+});
+
+it("abandons a deferred destination when navigation leaves pane focus", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  store.setPictures(() => true);
+  store.setMoving(true);
+  store.setFocus("p0-9");
+  vi.advanceTimersByTime(250);
+  store.setFocus(null);
+  store.setMoving(false);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
+  store.dispose();
+});
+
 it("does not postpone a focused mount when unrelated thread pictures and labels keep updating", () => {
   const panes = row(12);
   const store = createPaneLifecycleStore(panes, "p0-0");

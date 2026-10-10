@@ -279,10 +279,15 @@ export function SpatialWorkspace({
   );
 
   const onFocusedPaneFrame = useCallback(
-    (frame: WorkspaceFocusedPaneFrame | null) => {
-      if (!frame || frame.paneId === focusedPaneIdRef.current || !activeRef.current) return;
-      const paneId = frame.paneId;
+    (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
+      lifecycle?.setMoving(activeRef.current && moving);
+      const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
+      if (paneId === focusedPaneIdRef.current || !activeRef.current) return;
       focusedPaneIdRef.current = paneId;
+      if (paneId === null) {
+        lifecycle?.setFocus(null);
+        return;
+      }
       // A terminal or diff pane acts for its thread, which the route follows.
       const tool = toolPanesRef.current.find((pane) => pane.paneId === paneId);
       const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
@@ -329,7 +334,11 @@ export function SpatialWorkspace({
   // Focus moved while the workspace was covered, as when a route it did not
   // request focused a pane, reaches the lifecycle once it shows again.
   useEffect(() => {
-    if (!active || !lifecycle) return;
+    if (!lifecycle) return;
+    if (!active) {
+      lifecycle.setMoving(false);
+      return;
+    }
     const paneId = workspaceRef.current?.getSnapshot().focusedPaneId;
     if (paneId && paneId !== focusedPaneIdRef.current && paneData.has(paneId)) {
       focusedPaneIdRef.current = paneId;
