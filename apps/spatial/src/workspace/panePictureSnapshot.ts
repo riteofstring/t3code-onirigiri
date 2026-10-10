@@ -269,7 +269,7 @@ function inheritedStyles(element: HTMLElement): string {
     `color-scheme:${style.colorScheme}`,
     `tab-size:${style.tabSize}`,
     `text-rendering:${style.textRendering}`,
-    `-webkit-font-smoothing:antialiased`,
+    `-webkit-font-smoothing:${style.getPropertyValue("-webkit-font-smoothing")}`,
   );
   return declarations.join(";");
 }
