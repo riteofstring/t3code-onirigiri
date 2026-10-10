@@ -98,8 +98,17 @@ function escapeAttribute(value: string): string {
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.addEventListener("load", () => resolve(image));
-    image.addEventListener("error", () => reject(new Error("pane snapshot did not render")));
+    // Either handler can retain the encoded SVG after the image source is cleared.
+    const onLoad = () => {
+      image.removeEventListener("error", onError);
+      resolve(image);
+    };
+    const onError = () => {
+      image.removeEventListener("load", onLoad);
+      reject(new Error("pane snapshot did not render"));
+    };
+    image.addEventListener("load", onLoad, { once: true });
+    image.addEventListener("error", onError, { once: true });
     image.src = url;
   });
 }
