@@ -145,6 +145,8 @@ let lifecycle: PaneLifecycleStore | null;
 let paneId: string;
 let appSuppressed: boolean;
 let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
+let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
+let snapshots: { request: RequestPaneSnapshot; invalidate: (paneId: string) => void };
 let appComposerRef: ComposerHandleRef;
 let workspaceActive: boolean;
 
@@ -156,7 +158,7 @@ async function render(focused = false, paintFrames = true, visible = focused) {
         <ComposerHandleContext value={appComposerRef}>
           <PanelAnimationSuppressionProvider value={appSuppressed}>
             <PaneLifecycleContext value={lifecycle}>
-              <PaneSnapshotContext value={requestSnapshot}>
+              <PaneSnapshotContext value={snapshots}>
                 <ThreadPane
                   paneId={paneId}
                   thread={{
@@ -209,7 +211,12 @@ beforeEach(() => {
   state.suspended = false;
   state.engineReady = false;
   state.engineRevision = "";
-  requestSnapshot = vi.fn();
+  let visualRevision = 0;
+  requestSnapshot = vi.fn(() => visualRevision);
+  invalidateSnapshot = vi.fn(() => {
+    visualRevision++;
+  });
+  snapshots = { request: requestSnapshot, invalidate: invalidateSnapshot };
   appSuppressed = false;
   container = document.createElement("div");
   document.body.append(container);
@@ -317,6 +324,7 @@ it("retains the editor while a reconnect delays readiness and cancels the pendin
   const editor = container.querySelector("textarea")!;
   editor.value = "Keep through reconnect";
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
 
   state.status = "synchronizing";
   await render(true);
@@ -354,12 +362,13 @@ it("keeps a live editor presented while suspended content postpones new pictures
   const revision = state.engineRevision;
   expect(state.engineReady).toBe(true);
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
 
   state.suspended = true;
   await render(true);
   expect(state.engineReady).toBe(true);
   expect(state.engineRevision).not.toBe(revision);
-  expect(markPaneSynced).toHaveBeenLastCalledWith(paneId, null);
+  expect(markPaneSynced).toHaveBeenLastCalledWith(paneId, null, 0);
   expect(requestSnapshot).not.toHaveBeenCalled();
   expect(container.querySelector("textarea")).toBe(editor);
   expect(editor.value).toBe("Keep this draft while highlighting");
@@ -370,10 +379,14 @@ it("keeps a live editor presented while suspended content postpones new pictures
   await act(() => vi.advanceTimersByTimeAsync(32));
   expect(state.engineReady).toBe(true);
   expect(state.engineRevision).toBe(revision);
-  expect(markPaneSynced).toHaveBeenLastCalledWith(paneId, {
-    updatedAt: "u1",
-    theme: "default|dark",
-  });
+  expect(markPaneSynced).toHaveBeenLastCalledWith(
+    paneId,
+    {
+      updatedAt: "u1",
+      theme: "default|dark",
+    },
+    0,
+  );
   expect(requestSnapshot).toHaveBeenCalledOnce();
 
   state.mounted = false;
@@ -399,42 +412,48 @@ it("reuses an unchanged picture through repeated focus changes without replacing
   await render(true);
   const editor = container.querySelector("textarea")!;
   expect(requestSnapshot).toHaveBeenCalledOnce();
-  expect(requestSnapshot.mock.calls[0]?.[2]?.refresh).toBe(false);
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
   editor.value = "Keep this unsent draft";
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
 
   await render(false);
   await render(true);
   await render(false);
 
   expect(requestSnapshot).toHaveBeenCalledTimes(3);
-  expect(requestSnapshot.mock.calls.every(([, , options]) => options?.refresh === false)).toBe(
-    true,
-  );
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
   expect(container.querySelector("textarea")).toBe(editor);
   expect(editor.value).toBe("Keep this unsent draft");
 });
 
-it("defers a picture refresh after scroll input until departure and reuses an unchanged visit", async () => {
-  state.detail = { updatedAt: "u1" };
-  state.status = "live";
-  state.interactive = true;
-  await render(true);
-  const editor = container.querySelector("textarea")!;
-  requestSnapshot.mockClear();
-  await act(() => editor.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 80 })));
-  await act(() => vi.advanceTimersByTimeAsync(4000));
-  expect(requestSnapshot).not.toHaveBeenCalled();
-  await render(false);
-  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+it.each(["wheel", "scroll"])(
+  "defers a picture refresh after %s input until departure and reuses an unchanged visit",
+  async (event) => {
+    state.detail = { updatedAt: "u1" };
+    state.status = "live";
+    state.interactive = true;
+    await render(true);
+    const editor = container.querySelector("textarea")!;
+    requestSnapshot.mockClear();
+    invalidateSnapshot.mockClear();
+    const revision = state.engineRevision;
+    await act(() => editor.dispatchEvent(new Event(event, { bubbles: true })));
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    expect(requestSnapshot).not.toHaveBeenCalled();
+    expect(state.engineRevision).toBe(revision);
+    await render(false);
+    expect(state.engineRevision).not.toBe(revision);
+    expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+    expect(requestSnapshot).toHaveBeenCalled();
 
-  await render(true);
-  requestSnapshot.mockClear();
-  await render(false);
-  expect(requestSnapshot.mock.calls.every(([, , options]) => options?.refresh === false)).toBe(
-    true,
-  );
-});
+    await render(true);
+    requestSnapshot.mockClear();
+    invalidateSnapshot.mockClear();
+    await render(false);
+    expect(invalidateSnapshot).not.toHaveBeenCalled();
+  },
+);
 
 it("reuses pictures when navigation starts in the composer but refreshes keyboard scrolling", async () => {
   state.detail = { updatedAt: "u1" };
@@ -445,6 +464,7 @@ it("reuses pictures when navigation starts in the composer but refreshes keyboar
   editor.focus();
   await act(async () => editor.classList.add("ProseMirror-focused"));
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
   await act(() => {
     for (const key of ["Control", "Alt", "ArrowRight"])
       editor.dispatchEvent(
@@ -460,14 +480,14 @@ it("reuses pictures when navigation starts in the composer but refreshes keyboar
   await render(false);
   await act(async () => editor.classList.remove("ProseMirror-focused"));
   expect(requestSnapshot).toHaveBeenCalledOnce();
-  expect(requestSnapshot.mock.calls.every(([, , options]) => options?.refresh === false)).toBe(
-    true,
-  );
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
   expect(document.activeElement).not.toBe(editor);
 
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
   await act(async () => editor.classList.add("text-lg"));
-  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+  expect(requestSnapshot).toHaveBeenCalled();
 
   for (const options of [
     { key: "Home", ctrlKey: true },
@@ -476,13 +496,12 @@ it("reuses pictures when navigation starts in the composer but refreshes keyboar
   ]) {
     await render(true);
     requestSnapshot.mockClear();
+    invalidateSnapshot.mockClear();
     await act(() =>
       editor.dispatchEvent(new KeyboardEvent("keydown", { ...options, bubbles: true })),
     );
     await render(false);
-    expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(
-      true,
-    );
+    expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
   }
 });
 
@@ -496,6 +515,7 @@ it("ignores repeated and temporary attribute writes but refreshes a changed pres
   input.type = "file";
   await act(async () => panel.append(input));
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
 
   await act(async () => {
     input.name = "";
@@ -510,7 +530,8 @@ it("ignores repeated and temporary attribute writes but refreshes a changed pres
     panel.setAttribute("style", "color: red");
     panel.setAttribute("aria-label", "Updated panel");
   });
-  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+  expect(requestSnapshot).toHaveBeenCalled();
 });
 
 it("refreshes a picture when background content changes without a new message revision", async () => {
@@ -521,12 +542,14 @@ it("refreshes a picture when background content changes without a new message re
   expect(state.engineReady).toBe(true);
   const revision = state.engineRevision;
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
   const panel = container.querySelector("aside")!;
   await act(async () => {
     panel.textContent = "Asynchronous content is ready";
   });
-  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
-  expect(state.engineRevision).toBe(revision);
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+  expect(requestSnapshot).toHaveBeenCalled();
+  expect(state.engineRevision).not.toBe(revision);
 });
 
 it("refreshes a picture after a same-source image finishes loading in the background", async () => {
@@ -538,8 +561,10 @@ it("refreshes a picture after a same-source image finishes loading in the backgr
   const image = document.createElement("img");
   await act(async () => container.querySelector("aside")!.append(image));
   requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
   await act(() => image.dispatchEvent(new Event("load")));
-  expect(requestSnapshot.mock.calls.some(([, , options]) => options?.refresh === true)).toBe(true);
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+  expect(requestSnapshot).toHaveBeenCalled();
 });
 
 it("keeps a closing panel present when the app route follows another pane", async () => {
@@ -786,4 +811,39 @@ it("returns from a covered eviction before a replacement composer is available",
   await render(true);
   expect(appComposerRef.current).not.toBe(previous);
   expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
+});
+
+it("publishes a pending scroll revision after its content is remounted", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const before = state.engineRevision;
+  await act(() => container.querySelector("textarea")!.dispatchEvent(new Event("scroll")));
+  expect(state.engineRevision).toBe(before);
+  state.mounted = false;
+  await render(false);
+  expect(container.querySelector("textarea")).toBeNull();
+  state.mounted = true;
+  await render(false);
+  expect(container.querySelector("textarea")).not.toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(before);
+});
+
+it("reuses the picture revision when unchanged content is released and remounted", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const before = state.engineRevision;
+  invalidateSnapshot.mockClear();
+  state.mounted = false;
+  await render(true);
+  state.mounted = true;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).toBe(before);
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
 });

@@ -152,7 +152,7 @@ export function SpatialWorkspace({
     canBackgroundPicture,
     runningPanes,
     picturesLoaded,
-    requestSnapshot,
+    paneSnapshots,
     stageRef,
   } = useSavedPanePictures(getLayout);
   // Focus is kept out of React state so moving between panes does not
@@ -572,7 +572,7 @@ export function SpatialWorkspace({
       {initialPanes && lifecycle ? (
         <SpatialWorkspaceActiveContext value={active}>
           <PaneLifecycleContext value={lifecycle}>
-            <PaneSnapshotContext value={requestSnapshot}>
+            <PaneSnapshotContext value={paneSnapshots}>
               <BrowserSurfaceProjectionContext value={browserProjection}>
                 <OnirigiriWorkspace
                   ref={workspaceRef}

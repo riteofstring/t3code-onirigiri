@@ -32,7 +32,7 @@ interface PaneContentRevision {
   theme: string;
 }
 
-const syncedPanes = new Map<string, PaneContentRevision>();
+const syncedPanes = new Map<string, PaneContentRevision & { visualRevision: number }>();
 
 function contentKey(content: PaneContentRevision): string {
   return `${content.updatedAt}|${content.theme}`;
@@ -42,23 +42,33 @@ function pictureRevision(revision: string, source: SavedPanePicture["source"]): 
   return source === "capture" ? revision : `${revision}|responsive-css-4`;
 }
 
-function paneHasCommittedContent(paneId: string, expected: PaneContentRevision): boolean {
+function paneHasCommittedContent(
+  paneId: string,
+  expected: PaneContentRevision,
+  visualRevision: number,
+): boolean {
   const committed = syncedPanes.get(paneId);
   return (
     committed !== undefined &&
     committed.updatedAt >= expected.updatedAt &&
-    committed.theme === expected.theme
+    committed.theme === expected.theme &&
+    committed.visualRevision === visualRevision
   );
 }
 
-/** Asks for a picture of a mounted pane's content to be drawn when the page is idle. */
+/** Queues an idle picture and returns the visual revision to commit to native readiness. */
 export type RequestPaneSnapshot = (
   paneId: string,
   element: HTMLElement,
-  options?: { preferNative?: boolean; refresh?: boolean },
-) => void;
+  options?: { preferNative?: boolean },
+) => number;
 
-export const PaneSnapshotContext = createContext<RequestPaneSnapshot | null>(null);
+interface PaneSnapshots {
+  request: RequestPaneSnapshot;
+  invalidate: (paneId: string) => void;
+}
+
+export const PaneSnapshotContext = createContext<PaneSnapshots | null>(null);
 
 export function usePanePictureTheme(): string {
   const { theme, resolvedTheme, themeHalves } = useTheme();
@@ -77,8 +87,12 @@ export function usePanePictureTheme(): string {
 }
 
 /** Records the synchronized detail and theme committed by a mounted pane. */
-export function markPaneSynced(paneId: string, content: PaneContentRevision | null) {
-  if (content) syncedPanes.set(paneId, content);
+export function markPaneSynced(
+  paneId: string,
+  content: PaneContentRevision | null,
+  visualRevision = 0,
+) {
+  if (content) syncedPanes.set(paneId, { ...content, visualRevision });
   else syncedPanes.delete(paneId);
 }
 
@@ -115,12 +129,39 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   canBackgroundPicture: (paneId: string) => boolean;
   runningPanes: ReadonlySet<string>;
   picturesLoaded: boolean;
-  requestSnapshot: RequestPaneSnapshot;
+  paneSnapshots: PaneSnapshots;
   stageRef: (element: HTMLElement | null) => void;
 } {
   const threads = useThreadShells();
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
+  const savedRef = useRef(saved);
+  const updateSaved = useCallback((pictures: Map<string, SavedPanePicture>) => {
+    const next =
+      pictures.size <= MAX_SAVED
+        ? pictures
+        : new Map(
+            [...pictures.values()]
+              .toSorted((a, b) => b.savedAt - a.savedAt)
+              .slice(0, MAX_SAVED)
+              .map((picture) => [picture.paneId, picture]),
+          );
+    savedRef.current = next;
+    setSaved(next);
+  }, []);
+  // Session-local visual changes invalidate capture work, but keep the usable
+  // cover and persisted data revision until replacement pixels are accepted.
+  const visualRevisions = useRef(new Map<string, number>());
+  const pictureVisualRevisions = useRef(new WeakMap<Blob, number>());
+  const visualRevision = useCallback(
+    (paneId: string) => visualRevisions.current.get(paneId) ?? 0,
+    [],
+  );
+  const pictureMatchesVisualRevision = useCallback(
+    (paneId: string, image: Blob) =>
+      (pictureVisualRevisions.current.get(image) ?? 0) === visualRevision(paneId),
+    [visualRevision],
+  );
   const widthsRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
   const [geometryVersion, setGeometryVersion] = useState(0);
@@ -130,12 +171,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     loadPanePictures()
       .catch(() => new Map<string, SavedPanePicture>())
       .then((pictures) => {
-        if (current) setSaved(pictures);
+        if (current) updateSaved(new Map([...pictures, ...(savedRef.current ?? [])]));
       });
     return () => {
       current = false;
     };
-  }, []);
+  }, [updateSaved]);
 
   const stageObserverRef = useRef<ResizeObserver | null>(null);
   const stageRef = useCallback((element: HTMLElement | null) => {
@@ -282,25 +323,26 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     return image ? { image, fit: "fill", replaceable: true } : null;
   }, []);
 
-  const savedRef = useRef(saved);
-  useEffect(() => {
-    savedRef.current = saved;
-  }, [saved]);
-  const keepPicture = useCallback((picture: SavedPanePicture) => {
-    setSaved((current) => {
-      const next = new Map(current ?? []).set(picture.paneId, picture);
-      if (next.size <= MAX_SAVED) return next;
-      const newest = [...next.values()].toSorted((a, b) => b.savedAt - a.savedAt);
-      return new Map(newest.slice(0, MAX_SAVED).map((kept) => [kept.paneId, kept]));
-    });
-  }, []);
+  const keepPicture = useCallback(
+    (picture: SavedPanePicture, revision: number) => {
+      pictureVisualRevisions.current.set(picture.image, revision);
+      updateSaved(new Map(savedRef.current ?? []).set(picture.paneId, picture));
+    },
+    [updateSaved],
+  );
 
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image) => {
       if (runningPanesRef.current.has(pane.paneId)) return;
       const content = contentRevisionsRef.current.get(pane.paneId);
       const geometry = geometryRevision(pane.paneId);
-      if (!content || !geometry || !paneHasCommittedContent(pane.paneId, content)) return;
+      const currentVisualRevision = visualRevision(pane.paneId);
+      if (
+        !content ||
+        !geometry ||
+        !paneHasCommittedContent(pane.paneId, content, currentVisualRevision)
+      )
+        return;
       const picture = {
         paneId: pane.paneId,
         revision: `${contentKey(content)}|${geometry}`,
@@ -308,20 +350,21 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         savedAt: Date.now(),
         source: "capture" as const,
       };
-      keepPicture(picture);
+      keepPicture(picture, currentVisualRevision);
       void savePanePicture(picture).catch(() => {});
     },
-    [geometryRevision, keepPicture],
+    [geometryRevision, keepPicture, visualRevision],
   );
 
   const drawSnapshot = useCallback(
-    async (paneId: string, element: HTMLElement, refresh: boolean, canStart: () => boolean) => {
+    async (paneId: string, element: HTMLElement, canStart: () => boolean) => {
       const revision = () => {
         const content = contentRevisionsRef.current.get(paneId);
         const geometry = geometryRevision(paneId);
         return content && geometry ? `${contentKey(content)}|${geometry}` : null;
       };
       const before = revision();
+      const beforeVisualRevision = visualRevision(paneId);
       if (before === null) return;
       const canSnapshot = () => {
         const content = contentRevisionsRef.current.get(paneId);
@@ -329,23 +372,38 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
           element.isConnected &&
           !runningPanesRef.current.has(paneId) &&
           revision() === before &&
+          visualRevision(paneId) === beforeVisualRevision &&
           content !== undefined &&
-          paneHasCommittedContent(paneId, content) &&
+          paneHasCommittedContent(paneId, content, beforeVisualRevision) &&
           canStart()
         );
       };
       if (!canSnapshot()) return;
       const previous = savedRef.current?.get(paneId);
-      if (!refresh && previous?.revision === pictureRevision(before, previous?.source)) return;
+      if (
+        previous?.revision === pictureRevision(before, previous?.source) &&
+        pictureMatchesVisualRevision(paneId, previous.image)
+      )
+        return;
       // A capture of the same content is more faithful than a drawing.
       const captured = () => {
         const kept = savedRef.current?.get(paneId);
-        return kept?.source === "capture" && kept.revision === before;
+        return (
+          kept?.source === "capture" &&
+          kept.revision === before &&
+          pictureMatchesVisualRevision(paneId, kept.image)
+        );
       };
       if (captured()) return;
       const image = await snapshotPanePicture(element, canSnapshot);
       // The clone no longer depends on a mounted pane while its pixels are encoded.
-      if (!image || runningPanesRef.current.has(paneId) || revision() !== before || captured())
+      if (
+        !image ||
+        runningPanesRef.current.has(paneId) ||
+        revision() !== before ||
+        visualRevision(paneId) !== beforeVisualRevision ||
+        captured()
+      )
         return;
       const picture = {
         paneId,
@@ -354,13 +412,25 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         savedAt: Date.now(),
         source: "snapshot" as const,
       };
-      keepPicture(picture);
+      keepPicture(picture, beforeVisualRevision);
       await savePanePicture(picture);
     },
-    [geometryRevision, keepPicture],
+    [geometryRevision, keepPicture, pictureMatchesVisualRevision, visualRevision],
   );
   const [snapshots] = useState(createSnapshotQueue);
   useEffect(() => snapshots.setDraw(drawSnapshot), [drawSnapshot, snapshots]);
+  const paneSnapshots = useMemo<PaneSnapshots>(
+    () => ({
+      invalidate: (paneId) => {
+        visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
+      },
+      request: (paneId, element, options) => {
+        snapshots.request(paneId, element, options?.preferNative === true);
+        return visualRevision(paneId);
+      },
+    }),
+    [snapshots, visualRevision],
+  );
 
   return {
     getPanePicture,
@@ -373,7 +443,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     canBackgroundPicture,
     runningPanes,
     picturesLoaded: saved !== null,
-    requestSnapshot: snapshots.request,
+    paneSnapshots,
     stageRef,
   };
 }
@@ -384,13 +454,8 @@ const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const NATIVE_CAPTURE_GRACE_MS = 2000;
 
 export function createSnapshotQueue() {
-  type Draw = (
-    paneId: string,
-    element: HTMLElement,
-    refresh: boolean,
-    canStart: () => boolean,
-  ) => Promise<void>;
-  const pending = new Map<string, { element: HTMLElement; after: number; refresh: boolean }>();
+  type Draw = (paneId: string, element: HTMLElement, canStart: () => boolean) => Promise<void>;
+  const pending = new Map<string, { element: HTMLElement; after: number }>();
   let draw: Draw | null = null;
   let drawing = false;
   let idle: number | null = null;
@@ -427,16 +492,13 @@ export function createSnapshotQueue() {
           if (performance.now() - lastInput < SNAPSHOT_INPUT_QUIET_MS) deferred = true;
           return !deferred && draw === current;
         };
-        void current(paneId, request.element, request.refresh, canStart)
+        void current(paneId, request.element, canStart)
           .catch(() => {})
           .finally(() => {
             drawing = false;
             if (deferred && draw === current) {
               const latest = pending.get(paneId);
-              pending.set(paneId, {
-                ...(latest ?? request),
-                refresh: request.refresh || latest?.refresh === true,
-              });
+              pending.set(paneId, latest ?? request);
             }
             next();
           });
@@ -444,11 +506,10 @@ export function createSnapshotQueue() {
       { timeout: 4000 },
     );
   };
-  const request: RequestPaneSnapshot = (paneId, element, options = {}) => {
+  const request = (paneId: string, element: HTMLElement, preferNative: boolean) => {
     pending.set(paneId, {
       element,
-      after: performance.now() + (options.preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
-      refresh: options.refresh === true || pending.get(paneId)?.refresh === true,
+      after: performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
     });
     if (timer !== null) clearTimeout(timer);
     timer = null;

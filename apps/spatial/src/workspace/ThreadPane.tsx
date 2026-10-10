@@ -113,6 +113,7 @@ function usePaneContent(
   thread: ThreadPaneThread,
   visible: boolean,
   focused: boolean,
+  visualRevision: number,
 ): {
   mounted: boolean;
   preparing: boolean;
@@ -173,12 +174,16 @@ function usePaneContent(
       prepared && detailUpdatedAt !== null
         ? { updatedAt: detailUpdatedAt, theme: pictureTheme }
         : null,
+      visualRevision,
     );
     return () => markPaneSynced(paneId, null);
-  }, [detailUpdatedAt, paneId, pictureTheme, prepared]);
+  }, [detailUpdatedAt, paneId, pictureTheme, prepared, visualRevision]);
 
   // Later async work can delay a new picture without covering a live editor.
-  useOnirigiriPaneContentReady(renderContent && presented, `${revision}|${presented && !prepared}`);
+  useOnirigiriPaneContentReady(
+    renderContent && presented,
+    `${revision}|${presented && !prepared}|${visualRevision}`,
+  );
 
   useEffect(() => {
     if (!renderContent || !synced || !contentReady) return;
@@ -242,11 +247,13 @@ export const ThreadPane = memo(function ThreadPane({
   const threadPath = `/${thread.environmentId}/${thread.threadId}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [activity] = useState(() => createPaneActivity(active));
+  const [visualRevision, setVisualRevision] = useState(0);
   const { mounted, preparing, picturable, onContentReadyChange } = usePaneContent(
     paneId,
     thread,
     visible,
     focused,
+    visualRevision,
   );
 
   const paneComposerRef = usePaneComposerHandle(active);
@@ -271,24 +278,21 @@ export const ThreadPane = memo(function ThreadPane({
   // Reuse pictures across focus changes. Observe actual content changes and
   // input that can change scroll position without forcing hidden content layout.
   // Native capture gets the first opportunity; drawing remains its fallback.
-  const requestSnapshot = use(PaneSnapshotContext);
-  const refreshPending = useRef(false);
+  const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
   useLayoutEffect(() => {
     const element = contentRef.current;
     if (!element) return;
     if (!mounted) {
       snapshotPrepared.current = false;
-      refreshPending.current = false;
       return;
     }
     if (!snapshotPrepared.current && picturable === null) return;
     snapshotPrepared.current = true;
     const invalidate = () => {
-      refreshPending.current = true;
-      if (active || picturable === null || !requestSnapshot) return;
-      requestSnapshot(paneId, element, { preferNative: canCapturePanes(), refresh: true });
-      refreshPending.current = false;
+      snapshots?.invalidate(paneId);
+      if (active || picturable === null || !snapshots) return;
+      setVisualRevision(snapshots.request(paneId, element, { preferNative: canCapturePanes() }));
     };
     const contentChanged = (records: MutationRecord[]) => {
       const attributes = new Map<Element, Set<string>>();
@@ -341,27 +345,29 @@ export const ThreadPane = memo(function ThreadPane({
         (event.key.startsWith("Arrow") || event.code === "KeyO");
       if (!modifierOnly && !navigating) invalidate();
     };
-    const events = ["wheel", "pointerdown", "input", "drop", "load"] as const;
+    const events = ["wheel", "scroll", "pointerdown", "input", "drop", "load"] as const;
     element.addEventListener("keydown", onKeyDown, true);
     for (const event of events)
       element.addEventListener(event, invalidate, { capture: true, passive: true });
     return () => {
-      if (contentChanged(observer.takeRecords())) refreshPending.current = true;
+      const pending = observer.takeRecords();
+      // Releasing the router removes its DOM; that does not change its saved pixels.
+      if (element.childElementCount > 0 && contentChanged(pending)) snapshots?.invalidate(paneId);
       observer.disconnect();
       element.removeEventListener("keydown", onKeyDown, true);
       for (const event of events) element.removeEventListener(event, invalidate, true);
     };
-  }, [active, mounted, paneId, picturable, requestSnapshot]);
+  }, [active, mounted, paneId, picturable, snapshots]);
   useEffect(() => {
-    if (picturable !== null && contentRef.current && requestSnapshot) {
-      requestSnapshot(paneId, contentRef.current, {
-        preferNative: canCapturePanes(),
-        refresh: refreshPending.current,
-      });
-      refreshPending.current = false;
+    if (picturable !== null && contentRef.current && snapshots) {
+      setVisualRevision(
+        snapshots.request(paneId, contentRef.current, {
+          preferNative: canCapturePanes(),
+        }),
+      );
     }
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Visibility retries a previously unmeasurable pane.
-  }, [active, paneId, picturable, requestSnapshot, visible]);
+  }, [active, paneId, picturable, snapshots, visible]);
 
   useEffect(
     () =>
