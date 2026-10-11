@@ -81,7 +81,7 @@ export function createPaneLifecycleStore(
   let storedPicturesTimer: ReturnType<typeof setTimeout> | null = null;
   let storedPicturesWaited = false;
   // A pane mounted only so it can be pictured, and the panes already tried.
-  let picturing: { paneId: string; since: number } | null = null;
+  let picturing: { paneId: string; since: number; interrupted: boolean } | null = null;
   const pictureAttempted = new Map<string, number>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundPictures = false;
@@ -169,11 +169,21 @@ export function createPaneLifecycleStore(
       !running.has(paneId) &&
       performance.now() - (pictureAttempted.get(paneId) ?? -Infinity) >= PICTURE_RETRY_MS
     ) {
-      picturing = { paneId, since: performance.now() };
+      picturing = {
+        paneId,
+        since: performance.now(),
+        interrupted: moving || performance.now() - lastInput < INPUT_QUIET_MS,
+      };
       pictureAttempted.set(paneId, performance.now());
       return true;
     }
     return false;
+  };
+
+  const interruptPicture = () => {
+    if (picturing && performance.now() - picturing.since < PICTURE_TIMEOUT_MS) {
+      picturing.interrupted = true;
+    }
   };
 
   const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
@@ -226,7 +236,8 @@ export function createPaneLifecycleStore(
       !panes.has(paneId) ||
       performance.now() - since >= PICTURE_TIMEOUT_MS;
     if (!done) return true;
-    if (hasPicture(paneId)) pictureAttempted.delete(paneId);
+    // Navigation can consume the reservation without giving capture a quiet opportunity.
+    if (hasPicture(paneId) || picturing.interrupted) pictureAttempted.delete(paneId);
     if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
     return false;
@@ -340,7 +351,7 @@ export function createPaneLifecycleStore(
     ).length;
     if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
     pictureAttempted.set(paneId, performance.now());
-    picturing = { paneId, since: performance.now() };
+    picturing = { paneId, since: performance.now(), interrupted: false };
     mountPrepared(paneId);
   };
 
@@ -437,6 +448,7 @@ export function createPaneLifecycleStore(
 
   const noteInput = () => {
     lastInput = performance.now();
+    interruptPicture();
   };
   const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
   for (const type of inputEvents) {
@@ -474,6 +486,7 @@ export function createPaneLifecycleStore(
       moving = next;
       for (const listener of motionListeners) listener();
       if (moving) {
+        interruptPicture();
         cancelSpeculation();
         requestSettle();
       } else if (settleDue) {

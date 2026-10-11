@@ -104,6 +104,148 @@ it.each(["completed", "expired"])(
   },
 );
 
+it("retries a departing picture owner that expires during continuous navigation", () => {
+  const window = new EventTarget();
+  vi.stubGlobal("window", window);
+  const panes = row(28);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const pictures = new Set<string>();
+  const transitions: boolean[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.subscribe("p0-0", () => transitions.push(store.isMounted("p0-0")));
+  store.setPictures((paneId) => pictures.has(paneId));
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  for (let slot = 1; slot <= 24; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(900);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+    if (slot === 9) expect(store.isMounted("p0-0")).toBe(true);
+  }
+  expect(store.isMoving()).toBe(true);
+  expect(transitions).toEqual([false]);
+
+  for (const { paneId } of panes) if (paneId !== "p0-0") pictures.add(paneId);
+  store.setPictures((paneId) => pictures.has(paneId));
+  window.dispatchEvent(new Event("keydown"));
+  store.setMoving(false);
+  vi.advanceTimersByTime(2900);
+  expect(store.isMounted("p0-0")).toBe(false);
+  vi.advanceTimersByTime(200);
+  expect(transitions).toEqual([false, true]);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+
+  pictures.add("p0-0");
+  store.setPictures((paneId) => pictures.has(paneId));
+  vi.advanceTimersByTime(1200);
+  expect(transitions).toEqual([false, true, false]);
+  vi.advanceTimersByTime(60_000);
+  expect(transitions).toEqual([false, true, false]);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  store.dispose();
+});
+
+it.each(["motion", "keydown", "pointerdown", "wheel"])(
+  "retries an expired background reservation interrupted by %s, then backs off a genuine failure",
+  (type) => {
+    const window = new EventTarget();
+    vi.stubGlobal("window", window);
+    const panes = row(3);
+    const store = createPaneLifecycleStore(panes, "p0-0");
+    const transitions: boolean[] = [];
+    for (const { paneId } of panes) {
+      store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+    }
+    store.subscribe("p0-2", () => transitions.push(store.isMounted("p0-2")));
+    store.setPictures((paneId) => paneId !== "p0-2");
+    store.setBackgroundPictures(true);
+    vi.advanceTimersByTime(3500);
+    expect(transitions).toEqual([true]);
+
+    if (type === "motion") store.setMoving(true);
+    else window.dispatchEvent(new Event(type));
+    for (let step = 0; step < 11; step++) {
+      vi.advanceTimersByTime(1000);
+      if (type !== "motion") window.dispatchEvent(new Event(type));
+    }
+    if (type === "motion") {
+      window.dispatchEvent(new Event("keydown"));
+      store.setMoving(false);
+    }
+    vi.advanceTimersByTime(500);
+    expect(transitions).toEqual([true, false]);
+    vi.advanceTimersByTime(2400);
+    expect(transitions).toEqual([true, false]);
+    vi.advanceTimersByTime(200);
+    expect(transitions).toEqual([true, false, true]);
+
+    vi.advanceTimersByTime(12_000);
+    expect(transitions).toEqual([true, false, true, false]);
+    vi.advanceTimersByTime(60_000);
+    expect(transitions).toEqual([true, false, true, false]);
+    expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
+    store.dispose();
+  },
+);
+
+it("retries a departing owner reserved while recent input still pauses capture", () => {
+  const window = new EventTarget();
+  vi.stubGlobal("window", window);
+  const panes = row(10);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const transitions: boolean[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.subscribe("p0-0", () => transitions.push(store.isMounted("p0-0")));
+  store.setMoving(true);
+  for (let slot = 1; slot <= 7; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(200);
+  }
+
+  window.dispatchEvent(new Event("keydown"));
+  store.setBackgroundPictures(true);
+  store.setVisible("p0-9", true);
+  store.setMoving(false);
+  vi.advanceTimersByTime(100);
+  expect(store.isMounted("p0-9")).toBe(true);
+  expect(store.isMounted("p0-0")).toBe(true);
+  expect(mountedOf(store, panes)).toHaveLength(9);
+
+  store.setPictures((paneId) => paneId !== "p0-0");
+  vi.advanceTimersByTime(11_000);
+  expect(transitions).toEqual([false, true]);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+  store.dispose();
+});
+
+it("keeps failure backoff when input arrives after an uninterrupted reservation's deadline", () => {
+  const window = new EventTarget();
+  vi.stubGlobal("window", window);
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 1000));
+  const panes = row(3);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const transitions: boolean[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.subscribe("p0-2", () => transitions.push(store.isMounted("p0-2")));
+  store.setPictures((paneId) => paneId !== "p0-2");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(4000);
+  expect(transitions).toEqual([true]);
+  vi.advanceTimersByTime(10_001);
+  window.dispatchEvent(new Event("keydown"));
+  vi.advanceTimersByTime(5000);
+  expect(transitions).toEqual([true, false]);
+  vi.advanceTimersByTime(60_000);
+  expect(transitions).toEqual([true, false]);
+  store.dispose();
+});
+
 it("mounts the focused pane at once and its neighbours after a rest", () => {
   const panes = row(6);
   const store = createPaneLifecycleStore(panes, "p0-2");
