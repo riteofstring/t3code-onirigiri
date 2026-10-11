@@ -419,7 +419,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   );
 
   const drawSnapshot = useCallback(
-    async (paneId: string, element: HTMLElement, canStart: () => boolean) => {
+    async (
+      paneId: string,
+      element: HTMLElement,
+      canStart: () => boolean,
+      waitToDraw: () => Promise<boolean>,
+    ) => {
       const revision = () => {
         const content = contentRevisionsRef.current.get(paneId);
         const geometry = geometryRevision(paneId);
@@ -458,17 +463,19 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         );
       };
       if (captured()) return;
-      const image = await snapshotPanePicture(element, canSnapshot);
       // The clone no longer depends on a mounted pane while its pixels are encoded.
-      if (
-        !image ||
-        retainedRef.current.get(paneId) === "live" ||
-        runningPanesRef.current.has(paneId) ||
-        revision() !== before ||
-        visualRevision(paneId) !== beforeVisualRevision ||
-        captured()
-      )
-        return;
+      const current = () =>
+        retainedRef.current.get(paneId) !== "live" &&
+        !runningPanesRef.current.has(paneId) &&
+        revision() === before &&
+        visualRevision(paneId) === beforeVisualRevision &&
+        !captured();
+      const image = await snapshotPanePicture(
+        element,
+        canSnapshot,
+        async () => (await waitToDraw()) && current(),
+      );
+      if (!image || !current()) return;
       const picture = {
         paneId,
         revision: pictureRevision(before, "snapshot"),
@@ -569,7 +576,12 @@ const NATIVE_CAPTURE_GRACE_MS = 2000;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
 export function createSnapshotQueue() {
-  type Draw = (paneId: string, element: HTMLElement, canStart: () => boolean) => Promise<void>;
+  type Draw = (
+    paneId: string,
+    element: HTMLElement,
+    canStart: () => boolean,
+    waitToDraw: () => Promise<boolean>,
+  ) => Promise<void>;
   const pending = new Map<string, { element: HTMLElement; after: number; retryAfter: number }>();
   let draw: Draw | null = null;
   let needsPicture: (paneId: string) => boolean = () => false;
@@ -577,6 +589,7 @@ export function createSnapshotQueue() {
   let enabled = true;
   let moving = false;
   let drawing = false;
+  let continuation: { paneId: string; resolve: (admitted: boolean) => void } | null = null;
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
@@ -596,10 +609,10 @@ export function createSnapshotQueue() {
     if (
       !enabled ||
       moving ||
-      drawing ||
+      (drawing && !continuation) ||
       idle !== null ||
       timer !== null ||
-      pending.size === 0 ||
+      (!continuation && pending.size === 0) ||
       !draw
     )
       return;
@@ -607,7 +620,7 @@ export function createSnapshotQueue() {
     idle = requestIdleCallback(
       (deadline) => {
         idle = null;
-        if (draw !== current || pending.size === 0) return;
+        if (draw !== current || (!continuation && pending.size === 0)) return;
         if (deadline.timeRemaining() < 4) {
           next();
           return;
@@ -615,15 +628,23 @@ export function createSnapshotQueue() {
         const now = performance.now();
         const due = ([paneId, request]: [string, { after: number }]) =>
           Math.max(lastInput + quietTime(paneId), request.after);
-        const [paneId, request] = [...pending].reduce((first, candidate) =>
-          due(candidate) < due(first) ? candidate : first,
-        );
-        const wait = due([paneId, request]) - now;
+        const [paneId, request] = continuation
+          ? ([continuation.paneId, null] as const)
+          : [...pending].reduce((first, candidate) =>
+              due(candidate) < due(first) ? candidate : first,
+            );
+        const wait = due([paneId, request ?? { after: 0 }]) - now;
         if (wait > 0) {
           timer = setTimeout(() => {
             timer = null;
             next();
           }, wait);
+          return;
+        }
+        if (!request) {
+          const resume = continuation!;
+          continuation = null;
+          resume.resolve(true);
           return;
         }
         pending.delete(paneId);
@@ -634,7 +655,14 @@ export function createSnapshotQueue() {
             deferred = true;
           return !deferred && draw === current;
         };
-        void current(paneId, request.element, canStart)
+        const waitToDraw = () => {
+          if (draw !== current) return Promise.resolve(false);
+          return new Promise<boolean>((resolve) => {
+            continuation = { paneId, resolve };
+            next();
+          });
+        };
+        void current(paneId, request.element, canStart, waitToDraw)
           .catch(() => {})
           .finally(() => {
             drawing = false;
@@ -684,6 +712,8 @@ export function createSnapshotQueue() {
       draw = null;
       pending.clear();
       cancelScheduled();
+      continuation?.resolve(false);
+      continuation = null;
       for (const type of inputEvents) {
         window.removeEventListener(type, noteInput, { capture: true });
       }

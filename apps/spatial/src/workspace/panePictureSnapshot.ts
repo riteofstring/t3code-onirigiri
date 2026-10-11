@@ -379,6 +379,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 export async function snapshotPanePicture(
   element: HTMLElement,
   canSnapshot: () => boolean,
+  waitToDraw: () => Promise<boolean>,
 ): Promise<Blob | null> {
   const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
   if (host) host.dataset.spatialSnapshot = "";
@@ -390,7 +391,7 @@ export async function snapshotPanePicture(
     );
     if (!element.isConnected || !canSnapshot() || hasLivePaneProducer(element)) return null;
     // Drawing clones the live DOM synchronously; encoding no longer needs its layout.
-    return drawPanePicture(element, canSnapshot);
+    return drawPanePicture(element, canSnapshot, waitToDraw);
   } finally {
     if (host) delete host.dataset.spatialSnapshot;
   }
@@ -399,6 +400,7 @@ export async function snapshotPanePicture(
 async function drawPanePicture(
   element: HTMLElement,
   canSnapshot: () => boolean,
+  waitToDraw: () => Promise<boolean>,
 ): Promise<Blob | null> {
   const width = element.offsetWidth;
   const height = element.offsetHeight;
@@ -436,6 +438,7 @@ async function drawPanePicture(
   const scale = window.devicePixelRatio || 1;
   const canvas = document.createElement("canvas");
   try {
+    if (!(await waitToDraw())) return null;
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
     const context = canvas.getContext("2d");
