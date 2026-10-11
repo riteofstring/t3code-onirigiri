@@ -522,6 +522,7 @@ export function createPaneLifecycleStore(
       focused = paneId;
       if (paneId !== null && mounted.has(paneId)) viewed.add(paneId);
       if (paneId !== null && picturing?.paneId === paneId) {
+        // A deliberate revisit takes ownership and can replace the failed content.
         picturing = null;
         pictureAttempted.delete(paneId);
       }
@@ -562,9 +563,13 @@ export function createPaneLifecycleStore(
     setBackgroundPictures: (enabled: boolean) => {
       backgroundPictures = enabled;
       if (!enabled && picturing) {
-        const { paneId } = picturing;
+        const { paneId, failed } = picturing;
         picturing = null;
-        pictureAttempted.delete(paneId);
+        if (hasPicture(paneId)) pictureAttempted.delete(paneId);
+        else if (!failed) {
+          const attempted = pictureAttempted.get(paneId);
+          if (attempted) attempted.retryAt = performance.now();
+        }
         if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
       }
       requestSettle();

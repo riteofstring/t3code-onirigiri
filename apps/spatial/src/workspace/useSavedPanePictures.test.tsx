@@ -524,6 +524,29 @@ it.each(["null", "error"])(
   },
 );
 
+it("reports the capture start time when a pending snapshot later fails", async () => {
+  const pending = pendingPicture();
+  let startedAt = -1;
+  snapshot.mockImplementationOnce(() => {
+    startedAt = performance.now();
+    return pending.promise;
+  });
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(snapshotFailures).not.toHaveBeenCalled();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(performance.now() - startedAt).toBeGreaterThanOrEqual(5000);
+  await act(() => pending.resolve(null));
+  expect(snapshotFailures).toHaveBeenCalledExactlyOnceWith(paneId, startedAt);
+});
+
 it.each(["motion", "input", "content", "readiness", "disconnect", "native"])(
   "does not report a failed reservation when %s invalidates an unfinished capture",
   async (change) => {

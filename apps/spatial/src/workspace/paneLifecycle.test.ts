@@ -258,6 +258,8 @@ it.each(["input", "motion"])(
       store.subscribe(paneId, () => {
         const mounted = store.isMounted(paneId);
         store.committed(paneId, mounted);
+        expect(store.isMounted("p0-2") && store.isMounted("p0-3")).toBe(false);
+        expect(mountedOf(store, panes).length).toBeLessThanOrEqual(3);
         if (!mounted || (paneId !== "p0-2" && paneId !== "p0-3")) return;
         mounts.push(paneId);
         setTimeout(() => {
@@ -273,7 +275,7 @@ it.each(["input", "motion"])(
     store.setBackgroundPictures(true);
     vi.advanceTimersByTime(60_000);
     expect(mounts.slice(0, 4)).toEqual(["p0-2", "p0-3", "p0-2", "p0-3"]);
-    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(4);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(3);
     store.dispose();
   },
 );
@@ -305,6 +307,65 @@ it("ignores a failed capture started during an earlier reservation of the same p
   window.dispatchEvent(new Event("keydown"));
   vi.advanceTimersByTime(11_000);
   expect(mounts).toHaveLength(3);
+  store.dispose();
+});
+
+it("keeps confirmed failure backoff across background deactivation and return", () => {
+  const panes = row(4);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const mounts: { paneId: string; at: number }[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => {
+      const mounted = store.isMounted(paneId);
+      store.committed(paneId, mounted);
+      expect(store.isMounted("p0-2") && store.isMounted("p0-3")).toBe(false);
+      if (mounted && (paneId === "p0-2" || paneId === "p0-3")) {
+        mounts.push({ paneId, at: performance.now() });
+      }
+    });
+  }
+  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(3500);
+  expect(mounts.map(({ paneId }) => paneId)).toEqual(["p0-2"]);
+  store.pictureFailed("p0-2", performance.now());
+
+  store.setBackgroundPictures(false);
+  expect(store.isMounted("p0-2")).toBe(false);
+  vi.advanceTimersByTime(1000);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(1000);
+  expect(mounts.map(({ paneId }) => paneId)).toEqual(["p0-2", "p0-3"]);
+  vi.advanceTimersByTime(mounts[0]!.at + 5 * 60_000 - performance.now() - 1);
+  expect(mounts.filter(({ paneId }) => paneId === "p0-2")).toHaveLength(1);
+  vi.advanceTimersByTime(10);
+  expect(mounts.filter(({ paneId }) => paneId === "p0-2")).toHaveLength(2);
+  store.dispose();
+});
+
+it("keeps interrupted panes in fair order across repeated background deactivation", () => {
+  const panes = row(4);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const mounts: string[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => {
+      const mounted = store.isMounted(paneId);
+      store.committed(paneId, mounted);
+      expect(store.isMounted("p0-2") && store.isMounted("p0-3")).toBe(false);
+      if (mounted && (paneId === "p0-2" || paneId === "p0-3")) mounts.push(paneId);
+    });
+  }
+  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(3500);
+  for (let visit = 0; visit < 3; visit++) {
+    store.setBackgroundPictures(false);
+    expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
+    vi.advanceTimersByTime(1000);
+    store.setBackgroundPictures(true);
+    vi.advanceTimersByTime(1000);
+  }
+  expect(mounts).toEqual(["p0-2", "p0-3", "p0-2", "p0-3"]);
   store.dispose();
 });
 
@@ -946,7 +1007,7 @@ it("retains a background view that starts running before its picture finishes", 
 it("cancels background picturing while covered and retries the interrupted pane on return", () => {
   const panes = row(5);
   const store = createPaneLifecycleStore(panes, "p0-0");
-  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setPictures((paneId) => paneId !== "p0-2");
   store.setBackgroundPictures(true);
   for (let step = 0; step < 5; step++) {
     vi.advanceTimersByTime(1000);
@@ -992,7 +1053,7 @@ it("retries a cancelled picture mount before the old commit deadline", () => {
   const store = createPaneLifecycleStore(panes, "p0-0");
   const transitions: boolean[] = [];
   store.subscribe("p0-2", () => transitions.push(store.isMounted("p0-2")));
-  store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+  store.setPictures((paneId) => paneId !== "p0-2");
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(1000);
   store.committed("p0-1", true);
