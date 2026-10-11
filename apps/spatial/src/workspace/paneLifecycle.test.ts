@@ -456,6 +456,116 @@ it("keeps cached focus visits bounded when input never becomes quiet", () => {
   store.dispose();
 });
 
+it.each(["uncaptured focus", "visible neighbor"])(
+  "keeps a completed capture neighbor live when the %s mounts",
+  (destination) => {
+    const window = new EventTarget();
+    vi.stubGlobal("window", window);
+    const panes = row(20);
+    const store = createPaneLifecycleStore(panes, "p0-0");
+    const fresh = new Set(panes.map(({ paneId }) => paneId));
+    const hasPicture = (paneId: string) => fresh.has(paneId);
+    for (const { paneId } of panes) {
+      store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+    }
+    store.setPictures(hasPicture);
+    for (let slot = 1; slot <= 6; slot++) {
+      store.setFocus(`p0-${slot}`);
+      vi.advanceTimersByTime(1000);
+    }
+    expect(mountedOf(store, panes)).toHaveLength(8);
+    fresh.delete("p0-10");
+    store.setPictures(hasPicture);
+    store.setBackgroundPictures(true);
+    vi.advanceTimersByTime(3000);
+    expect(store.isMounted("p0-10")).toBe(true);
+    expect(mountedOf(store, panes)).toHaveLength(9);
+
+    window.dispatchEvent(new Event("keydown"));
+    store.setMoving(true);
+    store.setFocus("p0-9");
+    store.setVisible("p0-9", true);
+    store.setVisible("p0-10", true);
+    vi.advanceTimersByTime(250);
+    store.setMoving(false);
+    vi.advanceTimersByTime(0);
+    expect(store.isMounted("p0-9")).toBe(true);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+
+    for (const paneId of mountedOf(store, panes)) fresh.delete(paneId);
+    fresh.add("p0-10");
+    if (destination === "uncaptured focus") fresh.delete("p0-11");
+    store.setPictures(hasPicture);
+    vi.advanceTimersByTime(50);
+    window.dispatchEvent(new Event("keydown"));
+    store.setMoving(true);
+    store.setFocus(destination === "uncaptured focus" ? "p0-11" : "p0-10");
+    store.setVisible("p0-9", false);
+    store.setVisible("p0-11", true);
+    vi.advanceTimersByTime(200);
+    if (destination === "visible neighbor") {
+      store.setMoving(false);
+      vi.advanceTimersByTime(1);
+    }
+    expect(store.isMounted("p0-10")).toBe(true);
+    expect(store.isMounted("p0-11")).toBe(true);
+    expect(store.isMounted("p0-1")).toBe(true);
+    expect(store.isMounted("p0-2")).toBe(false);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+
+    fresh.add("p0-1");
+    store.setPictures(hasPicture);
+    store.setMoving(false);
+    vi.advanceTimersByTime(201);
+    expect(store.isMounted("p0-1")).toBe(false);
+    expect(store.isMounted("p0-10")).toBe(true);
+    expect(store.isMounted("p0-11")).toBe(true);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+    store.dispose();
+  },
+);
+
+it("keeps a departing picture slot when every other view is visibly required", () => {
+  const panes = row(14);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const fresh = new Set(panes.map(({ paneId }) => paneId));
+  const hasPicture = (paneId: string) => fresh.has(paneId);
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.setPictures(hasPicture);
+  for (let slot = 1; slot <= 6; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(1000);
+  }
+  fresh.delete("p0-10");
+  store.setPictures(hasPicture);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(3000);
+  expect(mountedOf(store, panes)).toHaveLength(9);
+
+  const visible = [...panes.slice(0, 8).map(({ paneId }) => paneId), "p0-11"];
+  for (const paneId of visible) store.setVisible(paneId, true);
+  store.setMoving(true);
+  store.setFocus("p0-10");
+  vi.advanceTimersByTime(200);
+  fresh.delete("p0-11");
+  store.setPictures(hasPicture);
+  store.setFocus("p0-11");
+  vi.advanceTimersByTime(200);
+  expect(visible.every(store.isMounted)).toBe(true);
+  expect(store.isMounted("p0-10")).toBe(true);
+  expect(mountedOf(store, panes)).toHaveLength(visible.length + 1);
+
+  fresh.add("p0-10");
+  store.setPictures(hasPicture);
+  store.setMoving(false);
+  vi.advanceTimersByTime(201);
+  expect(store.isMounted("p0-10")).toBe(false);
+  expect(mountedOf(store, panes)).toEqual(visible);
+  store.dispose();
+});
+
 it("still waits for quiet focus when motion finishes before the mount delay", () => {
   const panes = row(12);
   const store = createPaneLifecycleStore(panes, "p0-0");

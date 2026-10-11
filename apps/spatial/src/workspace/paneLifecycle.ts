@@ -191,7 +191,9 @@ export function createPaneLifecycleStore(
   const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
     picturingPending();
     const paneId = evictionCandidate(limit + (picturing ? 1 : 0), keep);
-    if (paneId !== null && !retainForPicture(paneId)) unmount(paneId);
+    if (paneId === null) return;
+    const retiring = retainForPicture(paneId) ? evictionCandidate(limit + 1, keep) : paneId;
+    if (retiring !== null) unmount(retiring);
   };
 
   const cancelSpeculation = () => {
