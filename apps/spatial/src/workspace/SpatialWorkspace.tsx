@@ -163,6 +163,7 @@ export function SpatialWorkspace({
     retainedPaneIds,
     picturesLoaded,
     paneSnapshots,
+    setCaptureActivity,
     stageRef,
   } = useSavedPanePictures(getLayout);
   // Focus is kept out of React state so moving between panes does not
@@ -277,7 +278,8 @@ export function SpatialWorkspace({
   // Covered workspaces have no measurable viewport and must not start captures.
   useEffect(() => {
     lifecycle?.setBackgroundPictures(active);
-  }, [active, lifecycle]);
+    setCaptureActivity(active, lifecycle?.isMoving() ?? false);
+  }, [active, lifecycle, setCaptureActivity]);
   useEffect(() => {
     if (panes && lifecycle) {
       lifecycle.setPanes(threadPanePositions(panes));
@@ -315,6 +317,7 @@ export function SpatialWorkspace({
 
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
+      setCaptureActivity(activeRef.current, moving);
       lifecycle?.setMoving(activeRef.current && moving);
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
       if (paneId === focusedPaneIdRef.current || !activeRef.current) return;
@@ -341,7 +344,7 @@ export function SpatialWorkspace({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [lifecycle, paneData, router],
+    [lifecycle, paneData, router, setCaptureActivity],
   );
 
   // Anything but moving on through the workspace, such as opening the command

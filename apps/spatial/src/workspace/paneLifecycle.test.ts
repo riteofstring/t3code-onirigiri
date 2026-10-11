@@ -36,6 +36,74 @@ function mountedOf(store: ReturnType<typeof createPaneLifecycleStore>, panes: Pa
   return panes.filter(({ paneId }) => store.isMounted(paneId)).map(({ paneId }) => paneId);
 }
 
+it("retries exhausted background pictures after backoff without new input", () => {
+  const store = createPaneLifecycleStore(row(3), "p0-0");
+  let mounts = 0;
+  store.subscribe("p0-2", () => {
+    if (store.isMounted("p0-2")) mounts++;
+  });
+  store.setBackgroundPictures(true);
+  store.setPictures(() => false);
+  vi.advanceTimersByTime(60_000);
+  expect(mounts).toBe(1);
+  vi.advanceTimersByTime(5 * 60_000);
+  expect(mounts).toBe(2);
+  expect(mountedOf(store, row(3)).length).toBeLessThanOrEqual(3);
+  store.dispose();
+});
+
+it("gives a departing uncovered view one bounded slot until its first picture completes", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const pictures = new Set<string>();
+  store.setPictures((paneId) => pictures.has(paneId));
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  for (let slot = 1; slot < 12; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(200);
+    store.committed(`p0-${slot}`, true);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+  }
+  expect(store.isMounted("p0-0")).toBe(true);
+  pictures.add("p0-0");
+  store.setPictures((paneId) => pictures.has(paneId));
+  store.setMoving(false);
+  vi.advanceTimersByTime(1500);
+  expect(store.isMounted("p0-0")).toBe(false);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+  store.dispose();
+});
+
+it.each(["completed", "expired"])(
+  "releases a %s picture slot during continuous navigation",
+  (result) => {
+    const panes = row(28);
+    const store = createPaneLifecycleStore(panes, "p0-0");
+    const pictures = new Set<string>();
+    store.setPictures((paneId) => pictures.has(paneId));
+    store.setBackgroundPictures(true);
+    store.setMoving(true);
+    const visit = (slot: number) => {
+      store.setFocus(`p0-${slot}`);
+      vi.advanceTimersByTime(900);
+      store.committed(`p0-${slot}`, true);
+      expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+    };
+    for (let slot = 1; slot <= 9; slot++) visit(slot);
+    expect(store.isMounted("p0-0")).toBe(true);
+    if (result === "completed") {
+      pictures.add("p0-0");
+      store.setPictures((paneId) => pictures.has(paneId));
+      visit(10);
+    } else {
+      for (let slot = 10; slot <= 24; slot++) visit(slot);
+    }
+    expect(store.isMounted("p0-0")).toBe(false);
+    store.dispose();
+  },
+);
+
 it("mounts the focused pane at once and its neighbours after a rest", () => {
   const panes = row(6);
   const store = createPaneLifecycleStore(panes, "p0-2");

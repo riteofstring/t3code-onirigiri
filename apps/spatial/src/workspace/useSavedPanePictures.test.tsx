@@ -137,7 +137,9 @@ beforeEach(() => {
     },
   );
   vi.stubGlobal("window", Object.assign(new EventTarget(), { devicePixelRatio: 1 }));
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 1));
+  vi.stubGlobal("requestIdleCallback", (callback: (deadline: IdleDeadline) => void) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
+  );
   vi.stubGlobal("cancelIdleCallback", (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
   vi.stubGlobal(
     "ResizeObserver",
@@ -214,6 +216,22 @@ function fillPictureCache() {
     });
   }
 }
+
+it("prepares this workspace even when other workspaces fill the persistent cache", async () => {
+  fillPictureCache();
+  store.threadIds = ["t201"];
+  currentLayout = layout(400);
+  await mount();
+  const nextId = "thread:e:t201";
+  expect(hook.canBackgroundPicture(nextId)).toBe(true);
+  markPaneSynced(nextId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(nextId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(hook.hasFreshPicture(nextId)).toBe(true);
+  expect(hook.canBackgroundPicture(nextId)).toBe(true);
+});
 
 it.each(["native", "fallback"])(
   "does not refill its own evictions but still captures visited panes through %s",
@@ -427,7 +445,7 @@ it("retries a failed static capture without another interaction", async () => {
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
+    await vi.advanceTimersByTimeAsync(500);
   });
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes).toHaveLength(0);
@@ -546,7 +564,7 @@ it("lets a newly opened workspace settle even when the page has been open a whil
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2999);
+    await vi.advanceTimersByTimeAsync(399);
   });
   expect(snapshot).not.toHaveBeenCalled();
   await act(async () => {
@@ -584,13 +602,83 @@ it("waits for recent input to settle before preserving a newly ready pane", asyn
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2999);
+    await vi.advanceTimersByTimeAsync(399);
   });
   expect(snapshot).not.toHaveBeenCalled();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2);
   });
   expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it("captures first pixels between ordinary navigation inputs, only after motion stops", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.setCaptureActivity(true, true);
+  window.dispatchEvent(new Event("keydown"));
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(550);
+  });
+  expect(snapshot).not.toHaveBeenCalled();
+  hook.setCaptureActivity(true, false);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  window.dispatchEvent(new Event("keydown"));
+  expect(store.writes).toHaveLength(1);
+});
+
+it("keeps refresh work deferred when a usable cover already exists", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const cover = new Blob(["cover"]);
+  await act(() => hook.onPanePictureCaptured(pane, cover));
+  hook.paneSnapshots.invalidate(paneId);
+  const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
+  for (let step = 0; step < 5; step++) {
+    window.dispatchEvent(new Event("keydown"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+  }
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(hook.pictureFor(paneId)).toBe(cover);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(hook.pictureFor(paneId)).not.toBe(cover);
+});
+
+it("requeues a first picture interrupted by camera motion before cloning", async () => {
+  const layout = pendingPicture();
+  snapshot.mockImplementationOnce(async (_element, canSnapshot) => {
+    await layout.promise;
+    return canSnapshot() ? new Blob(["interrupted"]) : null;
+  });
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  hook.setCaptureActivity(true, true);
+  await act(() => layout.resolve(null));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(store.writes).toHaveLength(0);
+  expect(snapshot).toHaveBeenCalledOnce();
+  hook.setCaptureActivity(true, false);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(snapshot).toHaveBeenCalledTimes(2);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
@@ -671,11 +759,11 @@ it.each(["keydown", "pointerdown", "wheel"])(
     expect(store.writes).toHaveLength(0);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2500);
+      await vi.advanceTimersByTimeAsync(250);
     });
     window.dispatchEvent(new Event(type));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2999);
+      await vi.advanceTimersByTimeAsync(399);
     });
     expect(snapshot).toHaveBeenCalledOnce();
     await act(async () => {
@@ -1167,7 +1255,7 @@ it.each(["null", "error", "resize"])(
     });
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
+      await vi.advanceTimersByTimeAsync(500);
     });
     expect(hook.pictureFor(paneId)).toBeNull();
     expect(hook.retainedPaneIds.has(paneId)).toBe(true);
@@ -1232,7 +1320,7 @@ it.each(["disconnect", "remove", "unmount", "release-content"])(
     const element = { isConnected: true };
     hook.paneSnapshots.request(paneId, element as HTMLElement);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
+      await vi.advanceTimersByTimeAsync(500);
     });
     expect(snapshot).toHaveBeenCalledOnce();
     await act(() => {

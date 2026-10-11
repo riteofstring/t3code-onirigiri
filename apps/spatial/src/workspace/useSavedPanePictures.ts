@@ -136,6 +136,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   retainedPaneIds: ReadonlySet<string>;
   picturesLoaded: boolean;
   paneSnapshots: PaneSnapshots;
+  setCaptureActivity: (enabled: boolean, moving: boolean) => void;
   stageRef: (element: HTMLElement | null) => void;
 } {
   const threads = useThreadShells();
@@ -272,12 +273,16 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       ),
     [threads],
   );
+  const savedHere = useMemo(
+    () => [...(saved?.keys() ?? [])].filter((id) => contentRevisions.has(id)).length,
+    [contentRevisions, saved],
+  );
   const canBackgroundPicture = useCallback(
     (paneId: string) =>
       retained.get(paneId) !== "live" &&
       !runningPanes.has(paneId) &&
-      (saved === null || saved.size < MAX_SAVED || saved.has(paneId)),
-    [retained, runningPanes, saved],
+      (saved === null || saved.has(paneId) || savedHere < MAX_SAVED),
+    [retained, runningPanes, saved, savedHere],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
@@ -348,9 +353,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, retained, saved]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
-    (paneId: string) => freshPictureFor(paneId) !== null,
+    (paneId: string) => {
+      const image = freshPictureFor(paneId);
+      return image !== null && pictureMatchesVisualRevision(paneId, image);
+    },
     // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
-    [freshPictureFor, geometryVersion],
+    [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
   );
   const freshPictureForRef = useRef(freshPictureFor);
   useLayoutEffect(() => {
@@ -500,6 +508,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
             !pictureMatchesVisualRevision(paneId, previous.image)
           );
         },
+        (paneId) => lastValidPictures.current.has(paneId),
       ),
     [geometryRevision, pictureMatchesVisualRevision, snapshots],
   );
@@ -547,6 +556,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     retainedPaneIds,
     picturesLoaded: saved !== null,
     paneSnapshots,
+    setCaptureActivity: snapshots.setActivity,
     stageRef,
   };
 }
@@ -554,6 +564,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
 // Draws one requested snapshot at a time while the page is idle; a newer
 // request for a pane replaces one still waiting.
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
+const FIRST_PICTURE_INPUT_QUIET_MS = 400;
 const NATIVE_CAPTURE_GRACE_MS = 2000;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
@@ -562,6 +573,9 @@ export function createSnapshotQueue() {
   const pending = new Map<string, { element: HTMLElement; after: number; retryAfter: number }>();
   let draw: Draw | null = null;
   let needsPicture: (paneId: string) => boolean = () => false;
+  let hasCover: (paneId: string) => boolean = () => false;
+  let enabled = true;
+  let moving = false;
   let drawing = false;
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -570,19 +584,41 @@ export function createSnapshotQueue() {
     lastInput = performance.now();
   };
   const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
+  const quietTime = (paneId: string) =>
+    hasCover(paneId) ? SNAPSHOT_INPUT_QUIET_MS : FIRST_PICTURE_INPUT_QUIET_MS;
+  const cancelScheduled = () => {
+    if (idle !== null) cancelIdleCallback(idle);
+    if (timer !== null) clearTimeout(timer);
+    idle = null;
+    timer = null;
+  };
   const next = () => {
-    if (drawing || idle !== null || timer !== null || pending.size === 0 || !draw) return;
+    if (
+      !enabled ||
+      moving ||
+      drawing ||
+      idle !== null ||
+      timer !== null ||
+      pending.size === 0 ||
+      !draw
+    )
+      return;
     const current = draw;
     idle = requestIdleCallback(
-      () => {
+      (deadline) => {
         idle = null;
         if (draw !== current || pending.size === 0) return;
-        // Drawing waits until input has been quiet for a moment.
+        if (deadline.timeRemaining() < 4) {
+          next();
+          return;
+        }
         const now = performance.now();
+        const due = ([paneId, request]: [string, { after: number }]) =>
+          Math.max(lastInput + quietTime(paneId), request.after);
         const [paneId, request] = [...pending].reduce((first, candidate) =>
-          candidate[1].after < first[1].after ? candidate : first,
+          due(candidate) < due(first) ? candidate : first,
         );
-        const wait = Math.max(lastInput + SNAPSHOT_INPUT_QUIET_MS, request.after) - now;
+        const wait = due([paneId, request]) - now;
         if (wait > 0) {
           timer = setTimeout(() => {
             timer = null;
@@ -594,7 +630,8 @@ export function createSnapshotQueue() {
         drawing = true;
         let deferred = false;
         const canStart = () => {
-          if (performance.now() - lastInput < SNAPSHOT_INPUT_QUIET_MS) deferred = true;
+          if (!enabled || moving || performance.now() - lastInput < quietTime(paneId))
+            deferred = true;
           return !deferred && draw === current;
         };
         void current(paneId, request.element, canStart)
@@ -620,16 +657,24 @@ export function createSnapshotQueue() {
   const request = (paneId: string, element: HTMLElement, preferNative: boolean) => {
     pending.set(paneId, {
       element,
-      after: performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
+      after: Math.min(
+        pending.get(paneId)?.after ?? Infinity,
+        performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
+      ),
       retryAfter: SNAPSHOT_INPUT_QUIET_MS,
     });
     if (timer !== null) clearTimeout(timer);
     timer = null;
     next();
   };
-  const setDraw = (nextDraw: Draw, nextNeedsPicture: (paneId: string) => boolean) => {
+  const setDraw = (
+    nextDraw: Draw,
+    nextNeedsPicture: (paneId: string) => boolean,
+    nextHasCover: (paneId: string) => boolean,
+  ) => {
     draw = nextDraw;
     needsPicture = nextNeedsPicture;
+    hasCover = nextHasCover;
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });
     }
@@ -638,14 +683,18 @@ export function createSnapshotQueue() {
       if (draw !== nextDraw) return;
       draw = null;
       pending.clear();
-      if (idle !== null) cancelIdleCallback(idle);
-      if (timer !== null) clearTimeout(timer);
-      idle = null;
-      timer = null;
+      cancelScheduled();
       for (const type of inputEvents) {
         window.removeEventListener(type, noteInput, { capture: true });
       }
     };
   };
-  return { request, setDraw };
+  const setActivity = (nextEnabled: boolean, nextMoving: boolean) => {
+    if (enabled === nextEnabled && moving === nextMoving) return;
+    enabled = nextEnabled;
+    moving = nextMoving;
+    cancelScheduled();
+    next();
+  };
+  return { request, setDraw, setActivity };
 }

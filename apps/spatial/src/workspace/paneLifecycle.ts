@@ -151,14 +151,35 @@ export function createPaneLifecycleStore(
         )
         .toSorted(
           (a, b) =>
-            (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0) || distance(b) - distance(a),
+            Number(hasPicture(b)) - Number(hasPicture(a)) ||
+            (lastWanted.get(a) ?? 0) - (lastWanted.get(b) ?? 0) ||
+            distance(b) - distance(a),
         )[0] ?? null
     );
   };
 
+  const retainForPicture = (paneId: string) => {
+    if (
+      picturing === null &&
+      backgroundPictures &&
+      picturesReady &&
+      viewed.has(paneId) &&
+      !hasPicture(paneId) &&
+      !pictureExcluded.has(paneId) &&
+      !running.has(paneId) &&
+      performance.now() - (pictureAttempted.get(paneId) ?? -Infinity) >= PICTURE_RETRY_MS
+    ) {
+      picturing = { paneId, since: performance.now() };
+      pictureAttempted.set(paneId, performance.now());
+      return true;
+    }
+    return false;
+  };
+
   const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
-    const paneId = evictionCandidate(limit, keep);
-    if (paneId !== null) unmount(paneId);
+    picturingPending();
+    const paneId = evictionCandidate(limit + (picturing ? 1 : 0), keep);
+    if (paneId !== null && !retainForPicture(paneId)) unmount(paneId);
   };
 
   const cancelSpeculation = () => {
@@ -208,7 +229,6 @@ export function createPaneLifecycleStore(
     if (hasPicture(paneId)) pictureAttempted.delete(paneId);
     if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
-    evictBeyond(MAX_MOUNTED, wanted);
     return false;
   };
 
@@ -223,8 +243,28 @@ export function createPaneLifecycleStore(
       picturing === null &&
       nextToPicture() === null &&
       evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted) === null
-    )
+    ) {
+      const retryAt =
+        backgroundPictures && picturesReady
+          ? Math.min(
+              ...[...pictureAttempted].flatMap(([paneId, attempted]) =>
+                panes.has(paneId) &&
+                !mounted.has(paneId) &&
+                !pictureExcluded.has(paneId) &&
+                !hasPicture(paneId)
+                  ? [attempted + PICTURE_RETRY_MS]
+                  : [],
+              ),
+            )
+          : Infinity;
+      if (retryAt > performance.now() && Number.isFinite(retryAt)) {
+        pictureTimer = setTimeout(() => {
+          pictureTimer = null;
+          schedule();
+        }, retryAt - performance.now());
+      }
       return;
+    }
     if (visibleQueued()) {
       quietTimer = setTimeout(() => {
         quietTimer = null;
@@ -246,6 +286,7 @@ export function createPaneLifecycleStore(
   const advance = () => {
     idleCallback = null;
     if (moving) return;
+    picturingPending();
     queue = queue.filter((paneId) => panes.has(paneId) && !mounted.has(paneId));
     if (!visibleQueued() && performance.now() - lastInput < INPUT_QUIET_MS) {
       schedule();
@@ -254,7 +295,7 @@ export function createPaneLifecycleStore(
     if (queue.length > 0) {
       const visibleIndex = queue.findIndex((paneId) => visible.has(paneId));
       const paneId = queue.splice(Math.max(0, visibleIndex), 1)[0]!;
-      evictBeyond(MAX_MOUNTED - 1 + (picturing ? 1 : 0), wanted);
+      evictBeyond(MAX_MOUNTED - 1, wanted);
       mountPrepared(paneId);
       return;
     }
@@ -262,10 +303,13 @@ export function createPaneLifecycleStore(
     // only during idle input, instead of unmounting them all on the last frame.
     const retiring = evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
     if (retiring !== null) {
-      waitForCommit(retiring);
-      mounted.delete(retiring);
-      viewed.delete(retiring);
-      notify(retiring);
+      if (retainForPicture(retiring)) schedule();
+      else {
+        waitForCommit(retiring);
+        mounted.delete(retiring);
+        viewed.delete(retiring);
+        notify(retiring);
+      }
       return;
     }
     // With nothing likely to be needed soon, panes without a picture are
@@ -281,7 +325,10 @@ export function createPaneLifecycleStore(
       return;
     }
     const paneId = nextToPicture();
-    if (paneId === null) return;
+    if (paneId === null) {
+      schedule();
+      return;
+    }
     const now = performance.now();
     const wait = lastInput + PICTURE_INPUT_QUIET_MS - now;
     if (wait > 0) {
@@ -336,10 +383,7 @@ export function createPaneLifecycleStore(
         clock += 1;
         lastWanted.set(focused, clock);
         mountPrepared(focused);
-        evictBeyond(
-          MAX_MOUNTED + (picturing ? 1 : 0),
-          new Set([focused, ...wanted].slice(0, MAX_MOUNTED)),
-        );
+        evictBeyond(MAX_MOUNTED, new Set([focused, ...wanted].slice(0, MAX_MOUNTED)));
       }
       return;
     }
