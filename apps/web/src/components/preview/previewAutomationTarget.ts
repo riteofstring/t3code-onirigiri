@@ -6,10 +6,11 @@ interface PreviewAutomationSessionIndex {
 }
 
 export function needsPreviewAutomationSessionSync(
-  state: PreviewAutomationSessionIndex,
+  state: PreviewAutomationSessionIndex & { readonly serverEpoch: string | null },
   requestedTabId: string | undefined,
 ): boolean {
   return (
+    state.serverEpoch === null ||
     Object.keys(state.sessions).length === 0 ||
     requestedTabId === undefined ||
     state.sessions[requestedTabId] === undefined

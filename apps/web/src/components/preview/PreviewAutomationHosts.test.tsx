@@ -5,6 +5,7 @@ import {
   type ClientSettings,
   type PreviewAutomationResponse,
   type PreviewAutomationStreamEvent,
+  type PreviewListResult,
   type PreviewOpenInput,
   type PreviewSessionSnapshot,
 } from "@t3tools/contracts";
@@ -88,7 +89,7 @@ const snapshot: PreviewSessionSnapshot = {
   profileId: "work",
   updatedAt: "2026-09-05T00:00:00.000Z",
 };
-const emptyList = { sessions: [], serverEpoch: "test-server", revision: 0 };
+const emptyList: PreviewListResult = { sessions: [], serverEpoch: "test-server", revision: 0 };
 const listAtom = Atom.make(AsyncResult.success(emptyList));
 const requestsAtom = Atom.make<AsyncResult.AsyncResult<PreviewAutomationStreamEvent, Error>>(
   AsyncResult.initial(false),
@@ -338,6 +339,9 @@ describe("PreviewAutomationHosts ownership", () => {
 
   it("does not claim an available runtime from a server snapshot alone", async () => {
     const response = deferred<PreviewAutomationResponse>();
+    mocks.list.mockResolvedValueOnce(
+      AsyncResult.success({ ...emptyList, sessions: [snapshot], revision: 1 }),
+    );
     mocks.respond.mockImplementationOnce(async ({ input }) => response.resolve(input));
     await act(async () => {
       applyPreviewServerSnapshot(threadRef, snapshot);
@@ -359,5 +363,6 @@ describe("PreviewAutomationHosts ownership", () => {
       ok: true,
       result: { available: false, tabId: snapshot.tabId },
     });
+    expect(mocks.list).toHaveBeenCalledOnce();
   });
 });

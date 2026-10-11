@@ -26,15 +26,12 @@ import {
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { ensureLocalApi } from "~/localApi";
-import {
-  rememberPreviewUrl,
-  updatePreviewServerSnapshot,
-  useThreadPreviewState,
-} from "~/previewStateStore";
+import { updatePreviewServerSnapshot, useThreadPreviewState } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import {
   browserMiniPlayerSource,
   selectThreadPreviewMiniPlayerTabId,
@@ -45,6 +42,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
 import { openPreviewSession } from "./openPreviewSession";
+import { navigatePreviewSession } from "./navigatePreviewSession";
 import { PreviewChromeRow } from "./PreviewChromeRow";
 import { PreviewEmptyState } from "./PreviewEmptyState";
 import { PreviewMoreMenu } from "./PreviewMoreMenu";
@@ -129,6 +127,7 @@ export function PreviewView({
     ? new URL(environmentHttpBaseUrl).hostname
     : null;
   const open = useAtomCommand(previewEnvironment.open);
+  const listPreviews = useAtomQueryRunner(previewEnvironment.list, { refresh: true });
   const resize = useAtomCommand(previewEnvironment.resize, "preview viewport resize");
 
   usePreviewSession(threadRef);
@@ -192,11 +191,8 @@ export function PreviewView({
 
   const navigateToResolvedUrl = useCallback(
     async (resolvedUrl: string) => {
-      if (runtimeTabId && previewBridge) {
-        // The bridge mirrors the resolved URL back to the server.
-        await previewBridge.navigate(runtimeTabId, resolvedUrl);
-        rememberPreviewUrl(threadRef, resolvedUrl);
-        return true;
+      if (tabId && previewBridge) {
+        return navigatePreviewSession({ threadRef, tabId, url: resolvedUrl, listPreviews });
       }
       const result = await openPreviewSession({ openPreview: open, threadRef, url: resolvedUrl });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -211,7 +207,7 @@ export function PreviewView({
       }
       return result._tag === "Success";
     },
-    [open, runtimeTabId, threadRef],
+    [listPreviews, open, tabId, threadRef],
   );
 
   const handleSubmitUrl = useCallback(

@@ -1,12 +1,13 @@
 "use client";
 
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
+import { FILL_PREVIEW_VIEWPORT, type ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useMemo } from "react";
 
+import { usePreviewSession } from "~/components/preview/usePreviewSession";
 import { isElectron } from "~/env";
 import { useTheme } from "~/hooks/useTheme";
-import { useActivePreviewSessions } from "~/previewStateStore";
+import { useActivePreviewSessions, type ThreadPreviewState } from "~/previewStateStore";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { useBrowserPointerStore } from "./browserPointerStore";
@@ -16,24 +17,11 @@ import { previewRuntimeTabId } from "./previewRuntimeTabId";
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const previewByThreadKey = useActivePreviewSessions();
-  const sessions = useMemo(
+  const threads = useMemo(
     () =>
       Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
         const threadRef = parseScopedThreadKey(threadKey);
-        return threadRef
-          ? Object.values(previewState.sessions).map((snapshot) => ({
-              threadRef,
-              snapshot,
-              runtimeTabId: previewRuntimeTabId(
-                threadRef,
-                previewState.serverEpoch,
-                snapshot.tabId,
-              ),
-              pictureInPicture:
-                previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
-              zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
-            }))
-          : [];
+        return threadRef ? [{ threadKey, threadRef, previewState }] : [];
       }),
     [previewByThreadKey],
   );
@@ -82,7 +70,34 @@ export function ElectronBrowserHost() {
   if (!isElectron) return null;
   return (
     <div className="contents" data-electron-browser-host>
-      {sessions.map(({ threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor }) => {
+      {threads.map(({ threadKey, threadRef, previewState }) => (
+        <ThreadBrowserHost key={threadKey} threadRef={threadRef} previewState={previewState} />
+      ))}
+    </div>
+  );
+}
+
+function ThreadBrowserHost({
+  threadRef,
+  previewState,
+}: {
+  readonly threadRef: ScopedThreadRef;
+  readonly previewState: ThreadPreviewState;
+}) {
+  usePreviewSession(threadRef);
+  // Opening a tab returns its snapshot before the first list/event can identify
+  // the server. Creating a guest under that temporary identity would replace it.
+  if (previewState.serverEpoch === null) return null;
+
+  return (
+    <>
+      {Object.values(previewState.sessions).map((snapshot) => {
+        const runtimeTabId = previewRuntimeTabId(
+          threadRef,
+          previewState.serverEpoch,
+          snapshot.tabId,
+        );
+        const overlay = previewState.desktopByTabId[snapshot.tabId];
         const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
         return (
           <HostedBrowserWebview
@@ -92,12 +107,12 @@ export function ElectronBrowserHost() {
             runtimeTabId={runtimeTabId}
             initialUrl={url}
             viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
-            pictureInPicture={pictureInPicture}
+            pictureInPicture={overlay?.pictureInPicture ?? false}
             profileId={snapshot.profileId}
-            zoomFactor={zoomFactor}
+            zoomFactor={overlay?.zoomFactor ?? 1}
           />
         );
       })}
-    </div>
+    </>
   );
 }
