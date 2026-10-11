@@ -419,6 +419,43 @@ it("prepares a destination without a picture during motion and keeps retention b
   store.dispose();
 });
 
+it("keeps cached focus visits bounded when input never becomes quiet", () => {
+  const window = new EventTarget();
+  vi.stubGlobal("window", window);
+  const panes = row(20);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  for (let slot = 1; slot <= 6; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(1000);
+  }
+  expect(mountedOf(store, panes)).toHaveLength(8);
+  let visible = "p0-6";
+  store.setVisible(visible, true);
+
+  for (let slot = 8; slot <= 11; slot++) {
+    const paneId = `p0-${slot}`;
+    window.dispatchEvent(new Event("keydown"));
+    store.setMoving(true);
+    store.setFocus(paneId);
+    store.setVisible(visible, false);
+    store.setVisible(paneId, true);
+    visible = paneId;
+    vi.advanceTimersByTime(250);
+    expect(store.isMounted(paneId)).toBe(false);
+    store.setMoving(false);
+    vi.advanceTimersByTime(0);
+    expect(store.isMounted(paneId)).toBe(true);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
+    vi.advanceTimersByTime(50);
+  }
+  store.dispose();
+});
+
 it("still waits for quiet focus when motion finishes before the mount delay", () => {
   const panes = row(12);
   const store = createPaneLifecycleStore(panes, "p0-0");

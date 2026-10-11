@@ -407,10 +407,6 @@ export function createPaneLifecycleStore(
     }
     settleDue = false;
     clock += 1;
-    if (focused && panes.has(focused)) {
-      lastWanted.set(focused, clock);
-      if (!mounted.has(focused)) mountPrepared(focused);
-    }
     const required = new Set([
       ...(focused ? [focused] : []),
       ...[...visible]
@@ -433,6 +429,10 @@ export function createPaneLifecycleStore(
       ...speculative.slice(0, Math.max(0, MAX_MOUNTED - required.size)),
     ]);
     for (const paneId of wanted) lastWanted.set(paneId, clock);
+    if (focused && panes.has(focused) && !mounted.has(focused)) {
+      mountPrepared(focused);
+      evictBeyond(MAX_MOUNTED, wanted);
+    }
     cancelSpeculation();
     queue = [...wanted].filter((paneId) => !mounted.has(paneId));
     schedule();
