@@ -149,6 +149,13 @@ export function SpatialWorkspace({
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
+  const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
+    null,
+  );
+  const onSnapshotFailure = useCallback(
+    (paneId: string, startedAt: number) => lifecycle?.pictureFailed(paneId, startedAt),
+    [lifecycle],
+  );
   const {
     getPanePicture,
     getPanePresentation,
@@ -165,7 +172,7 @@ export function SpatialWorkspace({
     paneSnapshots,
     setCaptureActivity,
     stageRef,
-  } = useSavedPanePictures(getLayout);
+  } = useSavedPanePictures(getLayout, onSnapshotFailure);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -205,9 +212,6 @@ export function SpatialWorkspace({
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
 
-  const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
-    null,
-  );
   if (lifecycle === null && initialPanes !== null) {
     setLifecycle(createPaneLifecycleStore(threadPanePositions(initialPanes), routePaneId));
   }

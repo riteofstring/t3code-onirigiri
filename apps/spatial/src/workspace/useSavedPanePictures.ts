@@ -120,7 +120,10 @@ function columnWidths(layout: OnirigiriLayout): Map<string, string> {
  * DOM when the page is idle; those pictures seed their panes at once and are
  * saved too. A seed never replaces a capture.
  */
-export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
+export function useSavedPanePictures(
+  getLayout: () => OnirigiriLayout | null,
+  onSnapshotFailure: (paneId: string, startedAt: number) => void,
+): {
   getPanePicture: OnirigiriPanePictureResolver;
   getPanePresentation: PanePresentationResolver;
   onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
@@ -425,6 +428,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       canStart: () => boolean,
       waitToDraw: () => Promise<boolean>,
     ) => {
+      const startedAt = performance.now();
       const revision = () => {
         const content = contentRevisionsRef.current.get(paneId);
         const geometry = geometryRevision(paneId);
@@ -474,8 +478,12 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         element,
         canSnapshot,
         async () => (await waitToDraw()) && current(),
-      );
-      if (!image || !current()) return;
+      ).catch(() => null);
+      if (!image) {
+        if (current() && canSnapshot()) onSnapshotFailure(paneId, startedAt);
+        return;
+      }
+      if (!current()) return;
       const picture = {
         paneId,
         revision: pictureRevision(before, "snapshot"),
@@ -485,7 +493,13 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       };
       await keepPicture(picture, beforeVisualRevision);
     },
-    [geometryRevision, keepPicture, pictureMatchesVisualRevision, visualRevision],
+    [
+      geometryRevision,
+      keepPicture,
+      onSnapshotFailure,
+      pictureMatchesVisualRevision,
+      visualRevision,
+    ],
   );
   const drawSnapshotRef = useRef(drawSnapshot);
   useLayoutEffect(() => {

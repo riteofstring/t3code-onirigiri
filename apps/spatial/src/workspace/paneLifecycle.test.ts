@@ -246,6 +246,68 @@ it("keeps failure backoff when input arrives after an uninterrupted reservation'
   store.dispose();
 });
 
+it.each(["input", "motion"])(
+  "gives every missing pane a turn through repeated %s interruptions",
+  (interruption) => {
+    const window = new EventTarget();
+    vi.stubGlobal("window", window);
+    const panes = row(4);
+    const store = createPaneLifecycleStore(panes, "p0-0");
+    const mounts: string[] = [];
+    for (const { paneId } of panes) {
+      store.subscribe(paneId, () => {
+        const mounted = store.isMounted(paneId);
+        store.committed(paneId, mounted);
+        if (!mounted || (paneId !== "p0-2" && paneId !== "p0-3")) return;
+        mounts.push(paneId);
+        setTimeout(() => {
+          window.dispatchEvent(new Event("keydown"));
+          if (interruption === "motion") {
+            store.setMoving(true);
+            setTimeout(() => store.setMoving(false), 100);
+          }
+        }, 8000);
+      });
+    }
+    store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
+    store.setBackgroundPictures(true);
+    vi.advanceTimersByTime(60_000);
+    expect(mounts.slice(0, 4)).toEqual(["p0-2", "p0-3", "p0-2", "p0-3"]);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(4);
+    store.dispose();
+  },
+);
+
+it("ignores a failed capture started during an earlier reservation of the same pane", () => {
+  const window = new EventTarget();
+  vi.stubGlobal("window", window);
+  const panes = row(3);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const mounts: number[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => {
+      const mounted = store.isMounted(paneId);
+      store.committed(paneId, mounted);
+      if (paneId === "p0-2" && mounted) mounts.push(performance.now());
+    });
+  }
+  store.setPictures((paneId) => paneId !== "p0-2");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(3500);
+  expect(mounts).toHaveLength(1);
+  store.setMoving(true);
+  vi.advanceTimersByTime(11_000);
+  store.setMoving(false);
+  vi.advanceTimersByTime(1);
+  expect(mounts).toHaveLength(2);
+
+  store.pictureFailed("p0-2", mounts[0]!);
+  window.dispatchEvent(new Event("keydown"));
+  vi.advanceTimersByTime(11_000);
+  expect(mounts).toHaveLength(3);
+  store.dispose();
+});
+
 it("mounts the focused pane at once and its neighbours after a rest", () => {
   const panes = row(6);
   const store = createPaneLifecycleStore(panes, "p0-2");

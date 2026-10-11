@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { SavedPanePicture } from "./panePictureStore";
+import { createPaneLifecycleStore } from "./paneLifecycle";
 import { markPaneSynced, usePanePictureTheme, useSavedPanePictures } from "./useSavedPanePictures";
 
 const defaultFontSettings = {
@@ -89,10 +90,11 @@ let appearance: string;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 const getLayout = () => currentLayout;
+const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
-  const value = useSavedPanePictures(getLayout);
+  const value = useSavedPanePictures(getLayout, snapshotFailures);
   useEffect(() => {
     hook = value;
     appearance = pictureAppearance;
@@ -174,6 +176,7 @@ afterEach(async () => {
   currentLayout = layout(400);
   markPaneSynced(paneId, null);
   snapshot.mockReset();
+  snapshotFailures.mockReset();
   snapshot.mockImplementation(async (_element, canSnapshot) =>
     canSnapshot() ? new Blob(["snapshot"]) : null,
   );
@@ -460,6 +463,105 @@ it("retries a failed static capture without another interaction", async () => {
   });
   expect(snapshot).toHaveBeenCalledTimes(2);
 });
+
+it.each(["null", "error"])(
+  "keeps lifecycle backoff after a %s snapshot failure despite later input and prepares the next pane",
+  async (failure) => {
+    store.threadIds = ["t0", "t1", "t2", "t3"];
+    currentLayout = layout(400);
+    for (const id of ["t0", "t1"]) {
+      const idToSeed = `thread:e:${id}`;
+      store.saved.set(idToSeed, {
+        paneId: idToSeed,
+        revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+        image: new Blob(["cover"]),
+        savedAt: 1,
+        source: "capture",
+      });
+    }
+    await mount();
+    const panes = store.threadIds.map((id, slot) => ({
+      paneId: `thread:e:${id}`,
+      plane: 0,
+      slot,
+    }));
+    const lifecycle = createPaneLifecycleStore(panes, "thread:e:t0");
+    snapshotFailures.mockImplementation((id, startedAt) => lifecycle.pictureFailed(id, startedAt));
+    const nearest = { isConnected: true } as HTMLElement;
+    snapshot.mockImplementation(async (element, canSnapshot) => {
+      if (!canSnapshot()) return null;
+      if (element !== nearest) return new Blob(["farther pane"]);
+      if (failure === "error") throw new Error("Image encoding failed");
+      return null;
+    });
+    const mounts: string[] = [];
+    for (const { paneId: id } of panes) {
+      lifecycle.subscribe(id, () => {
+        const mounted = lifecycle.isMounted(id);
+        lifecycle.committed(id, mounted);
+        markPaneSynced(id, mounted ? { updatedAt: store.updatedAt, theme: appearance } : null);
+        if (!mounted || hook.hasFreshPicture(id)) return;
+        mounts.push(id);
+        hook.paneSnapshots.request(
+          id,
+          id === "thread:e:t2" ? nearest : ({ isConnected: true } as HTMLElement),
+        );
+        if (id === "thread:e:t2") {
+          setTimeout(() => window.dispatchEvent(new Event("keydown")), 8000);
+        }
+      });
+    }
+    lifecycle.setPictures((id) => hook.hasFreshPicture(id));
+    lifecycle.setBackgroundPictures(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(mounts).toEqual(["thread:e:t2", "thread:e:t3"]);
+    expect(hook.hasFreshPicture("thread:e:t3")).toBe(true);
+    expect(snapshotFailures.mock.calls.length).toBeGreaterThan(0);
+    expect(snapshotFailures.mock.calls.every(([id]) => id === "thread:e:t2")).toBe(true);
+    lifecycle.dispose();
+  },
+);
+
+it.each(["motion", "input", "content", "readiness", "disconnect", "native"])(
+  "does not report a failed reservation when %s invalidates an unfinished capture",
+  async (change) => {
+    const pending = pendingPicture();
+    let canSnapshot = () => true;
+    snapshot.mockImplementationOnce((_element, allowed) => {
+      canSnapshot = allowed;
+      return pending.promise;
+    });
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const element = { isConnected: true };
+    hook.paneSnapshots.request(paneId, element as HTMLElement);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(snapshot).toHaveBeenCalledOnce();
+
+    if (change === "motion") hook.setCaptureActivity(true, true);
+    else if (change === "input") window.dispatchEvent(new Event("keydown"));
+    else if (change === "content") {
+      store.updatedAt = "u2";
+      await act(() => renderer!.update(<Probe />));
+    } else if (change === "readiness") markPaneSynced(paneId, null);
+    else if (change === "disconnect") element.isConnected = false;
+    else await act(() => hook.onPanePictureCaptured(pane, new Blob(["native winner"])));
+
+    if (change === "motion" || change === "input") {
+      expect(canSnapshot()).toBe(false);
+      hook.setCaptureActivity(true, false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+    }
+    await act(() => pending.resolve(null));
+    expect(snapshotFailures).not.toHaveBeenCalled();
+  },
+);
 
 it.each(["capture", "snapshot", undefined] as const)(
   "refreshes old drawing styles while preserving saved %s content",

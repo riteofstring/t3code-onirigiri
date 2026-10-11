@@ -37,8 +37,8 @@ type Direction = "left" | "right" | "up" | "down";
  * saved pictures. Visible views are never evicted to meet the retention target.
  * Neighbours, the next one in the direction of travel first, are prepared in
  * spare slots only while the page is idle and input has been quiet.
- * When nothing else is wanted, panes without a
- * picture are mounted the same way, nearest first, until they are pictured.
+ * When nothing else is wanted, untried panes mount nearest first; interrupted
+ * reservations take turns afterward until they are pictured.
  * Navigation cancels speculative work that has
  * not started yet.
  * Running conversations use spare retained slots after likely destinations;
@@ -81,8 +81,9 @@ export function createPaneLifecycleStore(
   let storedPicturesTimer: ReturnType<typeof setTimeout> | null = null;
   let storedPicturesWaited = false;
   // A pane mounted only so it can be pictured, and the panes already tried.
-  let picturing: { paneId: string; since: number; interrupted: boolean } | null = null;
-  const pictureAttempted = new Map<string, number>();
+  let picturing: { paneId: string; since: number; interrupted: boolean; failed: boolean } | null =
+    null;
+  const pictureAttempted = new Map<string, { since: number; retryAt: number }>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundPictures = false;
 
@@ -158,6 +159,12 @@ export function createPaneLifecycleStore(
     );
   };
 
+  const reservePicture = (paneId: string, interrupted: boolean) => {
+    const since = performance.now();
+    picturing = { paneId, since, interrupted, failed: false };
+    pictureAttempted.set(paneId, { since, retryAt: since + PICTURE_RETRY_MS });
+  };
+
   const retainForPicture = (paneId: string) => {
     if (
       picturing === null &&
@@ -167,14 +174,9 @@ export function createPaneLifecycleStore(
       !hasPicture(paneId) &&
       !pictureExcluded.has(paneId) &&
       !running.has(paneId) &&
-      performance.now() - (pictureAttempted.get(paneId) ?? -Infinity) >= PICTURE_RETRY_MS
+      performance.now() >= (pictureAttempted.get(paneId)?.retryAt ?? -Infinity)
     ) {
-      picturing = {
-        paneId,
-        since: performance.now(),
-        interrupted: moving || performance.now() - lastInput < INPUT_QUIET_MS,
-      };
-      pictureAttempted.set(paneId, performance.now());
+      reservePicture(paneId, moving || performance.now() - lastInput < INPUT_QUIET_MS);
       return true;
     }
     return false;
@@ -202,22 +204,25 @@ export function createPaneLifecycleStore(
     pictureTimer = null;
   };
 
-  // The nearest pane to focus that has no picture and was not tried yet.
+  // Untried panes go first, then the oldest attempt; distance breaks ties.
   const nextToPicture = (): string | null => {
     if (!backgroundPictures || !picturesReady) return null;
     const center = focused ? panes.get(focused) : undefined;
     let best: string | null = null;
+    let bestAttempt = Infinity;
     let bestDistance = Infinity;
     for (const pane of panes.values()) {
       if (mounted.has(pane.paneId)) continue;
       if (pictureExcluded.has(pane.paneId)) continue;
       const attempted = pictureAttempted.get(pane.paneId);
-      if (attempted !== undefined && performance.now() - attempted < PICTURE_RETRY_MS) continue;
+      if (attempted !== undefined && performance.now() < attempted.retryAt) continue;
       if (hasPicture(pane.paneId)) continue;
+      const since = attempted?.since ?? -Infinity;
       const distance = center
         ? Math.abs(pane.plane - center.plane) * 1000 + Math.abs(pane.slot - center.slot)
         : 0;
-      if (distance < bestDistance) {
+      if (since < bestAttempt || (since === bestAttempt && distance < bestDistance)) {
+        bestAttempt = since;
         bestDistance = distance;
         best = pane.paneId;
       }
@@ -236,8 +241,12 @@ export function createPaneLifecycleStore(
       !panes.has(paneId) ||
       performance.now() - since >= PICTURE_TIMEOUT_MS;
     if (!done) return true;
-    // Navigation can consume the reservation without giving capture a quiet opportunity.
-    if (hasPicture(paneId) || picturing.interrupted) pictureAttempted.delete(paneId);
+    if (hasPicture(paneId)) pictureAttempted.delete(paneId);
+    else if (picturing.interrupted && !picturing.failed) {
+      // Keep its place behind other missing panes without charging a missed capture as failure.
+      const attempted = pictureAttempted.get(paneId);
+      if (attempted) attempted.retryAt = performance.now();
+    }
     if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
     picturing = null;
     return false;
@@ -263,7 +272,7 @@ export function createPaneLifecycleStore(
                 !mounted.has(paneId) &&
                 !pictureExcluded.has(paneId) &&
                 !hasPicture(paneId)
-                  ? [attempted + PICTURE_RETRY_MS]
+                  ? [attempted.retryAt]
                   : [],
               ),
             )
@@ -323,8 +332,7 @@ export function createPaneLifecycleStore(
       }
       return;
     }
-    // With nothing likely to be needed soon, panes without a picture are
-    // mounted one at a time so they can be pictured, nearest first.
+    // With nothing likely to be needed soon, missing pictures share one mount slot.
     const waitForPicture = (ms: number) => {
       pictureTimer = setTimeout(() => {
         pictureTimer = null;
@@ -350,8 +358,7 @@ export function createPaneLifecycleStore(
       (paneId) => panes.has(paneId) && mustRetain(paneId) && paneId !== focused,
     ).length;
     if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
-    pictureAttempted.set(paneId, performance.now());
-    picturing = { paneId, since: performance.now(), interrupted: false };
+    reservePicture(paneId, false);
     mountPrepared(paneId);
   };
 
@@ -479,6 +486,9 @@ export function createPaneLifecycleStore(
       if (waitingFor !== paneId || isMounted !== mounted.has(paneId)) return;
       clearCommitWait();
       schedule();
+    },
+    pictureFailed: (paneId: string, startedAt: number) => {
+      if (picturing?.paneId === paneId && startedAt >= picturing.since) picturing.failed = true;
     },
     /** Saved pictures bridge camera motion before expensive view mounts resume. */
     setMoving: (next: boolean) => {
