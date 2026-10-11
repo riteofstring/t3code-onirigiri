@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
   composerVersion: 0,
   composerActions: [] as number[],
   activeKeys: 0,
+  shellUpdatedAt: "u1",
+  running: false,
   detail: null as { updatedAt: string } | null,
   status: "synchronizing" as "synchronizing" | "live" | "deleted",
   panelDurationMs: 200,
@@ -33,24 +35,34 @@ const state = vi.hoisted(() => ({
   suspended: false,
   engineReady: false,
   engineRevision: "",
+  engineRevisions: [] as string[],
   listeners: new Set<() => void>(),
 }));
 
-vi.mock("@riteofstring/onirigiri", () => ({
-  useOnirigiriPaneContentReady: (ready: boolean, revision: string) => {
-    state.engineReady = ready;
-    state.engineRevision = revision;
-  },
-  useOnirigiriPaneInteractive: () => state.interactive,
-}));
+vi.mock("@riteofstring/onirigiri", async () => {
+  const { useLayoutEffect } = await import("react");
+  return {
+    useOnirigiriPaneContentReady: (ready: boolean, revision: string) => {
+      useLayoutEffect(() => {
+        if (state.engineRevision !== revision) state.engineRevisions.push(revision);
+        state.engineReady = ready;
+        state.engineRevision = revision;
+      }, [ready, revision]);
+    },
+    useOnirigiriPaneInteractive: () => state.interactive,
+  };
+});
 vi.mock("./paneLifecycle", async () => {
   const { createContext } = await import("react");
   return { PaneLifecycleContext: createContext(null), usePaneMounted: () => state.mounted };
 });
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThreadShell: () => ({ updatedAt: "u1", latestTurn: null }),
-  useThreadDetail: () => state.detail,
-  useThreadStatus: () => state.status,
+  useThreadShell: () => ({
+    updatedAt: state.shellUpdatedAt,
+    latestTurn: state.running ? { state: "running" } : null,
+  }),
+  useThreadDetail: (ref: ScopedThreadRef | null) => (ref === null ? null : state.detail),
+  useThreadStatus: (ref: ScopedThreadRef | null) => (ref === null ? "empty" : state.status),
 }));
 vi.mock("./useSavedPanePictures", async () => {
   const { createContext } = await import("react");
@@ -209,6 +221,8 @@ beforeEach(() => {
   state.activeKeys = 0;
   appComposerRef = { current: null };
   workspaceActive = true;
+  state.shellUpdatedAt = "u1";
+  state.running = false;
   state.detail = null;
   state.status = "synchronizing";
   state.panelDurationMs = 200;
@@ -220,6 +234,7 @@ beforeEach(() => {
   state.suspended = false;
   state.engineReady = false;
   state.engineRevision = "";
+  state.engineRevisions = [];
   let visualRevision = 0;
   requestSnapshot = vi.fn(() => visualRevision);
   invalidateSnapshot = vi.fn(() => {
@@ -258,15 +273,21 @@ it("prepares a background view after its detail arrives and retains its draft du
   state.detail = { updatedAt: "u1" };
   state.status = "live";
   await render();
+  await act(() => vi.advanceTimersByTimeAsync(32));
   const editor = container.querySelector("textarea")!;
   expect(editor).not.toBeNull();
   editor.value = "Keep this draft";
+  const revision = state.engineRevision;
+  requestSnapshot.mockClear();
 
   state.detail = null;
   state.status = "synchronizing";
   await render();
   expect(container.querySelector("textarea")).toBe(editor);
   expect(editor.value).toBe("Keep this draft");
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(revision);
+  expect(requestSnapshot).not.toHaveBeenCalled();
 
   state.mounted = false;
   await render();
@@ -871,13 +892,108 @@ it("reuses the picture revision when unchanged content is released and remounted
   state.status = "live";
   await render(true);
   const before = state.engineRevision;
+  const revisions = [...state.engineRevisions];
   invalidateSnapshot.mockClear();
   state.mounted = false;
   await render(true);
+  expect(state.engineReady).toBe(false);
+  expect(state.engineRevision).toBe(before);
+  expect(state.engineRevisions).toEqual(revisions);
   state.mounted = true;
   await render(true);
   await act(() => vi.advanceTimersByTimeAsync(32));
   expect(state.engineReady).toBe(true);
   expect(state.engineRevision).toBe(before);
+  expect(state.engineRevisions).toEqual(revisions);
   expect(invalidateSnapshot).not.toHaveBeenCalled();
+});
+
+it("invalidates the picture revision when the shell changes while content is released", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const before = state.engineRevision;
+  state.mounted = false;
+  await render(false);
+  expect(state.engineRevision).toBe(before);
+  requestSnapshot.mockClear();
+
+  state.shellUpdatedAt = "u2";
+  await render(false);
+  expect(state.engineReady).toBe(false);
+  expect(state.engineRevision).not.toBe(before);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+});
+
+it("invalidates the picture revision when mounted detail changes", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const before = state.engineRevision;
+  const editor = container.querySelector("textarea");
+  requestSnapshot.mockClear();
+
+  state.detail = { updatedAt: "u2" };
+  await render(true);
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(before);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+});
+
+it("invalidates the picture revision when remounted detail has changed", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const before = state.engineRevision;
+  const revisions = [...state.engineRevisions];
+  state.mounted = false;
+  await render(false);
+  expect(state.engineRevisions).toEqual(revisions);
+
+  state.detail = { updatedAt: "u2" };
+  state.mounted = true;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(before);
+  expect(state.engineRevisions).toEqual([...revisions, state.engineRevision]);
+});
+
+it("invalidates the picture revision when subscribed detail is deleted", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const before = state.engineRevision;
+  requestSnapshot.mockClear();
+
+  state.detail = null;
+  state.status = "deleted";
+  state.hasChatView = false;
+  await render(true);
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(before);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+});
+
+it("defers shell and detail picture revisions until a running turn settles", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const before = state.engineRevision;
+  requestSnapshot.mockClear();
+
+  state.running = true;
+  state.shellUpdatedAt = "u2";
+  state.detail = { updatedAt: "u2" };
+  await render(true);
+  expect(state.engineRevision).toBe(before);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  state.running = false;
+  await render(true);
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).not.toBe(before);
+  expect(requestSnapshot).toHaveBeenCalledOnce();
 });

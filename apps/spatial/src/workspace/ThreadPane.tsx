@@ -156,10 +156,15 @@ function usePaneContent(
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = shell?.latestTurn?.state === "running";
-  const nextContentRevision = `${updatedAt}|${detailUpdatedAt}`;
-  const [contentRevision, setContentRevision] = useState(nextContentRevision);
-  if (!running && contentRevision !== nextContentRevision) setContentRevision(nextContentRevision);
-  const revision = `${contentRevision}|${pictureTheme}`;
+  const [contentRevision, setContentRevision] = useState({ updatedAt, detailUpdatedAt });
+  const nextDetailUpdatedAt = mounted ? detailUpdatedAt : contentRevision.detailUpdatedAt;
+  if (
+    !running &&
+    (contentRevision.updatedAt !== updatedAt ||
+      contentRevision.detailUpdatedAt !== nextDetailUpdatedAt)
+  )
+    setContentRevision({ updatedAt, detailUpdatedAt: nextDetailUpdatedAt });
+  const revision = `${contentRevision.updatedAt}|${contentRevision.detailUpdatedAt}|${pictureTheme}`;
   const [settled, setSettled] = useState(false);
   const [viewReady, setViewReady] = useState(false);
   const contentReady = status === "deleted" || viewReady;
