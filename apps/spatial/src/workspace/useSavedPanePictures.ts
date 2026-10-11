@@ -66,6 +66,7 @@ export type RequestPaneSnapshot = (
 ) => number;
 
 interface PaneSnapshots {
+  geometryVersion: number;
   request: RequestPaneSnapshot;
   invalidate: (paneId: string) => void;
   setLiveProducer: (paneId: string, present: boolean) => number;
@@ -209,7 +210,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     if (!element) return;
     const observer = new ResizeObserver(([entry]) => {
       const size = entry?.contentRect;
-      if (!size) return;
+      if (!size || size.width <= 0 || size.height <= 0) return;
       const next = `${Math.round(size.width)}x${Math.round(size.height)}`;
       if (stageSizeRef.current === next) return;
       stageSizeRef.current = next;
@@ -323,12 +324,11 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         picture.revision === pictureRevision(`${contentKey(content)}|${geometry}`, picture.source)
           ? picture.image
           : null;
-      if (fresh) lastValidPictures.current.set(paneId, fresh);
       return fresh ?? lastValidPictures.current.get(paneId) ?? null;
     },
     [geometryRevision, saved],
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     for (const paneId of lastValidPictures.current.keys()) {
       if (retainedRef.current.has(paneId) || !saved?.has(paneId) || !contentRevisions.has(paneId)) {
         lastValidPictures.current.delete(paneId);
@@ -338,12 +338,13 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
       new Set([
         ...[...contentRevisions.keys()].flatMap((paneId) => {
           const image = freshPictureFor(paneId);
+          if (image) lastValidPictures.current.set(paneId, image);
           return image ? [image] : [];
         }),
         ...lastValidPictures.current.values(),
       ]),
     );
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry changes can replace the retained cover read during render.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
   }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, retained, saved]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
@@ -363,6 +364,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
       pictureVisualRevisions.current.set(picture.image, revision);
+      lastValidPictures.current.set(picture.paneId, picture.image);
       if (retainedRef.current.get(picture.paneId) === "awaiting-picture") {
         const next = new Map(retainedRef.current);
         next.delete(picture.paneId);
@@ -479,15 +481,31 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
     () =>
       snapshots.setDraw(
         (...args) => drawSnapshotRef.current(...args),
-        (paneId) =>
-          retainedRef.current.get(paneId) === "awaiting-picture" &&
-          contentRevisionsRef.current.has(paneId) &&
-          syncedPanes.has(paneId),
+        (paneId) => {
+          const content = contentRevisionsRef.current.get(paneId);
+          const geometry = geometryRevision(paneId);
+          if (
+            !content ||
+            !geometry ||
+            retainedRef.current.get(paneId) === "live" ||
+            runningPanesRef.current.has(paneId) ||
+            !syncedPanes.has(paneId)
+          )
+            return false;
+          const previous = savedRef.current?.get(paneId);
+          return (
+            !previous ||
+            previous.revision !==
+              pictureRevision(`${contentKey(content)}|${geometry}`, previous.source) ||
+            !pictureMatchesVisualRevision(paneId, previous.image)
+          );
+        },
       ),
-    [snapshots],
+    [geometryRevision, pictureMatchesVisualRevision, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
+      geometryVersion,
       invalidate: (paneId) => {
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
       },
@@ -512,7 +530,7 @@ export function useSavedPanePictures(getLayout: () => OnirigiriLayout | null): {
         return visualRevision(paneId);
       },
     }),
-    [snapshots, updateRetained, updateSaved, visualRevision],
+    [geometryVersion, snapshots, updateRetained, updateSaved, visualRevision],
   );
 
   return {

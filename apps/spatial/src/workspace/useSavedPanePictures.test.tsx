@@ -376,6 +376,73 @@ it("does not display an old persisted picture that was never valid in this sessi
   expect(hook.pictureFor(paneId)).toBeNull();
 });
 
+it.each(["stored", "captured"])(
+  "retains a validated %s cover through resize without a placeholder render",
+  async (source) => {
+    const image = new Blob(["cover"]);
+    if (source === "stored") {
+      store.saved.set(paneId, {
+        paneId,
+        revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+        image,
+        savedAt: 1,
+        source: "capture",
+      });
+    }
+    await mount();
+    if (source === "captured") {
+      markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+      await act(() => hook.onPanePictureCaptured(pane, image));
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const url = hook.preparedPictureUrl(image);
+    expect(url).not.toBeNull();
+    await act(() => resize(900, 600));
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    expect(hook.getPanePicture(pane)).toBeNull();
+    expect(hook.pictureFor(paneId)).toBe(image);
+    expect(hook.preparedPictureUrl(image)).toBe(url);
+    expect(revokedUrls).not.toContain(url);
+  },
+);
+
+it("keeps validated geometry while a workspace is temporarily hidden", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const image = new Blob(["cover"]);
+  await act(() => hook.onPanePictureCaptured(pane, image));
+  const version = hook.paneSnapshots.geometryVersion;
+  await act(() => resize(0, 0));
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.paneSnapshots.geometryVersion).toBe(version);
+  await act(() => resize(800, 600));
+  expect(hook.getPanePicture(pane)?.image).toBe(image);
+});
+
+it("retries a failed static capture without another interaction", async () => {
+  snapshot.mockResolvedValueOnce(null);
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(store.writes).toHaveLength(0);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(snapshot).toHaveBeenCalledTimes(2);
+  expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+  expect(snapshot).toHaveBeenCalledTimes(2);
+});
+
 it.each(["capture", "snapshot", undefined] as const)(
   "refreshes old drawing styles while preserving saved %s content",
   async (source) => {

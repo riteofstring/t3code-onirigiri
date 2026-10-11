@@ -150,6 +150,7 @@ let appSuppressed: boolean;
 let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
 let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
 let snapshots: {
+  geometryVersion: number;
   request: RequestPaneSnapshot;
   invalidate: (paneId: string) => void;
   setLiveProducer: (paneId: string, present: boolean) => number;
@@ -226,6 +227,7 @@ beforeEach(() => {
   });
   liveProducer = false;
   snapshots = {
+    geometryVersion: 0,
     request: requestSnapshot,
     invalidate: invalidateSnapshot,
     setLiveProducer: (_paneId, present) => {
@@ -442,6 +444,21 @@ it("reuses an unchanged picture through repeated focus changes without replacing
   expect(invalidateSnapshot).not.toHaveBeenCalled();
   expect(container.querySelector("textarea")).toBe(editor);
   expect(editor.value).toBe("Keep this unsent draft");
+});
+
+it("requests replacement pixels after a resize without remounting live content", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep my draft through resize";
+  requestSnapshot.mockClear();
+  snapshots = { ...snapshots, geometryVersion: snapshots.geometryVersion + 1 };
+  await render(true);
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep my draft through resize");
 });
 
 it.each(["wheel", "scroll"])(
