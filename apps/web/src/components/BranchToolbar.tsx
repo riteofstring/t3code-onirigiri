@@ -362,6 +362,9 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
   const measure = useCallback(() => {
     const { element: current, overflows: compact } = stateRef.current;
     if (!current) return;
+    // Geometry reads would force layout inside a retained pane whose content
+    // the browser is skipping. ResizeObserver measures it when it is shown.
+    if (!current.checkVisibility({ contentVisibilityAuto: true })) return false;
     const available = current.clientWidth;
     if (available === 0) return;
     // flex-1 stretches the groups to fill the strip, so their own boxes always
@@ -496,13 +499,24 @@ function useLabelsOverflow(element: HTMLDivElement | null): boolean {
     // Changes arrive in bursts while a ChatView mounts; one measurement per
     // frame, still before paint, covers them.
     let frame: number | null = null;
+    let waitingForVisibility = false;
     const scheduleMeasure = () => {
       frame ??= requestAnimationFrame(() => {
         frame = null;
-        measure();
+        const skipped = measure() === false;
+        if (skipped && !waitingForVisibility) {
+          // A fresh observation delivers on reveal even if the strip's size
+          // is unchanged. Reobserve only once while its content stays skipped.
+          observer.unobserve(element);
+          observer.observe(element);
+        }
+        waitingForVisibility = skipped;
       });
     };
-    const observer = new ResizeObserver(scheduleMeasure);
+    const observer = new ResizeObserver(() => {
+      waitingForVisibility = false;
+      scheduleMeasure();
+    });
     observer.observe(element);
     const mutations = new MutationObserver(scheduleMeasure);
     mutations.observe(element, {
