@@ -203,6 +203,7 @@ import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { useActiveChatViewEffect, useChatViewActivity } from "./chatViewActivity";
 import { useChatViewContentReady } from "./chatViewContentReady";
+import { useChatViewVcsStatus } from "./chatViewVcsStatus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -3639,7 +3640,7 @@ export default function ChatView(props: ChatViewProps) {
       })
     : null;
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
-  const gitStatusQuery = useEnvironmentQuery(
+  const gitStatusQuery = useChatViewVcsStatus(
     gitStatusCwd === null
       ? null
       : vcsEnvironment.status({
@@ -3647,10 +3648,11 @@ export default function ChatView(props: ChatViewProps) {
           input: { cwd: gitStatusCwd },
         }),
   );
+  const refreshGitStatus = gitStatusQuery.refresh;
   useWorkspaceMutationRefresh({
     enabled: gitStatusCwd !== null,
     mutationId: workspaceMutationId,
-    refresh: gitStatusQuery.refresh,
+    refresh: refreshGitStatus,
     resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -6267,18 +6269,18 @@ export default function ChatView(props: ChatViewProps) {
             }),
           );
         }
-        gitStatusQuery.refresh();
+        refreshGitStatus();
         return;
       }
     }
-    gitStatusQuery.refresh();
+    refreshGitStatus();
     setIsRestoringThreadBranch(false);
     scheduleComposerFocus();
   }, [
     activeProjectCwd,
     activeThread,
     environmentId,
-    gitStatusQuery,
+    refreshGitStatus,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     scheduleComposerFocus,
