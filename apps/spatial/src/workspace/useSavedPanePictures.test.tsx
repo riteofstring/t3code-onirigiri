@@ -243,6 +243,7 @@ it.each(["native", "fallback"])(
     await mount();
     const nextId = "thread:e:t201";
     expect(hook.canBackgroundPicture(nextId)).toBe(false);
+    expect(hook.canBackgroundPicture(nextId, true)).toBe(true);
     expect(hook.canBackgroundPicture(paneId)).toBe(true);
     markPaneSynced(nextId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     if (source === "native") {
@@ -283,6 +284,38 @@ it("saves captures only from panes showing a synchronized thread", async () => {
   });
 });
 
+it.each(["native", "fallback"])(
+  "restores an accepted %s picture after the workspace is recreated",
+  async (source) => {
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    if (source === "native") {
+      await act(() => hook.onPanePictureCaptured(pane, new Blob(["saved pixels"])));
+    } else {
+      hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+    }
+    expect(store.writes).toHaveLength(1);
+    const accepted = store.writes[0]!;
+    const previousUrl = hook.pictureUrl(accepted.image);
+    const draws = snapshot.mock.calls.length;
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    markPaneSynced(paneId, null);
+    store.saved.set(paneId, accepted);
+
+    await mount();
+    expect(hook.getPanePicture(pane)?.image).toBe(accepted.image);
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(hook.pictureUrl(accepted.image)).not.toBe(previousUrl);
+    expect(revokedUrls).toContain(previousUrl);
+    expect(snapshot).toHaveBeenCalledTimes(draws);
+    expect(store.writes).toHaveLength(1);
+  },
+);
+
 it("keeps the last completed picture through streaming and saves the completed turn", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
@@ -292,6 +325,7 @@ it("keeps the last completed picture through streaming and saves the completed t
   store.running = true;
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
+  expect(hook.canBackgroundPicture(paneId, true)).toBe(false);
   await act(() => hook.onPanePictureCaptured(pane, new Blob(["partial"])));
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.image).toBe(previous);
@@ -1315,6 +1349,7 @@ it.each(["native", "fallback"])(
     expect(hook.pictureFor(paneId)).toBeNull();
     expect(hook.retainedPaneIds.has(paneId)).toBe(true);
     expect(hook.canBackgroundPicture(paneId)).toBe(false);
+    expect(hook.canBackgroundPicture(paneId, true)).toBe(false);
     expect(hook.getPanePresentation).not.toBe(originalPresentation);
     expect(store.deleted).toContain(paneId);
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);

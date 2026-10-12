@@ -37,8 +37,8 @@ type Direction = "left" | "right" | "up" | "down";
  * saved pictures. Visible views are never evicted to meet the retention target.
  * Neighbours, the next one in the direction of travel first, are prepared in
  * spare slots only while the page is idle and input has been quiet.
- * When nothing else is wanted, untried panes mount nearest first; interrupted
- * reservations take turns afterward until they are pictured.
+ * When nothing else is wanted, untried visits precede untouched panes;
+ * interrupted reservations take turns afterward until they are pictured.
  * Navigation cancels speculative work that has
  * not started yet.
  * Running conversations use spare retained slots after likely destinations;
@@ -75,6 +75,8 @@ export function createPaneLifecycleStore(
   let lastInput = 0;
   let clock = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
+  let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
+  const unpicturedVisits = new Set<string>();
   let freshPictures = new Set<string>();
   let pictureExcluded = new Set<string>();
   let picturesReady = true;
@@ -86,6 +88,7 @@ export function createPaneLifecycleStore(
   const pictureAttempted = new Map<string, { since: number; retryAt: number }>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundPictures = false;
+  const pictureEligible = (paneId: string) => canPicture(paneId, unpicturedVisits.has(paneId));
 
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
@@ -172,7 +175,7 @@ export function createPaneLifecycleStore(
       picturesReady &&
       viewed.has(paneId) &&
       !hasPicture(paneId) &&
-      !pictureExcluded.has(paneId) &&
+      pictureEligible(paneId) &&
       !running.has(paneId) &&
       performance.now() >= (pictureAttempted.get(paneId)?.retryAt ?? -Infinity)
     ) {
@@ -206,25 +209,32 @@ export function createPaneLifecycleStore(
     pictureTimer = null;
   };
 
-  // Untried panes go first, then the oldest attempt; distance breaks ties.
+  // Untried panes go first, then the oldest attempt; visits break ties before distance.
   const nextToPicture = (): string | null => {
     if (!backgroundPictures || !picturesReady) return null;
     const center = focused ? panes.get(focused) : undefined;
     let best: string | null = null;
     let bestAttempt = Infinity;
+    let bestVisited = false;
     let bestDistance = Infinity;
     for (const pane of panes.values()) {
       if (mounted.has(pane.paneId)) continue;
-      if (pictureExcluded.has(pane.paneId)) continue;
+      if (!pictureEligible(pane.paneId)) continue;
       const attempted = pictureAttempted.get(pane.paneId);
       if (attempted !== undefined && performance.now() < attempted.retryAt) continue;
       if (hasPicture(pane.paneId)) continue;
       const since = attempted?.since ?? -Infinity;
+      const visited = unpicturedVisits.has(pane.paneId);
       const distance = center
         ? Math.abs(pane.plane - center.plane) * 1000 + Math.abs(pane.slot - center.slot)
         : 0;
-      if (since < bestAttempt || (since === bestAttempt && distance < bestDistance)) {
+      if (
+        since < bestAttempt ||
+        (since === bestAttempt &&
+          ((visited && !bestVisited) || (visited === bestVisited && distance < bestDistance)))
+      ) {
         bestAttempt = since;
+        bestVisited = visited;
         bestDistance = distance;
         best = pane.paneId;
       }
@@ -272,7 +282,7 @@ export function createPaneLifecycleStore(
               ...[...pictureAttempted].flatMap(([paneId, attempted]) =>
                 panes.has(paneId) &&
                 !mounted.has(paneId) &&
-                !pictureExcluded.has(paneId) &&
+                pictureEligible(paneId) &&
                 !hasPicture(paneId)
                   ? [attempted.retryAt]
                   : [],
@@ -549,6 +559,9 @@ export function createPaneLifecycleStore(
       for (const paneId of mounted) if (!panes.has(paneId)) unmount(paneId);
       for (const paneId of visible) if (!panes.has(paneId)) visible.delete(paneId);
       for (const paneId of viewed) if (!panes.has(paneId)) viewed.delete(paneId);
+      for (const paneId of unpicturedVisits) {
+        if (!panes.has(paneId)) unpicturedVisits.delete(paneId);
+      }
       for (const paneId of pictureAttempted.keys()) {
         if (!panes.has(paneId)) pictureAttempted.delete(paneId);
       }
@@ -590,12 +603,14 @@ export function createPaneLifecycleStore(
     setPictures: (
       pictured: (paneId: string) => boolean,
       loaded = true,
-      canPicture: (paneId: string) => boolean = () => true,
+      eligible: (paneId: string, visited: boolean) => boolean = () => true,
     ) => {
       hasPicture = pictured;
+      canPicture = eligible;
       const ready = loaded || storedPicturesWaited;
       const next = new Set([...panes.keys()].filter(pictured));
-      const excluded = new Set([...panes.keys()].filter((paneId) => !canPicture(paneId)));
+      for (const paneId of next) unpicturedVisits.delete(paneId);
+      const excluded = new Set([...panes.keys()].filter((paneId) => !pictureEligible(paneId)));
       const changed =
         ready !== picturesReady ||
         next.size !== freshPictures.size ||
@@ -623,6 +638,7 @@ export function createPaneLifecycleStore(
       if (visible.has(paneId) === isVisible) return;
       if (isVisible) {
         visible.add(paneId);
+        if (panes.has(paneId) && !hasPicture(paneId)) unpicturedVisits.add(paneId);
         if (mounted.has(paneId)) viewed.add(paneId);
       } else visible.delete(paneId);
       requestSettle();

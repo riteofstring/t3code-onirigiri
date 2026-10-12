@@ -133,8 +133,8 @@ export function useSavedPanePictures(
   preparedPictureUrl: (image: Blob) => string | null;
   pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
-  /** Passive preparation fills free slots or refreshes existing pictures. */
-  canBackgroundPicture: (paneId: string) => boolean;
+  /** Passive preparation fills free slots; an unpictured visit may replace an older entry. */
+  canBackgroundPicture: (paneId: string, visited?: boolean) => boolean;
   runningPanes: ReadonlySet<string>;
   retainedPaneIds: ReadonlySet<string>;
   picturesLoaded: boolean;
@@ -281,10 +281,10 @@ export function useSavedPanePictures(
     [contentRevisions, saved],
   );
   const canBackgroundPicture = useCallback(
-    (paneId: string) =>
+    (paneId: string, visited = false) =>
       retained.get(paneId) !== "live" &&
       !runningPanes.has(paneId) &&
-      (saved === null || saved.has(paneId) || savedHere < MAX_SAVED),
+      (visited || saved === null || saved.has(paneId) || savedHere < MAX_SAVED),
     [retained, runningPanes, saved, savedHere],
   );
   const runningPanesRef = useRef(runningPanes);

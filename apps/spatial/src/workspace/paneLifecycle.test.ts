@@ -852,6 +852,110 @@ it("mounts panes without a picture one at a time to picture them, then lets them
   store.dispose();
 });
 
+it("pictures a briefly visible pane after rest before untouched panes", () => {
+  const input = new EventTarget();
+  vi.stubGlobal("window", input);
+  const panes = row(8);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const pictured = new Set(["p0-0", "p0-1"]);
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => store.committed(paneId, store.isMounted(paneId)));
+  }
+  store.setPictures((paneId) => pictured.has(paneId));
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  store.setVisible("p0-6", true);
+  vi.advanceTimersByTime(45);
+  store.setVisible("p0-6", false);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-6")).toBe(false);
+
+  input.dispatchEvent(new Event("keydown"));
+  store.setMoving(false);
+  vi.advanceTimersByTime(2900);
+  expect(store.isMounted("p0-6")).toBe(false);
+  vi.advanceTimersByTime(200);
+  expect(store.isMounted("p0-6")).toBe(true);
+  expect(store.isMounted("p0-2")).toBe(false);
+
+  pictured.add("p0-6");
+  store.setPictures((paneId) => pictured.has(paneId));
+  vi.advanceTimersByTime(1200);
+  expect(store.isMounted("p0-6")).toBe(false);
+  expect(store.isMounted("p0-2")).toBe(true);
+  store.dispose();
+});
+
+it("prepares a crossed pane at cache capacity without refilling its later eviction", () => {
+  const panes = row(8);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  const pictured = new Set(["p0-0", "p0-1"]);
+  const canPicture = (paneId: string, visited = false) => pictured.has(paneId) || visited;
+  const mounts: string[] = [];
+  for (const { paneId } of panes) {
+    store.subscribe(paneId, () => {
+      if (store.isMounted(paneId)) mounts.push(paneId);
+      store.committed(paneId, store.isMounted(paneId));
+    });
+  }
+  store.setPictures((paneId) => pictured.has(paneId), true, canPicture);
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  store.setVisible("p0-6", true);
+  store.setVisible("p0-6", false);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-6")).toBe(false);
+  store.setMoving(false);
+  vi.advanceTimersByTime(3500);
+  expect(store.isMounted("p0-6")).toBe(true);
+  expect(store.isMounted("p0-2")).toBe(false);
+
+  pictured.add("p0-6");
+  store.setPictures((paneId) => pictured.has(paneId), true, canPicture);
+  vi.advanceTimersByTime(1200);
+  expect(store.isMounted("p0-6")).toBe(false);
+  pictured.delete("p0-6");
+  store.setPictures((paneId) => pictured.has(paneId), true, canPicture);
+  vi.advanceTimersByTime(6 * 60_000);
+  expect(mounts.filter((paneId) => paneId === "p0-6")).toHaveLength(1);
+
+  store.setVisible("p0-6", true);
+  store.setVisible("p0-6", false);
+  vi.advanceTimersByTime(3500);
+  expect(mounts.filter((paneId) => paneId === "p0-6")).toHaveLength(2);
+  store.dispose();
+});
+
+it.each(["never visible", "removed"])(
+  "does not prioritize a %s pane at cache capacity",
+  (condition) => {
+    const panes = row(8);
+    const store = createPaneLifecycleStore(panes, "p0-0");
+    const pictured = new Set(["p0-0", "p0-1"]);
+    store.setPictures(
+      (paneId) => pictured.has(paneId),
+      true,
+      (paneId, visited = false) => pictured.has(paneId) || visited,
+    );
+    store.setBackgroundPictures(true);
+    store.setMoving(true);
+    if (condition === "removed") {
+      store.setVisible("p0-6", true);
+      store.setVisible("p0-6", false);
+      store.setPanes(panes.filter((pane) => pane.paneId !== "p0-6"));
+      store.setPanes(panes);
+    } else {
+      store.setFocus("p0-6");
+      store.setFocus("p0-0");
+    }
+    vi.advanceTimersByTime(1000);
+    store.setMoving(false);
+    drain(store, panes);
+    expect(store.isMounted("p0-6")).toBe(false);
+    store.dispose();
+  },
+);
+
 it.each(["keydown", "pointerdown", "wheel"])(
   "waits for input to quiet after %s between background pictures",
   (type) => {
