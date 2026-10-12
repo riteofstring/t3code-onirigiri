@@ -1,6 +1,8 @@
 import type { WorkspaceFocusAnchor } from "@riteofstring/onirigiri";
 import { useCallback, useState } from "react";
 
+import { Button } from "@t3tools/web/src/components/ui/button";
+
 const STORAGE_KEY = "onirigiri-t3:focus-anchor";
 
 function readFocusAnchor(): WorkspaceFocusAnchor {
@@ -28,7 +30,6 @@ export function useFocusAnchorPreference() {
   return [focusAnchor, toggle] as const;
 }
 
-/** A workspace control, styled like Onirigiri's own, that switches the focus anchor. */
 export function FocusAnchorToggle({
   focusAnchor,
   onToggle,
@@ -39,62 +40,55 @@ export function FocusAnchorToggle({
   const centered = focusAnchor === "center";
   const label = centered ? "Keep the focused pane at the left" : "Center the focused pane";
   return (
-    <div className="onirigiri-workspace__desktop-controls">
-      <div className="onirigiri-workspace__toolbar">
-        <button
-          type="button"
-          className="onirigiri-workspace__control"
-          data-available="true"
-          aria-label={label}
-          onClick={onToggle}
-        >
-          <svg
-            aria-hidden="true"
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <rect x="1.5" y="3" width="13" height="10" rx="1.5" />
-            {centered ? (
-              <rect x="5.5" y="5.5" width="5" height="5" fill="currentColor" stroke="none" />
-            ) : (
-              <rect x="3.5" y="5.5" width="5" height="5" fill="currentColor" stroke="none" />
-            )}
-          </svg>
-        </button>
-      </div>
-    </div>
+    <Button
+      variant="ghost-muted"
+      size="icon-xs"
+      aria-label={label}
+      title={label}
+      onClick={onToggle}
+    >
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <rect x="1.5" y="3" width="13" height="10" rx="1.5" />
+        {centered ? (
+          <rect x="5.5" y="5.5" width="5" height="5" fill="currentColor" stroke="none" />
+        ) : (
+          <rect x="3.5" y="5.5" width="5" height="5" fill="currentColor" stroke="none" />
+        )}
+      </svg>
+    </Button>
   );
 }
 
 /** A workspace control that opens a new, empty pane beside the focused one. */
 export function AddPaneButton({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="onirigiri-workspace__desktop-controls">
-      <div className="onirigiri-workspace__toolbar">
-        <button
-          type="button"
-          className="onirigiri-workspace__control"
-          data-available="true"
-          aria-label="Add a pane (Option+N)"
-          onClick={onAdd}
-        >
-          <svg
-            aria-hidden="true"
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <path d="M8 3v10M3 8h10" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-    </div>
+    <Button
+      variant="ghost-muted"
+      size="icon-xs"
+      aria-label="Add a pane"
+      aria-keyshortcuts="Alt+N"
+      title="Add a pane (Alt+N)"
+      onClick={onAdd}
+    >
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <path d="M8 3v10M3 8h10" strokeLinecap="round" />
+      </svg>
+    </Button>
   );
 }

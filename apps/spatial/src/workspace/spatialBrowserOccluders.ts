@@ -8,5 +8,12 @@ export function spatialBrowserOccluders(slot: HTMLElement): HTMLElement[] {
       occluders.push(child);
     }
   }
+  const workspace = stage.closest(".spatial-workspace");
+  const controls = workspace?.querySelector(":scope > [data-spatial-workspace-controls]");
+  if (controls) {
+    for (const child of controls.children) {
+      if (child instanceof HTMLElement) occluders.push(child);
+    }
+  }
   return occluders;
 }

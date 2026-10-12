@@ -42,10 +42,54 @@
   --onirigiri-muted: var(--muted-foreground);
   --onirigiri-edge: var(--border);
   --onirigiri-divider: var(--border);
-  --onirigiri-control: var(--card);
+  --onirigiri-focus: var(--muted-foreground);
+  --onirigiri-focus-ring-size: 0px;
+  --onirigiri-control: transparent;
   --onirigiri-control-hover: var(--accent);
-  --onirigiri-toolbar: var(--card);
+  --onirigiri-control-shadow: none;
+  --onirigiri-control-size: 24px;
+  --onirigiri-control-icon-size: 14px;
+  --onirigiri-toolbar: transparent;
+  --onirigiri-toolbar-shadow: none;
+  --onirigiri-toolbar-padding: 0px;
   --onirigiri-minimap-background: var(--card);
+}
+
+.spatial-workspace-controls {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  z-index: 40;
+}
+
+.spatial-workspace-controls__popup {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  padding-block-start: 4px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+}
+
+.spatial-workspace-controls__surface {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+}
+
+.spatial-workspace-controls__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.spatial-workspace-controls__hint {
+  margin: 4px 3px 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 
 /* Overview chrome overlays the thread's own header without resizing its content. */

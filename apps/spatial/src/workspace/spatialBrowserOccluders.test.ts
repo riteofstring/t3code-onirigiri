@@ -10,6 +10,8 @@ afterEach(() => {
 });
 
 function createWorkspace(parent: HTMLElement = document.body) {
+  const spatial = document.createElement("div");
+  spatial.className = "spatial-workspace";
   const workspace = document.createElement("div");
   workspace.className = "onirigiri-workspace";
   const stage = document.createElement("div");
@@ -21,8 +23,9 @@ function createWorkspace(parent: HTMLElement = document.body) {
   world.append(pane);
   stage.append(world);
   workspace.append(stage);
-  parent.append(workspace);
-  return { stage, pane, slot };
+  spatial.append(workspace);
+  parent.append(spatial);
+  return { spatial, stage, pane, slot };
 }
 
 function createMinimap(parent: HTMLElement, bounds = new DOMRect(200, 50, 100, 150)) {
@@ -96,6 +99,42 @@ describe("spatialBrowserOccluders", () => {
     stage.append(svg);
 
     expect(guestClip(slot)).toBe('path("M0 0H400V300H0Z")');
+  });
+
+  it("clips both the controls trigger and its popup as they open and close", () => {
+    const { spatial, slot } = createWorkspace();
+    const controls = document.createElement("div");
+    controls.dataset.spatialWorkspaceControls = "";
+    const trigger = document.createElement("button");
+    trigger.getBoundingClientRect = () => new DOMRect(280, 50, 20, 20);
+    const popup = document.createElement("div");
+    popup.hidden = true;
+    popup.getBoundingClientRect = () =>
+      popup.hidden ? new DOMRect() : new DOMRect(200, 70, 100, 130);
+    controls.append(trigger, popup);
+    spatial.append(controls);
+
+    expect(spatialBrowserOccluders(slot)).toEqual([trigger, popup]);
+    const closed = guestClip(slot);
+    expect(closed).toBe('path("M0 40H400V300H0Z M0 0H360V40H0Z")');
+    popup.hidden = false;
+    expect(guestClip(slot)).toBe('path("M0 40H200V300H0Z M0 0H360V40H0Z")');
+    popup.hidden = true;
+    expect(guestClip(slot)).toBe(closed);
+  });
+
+  it("does not clip one workspace with another workspace's controls", () => {
+    const first = createWorkspace();
+    const second = createWorkspace();
+    const controls = document.createElement("div");
+    controls.dataset.spatialWorkspaceControls = "";
+    const trigger = document.createElement("button");
+    trigger.getBoundingClientRect = () => new DOMRect(100, 50, 200, 150);
+    controls.append(trigger);
+    second.spatial.append(controls);
+
+    expect(guestClip(first.slot)).toBe('path("M0 0H400V300H0Z")');
+    expect(guestClip(second.slot)).toBe("inset(50%)");
   });
 
   it("leaves a guest unclipped when it has no owning stage", () => {

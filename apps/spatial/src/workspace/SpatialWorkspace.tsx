@@ -33,7 +33,8 @@ import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { EmptyPane } from "./EmptyPane";
-import { AddPaneButton, FocusAnchorToggle, useFocusAnchorPreference } from "./FocusAnchorToggle";
+import { useFocusAnchorPreference } from "./FocusAnchorToggle";
+import { WorkspaceToolbar } from "./WorkspaceToolbar";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { SavedPanePicture } from "./SavedPanePicture";
@@ -449,39 +450,6 @@ export function SpatialWorkspace({
     );
   }, [addEmpty, paneData, toolPanes]);
 
-  // Terminals consume the keys they receive, so the Control+Option moves
-  // that work while typing are taken before a terminal pane sees them.
-  useEffect(() => {
-    if (!active) return;
-    const directions: Record<string, "left" | "right" | "up" | "down"> = {
-      ArrowDown: "down",
-      ArrowLeft: "left",
-      ArrowRight: "right",
-      ArrowUp: "up",
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey) return;
-      if (event.isComposing || event.getModifierState("AltGraph")) return;
-      const target = event.target;
-      if (
-        !(target instanceof Element) ||
-        !target.closest('[data-onirigiri-surface-kind="terminal"]')
-      ) {
-        return;
-      }
-      const direction = directions[event.key];
-      if (!direction && event.code !== "KeyO") return;
-      event.preventDefault();
-      event.stopPropagation();
-      const workspace = workspaceRef.current;
-      // The terminal keeps the keyboard when there is no pane to move to.
-      const moved = direction ? workspace?.focus(direction) : (workspace?.toggleOverview(), true);
-      if (moved && target instanceof HTMLElement) target.blur();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active]);
-
   useEffect(() => {
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -584,12 +552,17 @@ export function SpatialWorkspace({
   );
 
   return (
-    <div ref={stageRef} inert={!active} className="spatial-workspace flex h-full w-full flex-col">
-      <div className="flex shrink-0 items-center justify-end bg-[color-mix(in_oklch,var(--background)_94%,var(--foreground))]">
-        <AddPaneButton onAdd={addPane} />
-        <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={toggleFocusAnchor} />
-        <div ref={setControlsContainer} />
-      </div>
+    <div
+      ref={stageRef}
+      inert={!active}
+      className="spatial-workspace relative flex h-full w-full flex-col"
+    >
+      <WorkspaceToolbar
+        focusAnchor={focusAnchor}
+        onAdd={addPane}
+        onToggleAnchor={toggleFocusAnchor}
+        controlsRef={setControlsContainer}
+      />
       {initialPanes && lifecycle ? (
         <SpatialWorkspaceActiveContext value={active}>
           <PaneLifecycleContext value={lifecycle}>
