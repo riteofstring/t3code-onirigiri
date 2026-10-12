@@ -3,9 +3,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import type { WebFrameMain } from "electron";
 
 export interface DesktopIpcInvokeEvent {
   readonly sender: { readonly id: number };
+  readonly senderFrame?: WebFrameMain | null;
 }
 
 export interface DesktopIpcSyncEvent {

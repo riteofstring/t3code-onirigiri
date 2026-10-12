@@ -11,6 +11,7 @@ vi.mock("./useWorkspacePanes", () => ({ threadPaneId: vi.fn() }));
 
 const images: HTMLImageElement[] = [];
 const drawImage = vi.fn();
+const scale = vi.fn();
 const picture = new Blob(["saved pixels"]);
 let idleBudget = 50;
 let dispose: (() => void) | undefined;
@@ -35,7 +36,7 @@ beforeEach(() => {
   );
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     drawImage,
-    scale: vi.fn(),
+    scale,
   } as unknown as ReturnType<HTMLCanvasElement["getContext"]>);
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) =>
     callback(picture),
@@ -50,12 +51,13 @@ afterEach(async () => {
   images.length = 0;
   idleBudget = 50;
   drawImage.mockClear();
+  scale.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
-async function beginPicture() {
+function createPane() {
   const element = document.createElement("div");
   element.textContent = "Retained snapshot content";
   Object.defineProperties(element, {
@@ -63,6 +65,11 @@ async function beginPicture() {
     offsetHeight: { value: 600 },
   });
   document.body.append(element);
+  return element;
+}
+
+async function beginPicture() {
+  const element = createPane();
   const clone = vi.spyOn(element, "cloneNode");
   const completed: (Blob | null)[] = [];
   const queue = createSnapshotQueue();
@@ -131,6 +138,117 @@ it("resumes a loaded SVG after the workspace is enabled and recent input becomes
   await vi.advanceTimersByTimeAsync(2);
   expect(f.completed).toEqual([picture]);
   expect(f.clone).toHaveBeenCalledOnce();
+});
+
+it("waits for admission before rasterizing the serialized pane on desktop", async () => {
+  const pixels = new Uint8Array([137, 80, 78, 71]);
+  const rasterize = vi.fn().mockResolvedValue(pixels);
+  vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
+  vi.stubGlobal("devicePixelRatio", 2);
+  const element = createPane();
+  const editor = document.createElement("div");
+  editor.dataset.testid = "composer-editor";
+  editor.textContent = "Unsent private draft";
+  element.append(editor);
+  let admit!: (value: boolean) => void;
+  const admission = new Promise<boolean>((resolve) => {
+    admit = resolve;
+  });
+  const result = snapshotPanePicture(
+    element,
+    () => element.isConnected,
+    () => admission,
+  );
+  await vi.advanceTimersByTimeAsync(40);
+  expect(rasterize).not.toHaveBeenCalled();
+  expect(images).toEqual([]);
+
+  element.remove();
+  admit(true);
+  const image = await result;
+  expect(image?.type).toBe("image/png");
+  expect(image?.size).toBe(pixels.byteLength);
+  expect(rasterize).toHaveBeenCalledOnce();
+  const input = rasterize.mock.calls[0]![0];
+  const svg = new DOMParser().parseFromString(
+    input.open + decodeURIComponent(input.styles) + input.content,
+    "image/svg+xml",
+  );
+  expect(svg.querySelector("parsererror")).toBeNull();
+  expect(svg.documentElement.getAttribute("width")).toBe("400");
+  expect(svg.documentElement.getAttribute("height")).toBe("600");
+  expect(svg.documentElement.textContent).toContain("Retained snapshot content");
+  expect(svg.documentElement.textContent).not.toContain("Unsent private draft");
+  expect(input).toMatchObject({ width: 400, height: 600, scale: 2 });
+  expect(images).toEqual([]);
+  expect(drawImage).not.toHaveBeenCalled();
+  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
+});
+
+it("does not dispatch or draw when desktop capture admission is revoked", async () => {
+  const rasterize = vi.fn();
+  vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
+  const result = snapshotPanePicture(
+    createPane(),
+    () => true,
+    async () => false,
+  );
+  await vi.advanceTimersByTimeAsync(40);
+  expect(await result).toBeNull();
+  expect(rasterize).not.toHaveBeenCalled();
+  expect(images).toEqual([]);
+  expect(drawImage).not.toHaveBeenCalled();
+});
+
+it.each(["unavailable", "empty", "rejected", "thrown"])(
+  "keeps the original foreground raster when desktop is %s",
+  async (failure) => {
+    const rasterize = vi.fn(() => {
+      if (failure === "thrown") throw new Error("raster service unavailable");
+      if (failure === "rejected") return Promise.reject(new Error("raster service stopped"));
+      return Promise.resolve(failure === "empty" ? new Uint8Array() : null);
+    });
+    vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
+    const element = createPane();
+    const clone = vi.spyOn(element, "cloneNode");
+    const result = snapshotPanePicture(
+      element,
+      () => true,
+      async () => true,
+    );
+    await vi.advanceTimersByTimeAsync(40);
+    expect(images).toHaveLength(1);
+    expect(drawImage).not.toHaveBeenCalled();
+    vi.stubGlobal("devicePixelRatio", 2);
+    images[0]!.dispatchEvent(new Event("load"));
+    expect(await result).toBe(picture);
+    expect(rasterize).toHaveBeenCalledOnce();
+    expect(clone).toHaveBeenCalledOnce();
+    expect(drawImage).toHaveBeenCalledWith(images[0], 0, 0, 400, 600);
+    expect(scale).toHaveBeenCalledWith(2, 2);
+    expect(HTMLCanvasElement.prototype.toBlob).toHaveBeenCalledOnce();
+    expect(images[0]!.hasAttribute("src")).toBe(false);
+  },
+);
+
+it("checks admission again before drawing a failed desktop raster locally", async () => {
+  const rasterize = vi.fn().mockResolvedValue(null);
+  vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
+  let admitted = true;
+  const result = snapshotPanePicture(
+    createPane(),
+    () => true,
+    async () => admitted,
+  );
+  await vi.advanceTimersByTimeAsync(40);
+  expect(images).toHaveLength(1);
+  admitted = false;
+  images[0]!.dispatchEvent(new Event("load"));
+  expect(await result).toBeNull();
+  expect(rasterize).toHaveBeenCalledOnce();
+  expect(drawImage).not.toHaveBeenCalled();
+  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
+  expect(images[0]!.hasAttribute("src")).toBe(false);
 });
 
 it("settles and releases a loaded SVG when the queue is disposed while awaiting admission", async () => {

@@ -1121,7 +1121,19 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export interface DesktopPanePictureRasterInput {
+  readonly open: string;
+  readonly styles: string;
+  readonly content: string;
+  readonly width: number;
+  readonly height: number;
+  readonly scale: number;
+}
+
 export interface DesktopBridge {
+  rasterizePanePicture?: (
+    input: DesktopPanePictureRasterInput,
+  ) => Promise<Uint8Array<ArrayBuffer> | null>;
   getAppBranding: () => DesktopAppBranding | null;
   /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
   getPathForFile?: (file: File) => string;

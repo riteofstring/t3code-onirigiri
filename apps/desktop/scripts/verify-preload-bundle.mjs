@@ -144,8 +144,40 @@ export const verifyPreloadBundle = (source) => {
   }
 };
 
+export const verifyPanePicturePreloadBundle = (source) => {
+  const unsupportedImports = inspectBundle(source).filter(
+    (moduleName) => moduleName !== "electron",
+  );
+  if (unsupportedImports.length > 0) {
+    throw new Error(
+      `Pane picture preload contains unsupported sandbox imports: ${unsupportedImports.join(", ")}`,
+    );
+  }
+  const listeners = new Map();
+  executeBundle(
+    source,
+    new Map([
+      [
+        "electron",
+        {
+          ipcRenderer: { once: (channel, listener) => listeners.set(channel, listener) },
+        },
+      ],
+    ]),
+  );
+  if (typeof listeners.get("desktop:pane-picture:port") !== "function") {
+    throw new Error("Pane picture preload is missing its executable port listener");
+  }
+};
+
 if (process.argv[1] && NodeURL.pathToFileURL(process.argv[1]).href === import.meta.url) {
   const preloadUrl = new URL("../dist-electron/preload.cjs", import.meta.url);
   const source = await NodeFSP.readFile(preloadUrl, "utf8");
   verifyPreloadBundle(source);
+  verifyPanePicturePreloadBundle(
+    await NodeFSP.readFile(
+      new URL("../dist-electron/pane-picture-preload.cjs", import.meta.url),
+      "utf8",
+    ),
+  );
 }

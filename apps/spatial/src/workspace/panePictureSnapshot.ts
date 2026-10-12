@@ -431,6 +431,23 @@ async function drawPanePicture(
     new XMLSerializer().serializeToString(definitions) +
     `<foreignObject width="100%" height="100%">`;
   const close = `</foreignObject></svg>`;
+  const rasterize = window.desktopBridge?.rasterizePanePicture;
+  if (rasterize) {
+    if (!(await waitToDraw())) return null;
+    try {
+      const pixels = await rasterize({
+        open,
+        styles,
+        content: markup + close,
+        width,
+        height,
+        scale: window.devicePixelRatio || 1,
+      });
+      if (pixels?.byteLength) return new Blob([pixels], { type: "image/png" });
+    } catch {
+      // A failed desktop raster leaves the serialized picture available locally.
+    }
+  }
   const image = await loadImage(
     `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${styles}` +
       `${encodeURIComponent(markup + close)}`,
