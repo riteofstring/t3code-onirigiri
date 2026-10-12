@@ -1010,11 +1010,11 @@ export class GhosttyTerminalCore {
       }
       const selected = this.getCellBool(cellsIterator, CELL_DATA.selected);
       // Read the style after allocation and ABI calls, which can grow WASM memory.
-      const styleView = this.runtime.view(this.style, styleSize);
-      if (styleView.getUint8(styleFields.inverse!.offset) !== 0) {
+      const styleView = this.runtime.currentMemoryView();
+      if (styleView.getUint8(this.style + styleFields.inverse!.offset) !== 0) {
         [foreground, background] = [background, foreground];
       }
-      if (styleView.getUint8(styleFields.faint!.offset) !== 0) {
+      if (styleView.getUint8(this.style + styleFields.faint!.offset) !== 0) {
         foreground = blend(foreground, background);
       }
       cells.push({
@@ -1022,12 +1022,12 @@ export class GhosttyTerminalCore {
         wide,
         foreground,
         background,
-        bold: styleView.getUint8(styleFields.bold!.offset) !== 0,
-        italic: styleView.getUint8(styleFields.italic!.offset) !== 0,
-        invisible: styleView.getUint8(styleFields.invisible!.offset) !== 0,
-        strikethrough: styleView.getUint8(styleFields.strikethrough!.offset) !== 0,
-        overline: styleView.getUint8(styleFields.overline!.offset) !== 0,
-        underline: styleView.getInt32(styleFields.underline!.offset, true) !== 0,
+        bold: styleView.getUint8(this.style + styleFields.bold!.offset) !== 0,
+        italic: styleView.getUint8(this.style + styleFields.italic!.offset) !== 0,
+        invisible: styleView.getUint8(this.style + styleFields.invisible!.offset) !== 0,
+        strikethrough: styleView.getUint8(this.style + styleFields.strikethrough!.offset) !== 0,
+        overline: styleView.getUint8(this.style + styleFields.overline!.offset) !== 0,
+        underline: styleView.getInt32(this.style + styleFields.underline!.offset, true) !== 0,
         selected,
       });
     }
@@ -1178,26 +1178,30 @@ export class GhosttyTerminalCore {
   }
 
   private getCellU32(iterator: number, data: number): number {
-    this.runtime.bytes(this.scratch, 4).fill(0);
+    this.runtime.currentMemoryView().setUint32(this.scratch, 0, true);
     const result = this.runtime.call(
       "ghostty_render_state_row_cells_get",
       iterator,
       data,
       this.scratch,
     );
-    return result === GHOSTTY_SUCCESS ? this.runtime.view(this.scratch, 4).getUint32(0, true) : 0;
+    return result === GHOSTTY_SUCCESS
+      ? this.runtime.currentMemoryView().getUint32(this.scratch, true)
+      : 0;
   }
 
   private getCellBool(iterator: number, data: number): boolean {
-    this.runtime.bytes(this.scratch, 1)[0] = 0;
+    this.runtime.currentMemoryView().setUint8(this.scratch, 0);
     return (
       this.runtime.call("ghostty_render_state_row_cells_get", iterator, data, this.scratch) ===
-        GHOSTTY_SUCCESS && this.runtime.bytes(this.scratch, 1)[0] !== 0
+        GHOSTTY_SUCCESS && this.runtime.currentMemoryView().getUint8(this.scratch) !== 0
     );
   }
 
   private getCellColor(iterator: number, data: number, fallback: GhosttyColor): GhosttyColor {
-    this.runtime.bytes(this.scratch, 3).fill(0);
+    const scratch = this.runtime.currentMemoryView();
+    scratch.setUint16(this.scratch, 0, true);
+    scratch.setUint8(this.scratch + 2, 0);
     const result = this.runtime.call(
       "ghostty_render_state_row_cells_get",
       iterator,
@@ -1208,8 +1212,12 @@ export class GhosttyTerminalCore {
   }
 
   private readColor(pointer: number): GhosttyColor {
-    const bytes = this.runtime.bytes(pointer, 3);
-    return { r: bytes[0] ?? 0, g: bytes[1] ?? 0, b: bytes[2] ?? 0 };
+    const view = this.runtime.currentMemoryView();
+    return {
+      r: view.getUint8(pointer),
+      g: view.getUint8(pointer + 1),
+      b: view.getUint8(pointer + 2),
+    };
   }
 
   private emptyCell(foreground: GhosttyColor, background: GhosttyColor): GhosttyCell {

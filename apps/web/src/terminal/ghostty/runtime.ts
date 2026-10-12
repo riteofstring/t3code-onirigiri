@@ -134,8 +134,8 @@ export class GhosttyRuntime {
     return new Uint8Array(this.memory.buffer, pointer, size);
   }
 
-  /** Reuse scalar reads across cells, refreshing after any terminal grows shared WASM memory. */
-  private currentMemoryView(): DataView {
+  /** Reacquire after call/alloc: any terminal can grow the shared WASM memory. */
+  currentMemoryView(): DataView {
     if (this.memoryView.buffer !== this.memory.buffer) {
       this.memoryView = new DataView(this.memory.buffer);
     }

@@ -111,12 +111,27 @@ describe("GhosttyTerminalCore snapshots", () => {
     vi.restoreAllMocks();
   });
 
-  it("preserves styles, wide cells, and selection after shared memory grows", async () => {
+  it("preserves styles, wide cells, and selection when ABI calls and another terminal grow memory", async () => {
     const core = await createCore();
     const runtime = await loadGhosttyRuntime();
     const grapheme = `e${"\u0301".repeat(64)}`;
     core.write(`\x1b[1;3;4;8;9;53;38;2;123;45;67;48;2;9;8;7m${grapheme}\x1b[0m界🙂`);
+    const originalCall = runtime.call.bind(runtime);
+    const pendingGrowth = new Set([3, 6, 7]);
+    const cellCalls = vi.spyOn(runtime, "call").mockImplementation((name, ...args) => {
+      const result = originalCall(name, ...args);
+      if (
+        result === 0 &&
+        name === "ghostty_render_state_row_cells_get" &&
+        pendingGrowth.delete(Number(args[1]))
+      ) {
+        runtime.memory.grow(1);
+      }
+      return result;
+    });
     const cells = core.snapshot().rowData[0]!.cells;
+    cellCalls.mockRestore();
+    expect(pendingGrowth.size).toBe(0);
     expect(cells[0]).toEqual({
       text: grapheme,
       wide: 0,
@@ -137,7 +152,21 @@ describe("GhosttyTerminalCore snapshots", () => {
       { text: "", wide: GHOSTTY_CELL_WIDE.spacerTail },
     ]);
 
-    runtime.memory.grow(1);
+    const other = await createCore();
+    const previousBuffer = runtime.memory.buffer;
+    let grewDuringOtherWrite = false;
+    const otherCalls = vi.spyOn(runtime, "call").mockImplementation((name, ...args) => {
+      const result = originalCall(name, ...args);
+      if (!grewDuringOtherWrite && name === "ghostty_terminal_vt_write") {
+        runtime.memory.grow(1);
+        grewDuringOtherWrite = true;
+      }
+      return result;
+    });
+    other.write("neighbor");
+    otherCalls.mockRestore();
+    expect(grewDuringOtherWrite).toBe(true);
+    expect(runtime.memory.buffer).not.toBe(previousBuffer);
     core.setSelection({ x: 0, y: 0 }, { x: 2, y: 0 });
     expect(core.snapshot().rowData[0]!.cells[0]).toEqual({ ...cells[0], selected: true });
     core.clearSelection();
