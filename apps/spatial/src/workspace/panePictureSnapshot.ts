@@ -119,12 +119,10 @@ async function matchTextLayout(
   const scale = window.devicePixelRatio || 1;
   let height: number;
   let width: number;
-  let markup: string;
   try {
     const rect = sample.getBoundingClientRect();
     height = (marker.getBoundingClientRect().y - rect.y) * scale;
     width = (end.getBoundingClientRect().x - rect.x) * scale;
-    markup = new XMLSerializer().serializeToString(sample);
   } finally {
     holder.remove();
   }
@@ -135,6 +133,7 @@ async function matchTextLayout(
     textLayout.width !== width ||
     textLayout.scale !== scale
   ) {
+    const markup = new XMLSerializer().serializeToString(sample);
     const errors: number[] = [];
     const imageHeight = Math.ceil(height / scale + 32);
     try {
