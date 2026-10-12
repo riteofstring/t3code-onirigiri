@@ -374,12 +374,17 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** A PNG after layout settles, or null when the pane is no longer valid or has no size. */
+export interface PanePictureSnapshot {
+  readonly image: Blob;
+  readonly cssSize: { readonly width: number; readonly height: number };
+}
+
+/** A PNG and its captured CSS size, or null when the pane is no longer valid or has no size. */
 export async function snapshotPanePicture(
   element: HTMLElement,
   canSnapshot: () => boolean,
   waitToDraw: () => Promise<boolean>,
-): Promise<Blob | null> {
+): Promise<PanePictureSnapshot | null> {
   const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
   if (host) host.dataset.spatialSnapshot = "";
   try {
@@ -400,7 +405,7 @@ async function drawPanePicture(
   element: HTMLElement,
   canSnapshot: () => boolean,
   waitToDraw: () => Promise<boolean>,
-): Promise<Blob | null> {
+): Promise<PanePictureSnapshot | null> {
   const width = element.offsetWidth;
   const height = element.offsetHeight;
   if (width === 0 || height === 0) return null;
@@ -442,7 +447,12 @@ async function drawPanePicture(
         height,
         scale: window.devicePixelRatio || 1,
       });
-      if (pixels?.byteLength) return new Blob([pixels], { type: "image/png" });
+      if (pixels?.byteLength) {
+        return {
+          image: new Blob([pixels], { type: "image/png" }),
+          cssSize: { width, height },
+        };
+      }
     } catch {
       // A failed desktop raster leaves the serialized picture available locally.
     }
@@ -461,7 +471,8 @@ async function drawPanePicture(
     if (!context) return null;
     context.scale(scale, scale);
     context.drawImage(image, 0, 0, width, height);
-    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    return blob ? { image: blob, cssSize: { width, height } } : null;
   } finally {
     canvas.width = 0;
     canvas.height = 0;

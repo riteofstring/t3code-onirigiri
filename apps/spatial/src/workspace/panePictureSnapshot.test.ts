@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import { snapshotPanePicture } from "./panePictureSnapshot";
+import { snapshotPanePicture, type PanePictureSnapshot } from "./panePictureSnapshot";
 import { createSnapshotQueue } from "./useSavedPanePictures";
 
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({ useTheme: vi.fn() }));
@@ -61,8 +61,8 @@ function createPane() {
   const element = document.createElement("div");
   element.textContent = "Retained snapshot content";
   Object.defineProperties(element, {
-    offsetWidth: { value: 400 },
-    offsetHeight: { value: 600 },
+    offsetWidth: { value: 400, configurable: true },
+    offsetHeight: { value: 600, configurable: true },
   });
   document.body.append(element);
   return element;
@@ -71,7 +71,7 @@ function createPane() {
 async function beginPicture() {
   const element = createPane();
   const clone = vi.spyOn(element, "cloneNode");
-  const completed: (Blob | null)[] = [];
+  const completed: (PanePictureSnapshot | null)[] = [];
   const queue = createSnapshotQueue();
   const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(
     async (_id, source, canStart, waitToDraw) => {
@@ -115,7 +115,7 @@ it.each([false, true])(
     expect(drawImage).not.toHaveBeenCalled();
     idleBudget = 50;
     await vi.advanceTimersByTimeAsync(1);
-    expect(f.completed).toEqual([picture]);
+    expect(f.completed).toEqual([{ image: picture, cssSize: { width: 400, height: 600 } }]);
     expect(drawImage).toHaveBeenCalledOnce();
     expect(HTMLCanvasElement.prototype.toBlob).toHaveBeenCalledOnce();
     expect(f.clone).toHaveBeenCalledOnce();
@@ -136,11 +136,11 @@ it("resumes a loaded SVG after the workspace is enabled and recent input becomes
   await vi.advanceTimersByTimeAsync(399);
   expect(drawImage).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(2);
-  expect(f.completed).toEqual([picture]);
+  expect(f.completed).toEqual([{ image: picture, cssSize: { width: 400, height: 600 } }]);
   expect(f.clone).toHaveBeenCalledOnce();
 });
 
-it("waits for admission before rasterizing the serialized pane on desktop", async () => {
+it("keeps the serialized CSS size through delayed desktop admission and later resize", async () => {
   const pixels = new Uint8Array([137, 80, 78, 71]);
   const rasterize = vi.fn().mockResolvedValue(pixels);
   vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
@@ -163,11 +163,16 @@ it("waits for admission before rasterizing the serialized pane on desktop", asyn
   expect(rasterize).not.toHaveBeenCalled();
   expect(images).toEqual([]);
 
+  Object.defineProperties(element, {
+    offsetWidth: { value: 900 },
+    offsetHeight: { value: 1000 },
+  });
   element.remove();
   admit(true);
   const image = await result;
-  expect(image?.type).toBe("image/png");
-  expect(image?.size).toBe(pixels.byteLength);
+  expect(image?.cssSize).toEqual({ width: 400, height: 600 });
+  expect(image?.image.type).toBe("image/png");
+  expect(image?.image.size).toBe(pixels.byteLength);
   expect(rasterize).toHaveBeenCalledOnce();
   const input = rasterize.mock.calls[0]![0];
   const svg = new DOMParser().parseFromString(
@@ -221,7 +226,7 @@ it.each(["unavailable", "empty", "rejected", "thrown"])(
     expect(drawImage).not.toHaveBeenCalled();
     vi.stubGlobal("devicePixelRatio", 2);
     images[0]!.dispatchEvent(new Event("load"));
-    expect(await result).toBe(picture);
+    expect(await result).toEqual({ image: picture, cssSize: { width: 400, height: 600 } });
     expect(rasterize).toHaveBeenCalledOnce();
     expect(clone).toHaveBeenCalledOnce();
     expect(drawImage).toHaveBeenCalledWith(images[0], 0, 0, 400, 600);
@@ -268,3 +273,53 @@ it("settles and releases a loaded SVG when the queue is disposed while awaiting 
   expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it.each([false, true])(
+  "retains captured CSS dimensions through browser encoding; encoding failed: %s",
+  async (failed) => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    let finish!: BlobCallback;
+    let canvas!: HTMLCanvasElement;
+    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(function (
+      this: HTMLCanvasElement,
+      callback,
+    ) {
+      canvas = this;
+      finish = callback;
+    });
+    const element = createPane();
+    const result = snapshotPanePicture(
+      element,
+      () => true,
+      async () => true,
+    );
+    await vi.advanceTimersByTimeAsync(40);
+    expect(images).toHaveLength(1);
+    const svg = new DOMParser().parseFromString(
+      decodeURIComponent(images[0]!.src.split(",")[1]!),
+      "image/svg+xml",
+    );
+    expect(svg.documentElement.getAttribute("width")).toBe("400");
+    expect(svg.documentElement.getAttribute("height")).toBe("600");
+    Object.defineProperties(element, {
+      offsetWidth: { value: 900, configurable: true },
+      offsetHeight: { value: 1000, configurable: true },
+    });
+    images[0]!.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(drawImage).toHaveBeenCalledWith(images[0], 0, 0, 400, 600);
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(1200);
+    Object.defineProperties(element, {
+      offsetWidth: { value: 200 },
+      offsetHeight: { value: 300 },
+    });
+    finish(failed ? null : picture);
+    expect(await result).toEqual(
+      failed ? null : { image: picture, cssSize: { width: 400, height: 600 } },
+    );
+    expect(canvas.width).toBe(0);
+    expect(canvas.height).toBe(0);
+    expect(images[0]!.hasAttribute("src")).toBe(false);
+  },
+);
