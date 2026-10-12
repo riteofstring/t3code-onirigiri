@@ -12,14 +12,14 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 ## Onirigiri spatial workspace
 
-This fork's spatial app lives in `apps/spatial`. Use Node 24.13.1 or newer within
-Node 24, Vite+ (see below), and each repository's pinned pnpm version. Clone the
+This fork's spatial app lives in `apps/spatial`. Use each repository's pinned Node
+and pnpm versions (Node 25.2.1 for the engine, Node 24 for T3), and Vite+ (see below). Clone the
 engine's `beta` branch beside this repository using the exact sibling directory
 name `onirigiri-beta`:
 
 ```bash
 git clone --branch beta https://github.com/riteofstring/onirigiri.git onirigiri-beta
-git clone https://github.com/riteofstring/t3code-onirigiri.git t3code-onirigiri
+git clone git@github.com:riteofstring/t3code-onirigiri.git t3code-onirigiri
 cd onirigiri-beta
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm build

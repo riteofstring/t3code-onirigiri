@@ -562,6 +562,7 @@ export function SpatialWorkspace({
         onAdd={addPane}
         onToggleAnchor={toggleFocusAnchor}
         controlsRef={setControlsContainer}
+        shortcuts={SHORTCUTS}
       />
       {initialPanes && lifecycle ? (
         <SpatialWorkspaceActiveContext value={active}>
@@ -587,6 +588,7 @@ export function SpatialWorkspace({
                   onPanePictureCaptured={onPanePictureCaptured}
                   renderPane={renderPane}
                   renderPanePlaceholder={renderPanePlaceholder}
+                  restPictureFade
                   shortcutScope={active ? "application" : "workspace"}
                   shortcuts={SHORTCUTS}
                   workspaceId={WORKSPACE_ID}

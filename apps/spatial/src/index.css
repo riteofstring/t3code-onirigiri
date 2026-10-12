@@ -86,10 +86,8 @@
   gap: 3px;
 }
 
-.spatial-workspace-controls__hint {
-  margin: 4px 3px 0;
-  color: var(--muted-foreground);
-  font-size: 11px;
+.spatial-workspace .onirigiri-workspace__desktop-controls {
+  --onirigiri-focus-outline-offset: 1px;
 }
 
 /* Overview chrome overlays the thread's own header without resizing its content. */
