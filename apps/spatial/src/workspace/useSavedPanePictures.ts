@@ -217,7 +217,7 @@ export function useSavedPanePictures(
 
   const workspaceElementRef = useRef<HTMLElement | null>(null);
   const observedStageRef = useRef<HTMLElement | null>(null);
-  const stageObserverRef = useRef<ResizeObserver | null>(null);
+  const stopObservingStageRef = useRef<(() => void) | null>(null);
   const observeStage = useCallback(() => {
     const workspace = workspaceElementRef.current;
     if (workspace && observedStageRef.current?.parentElement?.parentElement === workspace) return;
@@ -226,8 +226,8 @@ export function useSavedPanePictures(
         ':scope > [data-onirigiri-slot="workspace"] > [data-onirigiri-slot="stage"]',
       ) ?? null;
     if (stage === observedStageRef.current) return;
-    stageObserverRef.current?.disconnect();
-    stageObserverRef.current = null;
+    stopObservingStageRef.current?.();
+    stopObservingStageRef.current = null;
     observedStageRef.current = stage;
     stageSizeRef.current = "";
     if (!stage) return;
@@ -241,7 +241,19 @@ export function useSavedPanePictures(
       setGeometryVersion((version) => version + 1);
     });
     observer.observe(stage);
-    stageObserverRef.current = observer;
+    let resolution = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const pixelRatioChanged = () => {
+      if (observedStageRef.current !== stage) return;
+      resolution.removeEventListener("change", pixelRatioChanged);
+      resolution = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      resolution.addEventListener("change", pixelRatioChanged);
+      setGeometryVersion((version) => version + 1);
+    };
+    resolution.addEventListener("change", pixelRatioChanged);
+    stopObservingStageRef.current = () => {
+      observer.disconnect();
+      resolution.removeEventListener("change", pixelRatioChanged);
+    };
   }, []);
   const stageRef = useCallback(
     (element: HTMLElement | null) => {
@@ -433,6 +445,7 @@ export function useSavedPanePictures(
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image, receipt) => {
       if (
+        receipt.devicePixelRatio !== window.devicePixelRatio ||
         retainedRef.current.get(pane.paneId) === "live" ||
         runningPanesRef.current.has(pane.paneId)
       )

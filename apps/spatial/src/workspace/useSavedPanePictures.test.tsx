@@ -36,6 +36,7 @@ const store = {
 };
 const decodedUrls: string[] = [];
 const revokedUrls: string[] = [];
+const resolutionQueries: (EventTarget & { media: string })[] = [];
 
 const snapshot = vi.hoisted(() =>
   vi.fn(
@@ -146,11 +147,16 @@ function pictureImageFor(id: string): Blob | null {
   return hook.pictureFor(id)?.image ?? null;
 }
 
-function capturePicture(target: WorkspacePane, image: Blob, cssSize = { width: 400, height: 580 }) {
+function capturePicture(
+  target: WorkspacePane,
+  image: Blob,
+  cssSize = { width: 400, height: 580 },
+  devicePixelRatio = window.devicePixelRatio,
+) {
   hook.onPanePictureCaptured(target, image, {
     id: "accepted-capture",
-    devicePixelRatio: 2,
-    pixelsPerCss: { x: 2, y: 2 },
+    devicePixelRatio,
+    pixelsPerCss: { x: devicePixelRatio, y: devicePixelRatio },
     bounds: { x: 0, y: 0, ...cssSize },
   });
 }
@@ -181,7 +187,17 @@ beforeEach(() => {
       }
     },
   );
-  vi.stubGlobal("window", Object.assign(new EventTarget(), { devicePixelRatio: 1 }));
+  vi.stubGlobal(
+    "window",
+    Object.assign(new EventTarget(), {
+      devicePixelRatio: 1,
+      matchMedia: (media: string) => {
+        const query = Object.assign(new EventTarget(), { media });
+        resolutionQueries.push(query);
+        return query;
+      },
+    }),
+  );
   vi.stubGlobal("requestIdleCallback", (callback: (deadline: IdleDeadline) => void) =>
     setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
   );
@@ -206,8 +222,10 @@ beforeEach(() => {
 afterEach(async () => {
   if (renderer) await act(() => renderer!.unmount());
   renderer = undefined;
+  hook.stageRef(null);
   workspace?.remove();
   resizeObservers.clear();
+  resolutionQueries.length = 0;
   decodedUrls.length = 0;
   revokedUrls.length = 0;
   store.saved.clear();
@@ -1747,3 +1765,69 @@ it.each(["height", "weight", "sibling", "defaults"])(
     expect(hook.pictureFor(paneId)?.image).not.toBe(image);
   },
 );
+
+it("refreshes and re-arms picture preparation when only display density changes", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const image = new Blob(["first monitor"]);
+  const cssSize = { width: 400, height: 580 };
+  await act(() => capturePicture(pane, image, cssSize));
+  const version = hook.paneSnapshots.geometryVersion;
+  const firstQuery = resolutionQueries.at(-1)!;
+  expect(firstQuery.media).toBe("(resolution: 1dppx)");
+  await act(() => {
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    firstQuery.dispatchEvent(new Event("change"));
+  });
+  expect(hook.paneSnapshots.geometryVersion).toBe(version + 1);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.getPanePicture(pane)).toBeNull();
+  expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize });
+  expect(resolutionQueries.at(-1)?.media).toBe("(resolution: 2dppx)");
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.pictureFor(paneId)?.image).not.toBe(image);
+  expect(store.writes.at(-1)?.cssSize).toEqual(cssSize);
+  const secondQuery = resolutionQueries.at(-1)!;
+  await act(() => {
+    Object.defineProperty(window, "devicePixelRatio", { value: 1.5, configurable: true });
+    secondQuery.dispatchEvent(new Event("change"));
+  });
+  expect(hook.paneSnapshots.geometryVersion).toBe(version + 2);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(resolutionQueries.at(-1)?.media).toBe("(resolution: 1.5dppx)");
+  const queries = resolutionQueries.length;
+  await act(() => {
+    firstQuery.dispatchEvent(new Event("change"));
+  });
+  expect(resolutionQueries).toHaveLength(queries);
+  const lastQuery = resolutionQueries.at(-1)!;
+  await act(() => hook.stageRef(null));
+  await act(() => {
+    lastQuery.dispatchEvent(new Event("change"));
+  });
+  expect(resolutionQueries).toHaveLength(queries);
+});
+
+it("does not persist a capture completed after leaving its display density", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const image = new Blob(["before changing monitors"]);
+  await act(() => capturePicture(pane, image));
+  await act(() => {
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    resolutionQueries.at(-1)!.dispatchEvent(new Event("change"));
+  });
+  await act(() => capturePicture(pane, new Blob(["old in-flight density"]), undefined, 1));
+  expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.pictureFor(paneId)?.image).toBe(image);
+  const replacement = new Blob(["current monitor"]);
+  await act(() => capturePicture(pane, replacement));
+  expect(store.writes).toHaveLength(2);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.pictureFor(paneId)?.image).toBe(replacement);
+});
