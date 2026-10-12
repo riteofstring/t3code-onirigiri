@@ -37,6 +37,7 @@ import { AddPaneButton, FocusAnchorToggle, useFocusAnchorPreference } from "./Fo
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { SavedPanePicture } from "./SavedPanePicture";
+import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { useToolPanes, type ToolPane } from "./useToolPanes";
@@ -194,11 +195,7 @@ export function SpatialWorkspace({
         !slot.closest(
           '[data-onirigiri-slot="pane"][data-visible="false"], [data-onirigiri-slot="pane-content"][data-runtime-state="hidden"]',
         ),
-      occluders: (slot) => [
-        ...(slot
-          .closest(".onirigiri-workspace")
-          ?.querySelectorAll<HTMLElement>(".onirigiri-workspace__minimap") ?? []),
-      ],
+      occluders: spatialBrowserOccluders,
       interactive: (slot) =>
         !slot.closest('[data-onirigiri-shielded="true"], [data-runtime-state="frozen"]'),
       focus: (slot) => {
