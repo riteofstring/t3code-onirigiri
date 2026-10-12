@@ -13,7 +13,7 @@
   "dependencies": {
     "@effect/atom-react": "catalog:",
     "@riteofstring/onirigiri": "link:../../../onirigiri-beta",
-    "@riteofstring/onirigiri-t3": "link:../../../onirigiri-t3",
+    "@riteofstring/onirigiri-t3": "workspace:*",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/web": "workspace:*",
     "@tanstack/react-router": "^1.160.2",

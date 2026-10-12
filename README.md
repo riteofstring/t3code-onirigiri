@@ -10,6 +10,55 @@ Nothing. We built T3 Code because we wanted the best possible development experi
 
 We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
 
+## Onirigiri spatial workspace
+
+This fork's spatial app lives in `apps/spatial`. Use Node 24.13.1 or newer within
+Node 24, Vite+ (see below), and each repository's pinned pnpm version. Clone the
+engine's `beta` branch beside this repository using the exact sibling directory
+name `onirigiri-beta`:
+
+```bash
+git clone --branch beta https://github.com/riteofstring/onirigiri.git onirigiri-beta
+git clone https://github.com/riteofstring/t3code-onirigiri.git t3code-onirigiri
+cd onirigiri-beta
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm build
+cd ../t3code-onirigiri
+vp install --frozen-lockfile
+```
+
+The engine exports compiled files, so rebuild it after changing its source. The
+workspace layout adapter is included in `packages/onirigiri-t3` and needs no
+separate clone or build.
+
+Start the backend from this repository:
+
+```bash
+vp run dev:server
+```
+
+Read `serverPort` from the `[dev-runner]` output. In a second terminal in the same
+repository, replace `BACKEND_PORT` with that number and start the spatial app:
+
+```bash
+T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=BACKEND_PORT vp run --filter @t3tools/spatial dev
+```
+
+Open the frontend URL printed by Vite (normally `http://localhost:5743`) and use
+the existing T3 sign-in or pairing flow. The frontend proxies API and WebSocket
+requests to that backend. The backend keeps the existing development data
+location and authentication rules described in
+[development setup](docs/operations/development.md).
+
+To build just the spatial frontend after building the engine:
+
+```bash
+vp run --filter @t3tools/spatial build
+```
+
+The existing `dev`, `dev:web`, and desktop commands retain their upstream entry
+points. The upstream installation instructions below install standard T3 Code.
+
 ## Installation
 
 > [!WARNING]
