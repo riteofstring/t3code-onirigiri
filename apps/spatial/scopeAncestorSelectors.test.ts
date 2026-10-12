@@ -1,9 +1,9 @@
-import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
-
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import { build, createServer } from "vite";
-import { describe, expect, it } from "vite-plus/test";
 
 import { rewriteAncestorIsSelectors, scopeAncestorSelectors } from "./scopeAncestorSelectors";
 
@@ -64,9 +64,12 @@ describe("rewriteAncestorIsSelectors", () => {
   });
 });
 
-it("scopes served and built CSS without rewriting nested rules or declaration values", async () => {
-  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "spatial-selector-css-"));
-  const css = `
+it.effect("scopes served and built CSS without rewriting nested rules or declaration values", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "spatial-selector-css-" });
+    const css = `
 @layer utilities {
   .subject:is(:where(.group):focus-visible *) { opacity: 1 }
   .label::after { content: ".keep:is(.a:has(.b) *)" }
@@ -76,52 +79,55 @@ it("scopes served and built CSS without rewriting nested rules or declaration va
     }
   }
 }`;
-  try {
-    await NodeFSP.writeFile(
-      NodePath.join(root, "index.html"),
+    yield* fs.writeFileString(
+      path.join(root, "index.html"),
       '<link rel="stylesheet" href="/style.css">',
     );
-    await NodeFSP.writeFile(NodePath.join(root, "style.css"), css);
-    const server = await createServer({
-      configFile: false,
-      root,
-      logLevel: "silent",
-      plugins: [scopeAncestorSelectors()],
-      server: { middlewareMode: true, hmr: false, watch: null },
-      optimizeDeps: { noDiscovery: true },
-    });
-    try {
-      const served = await server.transformRequest("/style.css?direct");
-      expect(served?.code).toContain(":where(.group):focus-visible .subject");
-      expect(served?.code).toContain(".nested:is(:where(.group):focus-visible *)");
-      expect(served?.code).toContain('content: ".keep:is(.a:has(.b) *)"');
-    } finally {
-      await server.close();
-    }
+    yield* fs.writeFileString(path.join(root, "style.css"), css);
+    yield* Effect.acquireUseRelease(
+      Effect.promise(() =>
+        createServer({
+          configFile: false,
+          root,
+          logLevel: "silent",
+          plugins: [scopeAncestorSelectors()],
+          server: { middlewareMode: true, hmr: false, watch: null },
+          optimizeDeps: { noDiscovery: true },
+        }),
+      ),
+      (server) =>
+        Effect.gen(function* () {
+          const served = yield* Effect.promise(() => server.transformRequest("/style.css?direct"));
+          expect(served?.code).toContain(":where(.group):focus-visible .subject");
+          expect(served?.code).toContain(".nested:is(:where(.group):focus-visible *)");
+          expect(served?.code).toContain('content: ".keep:is(.a:has(.b) *)"');
+        }),
+      (server) => Effect.promise(() => server.close()),
+    );
     let builtCss = "";
-    await build({
-      configFile: false,
-      root,
-      logLevel: "silent",
-      plugins: [
-        scopeAncestorSelectors(),
-        {
-          name: "read-built-css",
-          generateBundle(_options, bundle) {
-            for (const asset of Object.values(bundle)) {
-              if (asset.type === "asset" && asset.fileName.endsWith(".css")) {
-                builtCss += String(asset.source);
+    yield* Effect.promise(() =>
+      build({
+        configFile: false,
+        root,
+        logLevel: "silent",
+        plugins: [
+          scopeAncestorSelectors(),
+          {
+            name: "read-built-css",
+            generateBundle(_options, bundle) {
+              for (const asset of Object.values(bundle)) {
+                if (asset.type === "asset" && asset.fileName.endsWith(".css")) {
+                  builtCss += String(asset.source);
+                }
               }
-            }
+            },
           },
-        },
-      ],
-      build: { write: false, cssMinify: false },
-    });
+        ],
+        build: { write: false, cssMinify: false },
+      }),
+    );
     expect(builtCss).toContain(":where(.group):focus-visible .subject");
     expect(builtCss).toContain(".keep:is(.a:has(.b) *)");
     expect(builtCss).toContain(".nested:is(:where(.group):focus-visible *)");
-  } finally {
-    await NodeFSP.rm(root, { recursive: true, force: true });
-  }
-});
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
