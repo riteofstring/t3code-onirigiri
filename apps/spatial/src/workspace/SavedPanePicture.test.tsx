@@ -1,34 +1,23 @@
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { SavedPanePicture } from "./SavedPanePicture";
 
 const pending: { resolve: () => void; reject: () => void }[] = [];
-const writes: string[] = [];
-let source = "";
-const image = {
-  get src() {
-    return source;
-  },
-  set src(next: string) {
-    source = next;
-    writes.push(next);
-  },
-  ownerDocument: {
-    createElement: () => ({
-      src: "",
-      decode: () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject })),
-    }),
-  },
-};
-let renderer: ReactTestRenderer | undefined;
+const originalDecode = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "decode");
 const revoked: string[] = [];
 const ownedUrls = new Map<Blob, string>();
-const pictureUrl = (image: Blob) => {
+const pictureUrl = vi.fn((image: Blob) => {
   let url = ownedUrls.get(image);
   if (!url) ownedUrls.set(image, (url = URL.createObjectURL(image)));
   return url;
-};
+});
+const captureSize = { width: 520, height: 923 };
+let container: HTMLDivElement;
+let root: Root | undefined;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -37,108 +26,140 @@ beforeEach(() => {
     createObjectURL: () => `blob:${++sequence}`,
     revokeObjectURL: (url: string) => revoked.push(url),
   });
+  Object.defineProperty(HTMLImageElement.prototype, "decode", {
+    configurable: true,
+    value: () => new Promise<void>((resolve, reject) => pending.push({ resolve, reject })),
+  });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
 });
 
 afterEach(async () => {
-  if (renderer) await act(() => renderer!.unmount());
-  renderer = undefined;
-  source = "";
-  writes.length = 0;
+  if (root) await act(() => root!.unmount());
+  root = undefined;
+  container.remove();
+  if (originalDecode) Object.defineProperty(HTMLImageElement.prototype, "decode", originalDecode);
+  else delete (HTMLImageElement.prototype as Partial<HTMLImageElement>).decode;
   pending.length = 0;
   ownedUrls.clear();
   revoked.length = 0;
+  pictureUrl.mockClear();
   vi.unstubAllGlobals();
 });
 
-async function replace(preparedUrl: string | null = null) {
-  const content = (
-    <SavedPanePicture
-      image={new Blob(["png"])}
-      preparedUrl={preparedUrl}
-      pictureUrl={pictureUrl}
-      summary="Thread"
-    />
-  );
+async function replace(
+  preparedUrl: string | null = null,
+  cssSize = captureSize,
+  image = new Blob(["png"]),
+  paneSize = { width: 800, height: 1000 },
+) {
   await act(() => {
-    if (renderer) renderer.update(content);
-    else
-      renderer = create(content, {
-        createNodeMock: (node) => {
-          image.src = (node.props as { src?: string }).src ?? "";
-          return image;
-        },
-      });
+    root!.render(
+      <div style={{ ...paneSize, overflow: "hidden", position: "relative" }}>
+        <SavedPanePicture
+          image={image}
+          cssSize={cssSize}
+          preparedUrl={preparedUrl}
+          pictureUrl={pictureUrl}
+          summary="Thread"
+        />
+      </div>,
+    );
   });
 }
 
-it("keeps the decoded picture while a replacement loads or fails", async () => {
-  await replace();
-  await act(() => pending[0]!.resolve());
-  expect(image.src).toBe("blob:1");
-  await replace();
-  expect(image.src).toBe("blob:1");
-  await act(() => pending[1]!.reject());
-  expect(image.src).toBe("blob:1");
-  await replace();
-  await act(() => pending[2]!.resolve());
-  expect(image.src).toBe("blob:3");
-  await act(() => renderer!.unmount());
-  renderer = undefined;
-  expect(revoked).toEqual([]);
-});
+const shown = () => {
+  const image = container.querySelector("img")!;
+  return {
+    source: image.getAttribute("src"),
+    width: image.style.width,
+    height: image.style.height,
+  };
+};
 
-it("ignores an older decode that finishes after the current picture", async () => {
-  await replace();
-  await replace();
-  await act(() => pending[1]!.resolve());
-  await act(() => pending[0]!.resolve());
-  expect(image.src).toBe("blob:2");
-});
-
-it("uses a prepared picture without decoding or assigning its source again", async () => {
-  await replace("blob:prepared");
-  expect(image.src).toBe("blob:prepared");
+it("keeps captured dimensions when the surrounding pane shrinks or grows", async () => {
+  const image = new Blob(["png"]);
+  await replace("blob:prepared", captureSize, image);
+  const expected = { source: "blob:prepared", width: "520px", height: "923px" };
+  expect(shown()).toEqual(expected);
+  await replace("blob:prepared", captureSize, image, { width: 320, height: 400 });
+  expect(shown()).toEqual(expected);
+  await replace("blob:prepared", captureSize, image, { width: 1400, height: 1200 });
+  expect(shown()).toEqual(expected);
+  expect(container.querySelector("img")!.style.maxWidth).toBe("none");
+  expect(container.querySelector("img")!.style.maxHeight).toBe("none");
   expect(pending).toHaveLength(0);
-  expect(writes).toEqual(["blob:prepared"]);
-  await act(() => renderer!.unmount());
-  renderer = undefined;
-  expect(revoked).toEqual([]);
 });
 
-it("keeps a prepared cover while an unprepared replacement fails", async () => {
-  await replace("blob:prepared");
+it("keeps the decoded picture and its size while a replacement loads or fails", async () => {
   await replace();
-  expect(image.src).toBe("blob:prepared");
-  await act(() => pending[0]!.reject());
-  expect(image.src).toBe("blob:prepared");
-  expect(revoked).toEqual([]);
-});
-
-it("does not replace a prepared picture with an earlier pending decode", async () => {
-  await replace();
-  await replace("blob:prepared");
-  await act(() => pending[1]!.resolve());
-  expect(image.src).toBe("blob:prepared");
   await act(() => pending[0]!.resolve());
-  expect(image.src).toBe("blob:prepared");
+  const previous = { source: "blob:1", width: "520px", height: "923px" };
+  expect(shown()).toEqual(previous);
+  await replace(null, { width: 720, height: 961 });
+  expect(shown()).toEqual(previous);
+  await act(() => pending[1]!.reject());
+  expect(shown()).toEqual(previous);
+  await replace(null, { width: 480, height: 640 });
+  expect(shown()).toEqual(previous);
+  await act(() => pending[2]!.resolve());
+  expect(shown()).toEqual({ source: "blob:3", width: "480px", height: "640px" });
+  expect(revoked).toEqual([]);
 });
 
-it("keeps the visible cover while a previously prepared replacement decodes again", async () => {
-  await replace("blob:previous");
-  await replace("blob:prepared");
-  expect(image.src).toBe("blob:previous");
-  await act(() => pending[0]!.reject());
-  expect(image.src).toBe("blob:previous");
-  await replace("blob:replacement");
-  expect(image.src).toBe("blob:previous");
+it("ignores an older decode and its dimensions after the current picture", async () => {
+  await replace(null, { width: 400, height: 500 });
+  await replace(null, { width: 720, height: 961 });
   await act(() => pending[1]!.resolve());
-  expect(image.src).toBe("blob:replacement");
+  await act(() => pending[0]!.resolve());
+  expect(shown()).toEqual({ source: "blob:2", width: "720px", height: "961px" });
 });
 
-it("leaves URL release to its owner when unmounted during decoding", async () => {
-  await replace();
-  await act(() => renderer!.unmount());
-  renderer = undefined;
+it("uses a prepared picture immediately without decoding or requesting its URL", async () => {
+  await replace("blob:prepared");
+  expect(shown()).toEqual({ source: "blob:prepared", width: "520px", height: "923px" });
+  expect(pending).toHaveLength(0);
+  expect(pictureUrl).not.toHaveBeenCalled();
+  expect(revoked).toEqual([]);
+});
+
+it("keeps a prepared cover and its size while an unprepared replacement fails", async () => {
+  await replace("blob:prepared");
+  await replace(null, { width: 300, height: 400 });
   await act(() => pending[0]!.reject());
+  expect(shown()).toEqual({ source: "blob:prepared", width: "520px", height: "923px" });
+  expect(revoked).toEqual([]);
+});
+
+it("does not replace a prepared picture or its dimensions with an earlier pending decode", async () => {
+  await replace();
+  await replace("blob:prepared", { width: 720, height: 961 });
+  await act(() => pending[1]!.resolve());
+  expect(shown()).toEqual({ source: "blob:prepared", width: "720px", height: "961px" });
+  await act(() => pending[0]!.resolve());
+  expect(shown()).toEqual({ source: "blob:prepared", width: "720px", height: "961px" });
+});
+
+it("keeps both the visible cover and size while a prepared replacement decodes again", async () => {
+  await replace("blob:previous");
+  await replace("blob:prepared", { width: 720, height: 961 });
+  const previous = { source: "blob:previous", width: "520px", height: "923px" };
+  expect(shown()).toEqual(previous);
+  await act(() => pending[0]!.reject());
+  expect(shown()).toEqual(previous);
+  await replace("blob:replacement", { width: 480, height: 640 });
+  expect(shown()).toEqual(previous);
+  await act(() => pending[1]!.resolve());
+  expect(shown()).toEqual({ source: "blob:replacement", width: "480px", height: "640px" });
+});
+
+it("ignores a successful decode after unmount and leaves URL release to its owner", async () => {
+  await replace();
+  const image = container.querySelector("img")!;
+  await act(() => root!.unmount());
+  root = undefined;
+  await act(() => pending[0]!.resolve());
+  expect(image.getAttribute("src")).toBeNull();
   expect(revoked).toEqual([]);
 });

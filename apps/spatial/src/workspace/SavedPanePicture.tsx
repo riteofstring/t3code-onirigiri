@@ -1,25 +1,29 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-/** A saved picture of a thread pane, filling the pane, with its summary for assistive technology. */
+/** A thread picture at its captured CSS size, with its summary for assistive technology. */
 export function SavedPanePicture({
   image,
+  cssSize,
   preparedUrl,
   pictureUrl,
   summary,
 }: {
   image: Blob;
+  cssSize: { readonly width: number; readonly height: number };
   preparedUrl: string | null;
   pictureUrl: (image: Blob) => string;
   summary: ReactNode;
 }) {
   const ref = useRef<HTMLImageElement>(null);
-  const [initialUrl] = useState(preparedUrl);
-  const shownUrl = useRef(initialUrl);
+  const { width, height } = cssSize;
+  const [shown, setShown] = useState(() =>
+    preparedUrl ? { url: preparedUrl, width, height } : null,
+  );
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
     const url = preparedUrl ?? pictureUrl(image);
-    if (shownUrl.current === url) return;
+    if (shown?.url === url && shown.width === width && shown.height === height) return;
     // Previously warmed pixels may have been discarded; keep the current cover until decoding.
     const next = element.ownerDocument.createElement("img");
     let cancelled = false;
@@ -27,23 +31,28 @@ export function SavedPanePicture({
     void next.decode().then(
       () => {
         if (cancelled) return;
-        element.src = url;
-        shownUrl.current = url;
+        setShown({ url, width, height });
       },
       () => {},
     );
     return () => {
       cancelled = true;
     };
-  }, [image, pictureUrl, preparedUrl]);
+  }, [height, image, pictureUrl, preparedUrl, shown, width]);
   return (
     <>
       <img
         ref={ref}
-        src={initialUrl ?? undefined}
+        src={shown?.url}
         alt=""
         draggable={false}
-        className="pointer-events-none absolute inset-0 block size-full select-none"
+        className="pointer-events-none absolute top-0 left-0 block select-none"
+        style={{
+          width: shown?.width ?? width,
+          height: shown?.height ?? height,
+          maxWidth: "none",
+          maxHeight: "none",
+        }}
       />
       <div className="sr-only">{summary}</div>
     </>
