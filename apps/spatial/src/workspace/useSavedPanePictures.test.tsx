@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import type { OnirigiriLayout, WorkspacePane } from "@riteofstring/onirigiri";
 import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -82,9 +84,19 @@ const layout = (width: number) =>
       widthSpec: { unit: "px", value: width },
     })),
   }) as unknown as OnirigiriLayout;
-const geometry = (width: number) => `800x600@1|{"unit":"px","value":${width}}`;
+const geometry = (width: number) => `stage:800x600@1|{"unit":"px","value":${width}}`;
 
-let resize: (width: number, height: number) => void = () => {};
+type ResizeEntry = { contentRect: { width: number; height: number } };
+const resizeObservers = new Map<Element, (entries: ResizeEntry[]) => void>();
+let workspace: HTMLDivElement;
+let stage: HTMLDivElement;
+const resizeElement = (element: Element, width: number, height: number) => {
+  resizeObservers.get(element)?.([{ contentRect: { width, height } }]);
+};
+const resize = (width: number, height: number) => {
+  resizeElement(workspace, width, height);
+  resizeElement(stage, width, height);
+};
 let hook: ReturnType<typeof useSavedPanePictures>;
 let appearance: string;
 let renderer: ReactTestRenderer | undefined;
@@ -103,11 +115,20 @@ function Probe() {
 }
 
 async function mount() {
+  workspace?.remove();
+  workspace = document.createElement("div");
+  const engine = document.createElement("div");
+  engine.dataset.onirigiriSlot = "workspace";
+  stage = document.createElement("div");
+  stage.dataset.onirigiriSlot = "stage";
+  engine.append(stage);
+  workspace.append(engine);
+  document.body.append(workspace);
   await act(async () => {
     renderer = create(<Probe />);
   });
   await act(() => {
-    hook.stageRef({} as HTMLElement);
+    hook.stageRef(workspace);
     resize(800, 600);
   });
 }
@@ -146,13 +167,16 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(
-        callback: (entries: { contentRect: { width: number; height: number } }[]) => void,
-      ) {
-        resize = (width, height) => callback([{ contentRect: { width, height } }]);
+      private readonly elements = new Set<Element>();
+      constructor(private readonly callback: (entries: ResizeEntry[]) => void) {}
+      observe(element: Element) {
+        this.elements.add(element);
+        resizeObservers.set(element, this.callback);
       }
-      observe() {}
-      disconnect() {}
+      disconnect() {
+        for (const element of this.elements) resizeObservers.delete(element);
+        this.elements.clear();
+      }
     },
   );
 });
@@ -160,6 +184,8 @@ beforeEach(() => {
 afterEach(async () => {
   if (renderer) await act(() => renderer!.unmount());
   renderer = undefined;
+  workspace?.remove();
+  resizeObservers.clear();
   decodedUrls.length = 0;
   revokedUrls.length = 0;
   store.saved.clear();
@@ -203,6 +229,73 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
     resize(900, 600);
   });
   expect(hook.getPanePicture(pane)).toBeNull();
+});
+
+it("refreshes pictures when the engine stage grows inside an unchanged workspace", async () => {
+  await mount();
+  await act(() => resizeElement(stage, 800, 562));
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const oldImage = new Blob(["shorter stage"]);
+  await act(() => hook.onPanePictureCaptured(pane, oldImage));
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  const oldRevision = store.writes[0]!.revision;
+
+  await act(() => resizeElement(stage, 800, 600));
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.getPanePicture(pane)).toBeNull();
+  expect(hook.pictureFor(paneId)).toBe(oldImage);
+
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => vi.advanceTimersByTimeAsync(3500));
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.getPanePicture(pane)?.image).not.toBe(oldImage);
+  expect(store.writes[1]!.revision).not.toBe(oldRevision);
+});
+
+it.each(["capture", "snapshot"] as const)(
+  "does not mistake a wrapper-sized persisted %s for current stage geometry",
+  async (source) => {
+    store.saved.set(paneId, {
+      paneId,
+      revision: `u1|dark|dark|${fontRevision}|800x600@1|{"unit":"px","value":400}${source === "snapshot" ? "|responsive-css-4" : ""}`,
+      image: new Blob(["previous toolbar height"]),
+      savedAt: 1,
+      source,
+    });
+    await mount();
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    expect(hook.getPanePicture(pane)).toBeNull();
+    expect(hook.pictureFor(paneId)).toBeNull();
+    expect(store.deleted).toEqual([]);
+  },
+);
+
+it("binds a stage that appears after its outer workspace", async () => {
+  await act(async () => {
+    renderer = create(<Probe />);
+  });
+  workspace = document.createElement("div");
+  await act(() => {
+    hook.stageRef(workspace);
+    resizeElement(workspace, 800, 600);
+  });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  await act(() => hook.onPanePictureCaptured(pane, new Blob(["before stage"])));
+  expect(store.writes).toHaveLength(0);
+
+  const engine = document.createElement("div");
+  engine.dataset.onirigiriSlot = "workspace";
+  stage = document.createElement("div");
+  stage.dataset.onirigiriSlot = "stage";
+  engine.append(stage);
+  workspace.append(engine);
+  await act(() => {
+    hook.onLayoutChange(currentLayout);
+    resizeElement(stage, 800, 600);
+  });
+  await act(() => hook.onPanePictureCaptured(pane, new Blob(["ready stage"])));
+  expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
 function fillPictureCache() {

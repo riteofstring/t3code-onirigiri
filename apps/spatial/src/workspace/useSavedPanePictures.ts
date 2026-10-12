@@ -114,7 +114,7 @@ function columnWidths(layout: OnirigiriLayout): Map<string, string> {
 /**
  * Thread pictures saved from earlier sessions. A saved picture seeds its pane
  * while it still shows what the thread would: same last update and theme, and
- * the same pane geometry (workspace size, device pixel ratio and column
+ * the same pane geometry (engine stage size, device pixel ratio and column
  * width). Captures of fully synchronized threads are saved for the next load.
  * Where the browser cannot capture panes, mounted panes are drawn from their
  * DOM when the page is idle; those pictures seed their panes at once and are
@@ -207,12 +207,24 @@ export function useSavedPanePictures(
     };
   }, [updateSaved]);
 
+  const workspaceElementRef = useRef<HTMLElement | null>(null);
+  const observedStageRef = useRef<HTMLElement | null>(null);
   const stageObserverRef = useRef<ResizeObserver | null>(null);
-  const stageRef = useCallback((element: HTMLElement | null) => {
+  const observeStage = useCallback(() => {
+    const workspace = workspaceElementRef.current;
+    if (workspace && observedStageRef.current?.parentElement?.parentElement === workspace) return;
+    const stage =
+      workspace?.querySelector<HTMLElement>(
+        ':scope > [data-onirigiri-slot="workspace"] > [data-onirigiri-slot="stage"]',
+      ) ?? null;
+    if (stage === observedStageRef.current) return;
     stageObserverRef.current?.disconnect();
     stageObserverRef.current = null;
-    if (!element) return;
+    observedStageRef.current = stage;
+    stageSizeRef.current = "";
+    if (!stage) return;
     const observer = new ResizeObserver(([entry]) => {
+      if (observedStageRef.current !== stage) return;
       const size = entry?.contentRect;
       if (!size || size.width <= 0 || size.height <= 0) return;
       const next = `${Math.round(size.width)}x${Math.round(size.height)}`;
@@ -220,12 +232,20 @@ export function useSavedPanePictures(
       stageSizeRef.current = next;
       setGeometryVersion((version) => version + 1);
     });
-    observer.observe(element);
+    observer.observe(stage);
     stageObserverRef.current = observer;
   }, []);
+  const stageRef = useCallback(
+    (element: HTMLElement | null) => {
+      workspaceElementRef.current = element;
+      observeStage();
+    },
+    [observeStage],
+  );
 
   const onLayoutChange = useCallback(
     (layout: OnirigiriLayout) => {
+      observeStage();
       const next = columnWidths(layout);
       const previous = widthsRef.current;
       widthsRef.current = next;
@@ -239,7 +259,7 @@ export function useSavedPanePictures(
         updateRetained(new Map([...retainedRef.current].filter(([paneId]) => next.has(paneId))));
       }
     },
-    [updateRetained],
+    [observeStage, updateRetained],
   );
 
   const geometryRevision = useCallback(
@@ -251,7 +271,8 @@ export function useSavedPanePictures(
         widthsRef.current = columnWidths(layout);
       }
       const width = widthsRef.current.get(paneId);
-      return width ? `${stageSizeRef.current}@${window.devicePixelRatio}|${width}` : null;
+      // Older records measured the outer workspace, including its toolbar.
+      return width ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${width}` : null;
     },
     [getLayout],
   );
