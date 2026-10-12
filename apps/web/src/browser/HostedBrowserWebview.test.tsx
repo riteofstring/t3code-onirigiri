@@ -5,6 +5,8 @@ import {
   ThreadId,
   type ClientSettings,
   type DesktopPreviewBridge,
+  type DesktopPreviewWebviewConfig,
+  type PreviewViewportSetting,
 } from "@t3tools/contracts";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -46,7 +48,7 @@ import {
   __resetClientSettingsPersistenceForTests,
   ensureClientSettingsHydrated,
 } from "~/hooks/useSettings";
-import { useBrowserSurfaceStore } from "./browserSurfaceStore";
+import { acquireBrowserSurface, useBrowserSurfaceStore } from "./browserSurfaceStore";
 import * as desktopTabLifetime from "./desktopTabLifetime";
 import { HostedBrowserWebview } from "./HostedBrowserWebview";
 
@@ -65,7 +67,7 @@ function deferred<A>() {
 beforeEach(() => {
   __resetClientSettingsPersistenceForTests();
   useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
-  mocks.getClientSettings.mockReset();
+  mocks.getClientSettings.mockReset().mockResolvedValue(DEFAULT_CLIENT_SETTINGS);
   mocks.setClientSettings.mockReset().mockResolvedValue(undefined);
   mocks.createTab.mockReset().mockResolvedValue(undefined);
   mocks.closeTab.mockReset().mockResolvedValue(undefined);
@@ -198,5 +200,227 @@ describe("HostedBrowserWebview settings hydration", () => {
     expect(mocks.registerWebview).toHaveBeenCalledExactlyOnceWith(runtimeTabId, 41);
     expect(mocks.closeTab).not.toHaveBeenCalled();
     expect(mocks.setClientSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("HostedBrowserWebview content presentation", () => {
+  function fixture(name: string, fitSourceContent = false) {
+    const runtimeTabId = `content-${name}`;
+    const threadRef = {
+      environmentId: EnvironmentId.make(`host-content-${name}`),
+      threadId: ThreadId.make(`thread-content-${name}`),
+    };
+    const lease = acquireBrowserSurface(runtimeTabId, fitSourceContent);
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    let scrollLeft = 0;
+    let scrollTop = 0;
+    const readLeft = vi.fn(() => scrollLeft);
+    const readTop = vi.fn(() => scrollTop);
+    const wrapper = {
+      get scrollLeft() {
+        return readLeft();
+      },
+      get scrollTop() {
+        return readTop();
+      },
+      scrollTo(position: { left: number; top: number }) {
+        scrollLeft = position.left;
+        scrollTop = position.top;
+      },
+    };
+    const guest = Object.assign(new EventTarget(), { getWebContentsId: () => 41 });
+    const focus = () => undefined;
+    const present = (x = 0, y = 0, width = 800, height = 600, scale = 1) =>
+      lease.present({ x, y, width: width * scale, height: height * scale }, true, 0, 30, {
+        width,
+        height,
+        scaleX: scale,
+        scaleY: scale,
+        clipPath: "inset(0)",
+        interactive: true,
+        onFocus: focus,
+      });
+    present();
+    return {
+      runtimeTabId,
+      readLeft,
+      readTop,
+      frames,
+      present,
+      content: () => useBrowserSurfaceStore.getState().byTabId[runtimeTabId]?.content,
+      async render(
+        options: {
+          runtimeTabId?: string;
+          viewport?: PreviewViewportSetting;
+          zoomFactor?: number;
+        } = {},
+      ) {
+        await act(() => {
+          const view = (
+            <HostedBrowserWebview
+              threadRef={threadRef}
+              tabId="server-tab"
+              runtimeTabId={options.runtimeTabId ?? runtimeTabId}
+              initialUrl="https://example.com"
+              viewport={options.viewport ?? FILL_PREVIEW_VIEWPORT}
+              pictureInPicture={false}
+              profileId={undefined}
+              zoomFactor={options.zoomFactor ?? 1}
+            />
+          );
+          if (renderer) renderer.update(view);
+          else
+            renderer = create(view, {
+              createNodeMock: (element) => (element.type === "webview" ? guest : wrapper),
+            });
+        });
+      },
+      async frame() {
+        await act(() => {
+          const pending = [...frames.values()];
+          frames.clear();
+          for (const callback of pending) callback(16);
+        });
+      },
+      async scroll(left: number, top: number) {
+        scrollLeft = left;
+        scrollTop = top;
+        await act(() => {
+          renderer!.root.findByProps({ "data-preview-viewport": runtimeTabId }).props.onScroll();
+        });
+      },
+    };
+  }
+
+  it.each([false, true])(
+    "does not reread scrolling for camera-only movement (fitSourceContent=%s)",
+    async (fitSourceContent) => {
+      const f = fixture(`camera-${fitSourceContent}`, fitSourceContent);
+      await f.render();
+      await f.frame();
+      await f.frame();
+      const content = f.content();
+      expect(content).not.toBeNull();
+      f.readLeft.mockClear();
+      f.readTop.mockClear();
+      for (const [x, y, scale] of [
+        [100, 80, 1],
+        [240, 120, 0.5],
+        [-1200, 90, 0.75],
+      ] as const) {
+        await act(() => {
+          f.present(x, y, 800, 600, scale);
+        });
+        await f.frame();
+      }
+      expect(f.content()).toBe(content);
+      expect(f.readLeft).not.toHaveBeenCalled();
+      expect(f.readTop).not.toHaveBeenCalled();
+      expect(f.frames.size).toBe(0);
+    },
+  );
+
+  it("publishes changed logical dimensions on the next frame and native scrolling immediately", async () => {
+    const f = fixture("dimensions");
+    await f.render();
+    await f.frame();
+    await f.frame();
+    await act(() => {
+      f.present(100, 80, 1000, 700, 0.5);
+    });
+    expect(f.content()).toMatchObject({ width: 800, height: 600 });
+    await f.frame();
+    expect(f.content()).toEqual({
+      x: 0,
+      y: 0,
+      width: 1000,
+      height: 700,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+    await f.scroll(37, 61);
+    expect(f.content()).toMatchObject({ scrollLeft: 37, scrollTop: 61 });
+  });
+
+  it("publishes fitted viewport and zoom changes with their current offsets and scale", async () => {
+    const f = fixture("zoom", true);
+    const viewport = { _tag: "freeform", width: 320, height: 240 } as const;
+    await f.render({ viewport });
+    await f.frame();
+    expect(f.content()).toMatchObject({ x: 240, y: 180, width: 320, height: 240, scale: 1 });
+    await f.render({ viewport, zoomFactor: 2 });
+    await f.frame();
+    expect(f.content()).toMatchObject({ x: 80, y: 60, width: 640, height: 480, scale: 1 });
+    await f.render({ viewport, zoomFactor: 4 });
+    await f.frame();
+    expect(f.content()).toMatchObject({ x: 0, y: 0, width: 800, height: 600, scale: 0.625 });
+    await f.render({ viewport: { _tag: "freeform", width: 400, height: 200 } });
+    await f.frame();
+    expect(f.content()).toMatchObject({ x: 200, y: 200, width: 400, height: 200, scale: 1 });
+  });
+
+  it.each(["settings", "configuration"] as const)(
+    "synchronizes the first mounted wrapper after delayed %s readiness",
+    async (delayed) => {
+      const settings = deferred<ClientSettings | null>();
+      const config = deferred<DesktopPreviewWebviewConfig>();
+      if (delayed === "settings") mocks.getClientSettings.mockReturnValueOnce(settings.promise);
+      else mocks.getPreviewConfig.mockReturnValueOnce(config.promise);
+      const f = fixture(`delayed-${delayed}`);
+      await f.render();
+      await f.frame();
+      expect(f.content()).toBeNull();
+      expect(f.readLeft).not.toHaveBeenCalled();
+      await act(() => {
+        if (delayed === "settings") settings.resolve(DEFAULT_CLIENT_SETTINGS);
+        else
+          config.resolve({
+            partition: "persist:t3-preview-work",
+            webPreferences: "contextIsolation=yes",
+            preloadUrl: null,
+          });
+      });
+      expect(f.content()).toBeNull();
+      await f.frame();
+      expect(f.content()).toEqual({
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+        scale: 1,
+        scrollLeft: 0,
+        scrollTop: 0,
+      });
+      expect(f.readLeft).toHaveBeenCalledOnce();
+      expect(f.readTop).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("cancels a pending old-tab sync before publishing to a replacement tab", async () => {
+    const f = fixture("ownership");
+    await f.render();
+    await f.frame();
+    await f.frame();
+    const original = f.content();
+    await act(() => {
+      f.present(0, 0, 1000, 700);
+    });
+    const replacementId = "replacement-content-tab";
+    const replacement = acquireBrowserSurface(replacementId);
+    replacement.present({ x: 20, y: 30, width: 640, height: 480 }, true);
+    await f.render({ runtimeTabId: replacementId });
+    await f.frame();
+    expect(f.content()).toBe(original);
+    expect(useBrowserSurfaceStore.getState().byTabId[replacementId]?.content).toMatchObject({
+      width: 640,
+      height: 480,
+    });
   });
 });

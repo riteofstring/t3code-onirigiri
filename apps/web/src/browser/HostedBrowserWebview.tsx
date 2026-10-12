@@ -245,25 +245,34 @@ export function HostedBrowserWebview(props: {
     fittedSourceViewport && logicalSize
       ? resolveBrowserViewportLayout(logicalSize, fittedSourceViewport, normalizedZoomFactor)
       : viewportLayout;
+  const {
+    viewportX,
+    viewportY,
+    viewportWidth: contentWidth,
+    viewportHeight: contentHeight,
+    viewportScale,
+  } = layout;
 
   const syncContentPresentation = useCallback(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     useBrowserSurfaceStore.getState().presentContent(runtimeTabId, {
-      x: layout.viewportX,
-      y: layout.viewportY,
-      width: layout.viewportWidth,
-      height: layout.viewportHeight,
-      scale: layout.viewportScale,
+      x: viewportX,
+      y: viewportY,
+      width: contentWidth,
+      height: contentHeight,
+      scale: viewportScale,
       scrollLeft: wrapper.scrollLeft,
       scrollTop: wrapper.scrollTop,
     });
-  }, [layout, runtimeTabId]);
+  }, [contentHeight, contentWidth, runtimeTabId, viewportScale, viewportX, viewportY]);
 
+  const webviewReady = clientSettingsHydrated && config !== null;
   useEffect(() => {
+    if (!webviewReady) return;
     const frameId = window.requestAnimationFrame(syncContentPresentation);
     return () => window.cancelAnimationFrame(frameId);
-  }, [syncContentPresentation]);
+  }, [syncContentPresentation, webviewReady]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
