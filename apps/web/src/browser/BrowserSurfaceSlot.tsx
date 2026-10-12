@@ -2,7 +2,7 @@
 
 import { useContext, useLayoutEffect, useRef } from "react";
 
-import { acquireBrowserSurface } from "./browserSurfaceStore";
+import { acquireBrowserSurface, type BrowserSurfaceRect } from "./browserSurfaceStore";
 import {
   BrowserSurfaceProjectionContext,
   browserSurfaceAncestors,
@@ -37,15 +37,15 @@ export function BrowserSurfaceSlot(props: {
     if (!element) return;
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
     let observed: readonly HTMLElement[] = [];
+    let lastBounds: BrowserSurfaceRect | null = null;
     let lastProjection: ReturnType<typeof measureBrowserSurfaceProjection>["projection"] | null =
       null;
     const onFocus = () => projectionPolicy?.focus(element);
     const observer = new ResizeObserver(() => update());
     // Camera transforms do not resize the slot. Observe presented ancestor
     // writes, including moves that do not affect the focused pane.
-    const transforms = projectionPolicy ? new MutationObserver(() => update()) : null;
-    const update = (reclaim = false) => {
-      const rect = element.getBoundingClientRect();
+    const transforms = projectionPolicy ? new MutationObserver(() => update("mutation")) : null;
+    const update = (source: "geometry" | "mutation" | "presentation" = "geometry") => {
       const presentation = presentationRef.current;
       const ancestors = projectionPolicy ? browserSurfaceAncestors(element) : [];
       const panel = element.closest<HTMLElement>('[data-preview-panel-mode="inline"]');
@@ -64,6 +64,21 @@ export function BrowserSurfaceSlot(props: {
         }
         observed = nextObserved;
       }
+      if (
+        source === "mutation" &&
+        lastBounds !== null &&
+        projectionPolicy?.canPresent(element) === false
+      ) {
+        lease.present(
+          lastBounds,
+          false,
+          presentation.cornerRadius,
+          presentation.zIndex,
+          lastProjection,
+        );
+        return;
+      }
+      const rect = element.getBoundingClientRect();
       const projected = projectionPolicy
         ? measureBrowserSurfaceProjection(element, rect, ancestors, projectionPolicy, onFocus)
         : null;
@@ -85,6 +100,7 @@ export function BrowserSurfaceSlot(props: {
           };
       const showing =
         presentation.visible && (projected?.visible ?? (rect.width > 0 && rect.height > 0));
+      lastBounds = bounds;
       const presented = lease.present(
         bounds,
         showing,
@@ -92,13 +108,13 @@ export function BrowserSurfaceSlot(props: {
         presentation.zIndex,
         projection,
       );
-      if (reclaim && presentation.visible && !presented) {
+      if (source === "presentation" && presentation.visible && !presented) {
         lease.release();
         lease = acquireBrowserSurface(tabId, fitSourceContent);
         lease.present(bounds, showing, presentation.cornerRadius, presentation.zIndex, projection);
       }
     };
-    const present = () => update(true);
+    const present = () => update("presentation");
     updateRef.current = present;
     update();
     const measure = () => update();

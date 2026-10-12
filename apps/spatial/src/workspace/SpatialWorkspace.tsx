@@ -190,6 +190,10 @@ export function SpatialWorkspace({
   const activeRef = useRef(active);
   const browserProjection = useMemo<BrowserSurfaceProjectionPolicy>(
     () => ({
+      canPresent: (slot) =>
+        !slot.closest(
+          '[data-onirigiri-slot="pane"][data-visible="false"], [data-onirigiri-slot="pane-content"][data-runtime-state="hidden"]',
+        ),
       occluders: (slot) => [
         ...(slot
           .closest(".onirigiri-workspace")

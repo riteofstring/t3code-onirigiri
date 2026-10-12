@@ -13,6 +13,8 @@ export interface BrowserSurfaceProjection {
 }
 
 export interface BrowserSurfaceProjectionPolicy {
+  // Read lifecycle metadata only: this check must not force layout.
+  readonly canPresent: (slot: HTMLElement) => boolean;
   readonly occluders: (slot: HTMLElement) => readonly HTMLElement[];
   readonly interactive: (slot: HTMLElement) => boolean;
   readonly focus: (slot: HTMLElement) => void;
