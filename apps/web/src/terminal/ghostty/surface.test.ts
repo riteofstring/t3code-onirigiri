@@ -96,6 +96,7 @@ describe("GhosttyTerminalSurface visibility", () => {
     }
 
     const canvas = new TerminalTestElement();
+    const input = new TerminalTestElement();
     const mount = new TerminalTestElement();
     const context = {
       canvas,
@@ -116,7 +117,8 @@ describe("GhosttyTerminalSurface visibility", () => {
       }),
     };
     vi.stubGlobal("document", {
-      createElement: (tag: string) => (tag === "canvas" ? canvas : new TerminalTestElement()),
+      createElement: (tag: string) =>
+        tag === "canvas" ? canvas : tag === "textarea" ? input : new TerminalTestElement(),
       fonts: Object.assign(new EventTarget(), { load: async () => [], add() {} }),
     });
     vi.stubGlobal(
@@ -148,6 +150,7 @@ describe("GhosttyTerminalSurface visibility", () => {
     const onData = vi.fn<(data: string) => void>();
 
     return {
+      input,
       mount,
       frames,
       paint,
@@ -208,6 +211,40 @@ describe("GhosttyTerminalSurface visibility", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("keeps a workspace-consumed press and its Kitty release out of the shell", async () => {
+    const harness = createHarness();
+    const beforeKey = vi.fn(() => true);
+    const surface = await harness.create({ beforeKey });
+    surface.write("\x1b[>3u");
+    harness.onData.mockClear();
+    const key = (type: string) =>
+      Object.assign(new Event(type, { cancelable: true }), {
+        key: "ArrowRight",
+        code: "ArrowRight",
+        ctrlKey: true,
+        altKey: true,
+        metaKey: false,
+        shiftKey: false,
+        repeat: false,
+        isComposing: false,
+        getModifierState: () => false,
+      });
+    const consumed = key("keydown");
+    consumed.preventDefault();
+    harness.input.dispatchEvent(consumed);
+    harness.input.dispatchEvent(new Event("blur"));
+    harness.input.dispatchEvent(new Event("focus"));
+    harness.input.dispatchEvent(key("keyup"));
+    expect(beforeKey).not.toHaveBeenCalled();
+    expect(harness.onData).not.toHaveBeenCalled();
+
+    harness.input.dispatchEvent(key("keydown"));
+    harness.input.dispatchEvent(key("keyup"));
+    expect(beforeKey).toHaveBeenCalledOnce();
+    expect(harness.onData).toHaveBeenCalledTimes(2);
+    expect(harness.onData.mock.calls[1]?.[0]).toContain(":3");
   });
 
   it("stops hidden snapshots and paint while preserving live VT replies and the next cursor", async () => {
