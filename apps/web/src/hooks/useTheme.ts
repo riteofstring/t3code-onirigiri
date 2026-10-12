@@ -8,6 +8,7 @@ import {
   invalidateCustomThemes,
   canonicalThemePreference,
   isKnownThemePreference,
+  getThemeColorVariable,
   getThemePreferenceMode,
   parseThemeHalves,
   resolveDesktopTheme,
@@ -293,15 +294,15 @@ function resolveBrowserChromeSurface(): HTMLElement {
 
 export function syncBrowserChromeTheme() {
   if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return;
-  const rootStyles = getComputedStyle(document.documentElement);
-  const themeChromeColor = document.documentElement.dataset.themeId
-    ? normalizeThemeColor(rootStyles.getPropertyValue("--app-chrome-background"))
+  const root = document.documentElement;
+  const themeChromeColor = root.dataset.themeId
+    ? (normalizeThemeColor(root.style.getPropertyValue(getThemeColorVariable("chrome"))) ??
+      normalizeThemeColor(getComputedStyle(root).getPropertyValue("--app-chrome-background")))
     : null;
-  const surfaceColor = normalizeThemeColor(
-    getComputedStyle(resolveBrowserChromeSurface()).backgroundColor,
-  );
-  const fallbackColor = normalizeThemeColor(getComputedStyle(document.body).backgroundColor);
-  const backgroundColor = themeChromeColor ?? surfaceColor ?? fallbackColor;
+  const backgroundColor =
+    themeChromeColor ??
+    normalizeThemeColor(getComputedStyle(resolveBrowserChromeSurface()).backgroundColor) ??
+    normalizeThemeColor(getComputedStyle(document.body).backgroundColor);
   if (!backgroundColor) return;
 
   document.documentElement.style.backgroundColor = backgroundColor;
