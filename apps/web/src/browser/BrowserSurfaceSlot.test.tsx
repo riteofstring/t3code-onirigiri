@@ -11,6 +11,8 @@ import {
 } from "./browserSurfaceProjection";
 import { acquireBrowserSurface, useBrowserSurfaceStore } from "./browserSurfaceStore";
 
+const DOMMutationObserver = MutationObserver;
+
 class Observations {
   readonly targets = new Set<Element>();
   constructor(readonly notify: () => void) {}
@@ -19,6 +21,9 @@ class Observations {
   }
   disconnect() {
     this.targets.clear();
+  }
+  takeRecords() {
+    return [];
   }
 }
 
@@ -128,6 +133,119 @@ it("hides a departing guest without reading layout or rewriting its hidden prese
   expect(measure).not.toHaveBeenCalled();
 });
 
+it("waits for already queued content hiding before reading mutation geometry", async () => {
+  await mount();
+  const shown = state();
+  await act(() => {
+    queueMicrotask(() => {
+      host.dataset.visible = "false";
+      content.dataset.runtimeState = "hidden";
+    });
+    mutations!.notify();
+  });
+  expect(state().visible).toBe(false);
+  expect(state().rect).toEqual(shown.rect);
+  expect(state().projection).toEqual(shown.projection);
+  expect(measure).not.toHaveBeenCalled();
+});
+
+it("coalesces mutation notifications using the final geometry and input state", async () => {
+  const focus = vi.fn();
+  policy = { ...policy, focus };
+  await mount();
+  const shown = state();
+  await act(() => {
+    rect = new DOMRect(200, 100, 300, 450);
+    mutations!.notify();
+    rect = new DOMRect(240, 120, 200, 300);
+    content.setAttribute("inert", "");
+    mutations!.notify();
+    mutations!.notify();
+    expect(state()).toBe(shown);
+    expect(measure).not.toHaveBeenCalled();
+  });
+  expect(measure).toHaveBeenCalledOnce();
+  expect(state().rect).toEqual({ x: 240, y: 120, width: 200, height: 300 });
+  expect(state().projection).toMatchObject({ scaleX: 0.5, scaleY: 0.5, interactive: false });
+  await act(() => {
+    content.removeAttribute("inert");
+    mutations!.notify();
+  });
+  expect(state().projection?.interactive).toBe(true);
+  state().projection?.onFocus();
+  expect(focus).toHaveBeenCalledExactlyOnceWith(slot);
+});
+
+it("measures queued DOM writes once instead of redelivering records it already accounted for", async () => {
+  vi.stubGlobal("MutationObserver", DOMMutationObserver);
+  await mount();
+  await act(() => {
+    host.dataset.transform = "first";
+    queueMicrotask(() => {
+      rect = new DOMRect(300, 150, 200, 300);
+      host.dataset.transform = "final";
+    });
+  });
+  expect(state().rect).toEqual({ x: 300, y: 150, width: 200, height: 300 });
+  expect(measure).toHaveBeenCalledOnce();
+});
+
+it("observes new DOM writes made after the deferred measurement", async () => {
+  vi.stubGlobal("MutationObserver", DOMMutationObserver);
+  await mount();
+  const unsubscribe = useBrowserSurfaceStore.subscribe((next) => {
+    if (next.byTabId.guest?.rect?.x !== 200) return;
+    rect = new DOMRect(300, 150, 200, 300);
+    host.dataset.transform = "final";
+  });
+  try {
+    await act(() => {
+      rect = new DOMRect(200, 100, 300, 450);
+      host.dataset.transform = "first";
+    });
+    expect(state().rect).toEqual({ x: 300, y: 150, width: 200, height: 300 });
+    expect(measure).toHaveBeenCalledTimes(2);
+  } finally {
+    unsubscribe();
+  }
+});
+
+it("does not measure or present a queued mutation after unmount", async () => {
+  await mount();
+  act(() => {
+    mutations!.notify();
+    renderer!.unmount();
+  });
+  const released = state();
+  expect(released.owner).toBeNull();
+  await act(async () => {});
+  expect(state()).toBe(released);
+  expect(measure).not.toHaveBeenCalled();
+});
+
+it("keeps a replaced projection lease safe from its predecessor's queued mutation", async () => {
+  await mount();
+  const oldOwner = state().owner;
+  const oldMutations = mutations!;
+  act(() => {
+    oldMutations.notify();
+    rect = new DOMRect(300, 150, 200, 300);
+    renderer!.update(view({ ...policy }));
+  });
+  const replacement = state();
+  expect(replacement.owner).not.toBe(oldOwner);
+  expect(replacement.rect).toEqual({ x: 300, y: 150, width: 200, height: 300 });
+  measure.mockClear();
+  await act(async () => {});
+  expect(state()).toBe(replacement);
+  expect(measure).not.toHaveBeenCalled();
+  rect = new DOMRect(320, 180, 240, 360);
+  await act(() => mutations!.notify());
+  expect(state().owner).toBe(replacement.owner);
+  expect(state().rect).toEqual({ x: 320, y: 180, width: 240, height: 360 });
+  expect(measure).toHaveBeenCalledOnce();
+});
+
 it("waits for live content before restoring fresh geometry and input", async () => {
   await mount();
   await hide();
@@ -169,7 +287,7 @@ it.each(["observer", "resize", "scroll", "presentation"] as const)(
     await mount();
     await hide();
     rect = new DOMRect(-1200, 90, 440, 650);
-    await act(() => {
+    act(() => {
       if (source === "observer") resizes.notify();
       else if (source === "presentation") renderer!.update(view(policy, 1));
       else window.dispatchEvent(new Event(source));

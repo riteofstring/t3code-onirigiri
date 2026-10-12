@@ -36,6 +36,8 @@ export function BrowserSurfaceSlot(props: {
     const element = elementRef.current;
     if (!element) return;
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
+    let disposed = false;
+    let mutationQueued = false;
     let observed: readonly HTMLElement[] = [];
     let lastBounds: BrowserSurfaceRect | null = null;
     let lastProjection: ReturnType<typeof measureBrowserSurfaceProjection>["projection"] | null =
@@ -44,7 +46,19 @@ export function BrowserSurfaceSlot(props: {
     const observer = new ResizeObserver(() => update());
     // Camera transforms do not resize the slot. Observe presented ancestor
     // writes, including moves that do not affect the focused pane.
-    const transforms = projectionPolicy ? new MutationObserver(() => update("mutation")) : null;
+    const transforms = projectionPolicy
+      ? new MutationObserver(() => {
+          if (disposed || mutationQueued) return;
+          mutationQueued = true;
+          // Let pending React commits apply pane visibility before reading layout.
+          queueMicrotask(() => {
+            mutationQueued = false;
+            if (disposed) return;
+            transforms?.takeRecords();
+            update("mutation");
+          });
+        })
+      : null;
     const update = (source: "geometry" | "mutation" | "presentation" = "geometry") => {
       const presentation = presentationRef.current;
       const ancestors = projectionPolicy ? browserSurfaceAncestors(element) : [];
@@ -121,6 +135,7 @@ export function BrowserSurfaceSlot(props: {
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => {
+      disposed = true;
       observer.disconnect();
       transforms?.disconnect();
       window.removeEventListener("resize", measure);
