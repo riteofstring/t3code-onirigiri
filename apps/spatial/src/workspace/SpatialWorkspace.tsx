@@ -491,6 +491,11 @@ export function SpatialWorkspace({
     [closeTerminal, remove, toolPanes],
   );
 
+  const navigateFromTerminal = useCallback<OnirigiriWorkspaceHandle["focus"]>(
+    (direction) => workspaceRef.current?.focus(direction) ?? false,
+    [],
+  );
+
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
       if (pane.surfaceKind === "empty") {
@@ -512,6 +517,7 @@ export function SpatialWorkspace({
             terminalId={tool.terminalId}
             focused={state.focused}
             live={state.runtimeState === "live"}
+            onNavigate={navigateFromTerminal}
           />
         );
       }
@@ -527,7 +533,7 @@ export function SpatialWorkspace({
         />
       );
     },
-    [choose, navigateAway],
+    [choose, navigateAway, navigateFromTerminal],
   );
 
   // A valid picture remains a visual cover while the same thread refreshes.
@@ -536,11 +542,12 @@ export function SpatialWorkspace({
       if (pane.surfaceKind !== "thread") return null;
       const data = pane.data as ThreadPaneData;
       const card = <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
-      const image = pictureFor(pane.paneId);
-      return image ? (
+      const picture = pictureFor(pane.paneId);
+      return picture ? (
         <SavedPanePicture
-          image={image}
-          preparedUrl={preparedPictureUrl(image)}
+          image={picture.image}
+          cssSize={picture.cssSize}
+          preparedUrl={preparedPictureUrl(picture.image)}
           pictureUrl={pictureUrl}
           summary={card}
         />

@@ -10,6 +10,7 @@ export interface SavedPanePicture {
   /** What the picture shows: the thread's revision, theme and pane geometry. */
   readonly revision: string;
   readonly image: Blob;
+  readonly cssSize: { readonly width: number; readonly height: number };
   readonly savedAt: number;
   /** A capture by the workspace, or a picture drawn from the pane's DOM. */
   readonly source?: "capture" | "snapshot";
@@ -61,7 +62,18 @@ export async function loadPanePictures(): Promise<Map<string, SavedPanePicture>>
   const request = transaction.objectStore(STORE).getAll();
   await completed(transaction);
   const pictures = request.result as SavedPanePicture[];
-  return new Map(pictures.map((picture) => [picture.paneId, picture]));
+  return new Map(
+    pictures
+      .filter(
+        ({ cssSize }) =>
+          cssSize &&
+          Number.isFinite(cssSize.width) &&
+          cssSize.width > 0 &&
+          Number.isFinite(cssSize.height) &&
+          cssSize.height > 0,
+      )
+      .map((picture) => [picture.paneId, picture]),
+  );
 }
 
 /** Saves a pane's picture, then drops the oldest pictures beyond the limits. */
