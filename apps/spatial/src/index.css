@@ -6,6 +6,15 @@
   height: 100%;
 }
 
+/* Bound Chromium's layer merging when live content inside a pane repaints. */
+.spatial-workspace
+  > .onirigiri-workspace
+  > [data-onirigiri-slot="stage"]
+  > .onirigiri-workspace__world
+  > .onirigiri-pane[data-visible="true"] {
+  will-change: opacity;
+}
+
 .spatial-workspace .onirigiri-pane__live-content[data-spatial-snapshot],
 .spatial-workspace
   .onirigiri-pane__live-content:has(
