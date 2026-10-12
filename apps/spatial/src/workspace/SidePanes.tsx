@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import type { OnirigiriWorkspaceHandle } from "@riteofstring/onirigiri";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   Outlet,
@@ -8,7 +9,7 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { Suspense, createContext, use, useMemo, useState } from "react";
+import { Suspense, createContext, use, useEffect, useMemo, useRef, useState } from "react";
 
 import DiffPanel from "@t3tools/web/src/components/DiffPanel";
 import { Button } from "@t3tools/web/src/components/ui/button";
@@ -41,16 +42,29 @@ export function TerminalPane({
   terminalId,
   focused,
   live,
+  onNavigate,
 }: {
   thread: SidePaneThread;
   terminalId: string;
   focused: boolean;
   live: boolean;
+  onNavigate?: OnirigiriWorkspaceHandle["focus"];
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const cwd = useThreadCwd(thread);
   const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
   const [session, setSession] = useState({ attempt: 0, exited: false, failed: false });
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const activeElement = containerRef.current?.ownerDocument.activeElement;
+    if (
+      !focused &&
+      activeElement instanceof HTMLElement &&
+      containerRef.current?.contains(activeElement)
+    ) {
+      activeElement.blur();
+    }
+  }, [focused]);
   if (!cwd) return null;
   const restart = () => {
     void openTerminal({
@@ -65,7 +79,32 @@ export function TerminalPane({
     );
   };
   return (
-    <div className="relative h-full w-full" data-terminal-owner="drawer">
+    <div
+      ref={containerRef}
+      className="relative h-full w-full"
+      data-terminal-owner="drawer"
+      onKeyDownCapture={(event) => {
+        const native = event.nativeEvent;
+        if (
+          !onNavigate ||
+          event.defaultPrevented ||
+          !event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey ||
+          native.isComposing ||
+          native.keyCode === 229 ||
+          native.getModifierState("AltGraph") ||
+          (event.target instanceof HTMLElement &&
+            event.target.closest("dialog[open], [role='dialog'][aria-modal='true']"))
+        )
+          return;
+        const direction = terminalNavigationDirections[event.key];
+        if (typeof direction !== "string") return;
+        event.preventDefault();
+        onNavigate(direction);
+      }}
+    >
       <TerminalViewport
         key={session.attempt}
         advancedTypography={false}
@@ -97,6 +136,15 @@ export function TerminalPane({
     </div>
   );
 }
+
+const terminalNavigationDirections: Readonly<
+  Record<string, Parameters<OnirigiriWorkspaceHandle["focus"]>[0] | undefined>
+> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
 
 const DiffThreadContext = createContext<SidePaneThread | null>(null);
 
