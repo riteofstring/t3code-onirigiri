@@ -20,6 +20,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { DraftSessionState } from "../composerDraftStore";
 import type { ThreadRouteTarget } from "../threadRoutes";
+import { useEnvironmentShellBootstrapped } from "../state/entities";
 import { ThreadRouteView } from "./ThreadRouteView";
 
 const fixture = vi.hoisted(() => ({
@@ -222,6 +223,10 @@ function displayed(id = ONE, environmentId = LOCAL) {
   return JSON.parse(chat(id, environmentId)!.textContent!);
 }
 
+function BootstrapProbe({ environmentId }: { environmentId: EnvironmentId | null }) {
+  return <output>{String(useEnvironmentShellBootstrapped(environmentId))}</output>;
+}
+
 beforeEach(() => {
   atoms.registry = AtomRegistry.make();
   fixture.renders.clear();
@@ -352,4 +357,47 @@ it("does not carry bootstrap readiness into a different environment or an unrese
     setDetail(detail(thread(ONE)), REMOTE);
   });
   expect(displayed(ONE, REMOTE).title).toBe("one");
+});
+
+it("reports readiness from retained snapshots and clears it when the snapshot or environment leaves", async () => {
+  const show = async (environmentId: EnvironmentId | null) => {
+    await act(() =>
+      root.render(
+        <RegistryContext value={atoms.registry}>
+          <BootstrapProbe environmentId={environmentId} />
+        </RegistryContext>,
+      ),
+    );
+  };
+  const readiness = () => host.querySelector("output")!.textContent;
+  await show(LOCAL);
+  expect(readiness()).toBe("false");
+  const ready = AsyncResult.success(shellState(snapshot([thread(ONE)])));
+  for (const value of [
+    ready,
+    AsyncResult.waiting(ready),
+    AsyncResult.fail(new Error("offline"), { previousSuccess: Option.some(ready) }),
+    AsyncResult.success({ ...ready.value, status: "cached" as const }),
+    AsyncResult.success({ ...ready.value, status: "synchronizing" as const }),
+  ]) {
+    await act(() => atoms.registry.set(atoms.shell(LOCAL), value));
+    expect(readiness()).toBe("true");
+  }
+  await act(() =>
+    atoms.registry.set(
+      atoms.shell(LOCAL),
+      AsyncResult.success({ ...ready.value, snapshot: Option.none() }),
+    ),
+  );
+  expect(readiness()).toBe("false");
+  await act(() => atoms.registry.set(atoms.shell(LOCAL), AsyncResult.fail(new Error("offline"))));
+  expect(readiness()).toBe("false");
+  await act(() => atoms.registry.set(atoms.shell(LOCAL), ready));
+  expect(readiness()).toBe("true");
+  await show(REMOTE);
+  expect(readiness()).toBe("false");
+  await act(() => atoms.registry.set(atoms.shell(REMOTE), ready));
+  expect(readiness()).toBe("true");
+  await show(null);
+  expect(readiness()).toBe("false");
 });
