@@ -2,7 +2,9 @@ import {
   OnirigiriWorkspace,
   createWorkspaceScene,
   defaultOnirigiriShortcuts,
+  type OnirigiriShortcutBinding,
   type OnirigiriShortcutBindings,
+  type OnirigiriWorkspaceProps,
   serializeWorkspaceLayout,
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
@@ -36,7 +38,13 @@ import { useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { WorkspaceTooltips, WorkspaceControlButton } from "./WorkspaceTooltips";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
 import { overviewZoomChoices, useWorkspacePreferences } from "./useWorkspacePreferences";
-import { keepPaneSizes } from "./workspaceSizing";
+import {
+  readPaneLayout,
+  panesFillViewport,
+  reconcilePaneLayout,
+  threadLayoutPositions,
+  writePaneLayout,
+} from "./workspaceLayout";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { SavedPanePicture } from "./SavedPanePicture";
@@ -55,13 +63,11 @@ import {
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
 
-// A thread's composer usually holds focus, so moving between panes and
-// overview also answer to Control+Alt chords, which never edit text.
+// Explicit arrow chords remain available while a pane owns keyboard focus.
 function whileEditing(key: string) {
   return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
 }
-// Panes are threads and their side panes, which the workspace places itself,
-// so only navigation shortcuts apply; splitting or moving panes does not.
+// New panes use T3's chooser; navigation and rearrangement use the engine.
 const NAVIGATION = new Set([
   "focusDown",
   "focusFirstColumn",
@@ -69,19 +75,29 @@ const NAVIGATION = new Set([
   "focusLeft",
   "focusRight",
   "focusUp",
+  "movePaneDown",
+  "movePaneLeft",
+  "movePaneRight",
+  "movePaneUp",
   "returnHome",
   "toggleOverview",
 ]);
+const editingArrows = (bindings: readonly OnirigiriShortcutBinding[]) =>
+  bindings.map((binding) => ({ ...binding, whileEditing: binding.key.startsWith("Arrow") }));
 const SHORTCUTS: OnirigiriShortcutBindings = {
   ...Object.fromEntries(
     Object.keys(defaultOnirigiriShortcuts)
       .filter((action) => !NAVIGATION.has(action))
       .map((action) => [action, []]),
   ),
-  focusDown: [...defaultOnirigiriShortcuts.focusDown, whileEditing("ArrowDown")],
-  focusLeft: [...defaultOnirigiriShortcuts.focusLeft, whileEditing("ArrowLeft")],
-  focusRight: [...defaultOnirigiriShortcuts.focusRight, whileEditing("ArrowRight")],
-  focusUp: [...defaultOnirigiriShortcuts.focusUp, whileEditing("ArrowUp")],
+  focusDown: defaultOnirigiriShortcuts.focusDown,
+  movePaneDown: editingArrows(defaultOnirigiriShortcuts.movePaneDown),
+  focusLeft: defaultOnirigiriShortcuts.focusLeft,
+  movePaneLeft: editingArrows(defaultOnirigiriShortcuts.movePaneLeft),
+  focusRight: defaultOnirigiriShortcuts.focusRight,
+  movePaneRight: editingArrows(defaultOnirigiriShortcuts.movePaneRight),
+  focusUp: defaultOnirigiriShortcuts.focusUp,
+  movePaneUp: editingArrows(defaultOnirigiriShortcuts.movePaneUp),
   toggleOverview: [...defaultOnirigiriShortcuts.toggleOverview, whileEditing("o")],
 };
 /** Quiet time after a focus change before the app route follows it. */
@@ -127,6 +143,16 @@ export function SpatialWorkspace({
   const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
+  const [savedLayout] = useState(() => readPaneLayout(layoutMode));
+  const initialLayout = useMemo(() => {
+    if (!initialPanes || !savedLayout) return null;
+    const fresh = createWorkspaceScene({
+      id: WORKSPACE_ID,
+      panes: initialPanes,
+      gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
+    });
+    return reconcilePaneLayout(serializeWorkspaceLayout(fresh.scene, fresh.cursor), savedLayout);
+  }, [initialPanes, layoutMode, savedLayout]);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const [preferences, updatePreferences] = useWorkspacePreferences();
@@ -135,10 +161,9 @@ export function SpatialWorkspace({
     (choice) => choice.value === preferences.overviewZoom,
   )?.width;
   const [panesMaximized, setPanesMaximized] = useState(false);
+  const [workspacePadding, setWorkspacePadding] = useState(0);
   const resizePanes = useCallback((mode: PaneSizingMode) => {
-    if (!workspaceRef.current) return;
-    workspaceRef.current.resizePanes(mode);
-    setPanesMaximized(mode === "full");
+    workspaceRef.current?.resizePanes(mode);
   }, []);
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
@@ -152,7 +177,7 @@ export function SpatialWorkspace({
   const {
     getPanePicture,
     getPanePresentation,
-    onLayoutChange,
+    onLayoutChange: onPictureLayoutChange,
     onPanePictureCaptured,
     pictureFor,
     preparedPictureUrl,
@@ -167,6 +192,37 @@ export function SpatialWorkspace({
     stageRef,
     stageViewport,
   } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
+  const paneViewport = useMemo(() => {
+    if (stageViewport.height <= 0) return null;
+    return {
+      width: Math.max(0, stageViewport.width - workspacePadding * 2),
+      height: Math.max(0, stageViewport.height - workspacePadding * 2),
+    };
+  }, [stageViewport, workspacePadding]);
+  const updatePaneSizing = useCallback(
+    (layout: ReturnType<OnirigiriWorkspaceHandle["getLayout"]>) => {
+      setPanesMaximized(paneViewport !== null && panesFillViewport(layout, paneViewport));
+    },
+    [paneViewport],
+  );
+  useEffect(() => {
+    const layout = workspaceRef.current?.getLayout();
+    if (layout) updatePaneSizing(layout);
+  }, [updatePaneSizing]);
+  const lastLayoutRevisionRef = useRef<number | null>(null);
+  const onLayoutChange = useCallback<NonNullable<OnirigiriWorkspaceProps["onLayoutChange"]>>(
+    (layout, metadata) => {
+      if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
+      lastLayoutRevisionRef.current = metadata.layoutRevision;
+      setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
+      updatePaneSizing(layout);
+      onPictureLayoutChange(layout);
+      lifecycle?.setPanes(threadLayoutPositions(layout));
+      writePaneLayout(layoutMode, layout);
+    },
+    [layoutMode, lifecycle, onPictureLayoutChange, updatePaneSizing],
+  );
+
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -239,7 +295,7 @@ export function SpatialWorkspace({
         row: focused?.planeIndex ?? 0,
         split: 0,
       });
-      workspace.restoreLayout(keepPaneSizes(layout, workspace.getScene()), {
+      workspace.restoreLayout(reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId), {
         keepPresentation: true,
       });
       // A pane just added is for using now: leave overview to show it.
@@ -280,11 +336,6 @@ export function SpatialWorkspace({
     lifecycle?.setBackgroundPictures(active);
     setCaptureActivity(active, lifecycle?.isMoving() ?? false);
   }, [active, lifecycle, setCaptureActivity]);
-  useEffect(() => {
-    if (panes && lifecycle) {
-      lifecycle.setPanes(threadPanePositions(panes));
-    }
-  }, [lifecycle, panes]);
 
   // The app route follows the focused thread once the camera rests, so T3's
   // global surfaces act on it. Routes this workspace requested are remembered
@@ -619,15 +670,7 @@ export function SpatialWorkspace({
           onToggleAnchor={toggleFocusAnchor}
           preferences={preferences}
           maxRowHeight={
-            stageViewport.height > 0
-              ? Math.max(
-                  1,
-                  stageViewport.height -
-                    (stageViewport.compact
-                      ? 0
-                      : (workspaceRef.current?.getScene().padding ?? 0) * 2),
-                )
-              : null
+            stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
           }
           onPreferencesChange={updatePreferences}
           onResizePanes={resizePanes}
@@ -653,6 +696,7 @@ export function SpatialWorkspace({
                     getPanePresentation={getPanePresentation}
                     gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
                     initialPanes={initialPanes}
+                    initialLayout={initialLayout}
                     liveContent
                     onFocusedPaneFrame={onFocusedPaneFrame}
                     onLayoutChange={onLayoutChange}

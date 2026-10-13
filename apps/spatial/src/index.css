@@ -119,8 +119,7 @@
 }
 
 .spatial-workspace-controls__surface > .spatial-workspace-controls__reveal {
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow-x: clip;
 }
 
 .spatial-workspace-controls__actions {
@@ -128,6 +127,7 @@
   align-items: center;
   gap: 3px;
   width: max-content;
+  max-width: 100%;
   padding-inline: 3px;
 }
 
@@ -165,8 +165,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.spatial-workspace-controls__settings {
+.spatial-workspace-controls__actions > .spatial-workspace-controls__settings {
   order: -1;
+  flex-shrink: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

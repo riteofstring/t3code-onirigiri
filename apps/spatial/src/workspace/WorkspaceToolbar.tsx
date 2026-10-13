@@ -63,15 +63,20 @@ export function WorkspaceToolbar({
   const advancedRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
   const advancedId = useId();
-  const moveBinding = getOnirigiriShortcutBindings("focusLeft", shortcuts).find(
-    (binding) => binding.whileEditing,
+  const focusBinding = getOnirigiriShortcutBindings("focusLeft", shortcuts).find(
+    (binding) => binding.key === "ArrowLeft",
+  );
+  const moveBinding = getOnirigiriShortcutBindings("movePaneLeft", shortcuts).find(
+    (binding) => binding.key === "ArrowLeft",
   );
   const overviewBinding = getOnirigiriShortcutBindings("toggleOverview", shortcuts).find(
     (binding) => binding.whileEditing,
   );
   const hint = [
+    focusBinding &&
+      `${formatOnirigiriShortcut(focusBinding).keys.slice(0, -1).join(" + ")} + arrows to navigate`,
     moveBinding &&
-      `${formatOnirigiriShortcut(moveBinding).keys.slice(0, -1).join(" + ")} + arrows to move`,
+      `${formatOnirigiriShortcut(moveBinding).keys.slice(0, -1).join(" + ")} + arrows to move panes`,
     overviewBinding && `${formatOnirigiriShortcut(overviewBinding).label} for overview`,
   ]
     .filter(Boolean)
