@@ -59,31 +59,82 @@
   position: absolute;
   inset-block-start: 8px;
   inset-inline-end: 8px;
+  width: max-content;
+  max-width: calc(100% - 16px);
   z-index: 40;
 }
 
-.spatial-workspace-controls__popup {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline-end: 0;
-  padding-block-start: 4px;
-  width: max-content;
-  max-width: calc(100vw - 24px);
+.spatial-workspace-controls__surface {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
 }
 
-.spatial-workspace-controls__surface {
+.spatial-workspace-controls__surface[data-expanded="true"] {
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px;
+  border-color: var(--border);
   box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
 }
 
 .spatial-workspace-controls__actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 3px;
+  min-width: 0;
+  order: -1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.spatial-workspace-controls__actions > *,
+.spatial-workspace-controls__advanced > * {
+  flex-shrink: 0;
+}
+
+.spatial-workspace-controls__advanced {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  order: -1;
+  padding-inline-end: 6px;
+  margin-inline-end: 3px;
+  border-inline-end: 1px solid var(--border);
+}
+
+.spatial-workspace-controls__actions[hidden],
+.spatial-workspace-controls__advanced[hidden] {
+  display: none;
+}
+
+.spatial-workspace-controls__field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.spatial-workspace-controls__field select {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding-inline: 5px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+}
+
+.spatial-workspace-controls__field select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.spatial-workspace-controls__height {
+  width: 76px;
 }
 
 .spatial-workspace .onirigiri-workspace__desktop-controls {

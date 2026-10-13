@@ -101,25 +101,24 @@ describe("spatialBrowserOccluders", () => {
     expect(guestClip(slot)).toBe('path("M0 0H400V300H0Z")');
   });
 
-  it("clips both the controls trigger and its popup as they open and close", () => {
+  it("clips the toolbar as controls expand left on the same row", () => {
     const { spatial, slot } = createWorkspace();
     const controls = document.createElement("div");
     controls.dataset.spatialWorkspaceControls = "";
-    const trigger = document.createElement("button");
-    trigger.getBoundingClientRect = () => new DOMRect(280, 50, 20, 20);
-    const popup = document.createElement("div");
-    popup.hidden = true;
-    popup.getBoundingClientRect = () =>
-      popup.hidden ? new DOMRect() : new DOMRect(200, 70, 100, 130);
-    controls.append(trigger, popup);
+    const surface = document.createElement("div");
+    let width = 20;
+    surface.getBoundingClientRect = () => new DOMRect(300 - width, 50, width, 20);
+    controls.append(surface);
     spatial.append(controls);
 
-    expect(spatialBrowserOccluders(slot)).toEqual([trigger, popup]);
+    expect(spatialBrowserOccluders(slot)).toEqual([surface]);
     const closed = guestClip(slot);
     expect(closed).toBe('path("M0 40H400V300H0Z M0 0H360V40H0Z")');
-    popup.hidden = false;
-    expect(guestClip(slot)).toBe('path("M0 40H200V300H0Z M0 0H360V40H0Z")');
-    popup.hidden = true;
+    width = 100;
+    expect(guestClip(slot)).toBe('path("M0 40H400V300H0Z M0 0H200V40H0Z")');
+    width = 200;
+    expect(guestClip(slot)).toBe('path("M0 40H400V300H0Z")');
+    width = 20;
     expect(guestClip(slot)).toBe(closed);
   });
 

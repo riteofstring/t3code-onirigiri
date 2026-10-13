@@ -4,13 +4,12 @@ import {
   defaultOnirigiriShortcuts,
   type OnirigiriShortcutBindings,
   serializeWorkspaceLayout,
-  type OnirigiriLayout,
   type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
+  type PaneSizingMode,
   type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
-  type WorkspaceScene,
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
@@ -35,6 +34,8 @@ import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import { EmptyPane } from "./EmptyPane";
 import { useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
+import { overviewZoomChoices, useWorkspacePreferences } from "./useWorkspacePreferences";
+import { keepPaneSizes } from "./workspaceSizing";
 import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { SavedPanePicture } from "./SavedPanePicture";
@@ -101,30 +102,6 @@ function threadPanePositions(panes: readonly OnirigiriPaneDefinition[]): PanePos
     }));
 }
 
-// Panes that stay keep the widths their columns were given.
-function keepColumnWidths(layout: OnirigiriLayout, current: WorkspaceScene): OnirigiriLayout {
-  const columnByPane = new Map(
-    current.columns.flatMap((column) => column.cells.map((cell) => [cell.paneId, column] as const)),
-  );
-  return {
-    ...layout,
-    columns: layout.columns.map((column) => {
-      const previous = column.cells
-        .map((cell) => columnByPane.get(cell.paneId))
-        .find((match) => match !== undefined);
-      if (!previous) return column;
-      const { widthOverride, previousProportionWidth } = previous;
-      return {
-        ...column,
-        idealWidthSpec: previous.idealWidthSpec,
-        widthSpec: previous.widthSpec,
-        ...(widthOverride === undefined ? {} : { widthOverride }),
-        ...(previousProportionWidth === undefined ? {} : { previousProportionWidth }),
-      };
-    }),
-  };
-}
-
 function paneMembership(panes: readonly OnirigiriPaneDefinition[]) {
   return panes.map((pane) => `${pane.paneId}@${pane.planeIndex}:${pane.slotIndex}`).join("|");
 }
@@ -149,6 +126,15 @@ export function SpatialWorkspace({
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
+  const [preferences, updatePreferences] = useWorkspacePreferences();
+  const paneDefaults = useMemo(() => ({ height: preferences.rowHeight }), [preferences.rowHeight]);
+  const overviewCardWidth = overviewZoomChoices.find(
+    (choice) => choice.value === preferences.overviewZoom,
+  )?.width;
+  const resizePanes = useCallback(
+    (mode: PaneSizingMode) => workspaceRef.current?.resizePanes(mode),
+    [],
+  );
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
   const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
@@ -230,6 +216,7 @@ export function SpatialWorkspace({
       const { scene } = createWorkspaceScene({
         gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
         id: WORKSPACE_ID,
+        paneDefaults,
         panes,
       });
       const focused =
@@ -245,7 +232,7 @@ export function SpatialWorkspace({
         row: focused?.planeIndex ?? 0,
         split: 0,
       });
-      workspace.restoreLayout(keepColumnWidths(layout, workspace.getScene()), {
+      workspace.restoreLayout(keepPaneSizes(layout, workspace.getScene()), {
         keepPresentation: true,
       });
       // A pane just added is for using now: leave overview to show it.
@@ -268,7 +255,7 @@ export function SpatialWorkspace({
         workspace.renamePane(pane.paneId, pane.title);
       }
     }
-  }, [layoutMode, panes]);
+  }, [layoutMode, paneDefaults, panes]);
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useLayoutEffect(() => {
@@ -568,6 +555,9 @@ export function SpatialWorkspace({
         focusAnchor={focusAnchor}
         onAdd={addPane}
         onToggleAnchor={toggleFocusAnchor}
+        preferences={preferences}
+        onPreferencesChange={updatePreferences}
+        onResizePanes={resizePanes}
         controlsRef={setControlsContainer}
         shortcuts={SHORTCUTS}
       />
@@ -593,6 +583,9 @@ export function SpatialWorkspace({
                   onLayoutChange={onLayoutChange}
                   onPaneClose={onPaneClose}
                   onPanePictureCaptured={onPanePictureCaptured}
+                  overviewCardMaxWidthPx={overviewCardWidth}
+                  overviewCardMinWidthPx={overviewCardWidth}
+                  paneDefaults={paneDefaults}
                   renderPane={renderPane}
                   renderPanePlaceholder={renderPanePlaceholder}
                   restPictureFade
