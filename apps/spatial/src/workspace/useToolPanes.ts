@@ -1,12 +1,18 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { PANE_TERMINAL_ID_PREFIX, isPaneTerminalId } from "@t3tools/web/src/terminalOwnership";
+import {
+  readRightPanelSurface,
+  terminalSurface,
+  type RightPanelSurface,
+} from "@t3tools/web/src/rightPanelStore";
+
+import { isPaneTerminalId } from "@t3tools/web/src/terminalOwnership";
 
 const STORAGE_KEY = "onirigiri-t3:tool-panes";
 const TOOL_PANE_PREFIX = "tool-";
 
-export type ToolPaneKind = "empty" | "terminal" | "diff";
+export type ToolPaneKind = "empty" | "terminal" | "diff" | "surface";
 
 /**
  * A pane the user added beside a thread: empty until they pick what it shows,
@@ -18,6 +24,7 @@ export interface ToolPane {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly terminalId?: string;
+  readonly surface?: RightPanelSurface;
 }
 
 function isToolPane(value: unknown): value is ToolPane {
@@ -26,6 +33,7 @@ function isToolPane(value: unknown): value is ToolPane {
   const kindValid =
     pane.kind === "empty" ||
     pane.kind === "diff" ||
+    (pane.kind === "surface" && readRightPanelSurface(pane.surface) !== null) ||
     (pane.kind === "terminal" &&
       typeof pane.terminalId === "string" &&
       isPaneTerminalId(pane.terminalId));
@@ -44,11 +52,15 @@ function readToolPanes(): ToolPane[] {
     const stored: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(stored)) return [];
     const seen = new Set<string>();
-    return stored.filter((pane): pane is ToolPane => {
-      if (!isToolPane(pane) || seen.has(pane.paneId)) return false;
-      seen.add(pane.paneId);
-      return true;
-    });
+    return stored
+      .filter((pane): pane is ToolPane => {
+        if (!isToolPane(pane) || seen.has(pane.paneId)) return false;
+        seen.add(pane.paneId);
+        return true;
+      })
+      .map((pane) =>
+        pane.kind === "surface" ? { ...pane, surface: readRightPanelSurface(pane.surface)! } : pane,
+      );
   } catch {
     return [];
   }
@@ -62,19 +74,34 @@ function writeToolPanes(panes: readonly ToolPane[]) {
   }
 }
 
-let created = 0;
-function newId(prefix: string) {
-  created += 1;
-  return `${prefix}${Date.now().toString(36)}-${created}`;
+export function newToolResourceId(prefix: string) {
+  return `${prefix}${Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(36)).join("-")}`;
 }
 
 /** The panes the user added, in order, remembered across reloads. */
 export function useToolPanes() {
   const [toolPanes, setToolPanes] = useState(readToolPanes);
+  const currentRef = useRef(toolPanes);
+  const revisions = useRef(new Map<string, number>());
+  const getUserActionRevision = useCallback(
+    (thread: { environmentId: EnvironmentId; threadId: ThreadId }) =>
+      revisions.current.get(JSON.stringify([thread.environmentId, thread.threadId])) ?? 0,
+    [],
+  );
+  const recordUserAction = useCallback(
+    (thread: { environmentId: EnvironmentId; threadId: ThreadId }) => {
+      const key = JSON.stringify([thread.environmentId, thread.threadId]);
+      revisions.current.set(key, (revisions.current.get(key) ?? 0) + 1);
+    },
+    [],
+  );
   useEffect(() => writeToolPanes(toolPanes), [toolPanes]);
   const update = useCallback((change: (panes: readonly ToolPane[]) => ToolPane[]) => {
-    setToolPanes((current) => change(current));
+    const next = change(currentRef.current);
+    currentRef.current = next;
+    setToolPanes(next);
   }, []);
+  const getPanes = useCallback(() => currentRef.current, []);
 
   /**
    * Adds an empty pane for `thread`: right after `afterPaneId` when that is
@@ -82,7 +109,11 @@ export function useToolPanes() {
    */
   const addEmpty = useCallback(
     (thread: { environmentId: EnvironmentId; threadId: ThreadId }, afterPaneId: string | null) => {
-      const pane: ToolPane = { paneId: newId(TOOL_PANE_PREFIX), kind: "empty", ...thread };
+      const pane: ToolPane = {
+        paneId: newToolResourceId(TOOL_PANE_PREFIX),
+        kind: "empty",
+        ...thread,
+      };
       update((current) => {
         const after = current.findIndex((existing) => existing.paneId === afterPaneId);
         const first = current.findIndex(
@@ -98,19 +129,6 @@ export function useToolPanes() {
     [update],
   );
 
-  /** Turns an empty pane into a terminal or the thread's diff. */
-  const choose = useCallback(
-    (paneId: string, kind: "terminal" | "diff") => {
-      const terminalId = kind === "terminal" ? newId(PANE_TERMINAL_ID_PREFIX) : undefined;
-      update((current) =>
-        current.map((pane) =>
-          pane.paneId === paneId ? { ...pane, kind, ...(terminalId ? { terminalId } : {}) } : pane,
-        ),
-      );
-    },
-    [update],
-  );
-
   const remove = useCallback(
     (paneId: string) => {
       update((current) => current.filter((pane) => pane.paneId !== paneId));
@@ -118,5 +136,112 @@ export function useToolPanes() {
     [update],
   );
 
-  return { toolPanes, addEmpty, choose, remove };
+  const openSurface = useCallback(
+    (
+      thread: { environmentId: EnvironmentId; threadId: ThreadId },
+      surface: RightPanelSurface,
+      afterPaneId: string | null,
+    ) => {
+      const current = currentRef.current;
+      const belongs = (pane: ToolPane) =>
+        pane.environmentId === thread.environmentId && pane.threadId === thread.threadId;
+      const existing = current.find((pane) => {
+        if (!belongs(pane)) return false;
+        const currentSurface = toolPaneSurface(pane);
+        return (
+          currentSurface?.id === surface.id ||
+          (surface.kind === "terminal" &&
+            currentSurface?.kind === "terminal" &&
+            currentSurface.terminalIds.includes(surface.resourceId))
+        );
+      });
+      const previousSurface = existing && toolPaneSurface(existing);
+      if (surface.kind === "terminal" && previousSurface?.kind === "terminal")
+        surface = { ...previousSurface, activeTerminalId: surface.activeTerminalId };
+      if (
+        surface.kind === "device" &&
+        previousSurface?.kind === "device" &&
+        previousSurface.title &&
+        !surface.title
+      )
+        surface = { ...surface, title: previousSurface.title };
+      const source = current.find((pane) => pane.paneId === afterPaneId && belongs(pane));
+      const sourceSurface = source && toolPaneSurface(source);
+      const replace =
+        source &&
+        (source.kind === "empty" ||
+          (!existing &&
+            ((sourceSurface?.kind === "preview" &&
+              sourceSurface.resourceId === null &&
+              surface.kind === "preview") ||
+              (sourceSurface?.kind === "device" &&
+                !sourceSurface.target &&
+                surface.kind === "device") ||
+              ((sourceSurface?.kind === "files" || sourceSurface?.kind === "file") &&
+                surface.kind === "file"))));
+      const paneId =
+        existing?.paneId ?? (replace ? source.paneId : newToolResourceId(TOOL_PANE_PREFIX));
+      const pane: ToolPane = { ...thread, paneId, kind: "surface", surface };
+      update((panes) => {
+        if (existing || replace)
+          return panes.flatMap((entry) =>
+            entry.paneId === paneId
+              ? [pane]
+              : replace && entry.paneId === source.paneId
+                ? []
+                : [entry],
+          );
+        const after = panes.findIndex((entry) => entry.paneId === afterPaneId && belongs(entry));
+        const first = panes.findIndex(belongs);
+        const at = after !== -1 ? after + 1 : first !== -1 ? first : panes.length;
+        return [...panes.slice(0, at), pane, ...panes.slice(at)];
+      });
+      return paneId;
+    },
+    [update],
+  );
+
+  const updateSurface = useCallback(
+    (paneId: string, change: (surface: RightPanelSurface) => RightPanelSurface) => {
+      update((panes) =>
+        panes.map((pane) => {
+          const surface = toolPaneSurface(pane);
+          return pane.paneId === paneId && surface
+            ? { ...pane, kind: "surface", surface: change(surface) }
+            : pane;
+        }),
+      );
+    },
+    [update],
+  );
+
+  return useMemo(
+    () => ({
+      toolPanes,
+      addEmpty,
+      remove,
+      getPanes,
+      openSurface,
+      updateSurface,
+      getUserActionRevision,
+      recordUserAction,
+    }),
+    [
+      toolPanes,
+      addEmpty,
+      remove,
+      getPanes,
+      openSurface,
+      updateSurface,
+      getUserActionRevision,
+      recordUserAction,
+    ],
+  );
+}
+
+export function toolPaneSurface(pane: ToolPane): RightPanelSurface | null {
+  if (pane.kind === "surface") return pane.surface ?? null;
+  if (pane.kind === "terminal" && pane.terminalId) return terminalSurface(pane.terminalId);
+  if (pane.kind === "diff") return { id: "diff", kind: "diff" };
+  return null;
 }

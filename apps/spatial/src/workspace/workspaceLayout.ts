@@ -109,7 +109,7 @@ export function reconcilePaneLayout(
       (column) =>
         column.planeIndex === current.cursor.row && slot(column) === current.cursor.column,
     )?.cells[current.cursor.split]?.paneId;
-  const selected = selectedId && ownerByPane.has(selectedId) ? selectedId : fresh.panes[0]?.paneId;
+  const selected = selectedId && !ownerByPane.has(selectedId) ? fresh.panes[0]?.paneId : selectedId;
   const owner = selected ? ownerByPane.get(selected) : undefined;
   return {
     ...fresh,
@@ -124,7 +124,7 @@ export function reconcilePaneLayout(
           row: owner.planeIndex,
           split: owner.cells.findIndex((cell) => cell.paneId === selected),
         }
-      : fresh.cursor,
+      : current.cursor,
   };
 }
 

@@ -179,7 +179,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
   surfaces: [],
 };
 
-const singletonSurface = (
+export const singletonSurface = (
   kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
 ): RightPanelSurface => {
   switch (kind) {
@@ -196,12 +196,12 @@ const singletonSurface = (
   }
 };
 
-const browserSurface = (tabId: string | null): RightPanelSurface =>
+export const browserSurface = (tabId: string | null): RightPanelSurface =>
   tabId
     ? { id: `browser:${tabId}`, kind: "preview", resourceId: tabId }
     : { id: "browser:new", kind: "preview", resourceId: null };
 
-const fileSurface = (
+export const fileSurface = (
   relativePath: string,
   revealLine: number | null,
   revealRequestId: number,
@@ -213,7 +213,7 @@ const fileSurface = (
   revealRequestId,
 });
 
-const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface => ({
+export const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface => ({
   id: `attachment:${attachment.id}`,
   kind: "file",
   relativePath: attachment.name,
@@ -222,13 +222,126 @@ const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface =>
   attachment,
 });
 
-const terminalSurface = (terminalId: string): RightPanelSurface => ({
+export const terminalSurface = (
+  terminalId: string,
+): Extract<RightPanelSurface, { kind: "terminal" }> => ({
   id: `terminal:${terminalId}`,
   kind: "terminal",
   resourceId: terminalId,
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
 });
+
+export function deviceSurface(
+  target: DeviceTabTarget,
+): Extract<RightPanelSurface, { kind: "device" }> {
+  return {
+    id: `device:${encodeURIComponent(target.hostId)}:${encodeURIComponent(target.deviceId)}`,
+    kind: "device",
+    target,
+  };
+}
+
+/** Reads a saved descriptor without creating or opening its backing resource. */
+export function readRightPanelSurface(value: unknown): RightPanelSurface | null {
+  if (!value || typeof value !== "object") return null;
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.id !== "string") return null;
+  switch (entry.kind) {
+    case "diff":
+    case "files":
+    case "agents":
+    case "pull-requests":
+      return entry.id === entry.kind ? singletonSurface(entry.kind) : null;
+    case "preview":
+      return (entry.resourceId === null || typeof entry.resourceId === "string") &&
+        entry.id === browserSurface(entry.resourceId).id
+        ? browserSurface(entry.resourceId)
+        : null;
+    case "terminal": {
+      if (typeof entry.resourceId !== "string" || entry.id !== `terminal:${entry.resourceId}`)
+        return null;
+      const terminalIds = Array.isArray(entry.terminalIds)
+        ? [...new Set(entry.terminalIds.filter((id): id is string => typeof id === "string"))]
+        : [entry.resourceId];
+      if (terminalIds.length === 0) terminalIds.push(entry.resourceId);
+      return {
+        ...terminalSurface(entry.resourceId),
+        terminalIds,
+        activeTerminalId:
+          typeof entry.activeTerminalId === "string" && terminalIds.includes(entry.activeTerminalId)
+            ? entry.activeTerminalId
+            : terminalIds[0]!,
+        ...(entry.splitDirection === "horizontal" || entry.splitDirection === "vertical"
+          ? { splitDirection: entry.splitDirection }
+          : {}),
+      };
+    }
+    case "file": {
+      if (typeof entry.relativePath !== "string") return null;
+      if (entry.attachment) {
+        const attachment = entry.attachment as Partial<ChatFileAttachment>;
+        if (
+          typeof attachment.id !== "string" ||
+          typeof attachment.name !== "string" ||
+          typeof attachment.mimeType !== "string" ||
+          typeof attachment.sizeBytes !== "number"
+        )
+          return null;
+        return entry.id === `attachment:${attachment.id}`
+          ? attachmentSurface(attachment as ChatFileAttachment)
+          : null;
+      }
+      return entry.id === `file:${entry.relativePath}`
+        ? fileSurface(
+            entry.relativePath,
+            normalizeRevealLine(
+              typeof entry.revealLine === "number" ? entry.revealLine : undefined,
+            ),
+            typeof entry.revealRequestId === "number" &&
+              Number.isSafeInteger(entry.revealRequestId) &&
+              entry.revealRequestId >= 0
+              ? entry.revealRequestId
+              : 0,
+          )
+        : null;
+    }
+    case "pull-request":
+      return typeof entry.projectId === "string" &&
+        typeof entry.repository === "string" &&
+        typeof entry.number === "number" &&
+        Number.isSafeInteger(entry.number) &&
+        entry.number > 0
+        ? pullRequestSurface({
+            projectId: entry.projectId,
+            repository: entry.repository,
+            number: entry.number,
+            ...(typeof entry.environmentId === "string"
+              ? { environmentId: entry.environmentId }
+              : {}),
+            ...(typeof entry.host === "string" ? { host: entry.host } : {}),
+            ...(typeof entry.url === "string" ? { url: entry.url } : {}),
+          })
+        : null;
+    case "device": {
+      if (!entry.target) return entry.id === "device" ? { id: "device", kind: "device" } : null;
+      const target = entry.target as Partial<DeviceTabTarget>;
+      if (
+        typeof target.hostId !== "string" ||
+        typeof target.deviceId !== "string" ||
+        typeof target.name !== "string" ||
+        (target.platform !== "ios" && target.platform !== "android")
+      )
+        return null;
+      const surface = deviceSurface(target as DeviceTabTarget);
+      return entry.id === surface.id
+        ? { ...surface, ...(typeof entry.title === "string" ? { title: entry.title } : {}) }
+        : null;
+    }
+    default:
+      return null;
+  }
+}
 
 export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
 

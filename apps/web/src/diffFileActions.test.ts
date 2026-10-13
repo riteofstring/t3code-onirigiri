@@ -49,6 +49,29 @@ describe("openDiffFilePrimaryAction", () => {
     );
   });
 
+  it("opens the resolved file through its independent presentation without changing native tabs", () => {
+    useRightPanelStore.getState().open(THREAD_REF, "diff");
+    const native = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      THREAD_REF,
+    );
+    const openFile = vi.fn();
+    const openInEditor = vi.fn();
+    openDiffFilePrimaryAction({
+      threadRef: THREAD_REF,
+      filePath: "frontend/src/index.ts",
+      activeCwd: "/repo/frontend",
+      repositoryRoot: "/repo",
+      openFile,
+      openInEditor,
+    });
+    expect(openFile).toHaveBeenCalledExactlyOnceWith(THREAD_REF, "src/index.ts");
+    expect(openInEditor).not.toHaveBeenCalled();
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF)).toBe(
+      native,
+    );
+  });
+
   it("opens repository-relative diff files from a nested project", () => {
     const openInEditor = vi.fn();
 

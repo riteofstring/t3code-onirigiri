@@ -9,7 +9,8 @@ import { Smartphone, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
-import { useRightPanelStore, type RightPanelSurface } from "~/rightPanelStore";
+import type { RightPanelSurface } from "~/rightPanelStore";
+import { useHasSurfaceNavigation, useSurfaceNavigation } from "~/surfaceNavigation";
 import { Button } from "~/components/ui/button";
 import { DiscoveryList, DiscoveryListRow } from "~/components/ui/discovery-list";
 import { Dialog } from "~/components/ui/dialog";
@@ -38,6 +39,8 @@ export function DevicePanel(props: {
   readonly visible: boolean;
   readonly onDismissSetup: () => void;
 }) {
+  const surfaceNavigation = useSurfaceNavigation();
+  const hasSurfaceNavigation = useHasSurfaceNavigation();
   const { environmentId, threadId } = props.threadRef;
   const { state, loaded } = useDeviceState(environmentId);
   const list = useAtomCommand(deviceEnvironment.list, { reportFailure: false });
@@ -91,7 +94,7 @@ export function DevicePanel(props: {
       });
       if (result._tag === "Failure") setOperationError(formatEnvironmentQueryError(result.cause));
       else
-        useRightPanelStore.getState().openDevice(props.threadRef, {
+        surfaceNavigation.openDevice(props.threadRef, {
           hostId: result.value.hostId,
           deviceId: result.value.deviceId,
           platform: device.platform,
@@ -112,12 +115,13 @@ export function DevicePanel(props: {
       platform: activeDevice.platform,
       name: activeDevice.name,
     });
-    useRightPanelStore.getState().close(props.threadRef);
+    if (hasSurfaceNavigation) surfaceNavigation.closeSurface(props.threadRef, props.surface.id);
+    else surfaceNavigation.close(props.threadRef);
   };
 
   const closeActive = (powerOff: boolean) => {
     if (!powerOff) {
-      useRightPanelStore.getState().closeSurface(props.threadRef, props.surface.id);
+      surfaceNavigation.closeSurface(props.threadRef, props.surface.id);
       return;
     }
     if (!activeSession) return;
@@ -132,7 +136,7 @@ export function DevicePanel(props: {
       },
     }).then((result) => {
       if (result._tag === "Failure") setOperationError(formatEnvironmentQueryError(result.cause));
-      else useRightPanelStore.getState().closeSurface(props.threadRef, props.surface.id);
+      else surfaceNavigation.closeSurface(props.threadRef, props.surface.id);
     });
   };
 

@@ -26,6 +26,12 @@ import {
   applyPreviewDesktopState,
 } from "~/previewStateStore";
 import { appAtomRegistry, AppAtomRegistryProvider } from "~/rpc/atomRegistry";
+import { SurfaceNavigationContext } from "~/surfaceNavigation";
+import { useRightPanelStore } from "~/rightPanelStore";
+import {
+  selectThreadPreviewMiniPlayerTabId,
+  usePreviewMiniPlayerStore,
+} from "~/previewMiniPlayerStore";
 
 import { PreviewAutomationHosts } from "./PreviewAutomationHosts";
 
@@ -124,6 +130,7 @@ beforeEach(async () => {
   __resetClientSettingsPersistenceForTests();
   resetPreviewStateForTests();
   useBrowserSurfaceStore.setState({ byTabId: {} });
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
   appAtomRegistry.set(requestsAtom, AsyncResult.initial(false));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
@@ -213,6 +220,54 @@ describe("PreviewAutomationHosts open", () => {
 });
 
 describe("PreviewAutomationHosts ownership", () => {
+  it.each([true, false])(
+    "floats an agent-opened browser only when another presentation does not own it (owned=%s)",
+    async (owned) => {
+      const response = deferred<PreviewAutomationResponse>();
+      const hasSurface = vi.fn(
+        (ref: typeof threadRef, id: string) =>
+          owned &&
+          ref.environmentId === environmentId &&
+          ref.threadId === threadId &&
+          id === `browser:${snapshot.tabId}`,
+      );
+      const runtimeTabId = previewRuntimeTabId(threadRef, "test-server", snapshot.tabId);
+      const owner = Symbol();
+      mocks.respond.mockImplementationOnce(async ({ input }) => response.resolve(input));
+      await act(async () => {
+        renderer!.update(
+          <AppAtomRegistryProvider>
+            <SurfaceNavigationContext value={{ ...useRightPanelStore.getState(), hasSurface }}>
+              <PreviewAutomationHosts />
+            </SurfaceNavigationContext>
+          </AppAtomRegistryProvider>,
+        );
+        useBrowserSurfaceStore.getState().claim(runtimeTabId, owner, false);
+        useBrowserSurfaceStore
+          .getState()
+          .present(runtimeTabId, owner, { x: 0, y: 0, width: 800, height: 600 }, true, 0, 1);
+      });
+      await act(async () => {
+        appAtomRegistry.set(
+          requestsAtom,
+          AsyncResult.success({
+            ...requestEvent,
+            request: { ...requestEvent.request, input: { open: true, reuseExistingTab: false } },
+          }),
+        );
+        await response.promise;
+      });
+      await expect(response.promise).resolves.toMatchObject({ ok: true });
+      expect(hasSurface).toHaveBeenCalledWith(threadRef, `browser:${snapshot.tabId}`);
+      expect(
+        selectThreadPreviewMiniPlayerTabId(
+          usePreviewMiniPlayerStore.getState().byThreadKey,
+          threadRef,
+        ),
+      ).toBe(owned ? null : snapshot.tabId);
+    },
+  );
+
   it("reports only local live tabs and removes ownership when their web contents close", async () => {
     await act(() => {
       appAtomRegistry.set(

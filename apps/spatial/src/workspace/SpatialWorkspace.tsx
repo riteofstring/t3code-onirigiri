@@ -25,6 +25,13 @@ import {
 } from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
+import { previewEnvironment } from "@t3tools/web/src/state/preview";
+import { readThreadPreviewState } from "@t3tools/web/src/previewStateStore";
+import { closePreviewSession } from "@t3tools/web/src/components/preview/closePreviewSession";
+import { agentControlledBrowserCloseConfirmation } from "@t3tools/web/src/components/ChatView.logic";
+import { LinkPullRequestDialogHost } from "@t3tools/web/src/components/pullRequest/LinkPullRequestDialog";
+import { readLocalApi } from "@t3tools/web/src/localApi";
+import { confirmTerminalClose } from "@t3tools/web/src/lib/terminalCloseConfirm";
 import {
   BrowserSurfaceProjectionContext,
   type BrowserSurfaceProjectionPolicy,
@@ -32,7 +39,9 @@ import {
 import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { EmptyPane } from "./EmptyPane";
+import { ToolPaneView } from "./ToolPaneView";
+import { SpatialSurfaceHost } from "./SpatialSurfaceHost";
+import { useSpatialController } from "./SpatialSurfaceProvider";
 import { useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { WorkspaceTooltips, WorkspaceControlButton } from "./WorkspaceTooltips";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
@@ -45,12 +54,11 @@ import {
   threadLayoutPositions,
 } from "./workspaceLayout";
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
-import { DiffPane, TerminalPane } from "./SidePanes";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
-import { useToolPanes, type ToolPane } from "./useToolPanes";
+import { toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
   threadPaneId,
@@ -134,7 +142,14 @@ export function SpatialWorkspace({
       // Arrangement mode remains usable for this session.
     }
   }, [layoutMode]);
-  const { toolPanes, addEmpty, choose, remove } = useToolPanes();
+  const { controller: toolController, bindWorkspace } = useSpatialController();
+  const { toolPanes, addEmpty, remove } = toolController;
+  const closingToolPanesRef = useRef(new Set<string>());
+  const [closingToolPanes, setClosingToolPanes] = useState<ReadonlySet<string>>(() => new Set());
+  const isPaneClosing = useCallback(
+    (paneId: string) => closingToolPanesRef.current.has(paneId),
+    [],
+  );
   const toolPanesRef = useRef(toolPanes);
   useEffect(() => {
     toolPanesRef.current = toolPanes;
@@ -222,13 +237,13 @@ export function SpatialWorkspace({
   }, [layoutPersistence]);
   const onLayoutChange = useCallback<NonNullable<OnirigiriWorkspaceProps["onLayoutChange"]>>(
     (layout, metadata) => {
+      layoutPersistence.save(layout);
       if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
       lastLayoutRevisionRef.current = metadata.layoutRevision;
       setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
       updatePaneSizing(layout);
       onPictureLayoutChange(layout);
       lifecycle?.setPanes(threadLayoutPositions(layout));
-      layoutPersistence.save(layout);
     },
     [layoutPersistence, lifecycle, onPictureLayoutChange, updatePaneSizing],
   );
@@ -293,10 +308,21 @@ export function SpatialWorkspace({
         paneDefaults,
         panes,
       });
+      const selectedId = workspace.getSnapshot().focusedPaneId;
+      const previousSelected = selectedId ? previousById.get(selectedId) : undefined;
+      const removedTool =
+        previousSelected?.surfaceKind !== "thread" && previousSelected?.data
+          ? (previousSelected.data as ToolPane)
+          : null;
       const focused =
         panes.find((pane) => pane.paneId === pendingFocusPaneIdRef.current) ??
-        panes.find((pane) => pane.paneId === focusedPaneIdRef.current) ??
-        panes.find((pane) => pane.surfaceKind === "thread");
+        panes.find((pane) => pane.paneId === selectedId) ??
+        (removedTool
+          ? panes.find(
+              (pane) =>
+                pane.paneId === threadPaneId(removedTool.environmentId, removedTool.threadId),
+            )
+          : undefined);
       const added = panes.some((pane) => pane.paneId === pendingFocusPaneIdRef.current)
         ? pendingFocusPaneIdRef.current
         : null;
@@ -569,30 +595,79 @@ export function SpatialWorkspace({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, addPane]);
 
-  const closeTerminal = useAtomCommand(terminalEnvironment.close, { reportFailure: false });
+  const closeTerminal = useAtomCommand(terminalEnvironment.close, "terminal close");
+  const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const onPaneClose = useCallback(
     async (pane: WorkspacePane) => {
-      const tool = toolPanes.find((candidate) => candidate.paneId === pane.paneId);
+      const tool = toolController.getPanes().find((candidate) => candidate.paneId === pane.paneId);
       if (!tool) {
         if (pane.surfaceKind !== "thread") return false;
         setDismissedPaneIds((current) => new Set([...current, pane.paneId]));
         return false;
       }
-      // A terminal whose session would not close keeps its pane.
-      if (tool.kind === "terminal" && tool.terminalId) {
-        const closed = await closeTerminal({
-          environmentId: tool.environmentId,
-          input: { threadId: tool.threadId, terminalId: tool.terminalId, deleteHistory: true },
-        });
-        if (closed._tag !== "Success") return false;
+      if (isPaneClosing(tool.paneId)) return false;
+      closingToolPanesRef.current.add(tool.paneId);
+      setClosingToolPanes(new Set(closingToolPanesRef.current));
+      toolController.recordUserAction(tool);
+      try {
+        const surface = toolPaneSurface(tool);
+        if (surface?.kind === "terminal") {
+          if (
+            !(await confirmTerminalClose([
+              surface.activeTerminalId,
+              ...surface.terminalIds.filter((id) => id !== surface.activeTerminalId),
+            ]))
+          )
+            return false;
+          for (const terminalId of surface.terminalIds) {
+            const closed = await closeTerminal({
+              environmentId: tool.environmentId,
+              input: { threadId: tool.threadId, terminalId, deleteHistory: true },
+            });
+            if (closed._tag !== "Success") return false;
+            toolController.updateSurface(tool.paneId, (current) => {
+              if (current.kind !== "terminal") return current;
+              const remaining = current.terminalIds.filter((id) => id !== terminalId);
+              return {
+                ...current,
+                terminalIds: remaining,
+                activeTerminalId: remaining.includes(current.activeTerminalId)
+                  ? current.activeTerminalId
+                  : (remaining[0] ?? current.activeTerminalId),
+              };
+            });
+          }
+        }
+        if (surface?.kind === "preview" && surface.resourceId) {
+          const preview = readThreadPreviewState(tool);
+          const confirmation = agentControlledBrowserCloseConfirmation(
+            [surface],
+            preview.desktopByTabId,
+          );
+          if (
+            confirmation &&
+            !(await readLocalApi()?.dialogs.confirm(confirmation, { variant: "destructive" }))
+          )
+            return false;
+          const closed = await closePreviewSession({
+            closePreview,
+            threadRef: tool,
+            tabId: surface.resourceId,
+            snapshot: preview.sessions[surface.resourceId] ?? null,
+          });
+          if (closed._tag !== "Success") return false;
+        }
+        // The rebuilt arrangement drops the pane, so the workspace does not
+        // close it itself; focus returns to its thread.
+        pendingFocusPaneIdRef.current = threadPaneId(tool.environmentId, tool.threadId);
+        remove(tool.paneId);
+        return false;
+      } finally {
+        closingToolPanesRef.current.delete(tool.paneId);
+        setClosingToolPanes(new Set(closingToolPanesRef.current));
       }
-      // The rebuilt arrangement drops the pane, so the workspace does not
-      // close it itself; focus returns to its thread.
-      pendingFocusPaneIdRef.current = threadPaneId(tool.environmentId, tool.threadId);
-      remove(tool.paneId);
-      return false;
     },
-    [closeTerminal, remove, toolPanes],
+    [closePreview, closeTerminal, isPaneClosing, remove, toolController],
   );
 
   const navigateFromTerminal = useCallback<OnirigiriWorkspaceHandle["focus"]>(
@@ -606,6 +681,21 @@ export function SpatialWorkspace({
   const togglePaneMaximized = useCallback((paneId: string) => {
     workspaceRef.current?.togglePaneMaximized(paneId);
   }, []);
+  const focusSurfacePane = useCallback((paneId: string) => {
+    if (workspaceRef.current?.focusPane(paneId, { exitOverview: true })) return;
+    pendingFocusPaneIdRef.current = paneId;
+    setDismissedPaneIds((current) => {
+      if (!current.has(paneId)) return current;
+      const next = new Set(current);
+      next.delete(paneId);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (!active || !initialPanes || !lifecycle || !workspaceRef.current) return;
+    bindWorkspace({ focusPane: focusSurfacePane, isPaneClosing });
+    return () => bindWorkspace(null);
+  }, [active, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
 
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
@@ -616,46 +706,70 @@ export function SpatialWorkspace({
           </div>
         );
       }
-      if (pane.surfaceKind === "empty") {
+      if (pane.surfaceKind !== "thread") {
+        const tool =
+          toolPanes.find((candidate) => candidate.paneId === pane.paneId) ??
+          (pane.data as ToolPane);
         return (
-          <EmptyPane
-            threadTitle={pane.subtitle}
-            focused={state.focused}
-            onChoose={(kind) => choose(pane.paneId, kind)}
-            onClose={() => void workspaceRef.current?.closePane(pane.paneId)}
-          />
+          <SpatialSurfaceHost
+            controller={toolController}
+            paneId={pane.paneId}
+            focusPane={focusSurfacePane}
+            isPaneClosing={isPaneClosing}
+          >
+            <div className="h-full min-h-0" inert={closingToolPanes.has(pane.paneId)}>
+              <ToolPaneView
+                pane={tool}
+                isPresent={() =>
+                  !isPaneClosing(tool.paneId) &&
+                  toolController.getPanes().some((candidate) => candidate.paneId === tool.paneId)
+                }
+                focused={state.focused && active && !closingToolPanes.has(pane.paneId)}
+                visible={state.visible && active}
+                onNavigate={navigateFromTerminal}
+                onClose={() => void workspaceRef.current?.closePane(pane.paneId)}
+                onFocusThread={() =>
+                  focusSurfacePane(threadPaneId(tool.environmentId, tool.threadId))
+                }
+              />
+            </div>
+          </SpatialSurfaceHost>
         );
       }
-      if (pane.surfaceKind === "terminal") {
-        const tool = pane.data as ToolPane;
-        if (!tool.terminalId) return null;
-        return (
-          <TerminalPane
-            thread={tool}
-            terminalId={tool.terminalId}
-            focused={state.focused}
-            live={state.runtimeState === "live"}
-            onNavigate={navigateFromTerminal}
-          />
-        );
-      }
-      if (pane.surfaceKind === "diff") return <DiffPane thread={pane.data as ToolPane} />;
-      if (pane.surfaceKind !== "thread") return null;
       return (
-        <ThreadPane
-          thread={pane.data as ThreadPaneData}
-          focused={state.focused}
-          visible={state.visible}
+        <SpatialSurfaceHost
+          controller={toolController}
           paneId={pane.paneId}
-          onNavigateAway={navigateAway}
-          maximized={state.maximized}
-          onAddPane={addPaneBeside}
-          onClosePane={closeChatPane}
-          onToggleMaximized={togglePaneMaximized}
-        />
+          focusPane={focusSurfacePane}
+          isPaneClosing={isPaneClosing}
+        >
+          <ThreadPane
+            thread={pane.data as ThreadPaneData}
+            focused={state.focused}
+            visible={state.visible}
+            paneId={pane.paneId}
+            onNavigateAway={navigateAway}
+            maximized={state.maximized}
+            onAddPane={addPaneBeside}
+            onClosePane={closeChatPane}
+            onToggleMaximized={togglePaneMaximized}
+          />
+        </SpatialSurfaceHost>
       );
     },
-    [addPaneBeside, choose, closeChatPane, navigateAway, navigateFromTerminal, togglePaneMaximized],
+    [
+      active,
+      addPaneBeside,
+      closeChatPane,
+      closingToolPanes,
+      focusSurfacePane,
+      isPaneClosing,
+      navigateAway,
+      navigateFromTerminal,
+      togglePaneMaximized,
+      toolController,
+      toolPanes,
+    ],
   );
 
   // A valid picture remains a visual cover while the same thread refreshes.
@@ -682,6 +796,7 @@ export function SpatialWorkspace({
 
   return (
     <WorkspaceTooltips>
+      <LinkPullRequestDialogHost />
       <div
         ref={stageRef}
         inert={!active}
@@ -711,8 +826,8 @@ export function SpatialWorkspace({
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
                     chromeComponents={WORKSPACE_CHROME}
-                    cursorRunway={0}
-                    cursorTargets="panes"
+                    {...(layoutMode === "strip" ? { cursorRunway: 0 } : {})}
+                    cursorTargets={layoutMode === "strip" ? "panes" : "cells"}
                     desktopControlsContainer={controlsContainer}
                     focusAnchor={focusAnchor}
                     getPanePicture={getPanePicture}

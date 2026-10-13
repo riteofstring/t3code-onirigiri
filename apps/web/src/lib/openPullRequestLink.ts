@@ -12,7 +12,7 @@ import {
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { useRightPanelStore } from "../rightPanelStore";
+import { useSurfaceNavigation } from "../surfaceNavigation";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
 import { useProjects, useServerConfigs } from "../state/entities";
@@ -217,6 +217,7 @@ export function useOpenChangeRequestLink(
   targetEnvironmentId?: EnvironmentId,
 ) => boolean {
   const navigate = useNavigate();
+  const surfaceNavigation = useSurfaceNavigation();
   const allProjects = useProjects();
   const serverConfigs = useServerConfigs();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -269,7 +270,7 @@ export function useOpenChangeRequestLink(
       event.preventDefault();
       event.stopPropagation();
       if (resolvedPanelRef) {
-        useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
+        surfaceNavigation.openPullRequest(resolvedPanelRef, {
           // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
           ...(resolvedPanelRef.environmentId === project.environmentId
             ? {}
@@ -318,7 +319,15 @@ export function useOpenChangeRequestLink(
       });
       return true;
     },
-    [allProjects, navigate, panelRef, primaryEnvironmentId, serverConfigs, threadRef],
+    [
+      allProjects,
+      navigate,
+      panelRef,
+      primaryEnvironmentId,
+      serverConfigs,
+      surfaceNavigation,
+      threadRef,
+    ],
   );
 }
 

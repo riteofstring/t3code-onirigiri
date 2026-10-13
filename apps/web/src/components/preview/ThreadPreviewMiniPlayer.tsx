@@ -31,7 +31,7 @@ import {
   previewMiniPlayerSourceKey,
   usePreviewMiniPlayerStore,
 } from "~/previewMiniPlayerStore";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { useSurfaceNavigation } from "~/surfaceNavigation";
 import { useDeviceState } from "~/state/device";
 
 import { DeviceStreamView } from "../device/DeviceStreamView";
@@ -152,6 +152,7 @@ function BrowserMiniPlayer({
   miniPlayer,
   composerOverlayElement,
 }: Props & { readonly tabId: string }) {
+  const surfaceNavigation = useSurfaceNavigation();
   const previewState = useThreadPreviewState(threadRef);
   const snapshot = previewState.sessions[tabId] ?? null;
   const runtimeTabId = previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId);
@@ -171,7 +172,7 @@ function BrowserMiniPlayer({
 
   const openInPanel = () => {
     usePreviewMiniPlayerStore.getState().close(threadRef);
-    useRightPanelStore.getState().openBrowser(threadRef, tabId);
+    surfaceNavigation.openBrowser(threadRef, tabId);
   };
 
   const toggleNativePictureInPicture = () => {
@@ -255,6 +256,7 @@ function DeviceMiniPlayer({
   miniPlayer,
   composerOverlayElement,
 }: Props & { readonly source: Extract<PreviewMiniPlayerSource, { kind: "device" }> }) {
+  const surfaceNavigation = useSurfaceNavigation();
   const { state: deviceState } = useDeviceState(threadRef.environmentId);
   const [screen, setScreen] = useState<DeviceScreenSize | null>(null);
   const sourceSize = resolveDeviceMiniPlayerSourceSize(source.platform, screen);
@@ -270,7 +272,7 @@ function DeviceMiniPlayer({
 
   const openInPanel = () => {
     usePreviewMiniPlayerStore.getState().close(threadRef);
-    useRightPanelStore.getState().openDevice(threadRef, {
+    surfaceNavigation.openDevice(threadRef, {
       hostId: source.hostId,
       deviceId: source.deviceId,
       platform: source.platform,

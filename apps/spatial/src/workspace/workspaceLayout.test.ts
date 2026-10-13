@@ -88,6 +88,51 @@ const layoutFor = (panes: OnirigiriPaneDefinition[]) => {
   return serializeWorkspaceLayout(scene, cursor);
 };
 
+it("keeps an empty grid selection when panes arrive and after serializing the layout", () => {
+  const panes = [pane("origin", 0, 0), pane("right", 0, 2), pane("lower", 2, 0)];
+  const initial = createWorkspaceScene({ id: "onirigiri-t3", gridAxes: "spatial", panes });
+  const engine = new OnirigiriLayoutEngine(initial.scene);
+  const store = new OnirigiriLayoutStore(engine, initial.scene, initial.cursor);
+  expect(store.moveFocus("right")).toBe(true);
+  expect(store.getSnapshot()).toMatchObject({
+    cursor: { column: 1, row: 0, split: 0 },
+    focusedPaneId: null,
+  });
+  expect(store.moveFocus("down")).toBe(true);
+  const current = serializeWorkspaceLayout(engine.toScene(), store.getSnapshot().cursor);
+  const fresh = layoutFor([...panes, pane("new-project", 3, 0)]);
+  const reconciled = reconcilePaneLayout(fresh, current);
+  assertOnirigiriLayout(reconciled);
+  store.restoreLayout(reconciled, { keepPresentation: true });
+  expect(store.getSnapshot()).toMatchObject({
+    cursor: { column: 1, row: 1, split: 0 },
+    focusedPaneId: null,
+  });
+  expect(reconciled.panes).toHaveLength(4);
+
+  const restored = createWorkspaceScene({ initialLayout: JSON.parse(JSON.stringify(reconciled)) });
+  const restoredStore = new OnirigiriLayoutStore(
+    new OnirigiriLayoutEngine(restored.scene),
+    restored.scene,
+    restored.cursor,
+  );
+  expect(restoredStore.getSnapshot()).toMatchObject({
+    cursor: { column: 1, row: 1, split: 0 },
+    focusedPaneId: null,
+  });
+});
+
+it("keeps negative empty coordinates while honoring an explicit pane selection", () => {
+  const fresh = layoutFor([pane("origin", 0, 0), pane("other", 1, 1)]);
+  const current = { ...fresh, cursor: { column: -3, row: -2, split: 0 } };
+  expect(reconcilePaneLayout(fresh, current).cursor).toEqual(current.cursor);
+  const selected = reconcilePaneLayout(fresh, current, "other");
+  expect(selected.cursor).toEqual({ column: 1, row: 1, split: 0 });
+
+  const removed = reconcilePaneLayout(layoutFor([pane("origin", 0, 0)]), selected);
+  expect(removed.cursor).toEqual({ column: 0, row: 0, split: 0 });
+});
+
 it("keeps a pane's actual 2D position, identity and size through fresh metadata and membership", () => {
   const panes = [pane("moved", 0, 0), pane("neighbor", 0, 1), pane("removed", 1, 1)];
   const initial = createWorkspaceScene({ id: "onirigiri-t3", gridAxes: "spatial", panes });

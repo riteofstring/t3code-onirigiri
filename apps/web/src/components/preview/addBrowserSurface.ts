@@ -6,6 +6,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 
 import type { BrowserSettingsReadError, OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { useRightPanelStore } from "~/rightPanelStore";
+import type { SurfaceNavigation } from "~/surfaceNavigation";
 
 import { openPreviewSession } from "./openPreviewSession";
 
@@ -15,6 +16,7 @@ export async function addBrowserSurface<E>(input: {
   readonly openPreview: OpenPreviewMutation<E>;
   /** Omit to use the configured default profile. */
   readonly profileId?: string | undefined;
+  readonly openBrowser?: SurfaceNavigation["openBrowser"];
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const result = await openPreviewSession({
     openPreview: input.openPreview,
@@ -22,6 +24,9 @@ export async function addBrowserSurface<E>(input: {
     ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
   });
   return mapAtomCommandResult(result, (snapshot) => {
-    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
+    (input.openBrowser ?? useRightPanelStore.getState().openBrowser)(
+      input.threadRef,
+      snapshot.tabId,
+    );
   });
 }

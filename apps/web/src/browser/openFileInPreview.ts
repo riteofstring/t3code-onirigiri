@@ -22,6 +22,7 @@ import {
   rememberPreviewUrl,
 } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
+import type { SurfaceNavigation } from "~/surfaceNavigation";
 
 import {
   browserDefaultOpenProfileId,
@@ -55,6 +56,7 @@ export async function openUrlInPreview<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly url: string;
   readonly openPreview: OpenPreviewMutation<E>;
+  readonly openBrowser?: SurfaceNavigation["openBrowser"];
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const defaults = await resolveBrowserDefaults().catch(
     (cause: unknown) => new BrowserSettingsReadError({ cause }),
@@ -77,7 +79,10 @@ export async function openUrlInPreview<E>(input: {
   return mapAtomCommandResult(result, (snapshot) => {
     applyPreviewServerSnapshot(input.threadRef, snapshot);
     rememberPreviewUrl(input.threadRef, input.url);
-    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
+    (input.openBrowser ?? useRightPanelStore.getState().openBrowser)(
+      input.threadRef,
+      snapshot.tabId,
+    );
   });
 }
 
@@ -95,6 +100,7 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     readonly input: { readonly resource: AssetResource };
   }) => Promise<AtomCommandResult<AssetCreateUrlResult, AssetError>>;
   readonly openPreview: OpenPreviewMutation<PreviewError>;
+  readonly openBrowser?: SurfaceNavigation["openBrowser"];
 }): Promise<
   AtomCommandResult<
     void,
@@ -135,5 +141,6 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     threadRef: input.threadRef,
     url: assetUrl,
     openPreview: input.openPreview,
+    ...(input.openBrowser ? { openBrowser: input.openBrowser } : {}),
   });
 }

@@ -127,7 +127,19 @@ it.each(["strip", "rows"] as const)(
     await act(() => {
       first = tools.addEmpty(owner, null);
     });
-    await act(() => tools.choose(first, "terminal"));
+    await act(() => {
+      tools.openSurface(
+        owner,
+        {
+          id: "terminal:test",
+          kind: "terminal",
+          resourceId: "test",
+          terminalIds: ["test"],
+          activeTerminalId: "test",
+        },
+        first,
+      );
+    });
     const terminal = tools.toolPanes[0]!;
     await act(() => {
       second = tools.addEmpty(owner, null);

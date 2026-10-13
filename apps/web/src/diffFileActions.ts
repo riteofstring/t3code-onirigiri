@@ -2,6 +2,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { isWindowsAbsolutePath, normalizeProjectPathForComparison } from "@t3tools/shared/path";
 
 import { useRightPanelStore } from "./rightPanelStore";
+import type { SurfaceNavigation } from "./surfaceNavigation";
 import { resolvePathLinkTarget } from "./terminal-links";
 
 interface OpenDiffFilePrimaryActionInput {
@@ -10,6 +11,7 @@ interface OpenDiffFilePrimaryActionInput {
   readonly activeCwd: string | undefined;
   readonly repositoryRoot?: string | undefined;
   readonly openInEditor: (targetPath: string) => void;
+  readonly openFile?: SurfaceNavigation["openFile"];
 }
 
 function normalizedRelativePathSegments(filePath: string): ReadonlyArray<string> | null {
@@ -83,6 +85,7 @@ export function openDiffFilePrimaryAction({
   activeCwd,
   repositoryRoot,
   openInEditor,
+  openFile,
 }: OpenDiffFilePrimaryActionInput): void {
   const workspaceFilePath = resolveDiffPathForWorkspace({
     filePath,
@@ -92,7 +95,7 @@ export function openDiffFilePrimaryAction({
   if (!workspaceFilePath) return;
 
   if (threadRef) {
-    useRightPanelStore.getState().openFile(threadRef, workspaceFilePath);
+    (openFile ?? useRightPanelStore.getState().openFile)(threadRef, workspaceFilePath);
     return;
   }
 

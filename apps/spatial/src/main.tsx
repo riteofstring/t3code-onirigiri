@@ -10,6 +10,7 @@ import { getRouter } from "@t3tools/web/src/router";
 import "./index.css";
 
 import { renderSpatialChatSurface } from "./workspace/SpatialChatSurface";
+import { SpatialSurfaceProvider } from "./workspace/SpatialSurfaceProvider";
 
 prepareProviderAuthDelivery();
 
@@ -21,7 +22,9 @@ export const startup = router.load().then(() => {
     <React.StrictMode>
       <ChatSurfaceContext value={renderSpatialChatSurface}>
         <SidebarPresentationContext value="all-conversations">
-          <AppRoot router={router} />
+          <SpatialSurfaceProvider router={router}>
+            <AppRoot router={router} />
+          </SpatialSurfaceProvider>
         </SidebarPresentationContext>
       </ChatSurfaceContext>
     </React.StrictMode>,

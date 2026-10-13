@@ -2,7 +2,7 @@ import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { useSurfaceNavigation } from "~/surfaceNavigation";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { filterComposerPullRequestMatches } from "@t3tools/shared/composerPullRequestMatches";
@@ -1498,6 +1498,7 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const surfaceNavigation = useSurfaceNavigation();
   const chatViewActivity = useChatViewActivity();
   const {
     composerDraftTarget,
@@ -1688,7 +1689,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (preview) onExpandImage(preview);
       },
       openFile: setPreviewFileId,
-      openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
+      openMention: (path: string) => surfaceNavigation.openFile(routeThreadRef, path),
       expandVideo: (fileId: string) => {
         const file = composerFiles.find((candidate) => candidate.id === fileId);
         if (!file || !isVideoAttachment(file)) return;
@@ -1713,7 +1714,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         openPrLink(event, url);
       },
     }),
-    [composerFiles, composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
+    [
+      composerFiles,
+      composerImages,
+      environmentId,
+      onExpandImage,
+      openPrLink,
+      routeThreadRef,
+      setPreviewFileId,
+      surfaceNavigation,
+    ],
   );
   const composerContextRecords = useMemo(
     () =>

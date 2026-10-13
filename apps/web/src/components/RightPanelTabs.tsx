@@ -316,7 +316,9 @@ function SurfaceMenuItem(props: {
  * focused. The highlight only appears on hover or arrow use. Unavailable
  * surfaces stay visible with a one-line reason.
  */
-function RightPanelEmptyState(props: {
+export function RightPanelEmptyState(props: {
+  active?: boolean;
+  autoFocus?: boolean;
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -337,6 +339,8 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   liveAgentCount: number;
 }) {
+  const active = props.active ?? true;
+  const autoFocus = props.autoFocus ?? true;
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
@@ -432,6 +436,7 @@ function RightPanelEmptyState(props: {
     shortcutActionsRef.current = availableActions;
   });
   useEffect(() => {
+    if (!active) return;
     const handler = (event: KeyboardEvent) => {
       if (!chatViewActivity.isActive()) return;
       const action = surfaceShortcutActionForKey(shortcutActionsRef.current, event);
@@ -445,9 +450,10 @@ function RightPanelEmptyState(props: {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [chatViewActivity]);
+  }, [active, chatViewActivity, shortcutActionsRef]);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!active) return;
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (availableActions.length === 0) return;
     if (event.key === "ArrowDown" || event.key === "ArrowRight") {
@@ -474,11 +480,12 @@ function RightPanelEmptyState(props: {
     }
   };
 
-  // Stable identity so React only runs this callback ref on mount/unmount;
-  // an inline arrow would re-attach and re-focus on every render.
-  const focusOnMount = useCallback((node: HTMLDivElement | null) => {
-    node?.focus();
-  }, []);
+  const focusOnMount = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (active && autoFocus) node?.focus();
+    },
+    [active, autoFocus],
+  );
 
   const isHighlighted = (action: SurfaceAction) =>
     highlightIndex !== -1 && availableActions[highlightIndex] === action;
@@ -506,7 +513,9 @@ function RightPanelEmptyState(props: {
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="Open a surface"
-      data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
+      data-surface-launcher-keys={
+        active ? availableActions.map((action) => action.shortcut).join("") : undefined
+      }
       className={cn(
         "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
         // The panel topbar sits above this container; matching bottom padding

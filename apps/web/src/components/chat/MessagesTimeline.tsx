@@ -1,6 +1,6 @@
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { useSurfaceNavigation } from "~/surfaceNavigation";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -3492,6 +3492,7 @@ function UserMessageMentionChip(props: {
   copyMarkdown: string;
 }) {
   const ctx = use(TimelineRowCtx);
+  const surfaceNavigation = useSurfaceNavigation();
   return (
     <Tooltip>
       <TooltipTrigger
@@ -3502,8 +3503,7 @@ function UserMessageMentionChip(props: {
             aria-label={`Preview ${props.record.path}`}
             data-markdown-copy={props.copyMarkdown}
             onClick={() => {
-              if (ctx.threadRef)
-                useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
+              if (ctx.threadRef) surfaceNavigation.openFile(ctx.threadRef, props.record.path);
             }}
           >
             <PierreEntryIcon

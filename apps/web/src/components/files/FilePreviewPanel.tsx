@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
+import { useSurfaceNavigation } from "~/surfaceNavigation";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
@@ -921,6 +922,7 @@ export default function FilePreviewPanel({
   selectedFilePending,
   workspaceMutationId,
 }: FilePreviewPanelProps) {
+  const surfaceNavigation = useSurfaceNavigation();
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
   const { resolvedTheme } = useTheme();
@@ -1078,6 +1080,7 @@ export default function FilePreviewPanel({
         httpBaseUrl: environmentHttpBaseUrl,
         createAssetUrl,
         openPreview,
+        openBrowser: surfaceNavigation.openBrowser,
       });
       if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
         return;
@@ -1091,7 +1094,15 @@ export default function FilePreviewPanel({
         }),
       );
     })();
-  }, [absolutePath, createAssetUrl, cwd, environmentHttpBaseUrl, openPreview, threadRef]);
+  }, [
+    absolutePath,
+    createAssetUrl,
+    cwd,
+    environmentHttpBaseUrl,
+    openPreview,
+    surfaceNavigation,
+    threadRef,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">

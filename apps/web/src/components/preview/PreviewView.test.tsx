@@ -10,12 +10,14 @@ import {
 import { act, createElement, Profiler } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(async (_tabId: string, _url: string): Promise<void> => undefined),
   rememberPreviewUrl: vi.fn(),
   readPreparedConnection: vi.fn(() => ({ httpBaseUrl: "http://172.25.85.75:3773" })),
   submittedUrl: null as ((url: string) => void) | null,
+  displayedUrl: "",
   emptyStateUrl: null as ((url: string) => void) | null,
   togglePictureInPicture: null as (() => void) | null,
   toggleNativePictureInPicture: null as (() => void) | null,
@@ -24,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   openMiniPlayer: vi.fn(),
   closeMiniPlayer: vi.fn(),
   closeRightPanel: vi.fn(),
+  openNativeBrowser: vi.fn(),
   openPictureInPicture: vi.fn(async (_tabId: string): Promise<void> => undefined),
   closePictureInPicture: vi.fn(async (_tabId: string): Promise<void> => undefined),
   pickElement: vi.fn(),
@@ -37,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   recordingTabIds: new Set<string>(),
   recordingRuntimeTabId: null as string | null,
   recordVisitForThread: vi.fn(),
+  openPreview: vi.fn(),
 }));
 
 const EMPTY_HISTORY: never[] = [];
@@ -69,6 +73,7 @@ vi.mock("~/state/session", async (importOriginal) => ({
 vi.mock("~/browser/browserDefaults", () => ({
   useBrowserDefaults: () => STUB_BROWSER_DEFAULTS,
   getBrowserDefaults: () => STUB_BROWSER_DEFAULTS,
+  resolveBrowserDefaults: async () => STUB_BROWSER_DEFAULTS,
   browserDefaultOpenViewport: () => FILL_PREVIEW_VIEWPORT,
   browserDefaultOpenProfileId: () => DEFAULT_BROWSER_PROFILE_ID,
   browserDefaultTabState: () => ({
@@ -96,7 +101,8 @@ vi.mock("~/localApi", () => ({
   ensureLocalApi: vi.fn(),
 }));
 
-vi.mock("~/previewStateStore", () => ({
+vi.mock("~/previewStateStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/previewStateStore")>()),
   rememberPreviewUrl: mocks.rememberPreviewUrl,
   updatePreviewServerSnapshot: vi.fn(),
   useThreadPreviewState: () => ({
@@ -142,11 +148,12 @@ vi.mock("~/state/environments", () => ({
 }));
 
 vi.mock("~/state/preview", () => ({
-  previewEnvironment: { open: {}, resize: {} },
+  previewEnvironment: { open: { operation: "open" }, resize: {} },
 }));
 
 vi.mock("~/state/use-atom-command", () => ({
-  useAtomCommand: () => vi.fn(),
+  useAtomCommand: (command?: { operation?: string }) =>
+    command?.operation === "open" ? mocks.openPreview : vi.fn(),
 }));
 
 vi.mock("~/browser/browserRecording", () => ({
@@ -194,7 +201,7 @@ vi.mock("~/previewMiniPlayerStore", () => {
 
 vi.mock("~/rightPanelStore", () => ({
   useRightPanelStore: {
-    getState: () => ({ close: mocks.closeRightPanel }),
+    getState: () => ({ close: mocks.closeRightPanel, openBrowser: mocks.openNativeBrowser }),
   },
 }));
 
@@ -216,6 +223,7 @@ vi.mock("./previewBridge", () => ({
 
 vi.mock("./PreviewChromeRow", () => ({
   PreviewChromeRow: (props: {
+    url: string;
     onSubmit: (url: string) => void;
     onPickElement?: () => void;
     onPictureInPicture?: () => void;
@@ -225,6 +233,7 @@ vi.mock("./PreviewChromeRow", () => ({
     };
   }) => {
     mocks.submittedUrl = props.onSubmit;
+    mocks.displayedUrl = props.url;
     mocks.toggleAnnotation = props.onPickElement ?? null;
     mocks.togglePictureInPicture = props.onPictureInPicture ?? null;
     mocks.toggleNativePictureInPicture =
@@ -252,17 +261,27 @@ vi.mock("./AgentBrowserCursor", () => ({
   AgentBrowserCursor: () => createElement("agent-cursor"),
 }));
 vi.mock("~/browser/BrowserSurfaceSlot", () => ({ BrowserSurfaceSlot: () => null }));
+vi.mock("~/browser/desktopTabLifetime", () => ({
+  acquireDesktopTab: () => ({ ready: Promise.resolve(), release: () => undefined }),
+}));
 vi.mock("./usePreviewSession", () => ({ usePreviewSession: vi.fn() }));
 
 import { PreviewView } from "./PreviewView";
 import { toastManager } from "~/components/ui/toast";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
+import {
+  readThreadPreviewState,
+  reconcilePreviewServerSessions,
+  resetPreviewStateForTests,
+} from "~/previewStateStore";
+import { SurfaceNavigationContext } from "~/surfaceNavigation";
+import { useRightPanelStore } from "~/rightPanelStore";
 
 const TEST_THREAD_REF = {
   environmentId: EnvironmentId.make("environment-1"),
   threadId: ThreadId.make("thread-1"),
 } as const;
-const TEST_RUNTIME_TAB_ID = previewRuntimeTabId(TEST_THREAD_REF, null, "tab-1");
+const TEST_RUNTIME_TAB_ID = previewRuntimeTabId(TEST_THREAD_REF, "initial-server", "tab-1");
 
 // ReactDOM needs a host, but this unit suite intentionally has no DOM dependency.
 class TestNode {
@@ -332,6 +351,7 @@ describe("PreviewView navigation", () => {
     mocks.rememberPreviewUrl.mockClear();
     mocks.readPreparedConnection.mockClear();
     mocks.submittedUrl = null;
+    mocks.displayedUrl = "";
     mocks.emptyStateUrl = null;
     mocks.togglePictureInPicture = null;
     mocks.toggleNativePictureInPicture = null;
@@ -340,6 +360,7 @@ describe("PreviewView navigation", () => {
     mocks.openMiniPlayer.mockClear();
     mocks.closeMiniPlayer.mockClear();
     mocks.closeRightPanel.mockClear();
+    mocks.openNativeBrowser.mockClear();
     mocks.openPictureInPicture.mockClear();
     mocks.closePictureInPicture.mockClear();
     mocks.pickElement.mockReset();
@@ -350,11 +371,85 @@ describe("PreviewView navigation", () => {
     mocks.pictureInPicture = false;
     mocks.showEmptyState = false;
     mocks.loading = false;
-    mocks.serverEpoch = null;
+    mocks.serverEpoch = "initial-server";
+    resetPreviewStateForTests();
+    reconcilePreviewServerSessions(TEST_THREAD_REF, {
+      serverEpoch: "initial-server",
+      revision: 1,
+      sessions: [
+        {
+          threadId: TEST_THREAD_REF.threadId,
+          tabId: "tab-1",
+          navStatus: { _tag: "Idle" },
+          canGoBack: false,
+          canGoForward: false,
+          updatedAt: "2026-07-13T00:00:00.000Z",
+        },
+      ],
+    });
     mocks.recordingTabIds = new Set();
     mocks.recordingRuntimeTabId = null;
     mocks.recordVisitForThread.mockClear();
+    mocks.openPreview.mockReset();
   });
+
+  it.each([false, true])(
+    "keeps an explicit empty browser independent of an existing tab and binds the tab opened from its address (spatial=%s)",
+    async (spatial) => {
+      const document = installTestDom();
+      const { createRoot } = await import("react-dom/client");
+      const root = createRoot(document.createElement("div") as unknown as Element);
+      const openBrowser = spatial ? vi.fn() : mocks.openNativeBrowser;
+      mocks.openPreview.mockResolvedValue(
+        AsyncResult.success({
+          threadId: TEST_THREAD_REF.threadId,
+          tabId: "tab-new",
+          navStatus: { _tag: "Loading", url: "https://new.example/" },
+          canGoBack: false,
+          canGoForward: false,
+          updatedAt: "2026-10-13T00:00:00.000Z",
+        }),
+      );
+      try {
+        await act(async () =>
+          root.render(
+            <SurfaceNavigationContext
+              value={
+                spatial
+                  ? { ...useRightPanelStore.getState(), openBrowser, hasSurface: () => false }
+                  : null
+              }
+            >
+              <PreviewView threadRef={TEST_THREAD_REF} tabId={null} visible />
+            </SurfaceNavigationContext>,
+          ),
+        );
+        expect(mocks.emptyStateUrl).not.toBeNull();
+        expect(mocks.displayedUrl).toBe("");
+        await act(async () => {
+          await mocks.emptyStateUrl!("https://new.example/");
+        });
+        expect(mocks.openPreview).toHaveBeenCalledExactlyOnceWith({
+          environmentId: TEST_THREAD_REF.environmentId,
+          input: {
+            threadId: TEST_THREAD_REF.threadId,
+            url: "https://new.example/",
+            viewport: FILL_PREVIEW_VIEWPORT,
+            profileId: DEFAULT_BROWSER_PROFILE_ID,
+          },
+        });
+        expect(mocks.navigate).not.toHaveBeenCalled();
+        expect(openBrowser).toHaveBeenCalledExactlyOnceWith(TEST_THREAD_REF, "tab-new");
+        expect(Object.keys(readThreadPreviewState(TEST_THREAD_REF).sessions).sort()).toEqual([
+          "tab-1",
+          "tab-new",
+        ]);
+      } finally {
+        await act(async () => root.unmount());
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("shows the cursor in a replacement browser while the old instance still records", async () => {
     const document = installTestDom();

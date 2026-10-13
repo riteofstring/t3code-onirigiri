@@ -37,7 +37,7 @@ import {
   selectThreadPreviewMiniPlayerTabId,
   usePreviewMiniPlayerStore,
 } from "~/previewMiniPlayerStore";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { useHasSurfaceNavigation, useSurfaceNavigation } from "~/surfaceNavigation";
 
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
@@ -103,6 +103,8 @@ export function PreviewView({
   visible,
   onSendAnnotation,
 }: Props) {
+  const surfaceNavigation = useSurfaceNavigation();
+  const hasSurfaceNavigation = useHasSurfaceNavigation();
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
   const [pickActive, setPickActive] = useState(false);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
@@ -139,7 +141,7 @@ export function PreviewView({
     };
   }, []);
 
-  const tabId = requestedTabId ?? previewState.activeTabId;
+  const tabId = requestedTabId === undefined ? previewState.activeTabId : requestedTabId;
   const runtimeTabId = tabId
     ? previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId)
     : null;
@@ -195,6 +197,9 @@ export function PreviewView({
         return navigatePreviewSession({ threadRef, tabId, url: resolvedUrl, listPreviews });
       }
       const result = await openPreviewSession({ openPreview: open, threadRef, url: resolvedUrl });
+      if (result._tag === "Success") {
+        surfaceNavigation.openBrowser(threadRef, result.value.tabId);
+      }
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         if (error instanceof BrowserSettingsReadError) {
@@ -207,7 +212,7 @@ export function PreviewView({
       }
       return result._tag === "Success";
     },
-    [listPreviews, open, tabId, threadRef],
+    [listPreviews, open, surfaceNavigation, tabId, threadRef],
   );
 
   const handleSubmitUrl = useCallback(
@@ -321,8 +326,9 @@ export function PreviewView({
       return;
     }
     usePreviewMiniPlayerStore.getState().open(threadRef, browserMiniPlayerSource(tabId));
-    useRightPanelStore.getState().close(threadRef);
-  }, [miniPlayerTabId, tabId, threadRef]);
+    if (hasSurfaceNavigation) surfaceNavigation.closeSurface(threadRef, `browser:${tabId}`);
+    else surfaceNavigation.close(threadRef);
+  }, [hasSurfaceNavigation, miniPlayerTabId, surfaceNavigation, tabId, threadRef]);
 
   const handleNativePictureInPicture = useCallback(() => {
     if (!previewBridge || !runtimeTabId) return;

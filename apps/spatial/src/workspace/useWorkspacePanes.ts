@@ -187,6 +187,7 @@ const TOOL_TITLES: Record<ToolPane["kind"], string> = {
   diff: "Diff",
   empty: "New pane",
   terminal: "Terminal",
+  surface: "Pane",
 };
 
 function toolPaneDefinition(tool: ToolPane, threadTitle: string) {
@@ -194,8 +195,34 @@ function toolPaneDefinition(tool: ToolPane, threadTitle: string) {
     paneId: tool.paneId,
     surfaceId: `surface:${tool.paneId}:${tool.kind}`,
     surfaceKind: tool.kind,
-    title: TOOL_TITLES[tool.kind],
+    title:
+      tool.kind === "surface" && tool.surface
+        ? toolSurfaceTitle(tool.surface)
+        : TOOL_TITLES[tool.kind],
     subtitle: threadTitle,
     data: tool,
   };
+}
+
+function toolSurfaceTitle(surface: NonNullable<ToolPane["surface"]>): string {
+  switch (surface.kind) {
+    case "preview":
+      return "Browser";
+    case "terminal":
+      return "Terminal";
+    case "diff":
+      return "Diff";
+    case "files":
+      return "Files";
+    case "file":
+      return surface.relativePath.split("/").at(-1) ?? surface.relativePath;
+    case "pull-request":
+      return `Pull request #${surface.number}`;
+    case "pull-requests":
+      return "Linked pull requests";
+    case "agents":
+      return "Agents";
+    case "device":
+      return surface.title ?? surface.target?.name ?? "Device";
+  }
 }

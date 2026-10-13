@@ -9,6 +9,7 @@ import { recordVisitForThread } from "~/browserHistoryStore";
 import { readLocalApi } from "~/localApi";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useSurfaceNavigation } from "~/surfaceNavigation";
 
 import {
   canOpenLinksInApp,
@@ -38,6 +39,7 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
     readonly threadRef?: ScopedThreadRef | undefined;
   },
 ) => Promise<void> {
+  const surfaceNavigation = useSurfaceNavigation();
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   return useCallback(
     async (url, options = {}) => {
@@ -49,7 +51,12 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
         canOpenInApp: canOpenLinksInApp(Boolean(targetThreadRef)),
       });
       if (target === "app" && targetThreadRef) {
-        const result = await openUrlInPreview({ threadRef: targetThreadRef, url, openPreview });
+        const result = await openUrlInPreview({
+          threadRef: targetThreadRef,
+          url,
+          openPreview,
+          openBrowser: surfaceNavigation.openBrowser,
+        });
         if (isAtomCommandInterrupted(result)) return;
         if (result._tag === "Success") {
           recordVisitForThread(targetThreadRef, url);
@@ -63,6 +70,6 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
       if (!api) throw new Error("Link opening is unavailable.");
       await api.shell.openExternal(url);
     },
-    [openPreview, threadRef],
+    [openPreview, surfaceNavigation, threadRef],
   );
 }

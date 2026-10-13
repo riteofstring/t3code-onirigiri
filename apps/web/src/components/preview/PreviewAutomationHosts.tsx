@@ -62,6 +62,7 @@ import { useEnvironments } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useHasSurfaceNavigation, useSurfaceNavigation } from "~/surfaceNavigation";
 
 import { previewBridge } from "./previewBridge";
 import {
@@ -295,6 +296,8 @@ export function PreviewAutomationHosts() {
 
 function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId }) {
   const { environmentId } = props;
+  const surfaceNavigation = useSurfaceNavigation();
+  const hasSurfaceNavigation = useHasSurfaceNavigation();
   const previewSessions = useActivePreviewSessions();
   const visibleRuntimeTabIds = useBrowserSurfaceStore(
     useShallow((state) =>
@@ -407,7 +410,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                   presentationSuppressedRuntimeTabsRef.current
                     .get(request.threadId)
                     ?.has(runtimeTabId) ?? false,
-              })
+              }) &&
+              !(
+                hasSurfaceNavigation &&
+                surfaceNavigation.hasSurface(threadRef, `browser:${readyTabId}`)
+              )
             ) {
               usePreviewMiniPlayerStore
                 .getState()
@@ -539,7 +546,13 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 presentationSuppressedRuntimeTabsRef.current.delete(request.threadId);
               }
             }
-            if (shouldPresentPreview) {
+            if (
+              shouldPresentPreview &&
+              !(
+                hasSurfaceNavigation &&
+                surfaceNavigation.hasSurface(threadRef, `browser:${activeTabId}`)
+              )
+            ) {
               usePreviewMiniPlayerStore
                 .getState()
                 .open(threadRef, browserMiniPlayerSource(activeTabId));
@@ -794,7 +807,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
         browserActivity.release?.();
       }
     },
-    [environmentId, listPreviews, open, registry, resize],
+    [environmentId, hasSurfaceNavigation, listPreviews, open, registry, resize, surfaceNavigation],
   );
   const [requestHandlerAtom] = useState(() => Atom.make({ handle: handleRequest }));
   const setRequestHandler = useAtomSet(requestHandlerAtom);

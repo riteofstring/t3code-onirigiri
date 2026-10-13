@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { useSurfaceNavigation } from "~/surfaceNavigation";
 import { useProjectContentSearch } from "~/state/queries";
 
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
@@ -104,6 +104,7 @@ function OpenContentSearchDialog(props: {
   readonly target: ActiveProjectTarget;
 }) {
   const { target } = props;
+  const surfaceNavigation = useSurfaceNavigation();
   const { resolvedTheme } = useTheme();
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -155,7 +156,7 @@ function OpenContentSearchDialog(props: {
   const openMatch = (match: ProjectContentMatch) => {
     if (!canOpenMatches) return;
     props.onOpenChange(false);
-    useRightPanelStore.getState().openFile(target.threadRef, match.path, match.lineNumber);
+    surfaceNavigation.openFile(target.threadRef, match.path, match.lineNumber);
   };
   const fileCount = useMemo(() => new Set(matches.map((match) => match.path)).size, [matches]);
   const showSearchStatus =

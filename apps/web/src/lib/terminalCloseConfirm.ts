@@ -1,4 +1,5 @@
 import { readLocalApi } from "~/localApi";
+export { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 
 let pendingConfirmations = 0;
 

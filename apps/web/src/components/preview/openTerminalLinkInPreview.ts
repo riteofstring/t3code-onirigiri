@@ -12,6 +12,7 @@ import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
+import type { SurfaceNavigation } from "~/surfaceNavigation";
 
 const terminalLinkErrorContext = {
   environmentId: Schema.String,
@@ -36,6 +37,7 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly fallbackToBrowser: () => void;
   /** Cmd/Ctrl-click bypasses the preference and opens in the system browser. */
   readonly forceBrowser: boolean;
+  readonly openBrowser?: SurfaceNavigation["openBrowser"];
 }
 
 /**
@@ -90,5 +92,8 @@ export async function openTerminalLinkInPreview<E>(
   }
   recordVisitForThread(input.threadRef, input.url);
   applyPreviewServerSnapshot(input.threadRef, result.value);
-  useRightPanelStore.getState().openBrowser(input.threadRef, result.value.tabId);
+  (input.openBrowser ?? useRightPanelStore.getState().openBrowser)(
+    input.threadRef,
+    result.value.tabId,
+  );
 }

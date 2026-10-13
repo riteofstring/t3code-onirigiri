@@ -94,6 +94,7 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
+import { useSurfaceNavigation } from "../surfaceNavigation";
 import { useAtomCommand } from "../state/use-atom-command";
 import { previewEnvironment } from "../state/preview";
 import {
@@ -381,6 +382,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     thread,
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+  const surfaceNavigation = useSurfaceNavigation();
   const threadKey = scopedThreadKey(threadRef);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const fileDropHandlers = useMemo(
@@ -441,7 +443,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       event.stopPropagation();
       navigateToThread(threadRef);
       void (async () => {
-        const result = await openDiscoveredPort({ threadRef, port, openPreview });
+        const result = await openDiscoveredPort({
+          threadRef,
+          port,
+          openPreview,
+          openBrowser: surfaceNavigation.openBrowser,
+        });
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
@@ -456,7 +463,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         );
       })();
     },
-    [discoveredPorts, navigateToThread, openPreview, threadRef],
+    [discoveredPorts, navigateToThread, openPreview, surfaceNavigation, threadRef],
   );
   const isThreadRunning =
     thread.session?.status === "running" && thread.session.activeTurnId != null;

@@ -82,7 +82,7 @@ import {
 } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 
-import { useRightPanelStore } from "../rightPanelStore";
+import { useSurfaceNavigation } from "../surfaceNavigation";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -1111,6 +1111,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const openPrLink = useOpenPrLink();
+  const surfaceNavigation = useSurfaceNavigation();
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -1571,9 +1572,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     ? resolveThreadPullRequestBadge(thread.pullRequests)
     : null;
   const handlePrListClick = useCallback(() => {
-    useRightPanelStore.getState().open(threadRef, "pull-requests");
+    surfaceNavigation.open(threadRef, "pull-requests");
     if (!props.isActive) onThreadActivate(threadRef);
-  }, [onThreadActivate, props.isActive, threadRef]);
+  }, [onThreadActivate, props.isActive, surfaceNavigation, threadRef]);
   const prBadge =
     prBadgeShape?.kind === "stack" || pr || currentLinkedPr ? (
       <ThreadPullRequestBadgeControl

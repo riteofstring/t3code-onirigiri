@@ -131,6 +131,7 @@ import {
   selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
+import { useSurfaceNavigation } from "../surfaceNavigation";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
   cn,
@@ -711,6 +712,7 @@ function OpenCommandPaletteDialog(props: {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
+  const surfaceNavigation = useSurfaceNavigation();
   const [query, setQuery] = useState(openIntent?.kind === "search" ? openIntent.query : "");
   const [linkedThreadSearch, setLinkedThreadSearch] = useState(
     openIntent?.kind === "search" ? openIntent : null,
@@ -1967,7 +1969,7 @@ function OpenCommandPaletteDialog(props: {
         disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
         icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
         run: async () => {
-          useRightPanelStore.getState().open(threadRef, "pull-requests");
+          surfaceNavigation.open(threadRef, "pull-requests");
         },
       });
     }

@@ -69,7 +69,7 @@ const paneRouteTree = paneRootRoute.addChildren([
   }),
 ]);
 
-function createPaneActivity(initial: boolean) {
+export function createPaneActivity(initial: boolean) {
   let active = initial;
   const listeners = new Set<() => void>();
   const activity: ChatViewActivity & { set: (next: boolean) => void } = {

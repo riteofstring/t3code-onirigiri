@@ -165,7 +165,7 @@ import { readLocalApi } from "../localApi";
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import { cn } from "../lib/utils";
 import { useRemoteOpenResolution, type RemoteOpenMode } from "../remoteOpen";
-import { useRightPanelStore } from "../rightPanelStore";
+import { useSurfaceNavigation } from "../surfaceNavigation";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { shellEnvironment } from "../state/shell";
@@ -1691,6 +1691,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
+  const surfaceNavigation = useSurfaceNavigation();
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, props.resource);
   const resource = props.resource;
   const path =
@@ -1735,12 +1736,10 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
       ? {
           onOpenFile: () =>
-            useRightPanelStore
-              .getState()
-              .openFile(
-                { environmentId: props.environmentId, threadId: resource.threadId },
-                relativePath,
-              ),
+            surfaceNavigation.openFile(
+              { environmentId: props.environmentId, threadId: resource.threadId },
+              relativePath,
+            ),
         }
       : {}),
   };
@@ -2338,6 +2337,7 @@ function useChatMarkdownState({
   headingLevelOffset = 0,
   githubMedia = false,
 }: ChatMarkdownProps) {
+  const surfaceNavigation = useSurfaceNavigation();
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
   const markdownRef = useRef<HTMLDivElement>(null);
@@ -2379,9 +2379,7 @@ function useChatMarkdownState({
         httpBaseUrl:
           preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : undefined,
         createAssetUrl,
-        onOpenFile: threadRef
-          ? (path) => useRightPanelStore.getState().openFile(threadRef, path)
-          : undefined,
+        onOpenFile: threadRef ? (path) => surfaceNavigation.openFile(threadRef, path) : undefined,
       }).then(
         (preview) => {
           if (preview && mediaRequestId.current === requestId) {
@@ -2408,7 +2406,7 @@ function useChatMarkdownState({
         },
       );
     },
-    [createAssetUrl, cwd, expandMedia, preparedConnection, threadRef],
+    [createAssetUrl, cwd, expandMedia, preparedConnection, surfaceNavigation, threadRef],
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const projects = useProjects();
@@ -2549,7 +2547,12 @@ function useChatMarkdownState({
           ),
         );
       }
-      return openUrlInPreview({ threadRef, url, openPreview }).then((result) => {
+      return openUrlInPreview({
+        threadRef,
+        url,
+        openPreview,
+        openBrowser: surfaceNavigation.openBrowser,
+      }).then((result) => {
         if (result._tag === "Success") recordVisitForThread(threadRef, url);
         else if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
@@ -2566,7 +2569,7 @@ function useChatMarkdownState({
         return result;
       });
     },
-    [openPreview, threadRef],
+    [openPreview, surfaceNavigation, threadRef],
   );
   const openMarkdownFileInPreview = useCallback(
     (path: string) => {
@@ -2588,9 +2591,10 @@ function useChatMarkdownState({
         httpBaseUrl: preparedConnection.value.httpBaseUrl,
         createAssetUrl,
         openPreview,
+        openBrowser: surfaceNavigation.openBrowser,
       });
     },
-    [createAssetUrl, cwd, openPreview, preparedConnection, threadRef],
+    [createAssetUrl, cwd, openPreview, preparedConnection, surfaceNavigation, threadRef],
   );
   const findWorkspaceBasenameMatch = useCallback(
     async (workspaceRelativePath: string) => {
@@ -2620,8 +2624,7 @@ function useChatMarkdownState({
       // Claimed on every open so a synchronous one supersedes a lookup already
       // in flight.
       const isLatestLookup = claimWorkspaceBasenameLookup();
-      const openAt = (path: string) =>
-        useRightPanelStore.getState().openFile(threadRef, path, line);
+      const openAt = (path: string) => surfaceNavigation.openFile(threadRef, path, line);
       if (!cwd || !needsWorkspaceBasenameLookup(panelPath)) {
         openAt(panelPath);
         return;
@@ -2632,7 +2635,7 @@ function useChatMarkdownState({
         openAt(match ?? panelPath);
       })();
     },
-    [cwd, findWorkspaceBasenameMatch, threadRef],
+    [cwd, findWorkspaceBasenameMatch, surfaceNavigation, threadRef],
   );
   const revealMarkdownFileInFileManager = useCallback(
     async (fileLinkMeta: MarkdownFileLinkMeta) => {
