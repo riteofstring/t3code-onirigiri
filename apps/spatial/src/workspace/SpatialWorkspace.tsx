@@ -392,6 +392,7 @@ export function SpatialWorkspace({
       // A terminal or diff pane acts for its thread, which the route follows.
       const tool = toolPanesRef.current.find((pane) => pane.paneId === paneId);
       const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
+      if (pendingNavigationPaneRef.current !== routeTarget) pendingNavigationPaneRef.current = null;
       const data = paneData.get(routeTarget);
       if (!data) return;
       if (!tool) lifecycle?.setFocus(paneId);
@@ -488,7 +489,7 @@ export function SpatialWorkspace({
         if (params?.environmentId && params.threadId) {
           const paneId = threadPaneId(params.environmentId, params.threadId);
           if (!requestedRoutesRef.current.has(paneId)) {
-            pendingNavigationPaneRef.current = paneId;
+            pendingNavigationPaneRef.current = paneId === routePaneIdRef.current ? null : paneId;
             focusRoutePane(paneId);
           }
         } else {

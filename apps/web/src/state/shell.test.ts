@@ -1,18 +1,130 @@
 import {
+  AVAILABLE_CONNECTION_STATE,
   BearerConnectionTarget,
+  ConnectionBlockedError,
   PrimaryConnectionTarget,
+  type SupervisorConnectionState,
 } from "@t3tools/client-runtime/connection";
 import type { EnvironmentCatalogState } from "@t3tools/client-runtime/state/connections";
 import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createAllEnvironmentProjectSnapshotsReadyAtom } from "./shell";
+import {
+  createAllEnvironmentProjectSnapshotsReadyAtom,
+  createAllEnvironmentShellsBootstrappedAtom,
+} from "./shell";
 
 const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
+
+function makeBootstrapHarness() {
+  const catalog = Atom.make(AsyncResult.success(catalogState([LOCAL, REMOTE])));
+  const shells = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make<EnvironmentShellState>(shellState("empty")),
+  );
+  const connections = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make(AsyncResult.success<SupervisorConnectionState>(AVAILABLE_CONNECTION_STATE)),
+  );
+  const ready = createAllEnvironmentShellsBootstrappedAtom({
+    catalogAtom: catalog,
+    shellStateValueAtom: shells,
+    connectionStateAtom: connections,
+  });
+  const registry = AtomRegistry.make();
+  registry.set(shells(REMOTE), shellState("cached"));
+  return { catalog, shells, connections, ready, registry };
+}
+
+describe("shell bootstrap", () => {
+  it("waits through initial registration and connection until the first shell snapshot", () => {
+    const { shells, connections, ready, registry } = makeBootstrapHarness();
+    expect(registry.get(ready)).toBe(false);
+    registry.set(
+      connections(LOCAL),
+      AsyncResult.success({
+        ...AVAILABLE_CONNECTION_STATE,
+        desired: true,
+        phase: "connecting",
+        attempt: 1,
+      }),
+    );
+    expect(registry.get(ready)).toBe(false);
+    registry.set(shells(LOCAL), shellState("live"));
+    expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+
+  it("uses cached shells before the first connection request", () => {
+    const { shells, ready, registry } = makeBootstrapHarness();
+    registry.set(shells(LOCAL), shellState("cached"));
+    expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+
+  it.each(["offline", "blocked"] as const)(
+    "allows a reported %s outcome without waiting for a live connection",
+    (phase) => {
+      const { connections, ready, registry } = makeBootstrapHarness();
+      registry.set(
+        connections(LOCAL),
+        AsyncResult.success({
+          ...AVAILABLE_CONNECTION_STATE,
+          desired: true,
+          phase,
+          lastFailure:
+            phase === "blocked"
+              ? new ConnectionBlockedError({ reason: "authentication", detail: "Sign in required" })
+              : null,
+        }),
+      );
+      expect(registry.get(ready)).toBe(true);
+      registry.dispose();
+    },
+  );
+
+  it("keeps the existing first-retry allowance without waiting indefinitely", () => {
+    const { connections, ready, registry } = makeBootstrapHarness();
+    const retry: SupervisorConnectionState = {
+      ...AVAILABLE_CONNECTION_STATE,
+      desired: true,
+      phase: "backoff",
+      attempt: 2,
+    };
+    registry.set(connections(LOCAL), AsyncResult.success(retry));
+    expect(registry.get(ready)).toBe(false);
+    registry.set(connections(LOCAL), AsyncResult.success({ ...retry, attempt: 3 }));
+    expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+
+  it("accepts an available outcome after an established connection", () => {
+    const { connections, ready, registry } = makeBootstrapHarness();
+    registry.set(
+      connections(LOCAL),
+      AsyncResult.success({ ...AVAILABLE_CONNECTION_STATE, generation: 1 }),
+    );
+    expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+
+  it("does not wait for disabled environments to connect", () => {
+    const { catalog, ready, registry } = makeBootstrapHarness();
+    const current = catalogState([LOCAL, REMOTE]);
+    const local = current.entries.get(LOCAL)!;
+    registry.set(
+      catalog,
+      AsyncResult.success({
+        ...current,
+        entries: new Map([...current.entries, [LOCAL, { ...local, enabled: false }]]),
+      }),
+    );
+    expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+});
 
 function shellState(status: EnvironmentShellState["status"]): EnvironmentShellState {
   return {

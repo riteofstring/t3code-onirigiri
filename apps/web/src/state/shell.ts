@@ -1,6 +1,7 @@
 import {
   AVAILABLE_CONNECTION_STATE,
   connectionProjectionPhase,
+  type SupervisorConnectionState,
 } from "@t3tools/client-runtime/connection";
 import {
   createEnvironmentShellAtoms,
@@ -24,30 +25,46 @@ export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntim
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
 export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(environmentShell.stateAtom);
 
-export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
-  const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
-  if (Option.isNone(catalog)) {
-    return false;
-  }
-  for (const environmentId of enabledEnvironmentIds(catalog.value)) {
-    if (Option.isSome(get(environmentShell.stateValueAtom(environmentId)).snapshot)) {
-      continue;
-    }
-    const connection = Option.getOrElse(
-      AsyncResult.value(get(environmentCatalog.stateAtom(environmentId))),
-      () => AVAILABLE_CONNECTION_STATE,
-    );
-    if (connectionProjectionPhase(connection) !== "disconnected") {
+export function createAllEnvironmentShellsBootstrappedAtom<CatalogError, ConnectionError>(input: {
+  readonly catalogAtom: Atom.Atom<AsyncResult.AsyncResult<EnvironmentCatalogState, CatalogError>>;
+  readonly shellStateValueAtom: (environmentId: EnvironmentId) => Atom.Atom<EnvironmentShellState>;
+  readonly connectionStateAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<AsyncResult.AsyncResult<SupervisorConnectionState, ConnectionError>>;
+}) {
+  return Atom.make((get) => {
+    const catalog = AsyncResult.value(get(input.catalogAtom));
+    if (Option.isNone(catalog)) {
       return false;
     }
-    // A retrying environment is only transiently disconnected; give it its
-    // first retries before letting the landing settle without its snapshot.
-    if (connection.phase === "backoff" && connection.desired && connection.attempt <= 2) {
-      return false;
+    for (const environmentId of enabledEnvironmentIds(catalog.value)) {
+      if (Option.isSome(get(input.shellStateValueAtom(environmentId)).snapshot)) {
+        continue;
+      }
+      const connection = Option.getOrElse(
+        AsyncResult.value(get(input.connectionStateAtom(environmentId))),
+        () => AVAILABLE_CONNECTION_STATE,
+      );
+      // The initial supervisor value precedes its first connection request.
+      if (connection.phase === "available" && connection.generation === 0) return false;
+      if (connectionProjectionPhase(connection) !== "disconnected") {
+        return false;
+      }
+      // A retrying environment is only transiently disconnected; give it its
+      // first retries before letting the landing settle without its snapshot.
+      if (connection.phase === "backoff" && connection.desired && connection.attempt <= 2) {
+        return false;
+      }
     }
-  }
-  return true;
-}).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
+    return true;
+  }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
+}
+
+export const allEnvironmentShellsBootstrappedAtom = createAllEnvironmentShellsBootstrappedAtom({
+  catalogAtom: environmentCatalog.catalogAtom,
+  shellStateValueAtom: environmentShell.stateValueAtom,
+  connectionStateAtom: environmentCatalog.stateAtom,
+});
 
 /** Cached or missing snapshots cannot establish that a saved project no longer exists. */
 export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {
