@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
+  use,
   useEffect,
   useState,
   useSyncExternalStore,
@@ -36,6 +37,7 @@ import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
+import { SidebarPresentationContext } from "./sidebar/sidebarPresentation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
@@ -217,6 +219,7 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const showAllConversations = use(SidebarPresentationContext) === "all-conversations";
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   // Settings routes show the settings nav in place of whichever thread
@@ -321,10 +324,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
             </>
-          ) : legacySidebarEnabled ? (
+          ) : legacySidebarEnabled && !showAllConversations ? (
             <LegacyThreadSidebar />
           ) : (
-            <ThreadSidebar />
+            <ThreadSidebar showAllConversations={showAllConversations} />
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>

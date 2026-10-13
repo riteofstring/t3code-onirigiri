@@ -156,7 +156,17 @@
 }
 
 .spatial-workspace-controls__height {
-  width: 76px;
+  display: flex;
+  width: 104px;
+}
+
+.spatial-workspace-controls__height-value {
+  width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spatial-workspace-controls__settings {
+  order: -1;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -13,6 +13,8 @@ let root: Root;
 
 function Workspace() {
   const [preferences, update] = useWorkspacePreferences();
+  const [maximum, setMaximum] = useState(880);
+  const [maximized, setMaximized] = useState(false);
   const [controls, setControls] = useState<HTMLDivElement | null>(null);
   return (
     <WorkspaceTooltips>
@@ -23,12 +25,17 @@ function Workspace() {
         controlsRef={setControls}
         shortcuts={{}}
         preferences={preferences}
+        maxRowHeight={maximum}
         onPreferencesChange={update}
-        onResizePanes={() => {}}
+        onResizePanes={(mode) => setMaximized(mode === "full")}
+        panesMaximized={maximized}
       />
       {controls && createPortal(<button>Overview</button>, controls)}
       <output>{JSON.stringify(preferences)}</output>
       <button>Outside</button>
+      <button onClick={() => setMaximum(640)}>Shorter view</button>
+      <button onClick={() => setMaximum(1000)}>Taller view</button>
+      <button onClick={() => setMaximum(60)}>Tiny view</button>
       <textarea aria-label="Terminal input" />
     </WorkspaceTooltips>
   );
@@ -115,7 +122,6 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     option.click();
   });
   await typeHeight("384");
-  await key(rowHeight(), "Enter");
   expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384 });
 
   await act(() => root.unmount());
@@ -124,22 +130,37 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384 });
   await click("Workspace controls");
   await click("Advanced workspace controls");
-  await typeHeight("");
-  await act(() => button("Advanced workspace controls").focus());
+  await typeHeight("880");
   expect(settings()).toEqual({ overviewZoom: "near", rowHeight: "viewport" });
 });
 
-it("discards invalid heights and Escape cancels a draft before restoring focus", async () => {
+it("bounds the slider to the view while preserving fixed heights across resizing", async () => {
   await click("Workspace controls");
   await click("Advanced workspace controls");
-  await typeHeight("48");
-  await key(rowHeight(), "Enter");
+  await typeHeight("720");
+  expect(settings().rowHeight).toBe(720);
+  await click("Shorter view");
+  expect(rowHeight().max).toBe("640");
+  expect(rowHeight().value).toBe("640");
+  expect(settings().rowHeight).toBe(720);
+  await click("Taller view");
+  expect(rowHeight().value).toBe("720");
+  await typeHeight("1000");
   expect(settings().rowHeight).toBe("viewport");
-  expect(rowHeight().value).toBe("");
+  await click("Shorter view");
+  expect(rowHeight().value).toBe("640");
+  await click("Tiny view");
+  expect(rowHeight().min).toBe("60");
+  expect(rowHeight().max).toBe("60");
+  expect(rowHeight().disabled).toBe(true);
+});
+
+it("Escape closes Advanced and restores focus without undoing an applied height", async () => {
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
   await typeHeight("420");
   expect((await key(rowHeight(), "Escape")).defaultPrevented).toBe(true);
-  expect(settings().rowHeight).toBe("viewport");
-  expect(rowHeight().value).toBe("");
+  expect(settings().rowHeight).toBe(420);
   expect(document.activeElement).toBe(button("Advanced workspace controls"));
   expect(button("Advanced workspace controls").getAttribute("aria-expanded")).toBe("false");
   await key(button("Advanced workspace controls"), "Escape");
@@ -222,7 +243,6 @@ it("keeps settings usable when storage cannot be written", async () => {
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await typeHeight("512");
-  await key(rowHeight(), "Enter");
   expect(settings().rowHeight).toBe(512);
 });
 

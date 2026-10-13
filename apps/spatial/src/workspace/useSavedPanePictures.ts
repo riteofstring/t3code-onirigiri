@@ -150,6 +150,7 @@ export function useSavedPanePictures(
   paneSnapshots: PaneSnapshots;
   setCaptureActivity: (enabled: boolean, moving: boolean) => void;
   stageRef: (element: HTMLElement | null) => void;
+  stageViewport: { height: number; compact: boolean };
 } {
   const threads = useThreadShells();
   const pictureTheme = usePanePictureTheme();
@@ -196,6 +197,7 @@ export function useSavedPanePictures(
   );
   const paneGeometryRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
+  const stageViewportRef = useRef({ height: 0, compact: false });
   const [geometryVersion, setGeometryVersion] = useState(0);
   const defaultRowHeightRef = useRef(defaultRowHeight);
   useLayoutEffect(() => {
@@ -242,6 +244,10 @@ export function useSavedPanePictures(
       if (observedStageRef.current !== stage) return;
       const size = entry?.contentRect;
       if (!size || size.width <= 0 || size.height <= 0) return;
+      stageViewportRef.current = {
+        height: Math.round(size.height),
+        compact: stage.parentElement?.dataset.compactLayout === "true",
+      };
       const next = `${Math.round(size.width)}x${Math.round(size.height)}`;
       if (stageSizeRef.current === next) return;
       stageSizeRef.current = next;
@@ -641,6 +647,7 @@ export function useSavedPanePictures(
     paneSnapshots,
     setCaptureActivity: snapshots.setActivity,
     stageRef,
+    stageViewport: stageViewportRef.current,
   };
 }
 

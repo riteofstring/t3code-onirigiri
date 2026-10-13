@@ -5,9 +5,15 @@ import {
   type PaneSizingMode,
   type WorkspaceFocusAnchor,
 } from "@riteofstring/onirigiri";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-
-import { Input } from "@t3tools/web/src/components/ui/input";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   Select,
   SelectItem,
@@ -27,8 +33,10 @@ export function WorkspaceToolbar({
   controlsRef,
   shortcuts,
   preferences,
+  maxRowHeight,
   onPreferencesChange,
   onResizePanes,
+  panesMaximized,
 }: {
   focusAnchor: WorkspaceFocusAnchor;
   onAdd: () => void;
@@ -36,8 +44,10 @@ export function WorkspaceToolbar({
   controlsRef: (element: HTMLDivElement | null) => void;
   shortcuts: OnirigiriShortcutBindings;
   preferences: WorkspacePreferences;
+  maxRowHeight: number | null;
   onPreferencesChange: (change: Partial<WorkspacePreferences>) => void;
   onResizePanes: (mode: PaneSizingMode) => void;
+  panesMaximized: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -207,7 +217,7 @@ export function WorkspaceToolbar({
             </Button>
             <div
               id={advancedId}
-              className="spatial-workspace-controls__reveal"
+              className="spatial-workspace-controls__reveal spatial-workspace-controls__settings"
               data-expanded={advanced}
               aria-hidden={!advanced}
               inert={!advanced}
@@ -244,47 +254,39 @@ export function WorkspaceToolbar({
                 </label>
                 <RowHeightControl
                   height={preferences.rowHeight}
+                  maximum={maxRowHeight}
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight })}
                 />
-                <Button
-                  variant="ghost-muted"
-                  size="icon-xs"
-                  aria-label="Maximize all panes"
-                  tooltip="Maximize all panes"
-                  onClick={() => onResizePanes("full")}
-                >
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  >
-                    <path d="M6 2H2v4m8-4h4v4M2 10v4h4m8-4v4h-4" />
-                    <rect x="5" y="5" width="6" height="6" rx="1" />
-                  </svg>
-                </Button>
-                <Button
-                  variant="ghost-muted"
-                  size="icon-xs"
-                  aria-label="Restore default pane sizes"
-                  tooltip="Restore all panes to default sizes"
-                  onClick={() => onResizePanes("default")}
-                >
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  >
-                    <rect x="2" y="5" width="9" height="9" rx="1" />
-                    <path d="M5 2h8a1 1 0 0 1 1 1v8" />
-                  </svg>
-                </Button>
               </div>
             </div>
             <AddPaneButton onAdd={onAdd} />
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={panesMaximized ? "Restore all panes" : "Maximize all panes"}
+              tooltip={panesMaximized ? "Restore all panes to default sizes" : "Maximize all panes"}
+              onClick={() => onResizePanes(panesMaximized ? "default" : "full")}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                {panesMaximized ? (
+                  <>
+                    <rect x="2" y="5" width="9" height="9" rx="1" />
+                    <path d="M5 2h8a1 1 0 0 1 1 1v8" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M6 2H2v4m8-4h4v4M2 10v4h4m8-4v4h-4" />
+                    <rect x="5" y="5" width="6" height="6" rx="1" />
+                  </>
+                )}
+              </svg>
+            </Button>
             <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
             <div ref={controlsRef} />
           </div>
@@ -335,55 +337,47 @@ function OnirigiriMark() {
 
 function RowHeightControl({
   height,
+  maximum,
   onChange,
 }: {
   height: WorkspacePreferences["rowHeight"];
+  maximum: number | null;
   onChange: (height: WorkspacePreferences["rowHeight"]) => void;
 }) {
-  const text = height === "viewport" ? "" : String(height);
-  const [draft, setDraft] = useState({ height, text });
-  const cancelBlur = useRef(false);
-  if (draft.height !== height) setDraft({ height, text });
-  const commit = (input: HTMLInputElement) => {
-    if (!input.validity.valid) setDraft({ height, text });
-    else if (!input.value) onChange("viewport");
-    else if (Number.isSafeInteger(input.valueAsNumber)) onChange(input.valueAsNumber);
-    else setDraft({ height, text });
-  };
+  const max = maximum ?? 96;
+  const min = Math.min(96, max);
+  const value = height === "viewport" ? max : Math.max(min, Math.min(max, height));
+  const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
   return (
     <label className="spatial-workspace-controls__field">
       <span>Row height</span>
       <span className="spatial-workspace-controls__height">
-        <Input
-          nativeInput
-          size="compact"
-          type="number"
-          min={96}
+        <input
+          className="settings-slider w-full"
+          type="range"
+          min={min}
+          max={max}
           step={1}
+          disabled={maximum === null || min === max}
           aria-label="Default row height in pixels"
-          aria-description="Blank uses the viewport. Manually resized panes keep their height."
-          placeholder="Auto"
-          value={draft.text}
-          onChange={(event) => setDraft({ height, text: event.target.value })}
-          onBlur={(event) => {
-            if (cancelBlur.current) cancelBlur.current = false;
-            else commit(event.currentTarget);
-          }}
-          onKeyDownCapture={(event) => {
-            if (event.key === "Escape") {
-              cancelBlur.current = true;
-              setDraft({ height, text });
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            event.stopPropagation();
-            commit(event.currentTarget);
+          aria-description="The maximum follows the view height. Manually resized panes keep their height."
+          aria-valuetext={value === max ? "Full view height" : `${value} pixels`}
+          value={value}
+          style={
+            {
+              "--settings-slider-progress": `${progress}%`,
+              "--settings-slider-fill-offset": `${0.5 - progress / 100}rem`,
+            } as CSSProperties
+          }
+          onChange={(event) => {
+            const next = event.currentTarget.valueAsNumber;
+            onChange(next === max ? "viewport" : next);
           }}
         />
       </span>
-      <span>px</span>
+      <span className="spatial-workspace-controls__height-value" aria-hidden="true">
+        {value === max ? "Full" : `${value}px`}
+      </span>
     </label>
   );
 }

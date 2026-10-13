@@ -304,7 +304,9 @@ it.each(["capture", "snapshot"] as const)(
 
 it("refreshes pictures when the engine stage grows inside an unchanged workspace", async () => {
   await mount();
+  expect(hook.stageViewport).toEqual({ height: 600, compact: false });
   await act(() => resizeElement(stage, 800, 562));
+  expect(hook.stageViewport.height).toBe(562);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   const oldImage = new Blob(["shorter stage"]);
   await act(() => capturePicture(pane, oldImage));

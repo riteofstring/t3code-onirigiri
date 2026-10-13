@@ -684,7 +684,7 @@ function SidebarSectionHeader(props: {
   // accent while the lifted row is over it.
   dragging?: boolean;
   isDropTarget?: boolean;
-  toggle: { expanded: boolean; onToggle: () => void };
+  toggle: { expanded: boolean; onToggle: () => void } | undefined;
 }) {
   const shelf =
     props.marker === "working-header"
@@ -711,13 +711,15 @@ function SidebarSectionHeader(props: {
           props.isDropTarget && "bg-primary/50",
         )}
       />
-      <ChevronDownIcon
-        aria-hidden
-        className={cn(
-          "size-3 shrink-0 transition-transform",
-          props.toggle.expanded && "rotate-180",
-        )}
-      />
+      {props.toggle ? (
+        <ChevronDownIcon
+          aria-hidden
+          className={cn(
+            "size-3 shrink-0 transition-transform",
+            props.toggle.expanded && "rotate-180",
+          )}
+        />
+      ) : null}
     </>
   );
   return (
@@ -726,15 +728,19 @@ function SidebarSectionHeader(props: {
       data-testid={`sidebar-${props.marker}`}
       className={cn("mx-0.5 h-8", props.className)}
     >
-      <button
-        type="button"
-        onClick={props.toggle.onToggle}
-        aria-expanded={props.toggle.expanded}
-        data-testid={`sidebar-${shelf}-shelf-toggle`}
-        className={cn(className, "cursor-pointer")}
-      >
-        {content}
-      </button>
+      {props.toggle ? (
+        <button
+          type="button"
+          onClick={props.toggle.onToggle}
+          aria-expanded={props.toggle.expanded}
+          data-testid={`sidebar-${shelf}-shelf-toggle`}
+          className={cn(className, "cursor-pointer")}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={className}>{content}</div>
+      )}
     </SortableSidebarMarker>
   );
 }
@@ -2217,7 +2223,11 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
 });
 
-export default function Sidebar() {
+export default function Sidebar({
+  showAllConversations = false,
+}: {
+  showAllConversations?: boolean;
+}) {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -2805,7 +2815,8 @@ export default function Sidebar() {
   // sidebar, and the common lookups are recent. Expansion resets when the
   // filter context changes so a scope/search flip never inherits a deep
   // page state.
-  const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
+  const [settledPageSize, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
+  const settledVisibleCount = showAllConversations ? threads.length : settledPageSize;
   const settledResetKey = projectScopeKey ?? "all";
   const lastSettledResetKeyRef = useRef(settledResetKey);
   if (lastSettledResetKeyRef.current !== settledResetKey) {
@@ -2834,11 +2845,12 @@ export default function Sidebar() {
     () => setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT),
     [],
   );
-  const [settledShelfExpanded, setSettledShelfExpanded] = useLocalStorage(
+  const [savedSettledExpanded, setSettledShelfExpanded] = useLocalStorage(
     SETTLED_SHELF_EXPANDED_KEY,
     false,
     Schema.Boolean,
   );
+  const settledShelfExpanded = showAllConversations || savedSettledExpanded;
   const toggleSettledShelf = useCallback(
     () => setSettledShelfExpanded((value) => !value),
     [setSettledShelfExpanded],
@@ -2856,11 +2868,12 @@ export default function Sidebar() {
   // The snoozed shelf is collapsed by default: out of the way, never gone.
   // Collapsed threads don't render (and so don't participate in jump
   // shortcuts or multi-select), matching the settled tail's paging model.
-  const [snoozedShelfExpanded, setSnoozedShelfExpanded] = useLocalStorage(
+  const [savedSnoozedExpanded, setSnoozedShelfExpanded] = useLocalStorage(
     SNOOZED_SHELF_EXPANDED_KEY,
     false,
     Schema.Boolean,
   );
+  const snoozedShelfExpanded = showAllConversations || savedSnoozedExpanded;
   const toggleSnoozedShelf = useCallback(
     () => setSnoozedShelfExpanded((value) => !value),
     [setSnoozedShelfExpanded],
@@ -2882,11 +2895,12 @@ export default function Sidebar() {
   // The Working shelf (beta) collapses the same way, with the same route
   // exception: sending a message folds the open thread into the shelf, and
   // its row must stay visible there.
-  const [workingShelfExpanded, setWorkingShelfExpanded] = useLocalStorage(
+  const [savedWorkingExpanded, setWorkingShelfExpanded] = useLocalStorage(
     WORKING_SHELF_EXPANDED_KEY,
     false,
     Schema.Boolean,
   );
+  const workingShelfExpanded = showAllConversations || savedWorkingExpanded;
   const toggleWorkingShelf = useCallback(
     () => setWorkingShelfExpanded((value) => !value),
     [setWorkingShelfExpanded],
@@ -5026,10 +5040,14 @@ export default function Sidebar() {
                                     ? "Working"
                                     : `Working (${workingThreads.length})`
                                 }
-                                toggle={{
-                                  expanded: workingShelfExpanded,
-                                  onToggle: toggleWorkingShelf,
-                                }}
+                                toggle={
+                                  showAllConversations
+                                    ? undefined
+                                    : {
+                                        expanded: workingShelfExpanded,
+                                        onToggle: toggleWorkingShelf,
+                                      }
+                                }
                               />,
                             );
                             break;
@@ -5044,10 +5062,14 @@ export default function Sidebar() {
                                     ? "Snoozed"
                                     : `Snoozed (${snoozedThreads.length})`
                                 }
-                                toggle={{
-                                  expanded: snoozedShelfExpanded,
-                                  onToggle: toggleSnoozedShelf,
-                                }}
+                                toggle={
+                                  showAllConversations
+                                    ? undefined
+                                    : {
+                                        expanded: snoozedShelfExpanded,
+                                        onToggle: toggleSnoozedShelf,
+                                      }
+                                }
                               />,
                             );
                             break;
@@ -5066,10 +5088,14 @@ export default function Sidebar() {
                                 }
                                 dragging={from !== null}
                                 isDropTarget={dragTargetSection === "settled"}
-                                toggle={{
-                                  expanded: settledShelfExpanded,
-                                  onToggle: toggleSettledShelf,
-                                }}
+                                toggle={
+                                  showAllConversations
+                                    ? undefined
+                                    : {
+                                        expanded: settledShelfExpanded,
+                                        onToggle: toggleSettledShelf,
+                                      }
+                                }
                               />,
                             );
                             break;

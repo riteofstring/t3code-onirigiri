@@ -134,10 +134,12 @@ export function SpatialWorkspace({
   const overviewCardWidth = overviewZoomChoices.find(
     (choice) => choice.value === preferences.overviewZoom,
   )?.width;
-  const resizePanes = useCallback(
-    (mode: PaneSizingMode) => workspaceRef.current?.resizePanes(mode),
-    [],
-  );
+  const [panesMaximized, setPanesMaximized] = useState(false);
+  const resizePanes = useCallback((mode: PaneSizingMode) => {
+    if (!workspaceRef.current) return;
+    workspaceRef.current.resizePanes(mode);
+    setPanesMaximized(mode === "full");
+  }, []);
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
   const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
@@ -163,6 +165,7 @@ export function SpatialWorkspace({
     paneSnapshots,
     setCaptureActivity,
     stageRef,
+    stageViewport,
   } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
@@ -405,8 +408,8 @@ export function SpatialWorkspace({
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
 
-  // Selecting the current thread still asks for its pane, even when navigation
-  // changes only the query. Different threads are handled by the route effect.
+  // Explicit navigation starts camera motion before the route finishes loading.
+  // Routes requested by pane navigation retain their follow-up guard.
   useEffect(
     () =>
       router.subscribe("onBeforeNavigate", (event) => {
@@ -416,7 +419,7 @@ export function SpatialWorkspace({
         const params = match?.params as { environmentId?: string; threadId?: string } | undefined;
         if (params?.environmentId && params.threadId) {
           const paneId = threadPaneId(params.environmentId, params.threadId);
-          if (paneId === routePaneIdRef.current) focusRoutePane(paneId);
+          if (!requestedRoutesRef.current.has(paneId)) focusRoutePane(paneId);
         }
       }),
     [router],
@@ -426,6 +429,29 @@ export function SpatialWorkspace({
     const pending = pendingRoutePaneRef.current;
     if (pending && panes?.some((pane) => pane.paneId === pending)) focusRoutePane(pending);
   }, [panes]);
+
+  useEffect(() => {
+    if (!active) return;
+    const confirmOverview = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.defaultPrevented || event.isComposing) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          "button, a, input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']",
+        )
+      )
+        return;
+      const workspace = workspaceRef.current;
+      const snapshot = workspace?.getSnapshot();
+      if (snapshot?.presentationMode !== "overview" || !snapshot.focusedPaneId) return;
+      event.preventDefault();
+      workspace?.focusPane(snapshot.focusedPaneId, { exitOverview: true });
+    };
+    window.addEventListener("keydown", confirmOverview);
+    return () => window.removeEventListener("keydown", confirmOverview);
+  }, [active]);
 
   const navigateAway = useCallback(
     (href: string) => {
@@ -592,8 +618,20 @@ export function SpatialWorkspace({
           onAdd={addPane}
           onToggleAnchor={toggleFocusAnchor}
           preferences={preferences}
+          maxRowHeight={
+            stageViewport.height > 0
+              ? Math.max(
+                  1,
+                  stageViewport.height -
+                    (stageViewport.compact
+                      ? 0
+                      : (workspaceRef.current?.getScene().padding ?? 0) * 2),
+                )
+              : null
+          }
           onPreferencesChange={updatePreferences}
           onResizePanes={resizePanes}
+          panesMaximized={panesMaximized}
           controlsRef={setControlsContainer}
           shortcuts={SHORTCUTS}
         />
