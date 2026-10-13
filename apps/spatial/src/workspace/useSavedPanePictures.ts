@@ -166,7 +166,8 @@ export function useSavedPanePictures(
   }, []);
   const retainedPaneIds = useMemo(() => new Set(retained.keys()), [retained]);
   const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane) => (retained.get(pane.paneId) === "live" ? "dom" : "auto"),
+    (pane) =>
+      pane.surfaceKind !== "thread" || retained.get(pane.paneId) === "live" ? "dom" : "auto",
     [retained],
   );
   const updateSaved = useCallback((pictures: Map<string, SavedPanePicture>) => {
