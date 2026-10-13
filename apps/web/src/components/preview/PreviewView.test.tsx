@@ -14,6 +14,10 @@ import { AsyncResult } from "effect/unstable/reactivity";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(async (_tabId: string, _url: string): Promise<void> => undefined),
+  refresh: vi.fn(),
+  zoomIn: vi.fn(),
+  zoomOut: vi.fn(),
+  resetZoom: vi.fn(),
   rememberPreviewUrl: vi.fn(),
   readPreparedConnection: vi.fn(() => ({ httpBaseUrl: "http://172.25.85.75:3773" })),
   submittedUrl: null as ((url: string) => void) | null,
@@ -213,6 +217,10 @@ vi.mock("~/components/ui/toast", () => ({
 vi.mock("./previewBridge", () => ({
   previewBridge: {
     navigate: mocks.navigate,
+    refresh: mocks.refresh,
+    zoomIn: mocks.zoomIn,
+    zoomOut: mocks.zoomOut,
+    resetZoom: mocks.resetZoom,
     pickElement: mocks.pickElement,
     pictureInPicture: {
       open: mocks.openPictureInPicture,
@@ -276,6 +284,8 @@ import {
 } from "~/previewStateStore";
 import { SurfaceNavigationContext } from "~/surfaceNavigation";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { ChatViewActivityContext } from "../chatViewActivity";
+import { dispatchPreviewAction } from "./previewActionBus";
 
 const TEST_THREAD_REF = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -328,6 +338,7 @@ class TestNode {
 
 function installTestDom() {
   const document = new TestNode("#document", null, 9);
+  const events = new EventTarget();
   const window = {
     document,
     HTMLIFrameElement: TestNode,
@@ -335,8 +346,9 @@ function installTestDom() {
     clearInterval: globalThis.clearInterval,
     setTimeout: globalThis.setTimeout,
     clearTimeout: globalThis.clearTimeout,
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
   };
   vi.stubGlobal("document", document);
   vi.stubGlobal("window", window);
@@ -348,6 +360,10 @@ function installTestDom() {
 describe("PreviewView navigation", () => {
   beforeEach(() => {
     mocks.navigate.mockClear();
+    mocks.refresh.mockClear();
+    mocks.zoomIn.mockClear();
+    mocks.zoomOut.mockClear();
+    mocks.resetZoom.mockClear();
     mocks.rememberPreviewUrl.mockClear();
     mocks.readPreparedConnection.mockClear();
     mocks.submittedUrl = null;
@@ -391,6 +407,76 @@ describe("PreviewView navigation", () => {
     mocks.recordingRuntimeTabId = null;
     mocks.recordVisitForThread.mockClear();
     mocks.openPreview.mockReset();
+  });
+
+  it.each([
+    ["refresh", "refresh"],
+    ["zoom-in", "zoomIn"],
+    ["zoom-out", "zoomOut"],
+    ["reset-zoom", "resetZoom"],
+  ] as const)("routes %s only to the active visible browser", async (action, operation) => {
+    const document = installTestDom();
+    const { createRoot } = await import("react-dom/client");
+    const root = createRoot(document.createElement("div") as unknown as Element);
+    const secondRef = { ...TEST_THREAD_REF, threadId: ThreadId.make("thread-2") };
+    let activePane = "first";
+    const listeners = new Set<() => void>();
+    const activity = (pane: string) => ({
+      isActive: () => activePane === pane,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    });
+    const onRender = vi.fn();
+    try {
+      await act(() =>
+        root.render(
+          <Profiler id="browsers" onRender={onRender}>
+            <ChatViewActivityContext value={activity("first")}>
+              <PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />
+            </ChatViewActivityContext>
+            <ChatViewActivityContext value={activity("second")}>
+              <PreviewView threadRef={secondRef} tabId="tab-1" visible />
+            </ChatViewActivityContext>
+          </Profiler>,
+        ),
+      );
+      const initialRenderCount = onRender.mock.calls.length;
+      dispatchPreviewAction(action);
+      expect(mocks[operation]).toHaveBeenCalledExactlyOnceWith(TEST_RUNTIME_TAB_ID);
+
+      mocks[operation].mockClear();
+      activePane = "second";
+      for (const listener of listeners) listener();
+      dispatchPreviewAction(action);
+      expect(mocks[operation]).toHaveBeenCalledExactlyOnceWith(
+        previewRuntimeTabId(secondRef, "initial-server", "tab-1"),
+      );
+      expect(onRender).toHaveBeenCalledTimes(initialRenderCount);
+
+      mocks[operation].mockClear();
+      activePane = "covered";
+      for (const listener of listeners) listener();
+      dispatchPreviewAction(action);
+      expect(mocks[operation]).not.toHaveBeenCalled();
+
+      await act(() =>
+        root.render(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />),
+      );
+      dispatchPreviewAction(action);
+      expect(mocks[operation]).toHaveBeenCalledExactlyOnceWith(TEST_RUNTIME_TAB_ID);
+
+      mocks[operation].mockClear();
+      await act(() =>
+        root.render(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible={false} />),
+      );
+      dispatchPreviewAction(action);
+      expect(mocks[operation]).not.toHaveBeenCalled();
+    } finally {
+      await act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
   });
 
   it.each([false, true])(

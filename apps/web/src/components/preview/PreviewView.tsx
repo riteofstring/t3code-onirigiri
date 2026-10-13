@@ -38,6 +38,7 @@ import {
   usePreviewMiniPlayerStore,
 } from "~/previewMiniPlayerStore";
 import { useHasSurfaceNavigation, useSurfaceNavigation } from "~/surfaceNavigation";
+import { useActiveChatViewEffect } from "../chatViewActivity";
 
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
@@ -685,9 +686,9 @@ export function PreviewView({
     };
   }, [runtimeTabId]);
 
-  // Subscribe only while visible; `toggle-panel` is owned by ChatView's
+  // Subscribe only while active and visible; `toggle-panel` is owned by ChatView's
   // URL-aware handler regardless of whether the panel is currently mounted.
-  useEffect(() => {
+  useActiveChatViewEffect(() => {
     if (!visible) return;
     return subscribePreviewAction((action) => {
       switch (action) {
