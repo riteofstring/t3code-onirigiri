@@ -1,7 +1,7 @@
 import type { WorkspaceFocusAnchor } from "@riteofstring/onirigiri";
 import { useCallback, useState } from "react";
 
-import { Button } from "@t3tools/web/src/components/ui/button";
+import { WorkspaceTooltipButton } from "./WorkspaceTooltips";
 
 const STORAGE_KEY = "onirigiri-t3:focus-anchor";
 
@@ -40,13 +40,7 @@ export function FocusAnchorToggle({
   const centered = focusAnchor === "center";
   const label = centered ? "Keep the focused pane at the left" : "Center the focused pane";
   return (
-    <Button
-      variant="ghost-muted"
-      size="icon-xs"
-      aria-label={label}
-      title={label}
-      onClick={onToggle}
-    >
+    <WorkspaceTooltipButton aria-label={label} tooltip={label} onClick={onToggle}>
       <svg
         aria-hidden="true"
         width="16"
@@ -63,19 +57,17 @@ export function FocusAnchorToggle({
           <rect x="3.5" y="5.5" width="5" height="5" fill="currentColor" stroke="none" />
         )}
       </svg>
-    </Button>
+    </WorkspaceTooltipButton>
   );
 }
 
 /** A workspace control that opens a new, empty pane beside the focused one. */
 export function AddPaneButton({ onAdd }: { onAdd: () => void }) {
   return (
-    <Button
-      variant="ghost-muted"
-      size="icon-xs"
+    <WorkspaceTooltipButton
       aria-label="Add a pane"
       aria-keyshortcuts="Alt+N"
-      title="Add a pane (Alt+N)"
+      tooltip="Add a pane (Alt+N)"
       onClick={onAdd}
     >
       <svg
@@ -89,6 +81,6 @@ export function AddPaneButton({ onAdd }: { onAdd: () => void }) {
       >
         <path d="M8 3v10M3 8h10" strokeLinecap="round" />
       </svg>
-    </Button>
+    </WorkspaceTooltipButton>
   );
 }

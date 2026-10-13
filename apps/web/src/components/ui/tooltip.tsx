@@ -6,7 +6,9 @@ const TooltipProvider = TooltipPrimitive.Provider;
 
 const Tooltip = TooltipPrimitive.Root;
 
-function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
+const TooltipCreateHandle = TooltipPrimitive.createHandle;
+
+function TooltipTrigger<Payload>(props: TooltipPrimitive.Trigger.Props<Payload>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
@@ -64,4 +66,4 @@ function TooltipPopup({
   );
 }
 
-export { TooltipProvider, Tooltip, TooltipTrigger, TooltipPopup };
+export { TooltipProvider, Tooltip, TooltipTrigger, TooltipPopup, TooltipCreateHandle };

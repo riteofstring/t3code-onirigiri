@@ -5,13 +5,20 @@ import {
   type PaneSizingMode,
   type WorkspaceFocusAnchor,
 } from "@riteofstring/onirigiri";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
-import { Button } from "@t3tools/web/src/components/ui/button";
 import { Input } from "@t3tools/web/src/components/ui/input";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "@t3tools/web/src/components/ui/select";
 
 import { AddPaneButton, FocusAnchorToggle } from "./FocusAnchorToggle";
 import { overviewZoomChoices, type WorkspacePreferences } from "./useWorkspacePreferences";
+import { WorkspaceTooltipButton as Button } from "./WorkspaceTooltips";
 
 export function WorkspaceToolbar({
   focusAnchor,
@@ -34,6 +41,12 @@ export function WorkspaceToolbar({
 }) {
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [selectOpen, setSelectOpen] = useState(false);
+  const selectOpenRef = useRef(false);
+  const selectPopupRef = useRef<HTMLDivElement>(null);
+  const mouseHoverRef = useRef(false);
+  const pointerInsideRef = useRef(false);
+  const focusOnOpenRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const advancedRef = useRef<HTMLButtonElement>(null);
@@ -53,28 +66,52 @@ export function WorkspaceToolbar({
     .filter(Boolean)
     .join("; ");
 
+  const close = useCallback(() => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && containerRef.current?.contains(focused)) {
+      focused.blur();
+    }
+    setOpen(false);
+    setAdvanced(false);
+    setSelectOpen(false);
+    selectOpenRef.current = false;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open && focusOnOpenRef.current) {
+      focusOnOpenRef.current = false;
+      advancedRef.current?.focus();
+    }
+  }, [open]);
+
   // Engine controls arrive through a portal. Listen on their physical parent
   // so hover, Escape and tabbing out behave like the neighboring T3 buttons.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const enter = (event: PointerEvent) => {
+      mouseHoverRef.current = event.pointerType === "mouse";
+      pointerInsideRef.current = true;
       if (event.pointerType === "mouse") setOpen(true);
     };
-    const close = () => {
-      setOpen(false);
-      setAdvanced(false);
-    };
+    const contains = (target: EventTarget | null) =>
+      target instanceof Node &&
+      (container.contains(target) || selectPopupRef.current?.contains(target));
     const leave = () => {
-      if (!container.contains(document.activeElement)) close();
+      pointerInsideRef.current = false;
+      if (
+        !selectOpenRef.current &&
+        (!contains(document.activeElement) || !document.activeElement?.matches(":focus-visible"))
+      )
+        close();
     };
     const blur = (event: FocusEvent) => {
-      if (!(event.relatedTarget instanceof Node) || !container.contains(event.relatedTarget)) {
+      if (!selectOpenRef.current && !contains(event.relatedTarget)) {
         close();
       }
     };
     const keyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !open) return;
+      if (event.key !== "Escape" || !open || selectOpenRef.current) return;
       event.preventDefault();
       event.stopPropagation();
       if (advanced) {
@@ -86,7 +123,7 @@ export function WorkspaceToolbar({
       }
     };
     const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !container.contains(event.target)) {
+      if (event.target instanceof Node && !contains(event.target)) {
         close();
       }
     };
@@ -102,7 +139,7 @@ export function WorkspaceToolbar({
       container.removeEventListener("keydown", keyDown);
       document.removeEventListener("pointerdown", dismiss, true);
     };
-  }, [advanced, open]);
+  }, [advanced, close, open]);
 
   return (
     <div
@@ -111,131 +148,159 @@ export function WorkspaceToolbar({
       data-spatial-workspace-controls=""
     >
       <div className="spatial-workspace-controls__surface" data-expanded={open}>
+        <div
+          id={panelId}
+          className="spatial-workspace-controls__reveal"
+          data-expanded={open}
+          aria-hidden={!open}
+          inert={!open}
+        >
+          <div className="spatial-workspace-controls__actions">
+            <Button
+              ref={advancedRef}
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label="Advanced workspace controls"
+              aria-controls={advancedId}
+              aria-expanded={advanced}
+              tooltip="Advanced workspace controls"
+              onClick={() => setAdvanced(!advanced)}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M2 4h12M2 8h12M2 12h12" />
+                <path d="M5 2v4M11 6v4M7 10v4" strokeWidth="3" />
+              </svg>
+            </Button>
+            <div
+              id={advancedId}
+              className="spatial-workspace-controls__reveal"
+              data-expanded={advanced}
+              aria-hidden={!advanced}
+              inert={!advanced}
+            >
+              <div className="spatial-workspace-controls__advanced">
+                <label className="spatial-workspace-controls__field">
+                  <span>Overview zoom</span>
+                  <Select
+                    value={preferences.overviewZoom}
+                    open={selectOpen}
+                    onOpenChange={(next) => {
+                      selectOpenRef.current = next;
+                      setSelectOpen(next);
+                      if (!next && mouseHoverRef.current && !pointerInsideRef.current) {
+                        queueMicrotask(() => {
+                          if (!document.activeElement?.matches(":focus-visible")) close();
+                        });
+                      }
+                    }}
+                    onValueChange={(value) => {
+                      const choice = overviewZoomChoices.find((option) => option.value === value);
+                      if (choice) onPreferencesChange({ overviewZoom: choice.value });
+                    }}
+                  >
+                    <SelectTrigger size="compact" aria-label="Overview zoom">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectPopup ref={selectPopupRef} side="top" alignItemWithTrigger={false}>
+                      {overviewZoomChoices.map((choice) => (
+                        <SelectItem key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </label>
+                <RowHeightControl
+                  height={preferences.rowHeight}
+                  onChange={(rowHeight) => onPreferencesChange({ rowHeight })}
+                />
+                <Button
+                  variant="ghost-muted"
+                  size="icon-xs"
+                  aria-label="Maximize all panes"
+                  tooltip="Maximize all panes"
+                  onClick={() => onResizePanes("full")}
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M6 2H2v4m8-4h4v4M2 10v4h4m8-4v4h-4" />
+                    <rect x="5" y="5" width="6" height="6" rx="1" />
+                  </svg>
+                </Button>
+                <Button
+                  variant="ghost-muted"
+                  size="icon-xs"
+                  aria-label="Restore default pane sizes"
+                  tooltip="Restore all panes to default sizes"
+                  onClick={() => onResizePanes("default")}
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <rect x="2" y="5" width="9" height="9" rx="1" />
+                    <path d="M5 2h8a1 1 0 0 1 1 1v8" />
+                  </svg>
+                </Button>
+              </div>
+            </div>
+            <AddPaneButton onAdd={onAdd} />
+            <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
+            <div ref={controlsRef} />
+          </div>
+        </div>
         <Button
           ref={triggerRef}
           variant="ghost-muted"
           size="icon-xs"
-          aria-label={open ? "Hide workspace controls" : "Workspace controls"}
+          aria-label="Workspace controls"
           aria-controls={panelId}
           aria-expanded={open}
-          title={
-            open
-              ? "Hide workspace controls"
-              : hint
-                ? `Workspace controls\n${hint}`
-                : "Workspace controls"
-          }
-          onClick={() => {
-            setOpen(!open);
-            if (open) setAdvanced(false);
+          tooltip={hint ? `Workspace controls · ${hint}` : "Workspace controls"}
+          onClick={(event) => {
+            if (event.detail > 0 && mouseHoverRef.current) return;
+            if (open) close();
+            else {
+              focusOnOpenRef.current = event.detail === 0;
+              setOpen(true);
+            }
           }}
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            {open ? (
-              <path d="m6 3 5 5-5 5" />
-            ) : (
-              <>
-                <rect x="2" y="2" width="12" height="12" rx="2" />
-                <path d="M7 2v12M7 8h7" />
-              </>
-            )}
-          </svg>
+          <OnirigiriMark />
         </Button>
-        <div id={panelId} className="spatial-workspace-controls__actions" hidden={!open}>
-          <AddPaneButton onAdd={onAdd} />
-          <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
-          <div ref={controlsRef} />
-          <Button
-            ref={advancedRef}
-            variant="ghost-muted"
-            size="icon-xs"
-            aria-label="Advanced workspace controls"
-            aria-controls={advancedId}
-            aria-expanded={advanced}
-            title="Advanced workspace controls"
-            onClick={() => setAdvanced(!advanced)}
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M2 4h12M2 8h12M2 12h12" />
-              <path d="M5 2v4M11 6v4M7 10v4" strokeWidth="3" />
-            </svg>
-          </Button>
-          <div id={advancedId} className="spatial-workspace-controls__advanced" hidden={!advanced}>
-            <label className="spatial-workspace-controls__field">
-              <span>Overview zoom</span>
-              <select
-                aria-label="Overview zoom"
-                value={preferences.overviewZoom}
-                onChange={(event) => {
-                  const choice = overviewZoomChoices.find(
-                    (option) => option.value === event.target.value,
-                  );
-                  if (choice) onPreferencesChange({ overviewZoom: choice.value });
-                }}
-              >
-                {overviewZoomChoices.map((choice) => (
-                  <option key={choice.value} value={choice.value}>
-                    {choice.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <RowHeightControl
-              height={preferences.rowHeight}
-              onChange={(rowHeight) => onPreferencesChange({ rowHeight })}
-            />
-            <Button
-              variant="ghost-muted"
-              size="icon-xs"
-              aria-label="Maximize all panes"
-              title="Maximize all panes"
-              onClick={() => onResizePanes("full")}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <path d="M6 2H2v4m8-4h4v4M2 10v4h4m8-4v4h-4" />
-                <rect x="5" y="5" width="6" height="6" rx="1" />
-              </svg>
-            </Button>
-            <Button
-              variant="ghost-muted"
-              size="icon-xs"
-              aria-label="Restore default pane sizes"
-              title="Restore all panes to default sizes"
-              onClick={() => onResizePanes("default")}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <rect x="2" y="5" width="9" height="9" rx="1" />
-                <path d="M5 2h8a1 1 0 0 1 1 1v8" />
-              </svg>
-            </Button>
-          </div>
-        </div>
       </div>
     </div>
+  );
+}
+
+function OnirigiriMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9.4 4.5a3 3 0 0 1 5.2 0l6 10.5a3 3 0 0 1-2.6 4.5H6A3 3 0 0 1 3.4 15Z" />
+      <path d="M9 19.5v-5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5" />
+    </svg>
   );
 }
 

@@ -57,22 +57,26 @@
 
 .spatial-workspace-controls {
   position: absolute;
-  inset-block-start: 8px;
-  inset-inline-end: 8px;
+  inset-block-end: max(8px, env(safe-area-inset-bottom));
+  inset-inline-end: max(8px, env(safe-area-inset-right));
   width: max-content;
-  max-width: calc(
-    100% - var(--workspace-controls-left) - var(--workspace-titlebar-control-size) - 20px
-  );
+  max-width: calc(100% - 16px);
   z-index: 40;
+  --workspace-reveal-duration: 180ms;
+  --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .spatial-workspace-controls__surface {
   display: flex;
   align-items: center;
-  min-height: 36px;
+  height: 40px;
   padding: 3px;
   border: 1px solid transparent;
   border-radius: 8px;
+  transition:
+    background-color var(--workspace-reveal-duration),
+    border-color var(--workspace-reveal-duration),
+    box-shadow var(--workspace-reveal-duration);
 }
 
 .spatial-workspace-controls__surface[data-expanded="true"] {
@@ -81,14 +85,40 @@
   box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
 }
 
+.spatial-workspace-controls__reveal {
+  interpolate-size: allow-keywords;
+  width: 0;
+  min-width: 0;
+  overflow: clip;
+  opacity: 0;
+  transform: translateX(8px);
+  visibility: hidden;
+  transition:
+    width var(--workspace-reveal-duration) var(--workspace-reveal-ease),
+    opacity var(--workspace-reveal-duration) ease-out,
+    transform var(--workspace-reveal-duration) var(--workspace-reveal-ease),
+    visibility 0s var(--workspace-reveal-duration);
+}
+
+.spatial-workspace-controls__reveal[data-expanded="true"] {
+  width: max-content;
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.spatial-workspace-controls__surface > .spatial-workspace-controls__reveal {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
 .spatial-workspace-controls__actions {
   display: flex;
   align-items: center;
   gap: 3px;
-  min-width: 0;
-  order: -1;
-  overflow-x: auto;
-  scrollbar-width: none;
+  width: max-content;
+  padding-inline-end: 3px;
 }
 
 .spatial-workspace-controls__actions > *,
@@ -100,15 +130,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  order: -1;
+  width: max-content;
   padding-inline-end: 6px;
   margin-inline-end: 3px;
   border-inline-end: 1px solid var(--border);
-}
-
-.spatial-workspace-controls__actions[hidden],
-.spatial-workspace-controls__advanced[hidden] {
-  display: none;
 }
 
 .spatial-workspace-controls__field {
@@ -120,23 +145,14 @@
   white-space: nowrap;
 }
 
-.spatial-workspace-controls__field select {
-  height: 28px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding-inline: 5px;
-  color: var(--foreground);
-  background: var(--background);
-  font: inherit;
-}
-
-.spatial-workspace-controls__field select:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-
 .spatial-workspace-controls__height {
   width: 76px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-workspace-controls {
+    --workspace-reveal-duration: 0s;
+  }
 }
 
 .spatial-workspace .onirigiri-workspace__desktop-controls {

@@ -37,7 +37,7 @@ interface PaneContentRevision {
 const syncedPanes = new Map<string, PaneContentRevision & { visualRevision: number }>();
 
 function contentKey(content: PaneContentRevision): string {
-  return `${content.updatedAt}|${content.theme}`;
+  return `${content.updatedAt}|${content.theme}|chat-chrome-1`;
 }
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {

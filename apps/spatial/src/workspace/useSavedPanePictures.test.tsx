@@ -256,7 +256,7 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
   const image = new Blob(["png"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -279,6 +279,28 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
   });
   expect(hook.getPanePicture(pane)).toBeNull();
 });
+
+it.each(["capture", "snapshot"] as const)(
+  "replaces persisted %s pictures from the previous chat controls",
+  async (source) => {
+    store.saved.set(paneId, {
+      paneId,
+      revision: `u1|dark|dark|${fontRevision}|${geometry(400)}${source === "snapshot" ? "|responsive-css-4" : ""}`,
+      image: new Blob(["old chat controls"]),
+      cssSize: { width: 400, height: 580 },
+      savedAt: 1,
+      source,
+    });
+    await mount();
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    expect(hook.canBackgroundPicture(paneId)).toBe(true);
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const replacement = new Blob(["current chat controls"]);
+    await act(() => capturePicture(pane, replacement));
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(hook.getPanePicture(pane)?.image).toBe(replacement);
+  },
+);
 
 it("refreshes pictures when the engine stage grows inside an unchanged workspace", async () => {
   await mount();
@@ -308,7 +330,7 @@ it.each(["capture", "snapshot"] as const)(
   async (source) => {
     store.saved.set(paneId, {
       paneId,
-      revision: `u1|dark|dark|${fontRevision}|800x600@1|{"unit":"px","value":400}${source === "snapshot" ? "|responsive-css-4" : ""}`,
+      revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|800x600@1|{"unit":"px","value":400}${source === "snapshot" ? "|responsive-css-4" : ""}`,
       image: new Blob(["previous toolbar height"]),
       cssSize: { width: 400, height: 580 },
       savedAt: 1,
@@ -357,7 +379,7 @@ function fillPictureCache() {
     const id = `thread:e:${store.threadIds[i]}`;
     store.saved.set(id, {
       paneId: id,
-      revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+      revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
       image: new Blob([String(i)]),
       cssSize: { width: 400, height: 580 },
       savedAt: i + 1,
@@ -423,7 +445,7 @@ it("saves captures only from panes showing a synchronized thread", async () => {
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]).toMatchObject({
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image,
   });
 });
@@ -481,7 +503,7 @@ it("keeps the last completed picture through streaming and saves the completed t
   await act(() => capturePicture(pane, completed));
   expect(store.writes).toHaveLength(2);
   expect(store.writes[1]).toMatchObject({
-    revision: `u2|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u2|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: completed,
   });
 });
@@ -510,7 +532,9 @@ it("refreshes pictures when the palette changes within the same appearance", asy
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `iris|dark|${fontRevision}` });
   await act(() => capturePicture(pane, new Blob(["iris"])));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  expect(store.writes[2]?.revision).toBe(`u1|iris|dark|${fontRevision}|${geometry(400)}`);
+  expect(store.writes[2]?.revision).toBe(
+    `u1|iris|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
+  );
 });
 
 it("waits for committed detail to catch up with shell metadata before saving either picture path", async () => {
@@ -533,7 +557,7 @@ it("waits for committed detail to catch up with shell metadata before saving eit
   });
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.revision).toBe(
-    `u2|dark|dark|${fontRevision}|${geometry(400)}|responsive-css-4`,
+    `u2|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}|responsive-css-4`,
   );
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
@@ -545,7 +569,7 @@ it("keeps previously valid cover pixels while treating updated content as needin
   const image = new Blob(["png"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -567,7 +591,7 @@ it("keeps previously valid cover pixels while treating updated content as needin
 it("does not display an old persisted picture that was never valid in this session", async () => {
   store.saved.set(paneId, {
     paneId,
-    revision: `old|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `old|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: new Blob(["png"]),
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -584,7 +608,7 @@ it.each(["stored", "captured"])(
     if (source === "stored") {
       store.saved.set(paneId, {
         paneId,
-        revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+        revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
         image,
         cssSize: { width: 400, height: 580 },
         savedAt: 1,
@@ -654,7 +678,7 @@ it.each(["null", "error"])(
       const idToSeed = `thread:e:${id}`;
       store.saved.set(idToSeed, {
         paneId: idToSeed,
-        revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+        revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
         image: new Blob(["cover"]),
         cssSize: { width: 400, height: 580 },
         savedAt: 1,
@@ -775,7 +799,7 @@ it.each(["capture", "snapshot", undefined] as const)(
     const image = new Blob(["previous picture"]);
     store.saved.set(paneId, {
       paneId,
-      revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+      revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
       image,
       cssSize: { width: 400, height: 580 },
       savedAt: 1,
@@ -997,7 +1021,7 @@ it("replaces retained cover pixels when a fresh capture arrives", async () => {
   const previous = new Blob(["previous"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: previous,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1093,7 +1117,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   const old = new Blob(["previous scroll position"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}|responsive-css-4`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}|responsive-css-4`,
     image: old,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1240,7 +1264,7 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
   const valid = new Blob(["valid"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: valid,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1248,7 +1272,7 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
   });
   store.saved.set("absent-pane", {
     paneId: "absent-pane",
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: new Blob(["absent"]),
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1271,7 +1295,7 @@ it("does not decode a stored picture that was never valid in this session", asyn
   const invalid = new Blob(["old geometry"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(600)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(600)}`,
     image: invalid,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1289,7 +1313,7 @@ it("retains the decoded cover through refresh and releases it after the next cov
   const previous = new Blob(["previous"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: previous,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1376,7 +1400,7 @@ it("refreshes a saved native picture after local scrolling while retaining its c
   const old = new Blob(["previous scroll position"]);
   store.saved.set(paneId, {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: old,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1483,7 +1507,7 @@ it("merges pictures loaded from storage with captures already accepted this sess
   const secondId = "thread:e:t2";
   const record = {
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+    revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
     image: previous,
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
@@ -1690,7 +1714,7 @@ it("does not resurrect stored pixels after a producer appears and disappears dur
           paneId,
           {
             paneId,
-            revision: `u1|dark|dark|${fontRevision}|${geometry(400)}`,
+            revision: `u1|dark|dark|${fontRevision}|chat-chrome-1|${geometry(400)}`,
             image: new Blob(["incomplete stored picture"]),
             cssSize: { width: 400, height: 580 },
             savedAt: 1,

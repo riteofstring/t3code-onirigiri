@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
+import { WorkspaceTooltips } from "./WorkspaceTooltips";
 import { useWorkspacePreferences } from "./useWorkspacePreferences";
 
 let host: HTMLDivElement;
@@ -14,7 +15,7 @@ function Workspace() {
   const [preferences, update] = useWorkspacePreferences();
   const [controls, setControls] = useState<HTMLDivElement | null>(null);
   return (
-    <>
+    <WorkspaceTooltips>
       <WorkspaceToolbar
         focusAnchor="center"
         onAdd={() => {}}
@@ -28,7 +29,7 @@ function Workspace() {
       {controls && createPortal(<button>Overview</button>, controls)}
       <output>{JSON.stringify(preferences)}</output>
       <button>Outside</button>
-    </>
+    </WorkspaceTooltips>
   );
 }
 
@@ -93,9 +94,15 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await act(() => {
-    const select = host.querySelector("select")!;
-    select.value = "near";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const select = host.querySelector<HTMLButtonElement>('[aria-label="Overview zoom"]')!;
+    select.focus();
+    select.click();
+  });
+  await act(() => {
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (element) => element.textContent === "Near",
+    )!;
+    option.click();
   });
   await typeHeight("384");
   await key(rowHeight(), "Enter");
@@ -156,7 +163,7 @@ it("opens on mouse hover while touch opens by click and outside press dismisses"
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
   await act(() => button("Outside").focus());
   await act(() => enter("mouse"));
-  expect(button("Hide workspace controls").getAttribute("aria-expanded")).toBe("true");
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
   await act(() => container.dispatchEvent(new Event("pointerleave")));
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
 });
