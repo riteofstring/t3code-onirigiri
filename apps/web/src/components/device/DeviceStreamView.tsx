@@ -221,11 +221,10 @@ export function DeviceStreamView(props: {
     const element = hostRef.current;
     if (!element) return;
     const update = () => {
-      const rect = element.getBoundingClientRect();
+      // Fit in layout coordinates; ancestor zoom is applied when the frame is painted.
+      const { clientWidth: width, clientHeight: height } = element;
       setHost((current) =>
-        current.width === rect.width && current.height === rect.height
-          ? current
-          : { width: rect.width, height: rect.height },
+        current.width === width && current.height === height ? current : { width, height },
       );
     };
     update();

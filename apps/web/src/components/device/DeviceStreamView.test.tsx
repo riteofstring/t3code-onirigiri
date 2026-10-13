@@ -42,7 +42,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup() {
+async function setup(scale = 1) {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", () => {
@@ -58,9 +58,22 @@ async function setup() {
       close() {}
     },
   );
+  let measure = () => {};
+  const host = {
+    clientWidth: 400,
+    clientHeight: 800,
+    style: { setProperty() {} },
+    getBoundingClientRect: () => ({
+      width: host.clientWidth * scale,
+      height: host.clientHeight * scale,
+    }),
+  };
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      constructor(callback: () => void) {
+        measure = callback;
+      }
       observe() {}
       disconnect() {}
     },
@@ -83,15 +96,42 @@ async function setup() {
           images.push(image);
           return image;
         }
-        return {
-          style: { setProperty() {} },
-          getBoundingClientRect: () => ({ width: 400, height: 800 }),
-        };
+        return host;
       },
     });
   });
-  return { images, view };
+  return {
+    images,
+    view,
+    resize(width: number, height: number) {
+      host.clientWidth = width;
+      host.clientHeight = height;
+      measure();
+    },
+  };
 }
+
+it.each([1, 0.3, 1.5])("fits the device frame in local dimensions at %s zoom", async (scale) => {
+  const { images, resize } = await setup(scale);
+  await act(async () => {
+    images[0]!.naturalWidth = 400;
+    images[0]!.naturalHeight = 800;
+    images[0]!.dispatchEvent(new Event("load"));
+  });
+  const frame = () => renderer!.root.findByType("img").props.style;
+  expect(frame().height).toBe(800);
+  expect(frame().width).toBeCloseTo((800 * 9) / 19.5);
+  await act(async () => resize(240, 320));
+  expect(frame().height).toBe(320);
+  expect(frame().width).toBeCloseTo((320 * 9) / 19.5);
+  await act(async () => resize(180, 500));
+  expect(frame()).toMatchObject({ width: 180, height: 390 });
+  await act(async () => resize(0, 0));
+  expect(frame()).toMatchObject({ width: 0, height: 0 });
+  await act(async () => resize(300, 600));
+  expect(frame().height).toBe(600);
+  expect(frame().width).toBeCloseTo((600 * 9) / 19.5);
+});
 
 it("removes MJPEG requests while hidden and reconnects when shown", async () => {
   const { images, view } = await setup();
