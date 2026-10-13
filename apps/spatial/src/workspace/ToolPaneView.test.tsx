@@ -184,7 +184,7 @@ async function render(focused = true, pane: ToolPane = terminalPane) {
           visible
           onNavigate={navigate}
           onFocusThread={state.focusThread}
-          onClose={() => {}}
+          onDismissDeviceSetup={() => {}}
           isPresent={state.isPresent}
         />
         <textarea aria-label="Chat composer" />

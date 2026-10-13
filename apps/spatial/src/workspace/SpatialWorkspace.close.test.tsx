@@ -109,6 +109,11 @@ vi.mock("@riteofstring/onirigiri", async (importOriginal) => {
                   NonNullable<OnirigiriWorkspaceProps["renderPane"]>
                 >[1],
               )}
+              {pane.surfaceKind !== "thread" ? (
+                <button onClick={() => void props.onPaneClose?.(pane as WorkspacePane)}>
+                  Close terminal group
+                </button>
+              ) : null}
             </div>
           ))}
         </>
@@ -147,17 +152,27 @@ vi.mock("./ToolPaneView", () => ({
   ToolPaneView: ({
     pane,
     focused,
-    onClose,
+    onDismissDeviceSetup,
   }: {
     pane: ToolPane;
     focused: boolean;
-    onClose: () => void;
-  }) => (
-    <section aria-label="Terminal group" data-focused={focused}>
-      <output>{JSON.stringify(toolPaneSurface(pane))}</output>
-      <button onClick={onClose}>Close terminal group</button>
-    </section>
-  ),
+    onDismissDeviceSetup: (
+      surface: Extract<ReturnType<typeof toolPaneSurface>, { kind: "device" }>,
+    ) => void;
+  }) => {
+    const surface = toolPaneSurface(pane);
+    return (
+      <section
+        aria-label={surface?.kind === "terminal" ? "Terminal group" : "Tool pane"}
+        data-focused={focused}
+      >
+        <output>{JSON.stringify(surface)}</output>
+        {surface?.kind === "device" ? (
+          <button onClick={() => onDismissDeviceSetup(surface)}>Cancel device setup</button>
+        ) : null}
+      </section>
+    );
+  },
 }));
 vi.mock("./SpatialSurfaceHost", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./SpatialSurfaceHost")>()),
@@ -270,6 +285,45 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("keeps the pane and its saved position when device setup is dismissed", async () => {
+  const neighbor = stored()[0]!;
+  const setup: ToolPane = {
+    ...owner,
+    paneId: "tool-setup",
+    kind: "surface",
+    surface: { id: "device", kind: "device" },
+  };
+  localStorage.setItem(storageKey, JSON.stringify([setup, neighbor]));
+  await mount();
+  const revision = fixture.controller!.getUserActionRevision(owner);
+  await act(() => {
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Cancel device setup")!
+      .click();
+  });
+  const empty: ToolPane = { ...owner, paneId: setup.paneId, kind: "empty" };
+  expect(stored()).toEqual([empty, neighbor]);
+  expect(fixture.panes.map((pane) => pane.paneId)).toEqual([
+    "thread:e:owner",
+    setup.paneId,
+    neighbor.paneId,
+  ]);
+  expect(fixture.controller!.getUserActionRevision(owner)).toBe(revision + 1);
+  expect(fixture.closeTerminal).not.toHaveBeenCalled();
+  expect(fixture.confirm).not.toHaveBeenCalled();
+  await act(() => root.unmount());
+  root = createRoot(host);
+  await mount();
+  expect(stored()).toEqual([empty, neighbor]);
+  await act(() =>
+    createSpatialSurfaceNavigation(fixture.controller!, setup.paneId, vi.fn()).open(owner, "files"),
+  );
+  expect(stored()).toEqual([
+    { ...empty, kind: "surface", surface: { id: "files", kind: "files" } },
+    neighbor,
+  ]);
 });
 
 it("retains only the failed terminal after partial group closure and retries without closing its former sibling twice", async () => {

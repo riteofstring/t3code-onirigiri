@@ -745,7 +745,10 @@ export function SpatialWorkspace({
                 focused={state.focused && active && !closingToolPanes.has(pane.paneId)}
                 visible={state.visible && active}
                 onNavigate={navigateFromTerminal}
-                onClose={() => void workspaceRef.current?.closePane(pane.paneId)}
+                onDismissDeviceSetup={(surface) => {
+                  toolController.recordUserAction(tool);
+                  toolController.clearSurface(tool.paneId, surface.id);
+                }}
                 onFocusThread={() =>
                   focusSurfacePane(threadPaneId(tool.environmentId, tool.threadId))
                 }

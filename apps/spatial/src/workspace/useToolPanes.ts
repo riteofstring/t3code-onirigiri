@@ -230,6 +230,24 @@ export function useToolPanes() {
     [update],
   );
 
+  const clearSurface = useCallback(
+    (paneId: string, surfaceId: string) => {
+      update((panes) =>
+        panes.map((pane) =>
+          pane.paneId === paneId && toolPaneSurface(pane)?.id === surfaceId
+            ? {
+                paneId,
+                kind: "empty",
+                environmentId: pane.environmentId,
+                threadId: pane.threadId,
+              }
+            : pane,
+        ),
+      );
+    },
+    [update],
+  );
+
   return useMemo(
     () => ({
       toolPanes,
@@ -238,6 +256,7 @@ export function useToolPanes() {
       getPanes,
       openSurface,
       updateSurface,
+      clearSurface,
       getUserActionRevision,
       recordUserAction,
     }),
@@ -248,6 +267,7 @@ export function useToolPanes() {
       getPanes,
       openSurface,
       updateSurface,
+      clearSurface,
       getUserActionRevision,
       recordUserAction,
     ],

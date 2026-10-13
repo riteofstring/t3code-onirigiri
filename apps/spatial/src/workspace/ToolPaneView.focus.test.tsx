@@ -149,7 +149,7 @@ function render(nextFocused = focused) {
         visible
         onNavigate={() => false}
         onFocusThread={() => {}}
-        onClose={() => {}}
+        onDismissDeviceSetup={() => {}}
         isPresent={() => true}
       />
       <textarea aria-label="Chat composer" />

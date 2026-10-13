@@ -56,7 +56,7 @@ export function ToolPaneView({
   visible,
   onNavigate,
   onFocusThread,
-  onClose,
+  onDismissDeviceSetup,
   isPresent,
 }: {
   pane: ToolPane;
@@ -64,7 +64,7 @@ export function ToolPaneView({
   visible: boolean;
   onNavigate: OnirigiriWorkspaceHandle["focus"];
   onFocusThread: () => void;
-  onClose: () => void;
+  onDismissDeviceSetup: ThreadSurfaceActions["onDismissDeviceSetup"];
   isPresent: () => boolean;
 }) {
   const interactive = useOnirigiriPaneInteractive();
@@ -348,7 +348,7 @@ export function ToolPaneView({
     ...(data.availability.pullRequestsAvailable && data.visiblePullRequestCount > 1
       ? { onBackToPullRequests: () => navigation.open(threadRef, "pull-requests") }
       : {}),
-    onDismissDeviceSetup: onClose,
+    onDismissDeviceSetup,
     onOpenFile: (path) => navigation.openFile(threadRef, path),
     onFilePendingChange: handleFilePendingChange,
   };

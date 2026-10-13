@@ -123,6 +123,28 @@ it("replaces choosers and placeholders in place, and keeps one owner per browser
   expect(hook.toolPanes.map((pane) => pane.threadId)).toEqual(["t1", "t2"]);
 });
 
+it("does not let a dismissed setup clear a replacement surface or recreate a closed pane", async () => {
+  await mount();
+  const ref = thread("t1");
+  let paneId = "";
+  await act(() => {
+    paneId = hook.addEmpty(ref, null);
+    hook.openSurface(ref, { id: "device", kind: "device" }, paneId);
+  });
+  await act(() => hook.clearSurface(paneId, "device"));
+  const chooser = { ...ref, paneId, kind: "empty" };
+  expect(hook.toolPanes).toEqual([chooser]);
+  await act(() => {
+    hook.openSurface(ref, { id: "files", kind: "files" }, paneId);
+  });
+  const files = hook.toolPanes[0];
+  await act(() => hook.clearSurface(paneId, "device"));
+  expect(hook.toolPanes).toEqual([files]);
+  await act(() => hook.remove(paneId));
+  await act(() => hook.clearSurface(paneId, "device"));
+  expect(hook.toolPanes).toEqual([]);
+});
+
 it("persists every supported surface and drops malformed records without losing valid neighbors", async () => {
   const surfaces: RightPanelSurface[] = [
     { id: "browser:page", kind: "preview", resourceId: "page" },
