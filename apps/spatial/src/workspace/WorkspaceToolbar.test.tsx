@@ -164,7 +164,11 @@ it("opens on mouse hover while touch opens by click and outside press dismisses"
   await act(() => button("Outside").focus());
   await act(() => enter("mouse"));
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
-  await act(() => container.dispatchEvent(new Event("pointerleave")));
+  await act(() => {
+    const leave = new Event("pointerleave");
+    Object.defineProperty(leave, "pointerType", { value: "mouse" });
+    container.dispatchEvent(leave);
+  });
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
 });
 

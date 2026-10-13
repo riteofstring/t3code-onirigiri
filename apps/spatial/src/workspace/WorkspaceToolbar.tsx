@@ -97,15 +97,17 @@ export function WorkspaceToolbar({
     const contains = (target: EventTarget | null) =>
       target instanceof Node &&
       (container.contains(target) || selectPopupRef.current?.contains(target));
-    const leave = () => {
+    const leave = (event: PointerEvent) => {
       pointerInsideRef.current = false;
       if (
+        event.pointerType === "mouse" &&
         !selectOpenRef.current &&
         (!contains(document.activeElement) || !document.activeElement?.matches(":focus-visible"))
       )
         close();
     };
     const blur = (event: FocusEvent) => {
+      if (event.relatedTarget === null && pointerInsideRef.current) return;
       if (!selectOpenRef.current && !contains(event.relatedTarget)) {
         close();
       }
@@ -273,7 +275,10 @@ export function WorkspaceToolbar({
           aria-expanded={open}
           tooltip={hint ? `Workspace controls · ${hint}` : "Workspace controls"}
           onClick={(event) => {
-            if (event.detail > 0 && mouseHoverRef.current) return;
+            if (event.detail > 0 && mouseHoverRef.current) {
+              setOpen(true);
+              return;
+            }
             if (open) close();
             else {
               focusOnOpenRef.current = event.detail === 0;
