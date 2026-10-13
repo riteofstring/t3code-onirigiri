@@ -1,6 +1,16 @@
 "use client";
 
-import type { PreviewViewportSetting, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  DesktopPreviewHostShortcut,
+  PreviewViewportSetting,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
+import {
+  DESKTOP_PREVIEW_HOST_KEY_CHANNEL,
+  DESKTOP_PREVIEW_HOST_SHORTCUTS_CHANNEL,
+  isPreviewHostKey,
+  matchesPreviewHostShortcut,
+} from "@t3tools/shared/previewHostKeyboard";
 import { useShallow } from "zustand/react/shallow";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -35,6 +45,7 @@ interface ElectronWebview extends HTMLElement {
   webpreferences?: string;
   getWebContentsId: () => number;
   executeJavaScript: (code: string, userGesture?: boolean) => Promise<unknown>;
+  send: (channel: string, ...args: unknown[]) => Promise<void>;
 }
 
 declare global {
@@ -268,6 +279,56 @@ export function HostedBrowserWebview(props: {
   }, [contentHeight, contentWidth, runtimeTabId, viewportScale, viewportX, viewportY]);
 
   const webviewReady = clientSettingsHydrated && config !== null;
+  const keyboard = presentation.projection?.keyboard;
+  const keyboardEnabled = active && presentation.projection?.interactive === true;
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webviewReady || !webview || !keyboard) return;
+    const sendShortcuts = async (shortcuts: readonly DesktopPreviewHostShortcut[]) => {
+      try {
+        await webview.send(DESKTOP_PREVIEW_HOST_SHORTCUTS_CHANNEL, shortcuts);
+      } catch {
+        // A guest that is attaching or navigating receives the configuration at dom-ready.
+      }
+    };
+    const configure = () => {
+      void sendShortcuts(keyboardEnabled ? keyboard.shortcuts : []);
+    };
+    const keyDown = (event: Event) => {
+      const message = event as Event & { channel?: unknown; args?: unknown };
+      if (
+        message.channel !== DESKTOP_PREVIEW_HOST_KEY_CHANNEL ||
+        !Array.isArray(message.args) ||
+        message.args.length !== 1 ||
+        !isPreviewHostKey(message.args[0]) ||
+        document.activeElement !== webview
+      )
+        return;
+      const input = message.args[0];
+      const current = useBrowserSurfaceStore.getState().byTabId[runtimeTabId];
+      const projection = current?.projection;
+      if (
+        !current?.visible ||
+        !current.rect ||
+        !projection?.interactive ||
+        !projection.keyboard ||
+        !matchesPreviewHostShortcut(input, projection.keyboard.shortcuts, navigator.platform)
+      )
+        return;
+      projection.keyboard.keyDown(
+        new KeyboardEvent("keydown", { ...input, bubbles: true, cancelable: true }),
+      );
+    };
+    webview.addEventListener("dom-ready", configure);
+    webview.addEventListener("ipc-message", keyDown);
+    configure();
+    return () => {
+      webview.removeEventListener("dom-ready", configure);
+      webview.removeEventListener("ipc-message", keyDown);
+      void sendShortcuts([]);
+    };
+  }, [keyboard, keyboardEnabled, runtimeTabId, webviewGeneration, webviewReady]);
+
   useEffect(() => {
     if (!webviewReady) return;
     const frameId = window.requestAnimationFrame(syncContentPresentation);

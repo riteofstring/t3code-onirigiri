@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import type { OnirigiriPaneDefinition } from "@riteofstring/onirigiri";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { DesktopPreviewHostKey, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { matchesPreviewHostShortcut } from "../../../../packages/shared/src/previewHostKeyboard";
+import type { BrowserSurfaceProjectionPolicy } from "@t3tools/web/src/browser/browserSurfaceProjection";
 import { act, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -18,6 +20,7 @@ const fixture = vi.hoisted(() => ({
   routeListeners: new Set<(event: NavigationEvent) => void>(),
   navigate: vi.fn<(input: { params: RouteLocation }) => Promise<void>>(),
   pictureLayoutChanged: vi.fn(),
+  browserProjection: null as BrowserSurfaceProjectionPolicy | null,
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -98,10 +101,19 @@ vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({ ThreadCard: () => null }));
 vi.mock("./ThreadPane", async () => {
-  const { createContext } = await import("react");
+  const { createContext, use } = await import("react");
+  const { BrowserSurfaceProjectionContext } =
+    await import("@t3tools/web/src/browser/browserSurfaceProjection");
   return {
     SpatialWorkspaceActiveContext: createContext(true),
-    ThreadPane: () => <textarea aria-label="Thread composer" />,
+    ThreadPane: () => {
+      fixture.browserProjection = use(BrowserSurfaceProjectionContext);
+      return (
+        <div data-browser-keyboard-slot>
+          <textarea aria-label="Thread composer" />
+        </div>
+      );
+    },
   };
 });
 
@@ -200,6 +212,7 @@ beforeEach(() => {
   fixture.navigate.mockReset();
   fixture.navigate.mockResolvedValue(undefined);
   fixture.pictureLayoutChanged.mockClear();
+  fixture.browserProjection = null;
   localStorage.clear();
   window.history.replaceState(null, "", "/?layout=rows");
   host = document.createElement("div");
@@ -226,6 +239,97 @@ it("delivers global surface focus only after the initial workspace and route are
   await act(() => vi.advanceTimersByTime(120));
   expect(status()).toContain("right");
   expect(status()).not.toContain("origin");
+});
+
+it("routes guest keys through the engine and returns keyboard focus to the destination pane", async () => {
+  fixture.panes = [pane("origin", 0, 0), pane("right", 0, 1)];
+  await render();
+  await act(() => vi.advanceTimersByTime(120));
+  const slot = host.querySelector<HTMLElement>(
+    '[data-onirigiri-pane-id="thread:e:origin"] [data-browser-keyboard-slot]',
+  )!;
+  const guest = document.createElement("button");
+  host.append(guest);
+  guest.focus();
+  const input = new KeyboardEvent("keydown", {
+    key: "ArrowRight",
+    code: "ArrowRight",
+    altKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(() => fixture.browserProjection!.keyboard!.keyDown(slot, input));
+  await act(() => vi.advanceTimersByTime(120));
+  expect(input.defaultPrevented).toBe(true);
+  expect(status()).toContain("right");
+  expect((document.activeElement as HTMLElement).dataset.onirigiriPaneId).toBe("thread:e:right");
+
+  const stale = new KeyboardEvent("keydown", {
+    key: "ArrowRight",
+    code: "ArrowRight",
+    altKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(() => fixture.browserProjection!.keyboard!.keyDown(slot, stale));
+  expect(stale.defaultPrevented).toBe(false);
+  const back = new KeyboardEvent("keydown", {
+    key: "ArrowLeft",
+    code: "ArrowLeft",
+    altKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(() => document.activeElement!.dispatchEvent(back));
+  await act(() => vi.advanceTimersByTime(120));
+  expect(back.defaultPrevented).toBe(true);
+  expect(status()).toContain("origin");
+  expect((document.activeElement as HTMLElement).dataset.onirigiriPaneId).toBe("thread:e:origin");
+});
+
+it("admits exactly the configured engine chords, including editable targets and macOS Option keys", async () => {
+  await render();
+  const shortcuts = fixture.browserProjection!.keyboard!.shortcuts;
+  const platform = vi.spyOn(window.navigator, "platform", "get");
+  for (const name of ["Linux", "MacIntel"]) {
+    platform.mockReturnValue(name);
+    for (const editing of [false, true]) {
+      const inputs: DesktopPreviewHostKey[] = shortcuts.map((shortcut) => ({
+        ...shortcut,
+        code: shortcut.key.length === 1 ? `Key${shortcut.key.toUpperCase()}` : shortcut.key,
+        key: name === "MacIntel" && shortcut.key === "o" ? "ø" : shortcut.key,
+        repeat: false,
+        isComposing: false,
+        keyCode: 0,
+        altGraph: false,
+        editing,
+      }));
+      const arrow = inputs.find((input) => input.key === "ArrowRight")!;
+      inputs.push(
+        { ...arrow, isComposing: true },
+        { ...arrow, keyCode: 229 },
+        { ...arrow, altGraph: true },
+        { ...arrow, shiftKey: true },
+        { ...arrow, metaKey: true },
+        { ...arrow, altKey: false },
+      );
+      for (const input of inputs) {
+        const event = new KeyboardEvent("keydown", {
+          ...input,
+          modifierAltGraph: input.altGraph,
+          bubbles: true,
+          cancelable: true,
+        });
+        Object.defineProperty(event, "keyCode", { value: input.keyCode });
+        const target = editing ? host.querySelector("textarea")! : workspace();
+        await act(() => target.dispatchEvent(event));
+        expect(
+          matchesPreviewHostShortcut(input, shortcuts, name),
+          `${name}: ${JSON.stringify(input)}`,
+        ).toBe(event.defaultPrevented);
+      }
+    }
+  }
 });
 
 it("returns to the owning chat when a focused tool closes through its content", async () => {

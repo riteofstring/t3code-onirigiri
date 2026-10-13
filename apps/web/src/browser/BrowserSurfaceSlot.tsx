@@ -43,6 +43,12 @@ export function BrowserSurfaceSlot(props: {
     let lastProjection: ReturnType<typeof measureBrowserSurfaceProjection>["projection"] | null =
       null;
     const onFocus = () => projectionPolicy?.focus(element);
+    const keyboard = projectionPolicy?.keyboard
+      ? {
+          shortcuts: projectionPolicy.keyboard.shortcuts,
+          keyDown: (event: KeyboardEvent) => projectionPolicy.keyboard?.keyDown(element, event),
+        }
+      : undefined;
     const observer = new ResizeObserver(() => update());
     // Camera transforms do not resize the slot. Observe presented ancestor
     // writes, including moves that do not affect the focused pane.
@@ -94,7 +100,14 @@ export function BrowserSurfaceSlot(props: {
       }
       const rect = element.getBoundingClientRect();
       const projected = projectionPolicy
-        ? measureBrowserSurfaceProjection(element, rect, ancestors, projectionPolicy, onFocus)
+        ? measureBrowserSurfaceProjection(
+            element,
+            rect,
+            ancestors,
+            projectionPolicy,
+            onFocus,
+            keyboard,
+          )
         : null;
       if (
         projected &&

@@ -2,6 +2,8 @@ import {
   OnirigiriWorkspace,
   createWorkspaceScene,
   defaultOnirigiriShortcuts,
+  getOnirigiriShortcutBindings,
+  type OnirigiriShortcutAction,
   type OnirigiriShortcutBinding,
   type OnirigiriShortcutBindings,
   type OnirigiriWorkspaceProps,
@@ -109,6 +111,9 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
   movePaneUp: editingArrows(defaultOnirigiriShortcuts.movePaneUp),
   toggleOverview: [...defaultOnirigiriShortcuts.toggleOverview, whileEditing("o")],
 };
+const BROWSER_SHORTCUTS = (
+  Object.keys(defaultOnirigiriShortcuts) as OnirigiriShortcutAction[]
+).flatMap((action) => getOnirigiriShortcutBindings(action, SHORTCUTS));
 /** Quiet time after a focus change before the app route follows it. */
 const ROUTE_SETTLE_MS = 450;
 
@@ -279,6 +284,23 @@ export function SpatialWorkspace({
         slot.dispatchEvent(
           new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
         );
+      },
+      keyboard: {
+        shortcuts: BROWSER_SHORTCUTS,
+        keyDown: (slot, event) => {
+          const pane = slot.closest<HTMLElement>("[data-onirigiri-pane-id]");
+          if (
+            !activeRef.current ||
+            !pane ||
+            pane.closest("[inert]") ||
+            pane.dataset.onirigiriPaneId !== workspaceRef.current?.getSnapshot().focusedPaneId ||
+            document.querySelector("dialog[open], [role='dialog'][aria-modal='true']")
+          )
+            return;
+          // The engine transfers focused pane chrome to the destination after navigation.
+          pane.focus({ preventScroll: true });
+          slot.dispatchEvent(event);
+        },
       },
     }),
     [],

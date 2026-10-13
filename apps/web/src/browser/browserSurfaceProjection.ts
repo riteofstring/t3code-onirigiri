@@ -1,6 +1,12 @@
 import { createContext } from "react";
+import type { DesktopPreviewHostShortcut } from "@t3tools/contracts";
 
 import type { BrowserSurfaceRect } from "./browserSurfaceStore";
+
+export interface BrowserSurfaceKeyboard {
+  readonly shortcuts: readonly DesktopPreviewHostShortcut[];
+  readonly keyDown: (event: KeyboardEvent) => void;
+}
 
 export interface BrowserSurfaceProjection {
   readonly width: number;
@@ -10,6 +16,7 @@ export interface BrowserSurfaceProjection {
   readonly clipPath: string;
   readonly interactive: boolean;
   readonly onFocus: () => void;
+  readonly keyboard?: BrowserSurfaceKeyboard;
 }
 
 export interface BrowserSurfaceProjectionPolicy {
@@ -18,6 +25,10 @@ export interface BrowserSurfaceProjectionPolicy {
   readonly occluders: (slot: HTMLElement) => readonly HTMLElement[];
   readonly interactive: (slot: HTMLElement) => boolean;
   readonly focus: (slot: HTMLElement) => void;
+  readonly keyboard?: {
+    readonly shortcuts: readonly DesktopPreviewHostShortcut[];
+    readonly keyDown: (slot: HTMLElement, event: KeyboardEvent) => void;
+  };
 }
 
 export const BrowserSurfaceProjectionContext = createContext<BrowserSurfaceProjectionPolicy | null>(
@@ -92,6 +103,7 @@ export function measureBrowserSurfaceProjection(
   ancestors: readonly HTMLElement[],
   policy: BrowserSurfaceProjectionPolicy,
   onFocus: () => void,
+  keyboard?: BrowserSurfaceKeyboard,
 ): { readonly projection: BrowserSurfaceProjection; readonly visible: boolean } {
   const width = Math.max(1, slot.clientWidth);
   const height = Math.max(1, slot.clientHeight);
@@ -131,6 +143,7 @@ export function measureBrowserSurfaceProjection(
       ),
       interactive: !slot.closest("[inert]") && policy.interactive(slot),
       onFocus,
+      ...(keyboard ? { keyboard } : {}),
     },
   };
 }

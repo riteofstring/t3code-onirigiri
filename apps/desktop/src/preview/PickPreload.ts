@@ -1,6 +1,10 @@
 // @effect-diagnostics globalDate:off globalTimers:off - This isolated Electron preload does not run inside an Effect runtime.
 import { ipcRenderer } from "electron";
 import { getElementContext } from "react-grab/primitives";
+import {
+  DESKTOP_PREVIEW_HOST_KEY_CHANNEL,
+  DESKTOP_PREVIEW_HOST_SHORTCUTS_CHANNEL,
+} from "@t3tools/shared/previewHostKeyboard";
 import type {
   DesktopPreviewAnnotationTheme,
   PickedElementPayload,
@@ -15,6 +19,7 @@ import type {
 } from "@t3tools/contracts";
 
 import { resolveAnnotationSubmission } from "./AnnotationKeyboard.ts";
+import { createGuestHostKeyboard } from "./GuestHostKeyboard.ts";
 import { previewAnnotationStyles } from "./AnnotationStyles.generated.ts";
 import { installRecordingCursor } from "./RecordingCursor.ts";
 import { DEFAULT_RECORDING_INPUT_OPTIONS } from "./RecordingInput.ts";
@@ -185,6 +190,14 @@ const reportHumanKeyInput = (event: KeyboardEvent): void => {
 
 window.addEventListener("pointerdown", reportHumanPointerInput, true);
 window.addEventListener("keydown", reportHumanKeyInput, true);
+
+const hostKeyboard = createGuestHostKeyboard(document, (input) =>
+  ipcRenderer.sendToHost(DESKTOP_PREVIEW_HOST_KEY_CHANNEL, input),
+);
+ipcRenderer.on(DESKTOP_PREVIEW_HOST_SHORTCUTS_CHANNEL, (_event, shortcuts: unknown) => {
+  hostKeyboard.configure(shortcuts);
+});
+window.addEventListener("keydown", hostKeyboard.keyDown, true);
 
 // Mouse thumb buttons: `button === 3` is Back, `button === 4` is Forward.
 const MOUSE_BUTTON_BACK = 3;

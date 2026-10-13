@@ -251,6 +251,10 @@
       "types": "./src/preview.ts",
       "import": "./src/preview.ts"
     },
+    "./previewHostKeyboard": {
+      "types": "./src/previewHostKeyboard.ts",
+      "import": "./src/previewHostKeyboard.ts"
+    },
     "./previewViewport": {
       "types": "./src/previewViewport.ts",
       "import": "./src/previewViewport.ts"

@@ -89,6 +89,7 @@ const projectionEquals = (
     left.scaleY === right.scaleY &&
     left.clipPath === right.clipPath &&
     left.interactive === right.interactive &&
+    left.keyboard === right.keyboard &&
     left.onFocus === right.onFocus);
 
 export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) => ({
