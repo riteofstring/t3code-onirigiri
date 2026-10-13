@@ -21,6 +21,8 @@ const fixture = vi.hoisted(() => ({
   navigate: vi.fn<(input: { params: RouteLocation }) => Promise<void>>(),
   pictureLayoutChanged: vi.fn(),
   browserProjection: null as BrowserSurfaceProjectionPolicy | null,
+  addEmpty: vi.fn(),
+  threadRenders: [] as string[],
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -43,7 +45,13 @@ vi.mock("./useWorkspacePanes", () => ({
   threadPaneId: (environmentId: string, threadId: string) => `thread:${environmentId}:${threadId}`,
 }));
 vi.mock("./useToolPanes", () => {
-  const tools = { toolPanes: [], addEmpty: vi.fn(), choose: vi.fn(), remove: vi.fn() };
+  const tools = {
+    toolPanes: [],
+    getPanes: () => tools.toolPanes,
+    addEmpty: fixture.addEmpty,
+    choose: vi.fn(),
+    remove: vi.fn(),
+  };
   return { useToolPanes: () => tools };
 });
 vi.mock("./SpatialSurfaceProvider", async () => {
@@ -106,10 +114,20 @@ vi.mock("./ThreadPane", async () => {
     await import("@t3tools/web/src/browser/browserSurfaceProjection");
   return {
     SpatialWorkspaceActiveContext: createContext(true),
-    ThreadPane: () => {
+    ThreadPane: ({
+      thread,
+      paneId,
+      onAddPane,
+    }: {
+      thread: { threadId: string };
+      paneId: string;
+      onAddPane: (paneId: string) => void;
+    }) => {
+      fixture.threadRenders.push(thread.threadId);
       fixture.browserProjection = use(BrowserSurfaceProjectionContext);
       return (
         <div data-browser-keyboard-slot>
+          <button onClick={() => onAddPane(paneId)}>Add beside {thread.threadId}</button>
           <textarea aria-label="Thread composer" />
         </div>
       );
@@ -213,6 +231,8 @@ beforeEach(() => {
   fixture.navigate.mockResolvedValue(undefined);
   fixture.pictureLayoutChanged.mockClear();
   fixture.browserProjection = null;
+  fixture.addEmpty.mockReset();
+  fixture.threadRenders = [];
   localStorage.clear();
   window.history.replaceState(null, "", "/?layout=rows");
   host = document.createElement("div");
@@ -239,6 +259,46 @@ it("delivers global surface focus only after the initial workspace and route are
   await act(() => vi.advanceTimersByTime(120));
   expect(status()).toContain("right");
   expect(status()).not.toContain("origin");
+});
+
+it("keeps mounted chat content stable across a shell refresh and uses the clicked pane's owner", async () => {
+  fixture.panes = [pane("origin", 0, 0), pane("right", 0, 1)];
+  await render();
+  await act(() => vi.advanceTimersByTime(120));
+  expect(fixture.threadRenders).toContain("origin");
+  fixture.threadRenders = [];
+
+  fixture.panes = fixture.panes.map((pane) => ({
+    ...pane,
+    data: { ...(pane.data as { environmentId: string; threadId: string }) },
+  }));
+  await render();
+  expect(fixture.threadRenders).toEqual([]);
+
+  expect(status()).toContain("origin");
+  const addToRight = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Add beside right",
+  );
+  expect(addToRight).toBeDefined();
+  await act(() => addToRight!.click());
+  expect(fixture.addEmpty).toHaveBeenCalledExactlyOnceWith(
+    { environmentId: "e", threadId: "right" },
+    null,
+  );
+  fixture.addEmpty.mockClear();
+
+  fixture.panes = [...fixture.panes, pane("new", 0, 2)];
+  await render();
+  await explicitRoute("new");
+  const add = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Add beside new",
+  );
+  expect(add).toBeDefined();
+  await act(() => add!.click());
+  expect(fixture.addEmpty).toHaveBeenCalledExactlyOnceWith(
+    { environmentId: "e", threadId: "new" },
+    null,
+  );
 });
 
 it("routes guest keys through the engine and returns keyboard focus to the destination pane", async () => {

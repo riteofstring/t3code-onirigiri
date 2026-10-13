@@ -149,7 +149,7 @@ export function SpatialWorkspace({
     }
   }, [layoutMode]);
   const { controller: toolController, bindWorkspace } = useSpatialController();
-  const { toolPanes, addEmpty, remove } = toolController;
+  const { toolPanes, addEmpty, getPanes, remove } = toolController;
   const closingToolPanesRef = useRef(new Set<string>());
   const [closingToolPanes, setClosingToolPanes] = useState<ReadonlySet<string>>(() => new Set());
   const isPaneClosing = useCallback(
@@ -583,19 +583,21 @@ export function SpatialWorkspace({
     [router],
   );
 
-  // A new empty pane opens beside the focused pane, for its thread.
+  // Resolve ownership on activation so live thread updates do not change pane renderers.
   const addPaneBeside = useCallback(
     (paneId: string | null) => {
-      const thread = paneId ? paneData.get(paneId) : undefined;
-      const tool = toolPanes.find((pane) => pane.paneId === paneId);
-      const owner = thread ?? tool;
+      if (!paneId) return;
+      const tool = getPanes().find((pane) => pane.paneId === paneId);
+      const pane = workspaceRef.current?.getScene().paneById.get(paneId);
+      const owner =
+        tool ?? (pane?.surfaceKind === "thread" ? (pane.data as ThreadPaneData) : undefined);
       if (!owner) return;
       pendingFocusPaneIdRef.current = addEmpty(
         { environmentId: owner.environmentId, threadId: owner.threadId },
         tool?.paneId ?? null,
       );
     },
-    [addEmpty, paneData, toolPanes],
+    [addEmpty, getPanes],
   );
   const addPane = useCallback(() => addPaneBeside(focusedPaneIdRef.current), [addPaneBeside]);
 
