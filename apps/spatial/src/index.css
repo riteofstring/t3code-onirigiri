@@ -2,6 +2,10 @@
 
 @source "../../web/src";
 
+.spatial-workspace {
+  --spatial-compact-toolbar-height: 52px;
+}
+
 .spatial-thread-pane [data-slot="sidebar-inset"] {
   height: 100%;
 }
@@ -52,6 +56,7 @@
   --onirigiri-toolbar: transparent;
   --onirigiri-toolbar-shadow: none;
   --onirigiri-toolbar-padding: 0px;
+  --onirigiri-compact-toolbar-min-height: var(--spatial-compact-toolbar-height);
   --onirigiri-minimap-background: var(--card);
 }
 
@@ -64,6 +69,11 @@
   z-index: 40;
   --workspace-reveal-duration: 180ms;
   --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spatial-workspace:has(> .onirigiri-workspace[data-compact-layout="true"])
+  > .spatial-workspace-controls {
+  inset-block-end: calc(var(--spatial-compact-toolbar-height) + env(safe-area-inset-bottom) + 8px);
 }
 
 .spatial-workspace-controls__surface {

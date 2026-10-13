@@ -189,6 +189,7 @@ export function WorkspaceToolbar({
                   <span>Overview zoom</span>
                   <Select
                     value={preferences.overviewZoom}
+                    items={overviewZoomChoices}
                     open={selectOpen}
                     onOpenChange={(next) => {
                       selectOpenRef.current = next;
