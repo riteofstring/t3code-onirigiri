@@ -26,7 +26,9 @@ function makeBootstrapHarness() {
     Atom.make<EnvironmentShellState>(shellState("empty")),
   );
   const connections = Atom.family((_environmentId: EnvironmentId) =>
-    Atom.make(AsyncResult.success<SupervisorConnectionState>(AVAILABLE_CONNECTION_STATE)),
+    Atom.make<AsyncResult.AsyncResult<SupervisorConnectionState, Error>>(
+      AsyncResult.success(AVAILABLE_CONNECTION_STATE),
+    ),
   );
   const ready = createAllEnvironmentShellsBootstrappedAtom({
     catalogAtom: catalog,
@@ -61,6 +63,33 @@ describe("shell bootstrap", () => {
     const { shells, ready, registry } = makeBootstrapHarness();
     registry.set(shells(LOCAL), shellState("cached"));
     expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+
+  it("allows a failed connection atom with no previous state to settle", () => {
+    const { connections, ready, registry } = makeBootstrapHarness();
+    registry.set(connections(LOCAL), AsyncResult.fail(new Error("Connection state unavailable")));
+    expect(registry.get(ready)).toBe(true);
+    registry.dispose();
+  });
+
+  it("keeps the previous connection state authoritative when its atom fails", () => {
+    const { connections, ready, registry } = makeBootstrapHarness();
+    for (const phase of ["connecting", "offline"] as const) {
+      registry.set(
+        connections(LOCAL),
+        AsyncResult.fail(new Error("Connection state unavailable"), {
+          previousSuccess: Option.some(
+            AsyncResult.success<SupervisorConnectionState>({
+              ...AVAILABLE_CONNECTION_STATE,
+              desired: true,
+              phase,
+            }),
+          ),
+        }),
+      );
+      expect(registry.get(ready)).toBe(phase === "offline");
+    }
     registry.dispose();
   });
 

@@ -41,10 +41,10 @@ export function createAllEnvironmentShellsBootstrappedAtom<CatalogError, Connect
       if (Option.isSome(get(input.shellStateValueAtom(environmentId)).snapshot)) {
         continue;
       }
-      const connection = Option.getOrElse(
-        AsyncResult.value(get(input.connectionStateAtom(environmentId))),
-        () => AVAILABLE_CONNECTION_STATE,
-      );
+      const result = get(input.connectionStateAtom(environmentId));
+      const value = AsyncResult.value(result);
+      if (AsyncResult.isFailure(result) && Option.isNone(value)) continue;
+      const connection = Option.getOrElse(value, () => AVAILABLE_CONNECTION_STATE);
       // The initial supervisor value precedes its first connection request.
       if (connection.phase === "available" && connection.generation === 0) return false;
       if (connectionProjectionPhase(connection) !== "disconnected") {
