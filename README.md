@@ -38,8 +38,27 @@ include development-mode overhead:
 T3CODE_SINGLE_ORIGIN_DEV=1 vp run --filter @t3tools/spatial build
 ```
 
-Start the backend from this repository and leave the terminal running. This
-keeps the trial's data in `~/.t3-onirigiri/userdata`:
+For the complete macOS experience, including embedded Browser panes, start the
+production frontend in one terminal:
+
+```bash
+T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial preview --host 127.0.0.1 --port 5743 --strictPort
+```
+
+In another terminal in this repository, launch the desktop client against it:
+
+```bash
+vp run dev:desktop --port 5734 --dev-url http://127.0.0.1:5743 --home-dir "$HOME/.t3-onirigiri"
+```
+
+This starts Electron and its local backend, with separate trial data in
+`~/.t3-onirigiri/userdata`. Keep both terminals running. Add a project and enable
+an installed, authenticated provider in Settings → Providers. No existing T3
+installation is required. Device panes additionally require T3's normal Device
+setup, and pull-request panes require a linked repository and provider account.
+
+For a browser-only trial, use the following backend command instead of the
+desktop command. It uses the same separate trial data directory:
 
 ```bash
 vp run dev:server --port 5734 --dev-url http://localhost:5743 --home-dir "$HOME/.t3-onirigiri"
@@ -68,9 +87,9 @@ T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial dev
 ```
 
 The existing `dev`, `dev:web`, and desktop commands retain their upstream entry
-points. This setup runs the spatial frontend in a browser; Electron-only features
-such as embedded Browser panes require the desktop client. The upstream
-installation instructions below install standard T3 Code. See
+points unless the explicit spatial URL above is supplied. Embedded Browser
+panes require the desktop client. The upstream installation instructions below
+install standard T3 Code. See
 [development setup](docs/operations/development.md) for authentication and data
 directory details.
 
