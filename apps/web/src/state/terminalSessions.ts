@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
@@ -12,12 +13,22 @@ import {
   type TerminalAttachInput,
   type TerminalSummary,
 } from "@t3tools/contracts";
-import { useMemo } from "react";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { useCallback, useMemo } from "react";
 
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
 
 const EMPTY_KNOWN_TERMINAL_SESSIONS = Object.freeze<ReadonlyArray<KnownTerminalSession>>([]);
+type TerminalMetadataResult = AsyncResult.AsyncResult<ReadonlyArray<TerminalSummary>, unknown>;
+const EMPTY_TERMINAL_METADATA_ATOM = Atom.make<TerminalMetadataResult>(AsyncResult.initial(false));
+
+function terminalMetadataAtom(environmentId: EnvironmentId | null) {
+  return environmentId === null
+    ? EMPTY_TERMINAL_METADATA_ATOM
+    : terminalEnvironment.metadata({ environmentId, input: null });
+}
 
 interface TerminalMetadataIndex {
   readonly all: ReadonlyArray<TerminalSummary>;
@@ -80,7 +91,7 @@ function terminalMetadataIndex(metadata: ReadonlyArray<TerminalSummary>): Termin
   return index;
 }
 
-/** Share one ordered index per immutable snapshot without changing metadata subscriptions. */
+/** Share one ordered index per immutable snapshot and retain unchanged thread groups. */
 export function selectKnownTerminalSessions(
   metadata: ReadonlyArray<TerminalSummary> | null,
   environmentId: EnvironmentId | null,
@@ -133,45 +144,47 @@ export function useAttachedTerminalSession(input: {
         })
       : null,
   );
-  const metadata = useEnvironmentQuery(
-    input.environmentId === null
-      ? null
-      : terminalEnvironment.metadata({
-          environmentId: input.environmentId,
-          input: null,
-        }),
+  const threadId = input.terminal?.threadId;
+  const terminalId = input.terminal?.terminalId;
+  const summary = useAtomValue(
+    terminalMetadataAtom(input.environmentId),
+    useCallback(
+      (result: TerminalMetadataResult) => {
+        const metadata = Option.getOrNull(AsyncResult.value(result));
+        return metadata === null || threadId === undefined
+          ? null
+          : (terminalMetadataIndex(metadata)
+              .byThreadId.get(threadId)
+              ?.find((terminal) => terminal.terminalId === terminalId) ?? null);
+      },
+      [terminalId, threadId],
+    ),
   );
 
   return useMemo(() => {
     if (input.environmentId === null || input.terminal === null) {
       return EMPTY_TERMINAL_SESSION_STATE;
     }
-    const summary =
-      (metadata.data === null
-        ? null
-        : terminalMetadataIndex(metadata.data)
-            .byThreadId.get(input.terminal.threadId)
-            ?.find((terminal) => terminal.terminalId === input.terminal?.terminalId)) ?? null;
     const state = combineTerminalSessionState(summary, attach.data ?? EMPTY_TERMINAL_BUFFER_STATE);
     return attach.error === null ? state : { ...state, error: attach.error, status: "error" };
-  }, [attach.data, attach.error, input.environmentId, input.terminal, metadata.data]);
+  }, [attach.data, attach.error, input.environmentId, input.terminal, summary]);
 }
 
 export function useKnownTerminalSessions(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<KnownTerminalSession> {
-  const metadata = useEnvironmentQuery(
-    input.environmentId === null
-      ? null
-      : terminalEnvironment.metadata({
-          environmentId: input.environmentId,
-          input: null,
-        }),
-  );
-  return useMemo(
-    () => selectKnownTerminalSessions(metadata.data, input.environmentId, input.threadId),
-    [input.environmentId, input.threadId, metadata.data],
+  return useAtomValue(
+    terminalMetadataAtom(input.environmentId),
+    useCallback(
+      (result: TerminalMetadataResult) =>
+        selectKnownTerminalSessions(
+          Option.getOrNull(AsyncResult.value(result)),
+          input.environmentId,
+          input.threadId,
+        ),
+      [input.environmentId, input.threadId],
+    ),
   );
 }
 
