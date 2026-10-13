@@ -13,7 +13,7 @@ function isRouterPlugin(plugin: PluginOption): boolean {
     plugin !== null &&
     "name" in plugin &&
     typeof plugin.name === "string" &&
-    plugin.name.startsWith("tanstack-router")
+    /^(?:tanstack-router|tanstack:router)/.test(plugin.name)
   );
 }
 

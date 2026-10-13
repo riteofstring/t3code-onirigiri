@@ -31,33 +31,48 @@ The engine exports compiled files, so rebuild it after changing its source. The
 workspace layout adapter is included in `packages/onirigiri-t3` and needs no
 separate clone or build.
 
-Start the backend from this repository:
+For a local beta trial, build the production frontend so navigation does not
+include development-mode overhead:
 
 ```bash
-vp run dev:server
+T3CODE_SINGLE_ORIGIN_DEV=1 vp run --filter @t3tools/spatial build
 ```
 
-Read `serverPort` from the `[dev-runner]` output. In a second terminal in the same
-repository, replace `BACKEND_PORT` with that number and start the spatial app:
+Start the backend from this repository and leave the terminal running. This
+keeps the trial's data in `~/.t3-onirigiri/userdata`:
 
 ```bash
-T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=BACKEND_PORT vp run --filter @t3tools/spatial dev
+vp run dev:server --port 5734 --dev-url http://localhost:5743 --home-dir "$HOME/.t3-onirigiri"
 ```
 
-Open the frontend URL printed by Vite (normally `http://localhost:5743`) and use
-the existing T3 sign-in or pairing flow. The frontend proxies API and WebSocket
-requests to that backend. The backend keeps the existing development data
-location and authentication rules described in
-[development setup](docs/operations/development.md).
-
-To build just the spatial frontend after building the engine:
+In a second terminal in the same repository, serve the built spatial app:
 
 ```bash
-vp run --filter @t3tools/spatial build
+T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial preview --port 5743 --strictPort
+```
+
+Open the backend's complete startup pairing URL in Chrome. The bare frontend
+URL does not authenticate a new browser. After pairing, open
+`http://localhost:5743/?layout=strip` for one row or
+`http://localhost:5743/?layout=rows` for the two-dimensional workspace. Add a
+project and enable an installed, authenticated provider in Settings → Providers.
+No existing T3 installation is required.
+
+The frontend proxies API and WebSocket requests to that backend. Keep both
+terminals running; stop them with Control+C. Rebuild the frontend after updating
+the checkout. For hot reload while editing, use this instead of the preview
+command:
+
+```bash
+T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial dev
 ```
 
 The existing `dev`, `dev:web`, and desktop commands retain their upstream entry
-points. The upstream installation instructions below install standard T3 Code.
+points. This setup runs the spatial frontend in a browser; Electron-only features
+such as embedded Browser panes require the desktop client. The upstream
+installation instructions below install standard T3 Code. See
+[development setup](docs/operations/development.md) for authentication and data
+directory details.
 
 ## Installation
 
