@@ -1,4 +1,5 @@
 import type { OnirigiriPaneDefinition } from "@riteofstring/onirigiri";
+import { useAtomValue } from "@effect/atom-react";
 import {
   reconcileWorkspaceLayout,
   type LiveWorkspace,
@@ -9,6 +10,8 @@ import { useMemo, useState } from "react";
 
 import { sortLogicalProjectsForSidebar } from "@t3tools/web/src/components/Sidebar.logic";
 import { useClientSettings } from "@t3tools/web/src/hooks/useSettings";
+import { environmentCatalog } from "@t3tools/web/src/connection/catalog";
+import { isHostedStaticApp } from "@t3tools/web/src/hostedPairing";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "@t3tools/web/src/logicalProject";
 import { orderItemsByPreferredIds } from "@t3tools/web/src/components/Sidebar.logic";
 import { buildSidebarProjectSnapshots } from "@t3tools/web/src/sidebarProjectGrouping";
@@ -82,11 +85,14 @@ export function useWorkspacePanes(
   dismissedPaneIds: ReadonlySet<string>,
 ): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const catalogReady = useAtomValue(environmentCatalog.catalogValueAtom).isReady;
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const catalogRegistered = catalogReady && (isHostedStaticApp() || primaryEnvironmentId !== null);
   const threads = useThreadShells();
   const groups = useSidebarProjectGroups();
 
   const live = useMemo((): LiveWorkspace | null => {
-    if (!bootstrapped) return null;
+    if (!bootstrapped || !catalogRegistered) return null;
     const groupByProject = new Map(
       groups.flatMap((group) =>
         group.memberProjectRefs.map(
@@ -111,7 +117,7 @@ export function useWorkspacePanes(
             : [];
         }),
     };
-  }, [bootstrapped, groups, threads]);
+  }, [bootstrapped, catalogRegistered, groups, threads]);
 
   // Compared by content: the sidebar inputs are rebuilt on unrelated renders.
   const liveKey = useMemo(() => (live ? JSON.stringify(live) : null), [live]);

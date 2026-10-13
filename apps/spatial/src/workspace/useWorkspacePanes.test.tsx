@@ -7,6 +7,8 @@ import { threadPaneId, useWorkspacePanes, type WorkspaceLayoutMode } from "./use
 import { useToolPanes } from "./useToolPanes";
 
 const data = vi.hoisted(() => ({
+  catalogReady: true,
+  primaryEnvironmentId: "e" as string | null,
   threads: [
     {
       id: "one",
@@ -56,7 +58,14 @@ vi.mock("@t3tools/web/src/logicalProject", () => ({
 vi.mock("@t3tools/web/src/sidebarProjectGrouping", () => ({
   buildSidebarProjectSnapshots: ({ projects }: { projects: unknown }) => projects,
 }));
-vi.mock("@t3tools/web/src/state/environments", () => ({ usePrimaryEnvironmentId: () => "e" }));
+vi.mock("@effect/atom-react", () => ({ useAtomValue: () => ({ isReady: data.catalogReady }) }));
+vi.mock("@t3tools/web/src/connection/catalog", () => ({
+  environmentCatalog: { catalogValueAtom: {} },
+}));
+vi.mock("@t3tools/web/src/hostedPairing", () => ({ isHostedStaticApp: () => false }));
+vi.mock("@t3tools/web/src/state/environments", () => ({
+  usePrimaryEnvironmentId: () => data.primaryEnvironmentId,
+}));
 vi.mock("@t3tools/web/src/uiStateStore", () => ({
   legacyProjectCwdPreferenceKey: () => "unused",
   useUiStateStore: () => [],
@@ -84,8 +93,23 @@ async function render(mode: WorkspaceLayoutMode, dismissed = new Set<string>()) 
 const id = (thread: string) => threadPaneId("e", thread);
 const positions = () => panes!.map((pane) => [pane.paneId, pane.planeIndex, pane.slotIndex]);
 beforeEach(() => {
+  data.catalogReady = true;
+  data.primaryEnvironmentId = "e";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { localStorage: { getItem: () => null, setItem: () => {} } });
+});
+
+it("waits for the environment catalog before providing an initial pane layout", async () => {
+  data.catalogReady = false;
+  await render("rows");
+  expect(panes).toBeNull();
+  data.catalogReady = true;
+  await render("rows");
+  expect(positions()).toEqual([
+    [id("one"), 0, 0],
+    [id("two"), 0, 1],
+    [id("three"), 1, 0],
+  ]);
 });
 afterEach(async () => {
   if (renderer) await act(() => renderer!.unmount());
@@ -142,3 +166,12 @@ it.each(["strip", "rows"] as const)(
     ]);
   },
 );
+
+it("waits for local primary discovery even when the persisted catalog is already ready", async () => {
+  data.primaryEnvironmentId = null;
+  await render("strip");
+  expect(panes).toBeNull();
+  data.primaryEnvironmentId = "e";
+  await render("strip");
+  expect(panes?.map((pane) => pane.paneId)).toEqual([id("one"), id("two"), id("three")]);
+});

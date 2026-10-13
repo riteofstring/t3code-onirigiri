@@ -61,6 +61,7 @@ import {
 
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
+const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 
 // Explicit arrow chords remain available while a pane owns keyboard focus.
 function whileEditing(key: string) {
@@ -103,10 +104,17 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
 const ROUTE_SETTLE_MS = 450;
 
 function readWorkspaceOptions() {
-  const search = new URLSearchParams(window.location.search);
-  return {
-    layout: (search.get("layout") === "strip" ? "strip" : "rows") as WorkspaceLayoutMode,
-  };
+  const requested = new URLSearchParams(window.location.search).get("layout");
+  let layout: WorkspaceLayoutMode = "rows";
+  if (requested === "strip" || requested === "rows") layout = requested;
+  else {
+    try {
+      if (localStorage.getItem(LAYOUT_MODE_KEY) === "strip") layout = "strip";
+    } catch {
+      // The explicit URL remains usable without browser storage.
+    }
+  }
+  return { layout };
 }
 
 export function SpatialWorkspace({
@@ -119,6 +127,13 @@ export function SpatialWorkspace({
 }) {
   const router = useRouter();
   const [{ layout: layoutMode }] = useState(readWorkspaceOptions);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_MODE_KEY, layoutMode);
+    } catch {
+      // Arrangement mode remains usable for this session.
+    }
+  }, [layoutMode]);
   const { toolPanes, addEmpty, choose, remove } = useToolPanes();
   const toolPanesRef = useRef(toolPanes);
   useEffect(() => {
