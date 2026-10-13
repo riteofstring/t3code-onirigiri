@@ -94,6 +94,7 @@ export function ToolPaneView({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedFilePending, setSelectedFilePending] = useState(false);
+  const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [activity] = useState(() => createPaneActivity(active));
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -216,8 +217,10 @@ export function ToolPaneView({
       environmentId: threadRef.environmentId,
       input: { threadId: threadRef.threadId, terminalId, deleteHistory: true },
     });
-    if (result._tag === "Success") navigation.closeTerminal(threadRef, surface.id, terminalId);
-    else setError(formatEnvironmentQueryError(result.cause));
+    if (result._tag === "Success") {
+      navigation.closeTerminal(threadRef, surface.id, terminalId);
+      setTerminalFocusRequestId((value) => value + 1);
+    } else setError(formatEnvironmentQueryError(result.cause));
   };
   const openDiff = () => {
     useDiffPanelStore.getState().selectGitScope(threadRef, "unstaged");
@@ -313,7 +316,10 @@ export function ToolPaneView({
       onSplitTerminalVertical: () => void terminal("vertical"),
       onNewTerminal: () => void terminal(),
       onActiveTerminalChange: (id) => {
-        if (surface?.kind === "terminal") navigation.activateTerminal(threadRef, surface.id, id);
+        if (surface?.kind === "terminal") {
+          navigation.activateTerminal(threadRef, surface.id, id);
+          setTerminalFocusRequestId((value) => value + 1);
+        }
       },
       onCloseTerminal: (id) => void removeTerminal(id),
     },
@@ -391,7 +397,11 @@ export function ToolPaneView({
             surface={surface}
             visible={visible}
             focused={active}
-            context={{ ...data.context, files: { ...data.context.files, selectedFilePending } }}
+            context={{
+              ...data.context,
+              terminal: { ...data.context.terminal, focusRequestId: terminalFocusRequestId },
+              files: { ...data.context.files, selectedFilePending },
+            }}
             actions={actions}
           />
         ) : (
