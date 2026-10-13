@@ -111,12 +111,13 @@ let hook: ReturnType<typeof useSavedPanePictures>;
 let appearance: string;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
+let defaultRowHeight: number | "viewport" = "viewport";
 const getLayout = () => currentLayout;
 const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
-  const value = useSavedPanePictures(getLayout, snapshotFailures);
+  const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight);
   useEffect(() => {
     hook = value;
     appearance = pictureAppearance;
@@ -240,6 +241,7 @@ afterEach(async () => {
   store.themeHalves = null;
   store.fontSettings = { ...defaultFontSettings };
   currentLayout = layout(400);
+  defaultRowHeight = "viewport";
   markPaneSynced(paneId, null);
   snapshot.mockReset();
   snapshotFailures.mockReset();
@@ -1765,6 +1767,62 @@ it.each(["height", "weight", "sibling", "defaults"])(
     expect(hook.pictureFor(paneId)?.image).not.toBe(image);
   },
 );
+
+it("refreshes pictures when the default row height changes and validates it after reload", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const image = new Blob(["viewport height"]);
+  await act(() => capturePicture(pane, image));
+  const version = hook.paneSnapshots.geometryVersion;
+  await act(() => {
+    defaultRowHeight = 420;
+    renderer!.update(<Probe />);
+  });
+  expect(hook.paneSnapshots.geometryVersion).toBe(version + 1);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.getPanePicture(pane)).toBeNull();
+  expect(hook.pictureFor(paneId)?.image).toBe(image);
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  const replacement = hook.pictureFor(paneId)!;
+  expect(replacement.image).not.toBe(image);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  store.saved.set(paneId, store.writes.at(-1)!);
+  await act(() => renderer!.unmount());
+  await mount();
+  expect(hook.getPanePicture(pane)?.image).toBe(replacement.image);
+  await act(() => renderer!.unmount());
+  defaultRowHeight = 600;
+  await mount();
+  expect(hook.getPanePicture(pane)).toBeNull();
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+});
+
+it("discards a snapshot completed after the default row height changes", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const pending = pendingPicture();
+  snapshot.mockReturnValueOnce(pending.promise);
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(snapshot).toHaveBeenCalledTimes(1);
+  await act(() => {
+    defaultRowHeight = 420;
+    renderer!.update(<Probe />);
+  });
+  await act(async () => pending.resolve(new Blob(["old row height"])));
+  expect(store.writes).toHaveLength(0);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500);
+  });
+  expect(store.writes).toHaveLength(1);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
 
 it("refreshes and re-arms picture preparation when only display density changes", async () => {
   await mount();

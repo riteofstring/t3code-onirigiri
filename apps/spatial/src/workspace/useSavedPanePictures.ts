@@ -131,6 +131,7 @@ function paneGeometry(layout: OnirigiriLayout): Map<string, string> {
 export function useSavedPanePictures(
   getLayout: () => OnirigiriLayout | null,
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
+  defaultRowHeight: number | "viewport" = "viewport",
 ): {
   getPanePicture: OnirigiriPanePictureResolver;
   getPanePresentation: PanePresentationResolver;
@@ -196,6 +197,12 @@ export function useSavedPanePictures(
   const paneGeometryRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
   const [geometryVersion, setGeometryVersion] = useState(0);
+  const defaultRowHeightRef = useRef(defaultRowHeight);
+  useLayoutEffect(() => {
+    if (defaultRowHeightRef.current === defaultRowHeight) return;
+    defaultRowHeightRef.current = defaultRowHeight;
+    setGeometryVersion((version) => version + 1);
+  }, [defaultRowHeight]);
 
   useEffect(() => {
     let current = true;
@@ -291,8 +298,11 @@ export function useSavedPanePictures(
         paneGeometryRef.current = paneGeometry(layout);
       }
       const sizing = paneGeometryRef.current.get(paneId);
+      const height = defaultRowHeightRef.current;
       // Older records measured the outer workspace, including its toolbar.
-      return sizing ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${sizing}` : null;
+      return sizing
+        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${sizing}${height === "viewport" ? "" : `|row:${height}`}`
+        : null;
     },
     [getLayout],
   );

@@ -160,7 +160,7 @@ export function SpatialWorkspace({
     paneSnapshots,
     setCaptureActivity,
     stageRef,
-  } = useSavedPanePictures(getLayout, onSnapshotFailure);
+  } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
   // Focus is kept out of React state so moving between panes does not
   // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
