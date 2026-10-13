@@ -405,18 +405,18 @@ export function SpatialWorkspace({
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
 
-  // Selecting the thread the route already shows changes no route, but still
-  // asks for its pane: in overview, or while the camera rests elsewhere.
+  // Selecting the current thread still asks for its pane, even when navigation
+  // changes only the query. Different threads are handled by the route effect.
   useEffect(
     () =>
       router.subscribe("onBeforeNavigate", (event) => {
-        if (event.hrefChanged) return;
         const match = router
           .matchRoutes(event.toLocation)
           .find((routeMatch) => routeMatch.routeId === "/_chat/$environmentId/$threadId");
         const params = match?.params as { environmentId?: string; threadId?: string } | undefined;
         if (params?.environmentId && params.threadId) {
-          focusRoutePane(threadPaneId(params.environmentId, params.threadId));
+          const paneId = threadPaneId(params.environmentId, params.threadId);
+          if (paneId === routePaneIdRef.current) focusRoutePane(paneId);
         }
       }),
     [router],
