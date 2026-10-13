@@ -87,6 +87,7 @@ import {
   shouldShowFileExplorer,
 } from "./filePreviewMode";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
+import { useFileViewport } from "./useFileViewport";
 import {
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
@@ -775,6 +776,7 @@ function EditableFileSurface({
     },
     [onPostRender, selectedRange],
   );
+  const handleViewportRender = useFileViewport(handlePostRender);
 
   return (
     <EditProvider editor={editor}>
@@ -810,7 +812,7 @@ function EditableFileSurface({
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
               themeType: resolvedTheme,
               unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
-              onPostRender: handlePostRender,
+              onPostRender: handleViewportRender,
             }}
             selectedLines={selectedRange}
             lineAnnotations={lineAnnotations}

@@ -7,6 +7,7 @@ import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
 import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
+import { useFileViewport } from "./useFileViewport";
 
 /**
  * Highlighted source for files that cannot be edited: captured attachments,
@@ -21,6 +22,7 @@ export default function ReadOnlySourcePreview(props: {
 }) {
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
+  const onPostRender = useFileViewport(props.onPostRender);
   return (
     <DiffWorkerPoolProvider>
       <Virtualizer
@@ -41,7 +43,7 @@ export default function ReadOnlySourcePreview(props: {
             preferredHighlighter: PREFERRED_HIGHLIGHTER,
             themeType: resolvedTheme,
             unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
-            ...(props.onPostRender ? { onPostRender: props.onPostRender } : {}),
+            onPostRender,
           }}
           className="min-h-full"
         />
