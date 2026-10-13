@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   readRightPanelSurface,
   terminalSurface,
+  type PullRequestSurface,
   type RightPanelSurface,
 } from "@t3tools/web/src/rightPanelStore";
 
@@ -52,15 +53,23 @@ function readToolPanes(): ToolPane[] {
     const stored: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(stored)) return [];
     const seen = new Set<string>();
-    return stored
-      .filter((pane): pane is ToolPane => {
-        if (!isToolPane(pane) || seen.has(pane.paneId)) return false;
-        seen.add(pane.paneId);
-        return true;
-      })
-      .map((pane) =>
-        pane.kind === "surface" ? { ...pane, surface: readRightPanelSurface(pane.surface)! } : pane,
-      );
+    const pullRequests = new Map<string, PullRequestSurface>();
+    return stored.flatMap((pane): ToolPane[] => {
+      if (!isToolPane(pane) || seen.has(pane.paneId)) return [];
+      seen.add(pane.paneId);
+      if (pane.kind !== "surface") return [pane];
+      const surface = readRightPanelSurface(pane.surface)!;
+      if (surface.kind === "pull-request") {
+        const key = JSON.stringify([pane.environmentId, pane.threadId, surface.id]);
+        const existing = pullRequests.get(key);
+        if (existing) {
+          if (!existing.url && surface.url) existing.url = surface.url;
+          return [];
+        }
+        pullRequests.set(key, surface);
+      }
+      return [{ ...pane, surface }];
+    });
   } catch {
     return [];
   }
@@ -158,6 +167,12 @@ export function useToolPanes() {
       const previousSurface = existing && toolPaneSurface(existing);
       if (surface.kind === "terminal" && previousSurface?.kind === "terminal")
         surface = { ...previousSurface, activeTerminalId: surface.activeTerminalId };
+      if (
+        surface.kind === "pull-request" &&
+        previousSurface?.kind === "pull-request" &&
+        !surface.url
+      )
+        surface = previousSurface;
       if (
         surface.kind === "device" &&
         previousSurface?.kind === "device" &&

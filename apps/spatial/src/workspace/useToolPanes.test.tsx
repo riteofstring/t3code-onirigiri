@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useToolPanes } from "./useToolPanes";
 import { createSpatialSurfaceNavigation } from "./SpatialSurfaceHost";
 import {
+  pullRequestSurface,
   terminalSurface,
   useRightPanelStore,
   selectThreadRightPanelState,
@@ -171,6 +172,124 @@ it("persists every supported surface and drops malformed records without losing 
   await mount();
   expect(hook.toolPanes).toEqual(saved);
 });
+
+it.each([
+  { explicitFirst: false, explicitHasUrl: false },
+  { explicitFirst: true, explicitHasUrl: false },
+  { explicitFirst: false, explicitHasUrl: true },
+  { explicitFirst: true, explicitHasUrl: true },
+])(
+  "merges restored PR panes with explicitFirst=$explicitFirst and explicitHasUrl=$explicitHasUrl",
+  async ({ explicitFirst, explicitHasUrl }) => {
+    const ref = thread("t1");
+    const target = { projectId: "p", repository: "owner/repo", number: 12 };
+    const host = "github.fixture.invalid";
+    const url = `https://${host}/owner/repo/pull/12`;
+    const legacy: RightPanelSurface = {
+      ...target,
+      id: "pull-request:p:owner%2Frepo:12",
+      kind: "pull-request",
+      url,
+    };
+    const explicit = pullRequestSurface({
+      ...target,
+      host,
+      ...(explicitHasUrl ? { url: `${url}#discussion` } : {}),
+    });
+    const pane = (paneId: string, surface: RightPanelSurface, owner = ref) => ({
+      ...owner,
+      paneId,
+      kind: "surface",
+      surface,
+    });
+    const before = pane("tool-files", { id: "files", kind: "files" });
+    const between = pane("tool-diff", { id: "diff", kind: "diff" });
+    const first = pane("tool-first", explicitFirst ? explicit : legacy);
+    const duplicate = pane("tool-duplicate", explicitFirst ? legacy : explicit);
+    const distinct = [
+      pane("tool-host", pullRequestSurface({ ...target, host: "github.other.invalid" })),
+      pane("tool-thread", explicit, thread("t2")),
+      pane("tool-environment", explicit, { ...ref, environmentId: "other" as EnvironmentId }),
+      pane("tool-source", pullRequestSurface({ ...target, host, environmentId: "remote" })),
+    ];
+    storage.set(
+      "onirigiri-t3:tool-panes",
+      JSON.stringify([before, first, between, duplicate, ...distinct]),
+    );
+
+    await mount();
+
+    const expected = [
+      before,
+      {
+        ...first,
+        surface: pullRequestSurface({
+          ...target,
+          host,
+          url: explicitFirst && explicitHasUrl ? `${url}#discussion` : url,
+        }),
+      },
+      between,
+      ...distinct,
+    ];
+    expect(hook.toolPanes).toEqual(expected);
+    expect(JSON.parse(storage.get("onirigiri-t3:tool-panes")!)).toEqual(expected);
+
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount();
+    expect(hook.toolPanes).toEqual(expected);
+  },
+);
+
+it.each([undefined, ""])(
+  "matches native PR URL retention when reopening with url=%s",
+  async (url) => {
+    await mount();
+    const ref = thread("t1");
+    const target = { projectId: "p", repository: "owner/repo", number: 12 };
+    const linked = { ...target, url: "https://github.fixture.invalid/owner/repo/pull/12" };
+    const native = useRightPanelStore.getState();
+    const focused = vi.fn();
+    const navigation = createSpatialSurfaceNavigation(hook, "thread-source", focused);
+    await act(() => {
+      native.openPullRequest(ref, linked);
+      navigation.openPullRequest(ref, linked);
+    });
+    const original = hook.toolPanes[0]!;
+    const listed = {
+      ...target,
+      host: "github.fixture.invalid",
+      ...(url === undefined ? {} : { url }),
+    };
+    await act(() => {
+      navigation.open(ref, "files");
+      native.openPullRequest(ref, listed);
+      navigation.openPullRequest(ref, listed);
+    });
+
+    expect(hook.toolPanes.map((pane) => pane.paneId)).toEqual([
+      expect.any(String),
+      original.paneId,
+    ]);
+    expect(hook.toolPanes[1]).toEqual(original);
+    expect(hook.toolPanes[1]?.surface).toEqual(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces[0],
+    );
+    expect(focused).toHaveBeenLastCalledWith(original.paneId);
+
+    const updated = { ...linked, url: `${linked.url}#discussion` };
+    await act(() => {
+      native.openPullRequest(ref, updated);
+      navigation.openPullRequest(ref, updated);
+    });
+    expect(hook.toolPanes[1]?.paneId).toBe(original.paneId);
+    expect(hook.toolPanes[1]?.surface).toMatchObject(updated);
+    expect(hook.toolPanes[1]?.surface).toEqual(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces[0],
+    );
+  },
+);
 
 it("keeps file reveal state and terminal split changes on their own pane", async () => {
   await mount();
