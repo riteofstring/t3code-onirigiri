@@ -26,6 +26,25 @@ export function writePaneLayout(mode: WorkspaceLayoutMode, layout: OnirigiriLayo
   }
 }
 
+export function createPaneLayoutPersistence(mode: WorkspaceLayoutMode) {
+  let pending: OnirigiriLayout | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    if (pending) writePaneLayout(mode, pending);
+    pending = null;
+  };
+  return {
+    save(layout: OnirigiriLayout) {
+      pending = layout;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(flush, 200);
+    },
+    flush,
+  };
+}
+
 const slot = (column: WorkspaceColumn) => column.slotIndex ?? column.index;
 
 /** Keeps the engine's arrangement while reconciling live pane identities and metadata. */
@@ -64,7 +83,10 @@ export function reconcilePaneLayout(
         .map((item) => ownerByPane.get(item.paneId))
         .find(Boolean);
       const anchor = previous ?? next;
-      const planeIndex = anchor?.planeIndex ?? source.planeIndex;
+      let planeIndex = anchor?.planeIndex ?? source.planeIndex;
+      if (!anchor && columns.some((column) => column.planeIndex === planeIndex)) {
+        planeIndex = Math.max(...columns.map((column) => column.planeIndex)) + 1;
+      }
       const slotIndex = anchor ? slot(anchor) + (previous ? 1 : 0) : slot(source);
       for (const column of columns) {
         if (column.planeIndex === planeIndex && slot(column) >= slotIndex) {
@@ -81,7 +103,14 @@ export function reconcilePaneLayout(
     }
   }
   const ordered = columns.toSorted((a, b) => a.planeIndex - b.planeIndex || slot(a) - slot(b));
-  const owner = focusedPaneId ? ownerByPane.get(focusedPaneId) : undefined;
+  const selectedId =
+    focusedPaneId ??
+    current.columns.find(
+      (column) =>
+        column.planeIndex === current.cursor.row && slot(column) === current.cursor.column,
+    )?.cells[current.cursor.split]?.paneId;
+  const selected = selectedId && ownerByPane.has(selectedId) ? selectedId : fresh.panes[0]?.paneId;
+  const owner = selected ? ownerByPane.get(selected) : undefined;
   return {
     ...fresh,
     columns: ordered.map((column, index) => ({ ...column, index })),
@@ -93,9 +122,9 @@ export function reconcilePaneLayout(
       ? {
           column: slot(owner),
           row: owner.planeIndex,
-          split: owner.cells.findIndex((cell) => cell.paneId === focusedPaneId),
+          split: owner.cells.findIndex((cell) => cell.paneId === selected),
         }
-      : current.cursor,
+      : fresh.cursor,
   };
 }
 
@@ -122,8 +151,8 @@ export function panesFillViewport(
     occupied.every(
       (column) =>
         column.widthSpec.unit === "px" &&
-        column.widthSpec.value >= viewport.width &&
-        column.cells.every((cell) => !cell.paneId || (cell.heightPx ?? 0) >= viewport.height),
+        column.widthSpec.value >= viewport.width - 1 &&
+        column.cells.every((cell) => !cell.paneId || (cell.heightPx ?? 0) >= viewport.height - 1),
     )
   );
 }

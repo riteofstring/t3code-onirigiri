@@ -65,13 +65,14 @@ async function click(label: string) {
   });
 }
 
-async function typeHeight(value: string) {
+async function typeHeight(value: string, commit = true) {
   await act(() => {
     const input = rowHeight();
     input.focus();
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  if (commit) await act(() => rowHeight().dispatchEvent(new Event("pointerup", { bubbles: true })));
 }
 
 async function key(target: HTMLElement, value: string) {
@@ -132,6 +133,20 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   await click("Advanced workspace controls");
   await typeHeight("880");
   expect(settings()).toEqual({ overviewZoom: "near", rowHeight: "viewport" });
+});
+
+it("keeps drag previews local and applies only the final pane height", async () => {
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
+  await typeHeight("300", false);
+  await typeHeight("420", false);
+  expect(rowHeight().value).toBe("420");
+  expect(settings().rowHeight).toBe("viewport");
+  await act(() => rowHeight().dispatchEvent(new Event("pointerup", { bubbles: true })));
+  expect(settings().rowHeight).toBe(420);
+  await typeHeight("500", false);
+  await act(() => rowHeight().blur());
+  expect(settings().rowHeight).toBe(500);
 });
 
 it("bounds the slider to the view while preserving fixed heights across resizing", async () => {

@@ -169,7 +169,7 @@
   order: -1;
   flex-shrink: 1;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 @media (prefers-reduced-motion: reduce) {

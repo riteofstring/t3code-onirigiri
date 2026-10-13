@@ -6,7 +6,6 @@ import {
   type OnirigiriShortcutBindings,
   type OnirigiriWorkspaceProps,
   serializeWorkspaceLayout,
-  type OnirigiriPaneDefinition,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
   type PaneSizingMode,
@@ -40,12 +39,12 @@ import { WorkspaceToolbar } from "./WorkspaceToolbar";
 import { overviewZoomChoices, useWorkspacePreferences } from "./useWorkspacePreferences";
 import {
   readPaneLayout,
+  createPaneLayoutPersistence,
   panesFillViewport,
   reconcilePaneLayout,
   threadLayoutPositions,
-  writePaneLayout,
 } from "./workspaceLayout";
-import { PaneLifecycleContext, createPaneLifecycleStore, type PanePosition } from "./paneLifecycle";
+import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { DiffPane, TerminalPane } from "./SidePanes";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
@@ -110,20 +109,6 @@ function readWorkspaceOptions() {
   };
 }
 
-function threadPanePositions(panes: readonly OnirigiriPaneDefinition[]): PanePosition[] {
-  return panes
-    .filter((pane) => pane.surfaceKind === "thread")
-    .map((pane) => ({
-      paneId: pane.paneId,
-      plane: pane.planeIndex ?? 0,
-      slot: pane.slotIndex ?? 0,
-    }));
-}
-
-function paneMembership(panes: readonly OnirigiriPaneDefinition[]) {
-  return panes.map((pane) => `${pane.paneId}@${pane.planeIndex}:${pane.slotIndex}`).join("|");
-}
-
 export function SpatialWorkspace({
   target,
   active,
@@ -143,20 +128,22 @@ export function SpatialWorkspace({
   const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
+  const [preferences, updatePreferences] = useWorkspacePreferences();
+  const paneDefaults = useMemo(() => ({ height: preferences.rowHeight }), [preferences.rowHeight]);
   const [savedLayout] = useState(() => readPaneLayout(layoutMode));
   const initialLayout = useMemo(() => {
-    if (!initialPanes || !savedLayout) return null;
+    if (!initialPanes) return null;
     const fresh = createWorkspaceScene({
       id: WORKSPACE_ID,
       panes: initialPanes,
+      paneDefaults,
       gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
     });
-    return reconcilePaneLayout(serializeWorkspaceLayout(fresh.scene, fresh.cursor), savedLayout);
-  }, [initialPanes, layoutMode, savedLayout]);
+    const layout = serializeWorkspaceLayout(fresh.scene, fresh.cursor);
+    return savedLayout ? reconcilePaneLayout(layout, savedLayout) : layout;
+  }, [initialPanes, layoutMode, paneDefaults, savedLayout]);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
-  const [preferences, updatePreferences] = useWorkspacePreferences();
-  const paneDefaults = useMemo(() => ({ height: preferences.rowHeight }), [preferences.rowHeight]);
   const overviewCardWidth = overviewZoomChoices.find(
     (choice) => choice.value === preferences.overviewZoom,
   )?.width;
@@ -210,6 +197,14 @@ export function SpatialWorkspace({
     if (layout) updatePaneSizing(layout);
   }, [updatePaneSizing]);
   const lastLayoutRevisionRef = useRef<number | null>(null);
+  const layoutPersistence = useMemo(() => createPaneLayoutPersistence(layoutMode), [layoutMode]);
+  useEffect(() => {
+    window.addEventListener("pagehide", layoutPersistence.flush);
+    return () => {
+      window.removeEventListener("pagehide", layoutPersistence.flush);
+      layoutPersistence.flush();
+    };
+  }, [layoutPersistence]);
   const onLayoutChange = useCallback<NonNullable<OnirigiriWorkspaceProps["onLayoutChange"]>>(
     (layout, metadata) => {
       if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
@@ -218,9 +213,9 @@ export function SpatialWorkspace({
       updatePaneSizing(layout);
       onPictureLayoutChange(layout);
       lifecycle?.setPanes(threadLayoutPositions(layout));
-      writePaneLayout(layoutMode, layout);
+      layoutPersistence.save(layout);
     },
-    [layoutMode, lifecycle, onPictureLayoutChange, updatePaneSizing],
+    [layoutPersistence, lifecycle, onPictureLayoutChange, updatePaneSizing],
   );
 
   // Focus is kept out of React state so moving between panes does not
@@ -263,8 +258,8 @@ export function SpatialWorkspace({
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
 
-  if (lifecycle === null && initialPanes !== null) {
-    setLifecycle(createPaneLifecycleStore(threadPanePositions(initialPanes), routePaneId));
+  if (lifecycle === null && initialLayout !== null) {
+    setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
   }
 
   // Panes appearing, leaving or moving rebuild the arrangement around the
@@ -275,7 +270,8 @@ export function SpatialWorkspace({
     const previous = panesRef.current;
     panesRef.current = panes;
     if (!previous || previous === panes) return;
-    if (paneMembership(panes) !== paneMembership(previous)) {
+    const previousById = new Map(previous.map((pane) => [pane.paneId, pane]));
+    if (panes.length !== previous.length || panes.some((pane) => !previousById.has(pane.paneId))) {
       const { scene } = createWorkspaceScene({
         gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
         id: WORKSPACE_ID,
@@ -304,7 +300,6 @@ export function SpatialWorkspace({
       }
       return;
     }
-    const previousById = new Map(previous.map((pane) => [pane.paneId, pane]));
     for (const pane of panes) {
       const before = previousById.get(pane.paneId);
       // An empty pane the user turned into a terminal or diff changes in place.
@@ -342,6 +337,7 @@ export function SpatialWorkspace({
   // so they are not mistaken for a navigation elsewhere in the app, which
   // instead moves focus to its pane.
   const requestedRoutesRef = useRef(new Set<string>());
+  const pendingNavigationPaneRef = useRef<string | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRouteRef = useRef<(() => void) | null>(null);
   const routePaneIdRef = useRef(routePaneId);
@@ -350,6 +346,7 @@ export function SpatialWorkspace({
   useEffect(() => {
     const coveredChanged = activeRef.current !== active;
     routePaneIdRef.current = routePaneId;
+    if (pendingNavigationPaneRef.current === routePaneId) pendingNavigationPaneRef.current = null;
     activeRef.current = active;
     const requested = routePaneId !== null && requestedRoutesRef.current.has(routePaneId);
     if (!coveredChanged && requested) return;
@@ -388,7 +385,12 @@ export function SpatialWorkspace({
         if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
         routeTimerRef.current = null;
         pendingRouteRef.current = null;
-        if (routeTarget === routePaneIdRef.current || focusedPaneIdRef.current !== paneId) return;
+        if (
+          routeTarget === routePaneIdRef.current ||
+          routeTarget === pendingNavigationPaneRef.current ||
+          focusedPaneIdRef.current !== paneId
+        )
+          return;
         requestedRoutesRef.current.add(routeTarget);
         void router.navigate({ to: "/$environmentId/$threadId", params: data });
       };
@@ -470,7 +472,12 @@ export function SpatialWorkspace({
         const params = match?.params as { environmentId?: string; threadId?: string } | undefined;
         if (params?.environmentId && params.threadId) {
           const paneId = threadPaneId(params.environmentId, params.threadId);
-          if (!requestedRoutesRef.current.has(paneId)) focusRoutePane(paneId);
+          if (!requestedRoutesRef.current.has(paneId)) {
+            pendingNavigationPaneRef.current = paneId;
+            focusRoutePane(paneId);
+          }
+        } else {
+          pendingNavigationPaneRef.current = null;
         }
       }),
     [router],

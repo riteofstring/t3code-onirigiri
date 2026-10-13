@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 
 import {
   panesFillViewport,
+  createPaneLayoutPersistence,
   reconcilePaneLayout,
   threadLayoutPositions,
   readPaneLayout,
@@ -182,4 +183,49 @@ it("identifies full sizes after reload, and stops offering Restore after a resiz
   expect(panesFillViewport(full, { width: 1100, height: 700 })).toBe(false);
 });
 
-afterEach(() => vi.unstubAllGlobals());
+it("gives a newly encountered project its own row without moving a user-arranged row", () => {
+  const current = layoutFor([pane("existing", 0, 0)]);
+  current.columns[0]!.planeIndex = 1;
+  const fresh = layoutFor([
+    pane("existing", 0, 0),
+    pane("new-project", 1, 0),
+    pane("same-project", 1, 1),
+  ]);
+  const next = reconcilePaneLayout(fresh, current);
+  assertOnirigiriLayout(next);
+  expect(threadLayoutPositions(next)).toEqual([
+    { paneId: "existing", plane: 1, slot: 0 },
+    { paneId: "new-project", plane: 2, slot: 0 },
+    { paneId: "same-project", plane: 2, slot: 1 },
+  ]);
+});
+
+it("coalesces repeated resizing writes and flushes the latest arrangement before reload", () => {
+  vi.useFakeTimers();
+  const storage = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  });
+  const persistence = createPaneLayoutPersistence("rows");
+  persistence.save(layoutFor([pane("one", 0, 0)]));
+  vi.advanceTimersByTime(100);
+  persistence.save(layoutFor([pane("one", 0, 2)]));
+  vi.advanceTimersByTime(100);
+  expect(readPaneLayout("rows")).toBeNull();
+  vi.advanceTimersByTime(100);
+  expect(threadLayoutPositions(readPaneLayout("rows")!)).toEqual([
+    { paneId: "one", plane: 0, slot: 2 },
+  ]);
+  persistence.save(layoutFor([pane("one", 0, 4)]));
+  persistence.flush();
+  expect(threadLayoutPositions(readPaneLayout("rows")!)).toEqual([
+    { paneId: "one", plane: 0, slot: 4 },
+  ]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
