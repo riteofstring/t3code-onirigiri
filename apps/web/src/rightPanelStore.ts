@@ -545,6 +545,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 threadState && typeof threadState === "object" ? threadState : null;
               const rawActiveSurfaceId = validThreadState?.activeSurfaceId;
               let normalizedActiveSurfaceId = rawActiveSurfaceId;
+              const pullRequests = new Map<PullRequestSurface["id"], PullRequestSurface>();
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     // Dropped surface kind: plans now render inline in the
@@ -583,6 +584,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                       if (surface.id === rawActiveSurfaceId) {
                         normalizedActiveSurfaceId = normalized.id;
                       }
+                      const existing = pullRequests.get(normalized.id);
+                      if (existing) {
+                        if (
+                          normalized.url &&
+                          (!existing.url || surface.id === rawActiveSurfaceId)
+                        ) {
+                          existing.url = normalized.url;
+                        }
+                        return [];
+                      }
+                      pullRequests.set(normalized.id, normalized);
                       return [normalized];
                     }
                     if (surface.kind !== "terminal") return [surface];

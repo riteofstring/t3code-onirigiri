@@ -390,6 +390,106 @@ describe("rightPanelStore", () => {
     },
   );
 
+  it.each([
+    { selected: "legacy", explicitFirst: false, explicitHasUrl: false },
+    { selected: "explicit", explicitFirst: false, explicitHasUrl: false },
+    { selected: "legacy", explicitFirst: true, explicitHasUrl: false },
+    { selected: "explicit", explicitFirst: true, explicitHasUrl: false },
+    { selected: "legacy", explicitFirst: false, explicitHasUrl: true },
+    { selected: "explicit", explicitFirst: false, explicitHasUrl: true },
+    { selected: "legacy", explicitFirst: true, explicitHasUrl: true },
+    { selected: "explicit", explicitFirst: true, explicitHasUrl: true },
+  ])(
+    "restores duplicate PR tabs with $selected selected, explicitFirst=$explicitFirst and explicitHasUrl=$explicitHasUrl",
+    async ({ selected, explicitFirst, explicitHasUrl }) => {
+      const target = { projectId: "project-a", repository: "acme/api", number: 7 };
+      const url = "https://github.fixture.invalid/acme/api/pull/7";
+      const host = "github.fixture.invalid";
+      const legacy = {
+        ...target,
+        id: pullRequestSurfaceId(target),
+        kind: "pull-request" as const,
+        url,
+      };
+      const explicit = pullRequestSurface({
+        ...target,
+        host,
+        ...(explicitHasUrl ? { url: `${url}#discussion` } : {}),
+      });
+      const expected = pullRequestSurface({
+        ...target,
+        host,
+        url: selected === "explicit" && explicitHasUrl ? `${url}#discussion` : url,
+      });
+      const files = { id: "files", kind: "files" } as const;
+      const diff = { id: "diff", kind: "diff" } as const;
+      const otherRequests = [
+        pullRequestSurface({ ...target, host: "github.other.invalid" }),
+        pullRequestSurface({ ...target, host, environmentId: "env-2" }),
+        pullRequestSurface({ ...target, host, projectId: "project-b" }),
+      ];
+      const otherThread = {
+        isOpen: false,
+        activeSurfaceId: explicit.id,
+        surfaces: [explicit],
+      };
+      const { storage, name, version } = useRightPanelStore.persist.getOptions();
+      if (!storage || !name) throw new Error("Right panel persistence is not configured");
+      await storage.setItem(name, {
+        version: version ?? 0,
+        state: {
+          byThreadKey: {
+            "env-1:thread-A": {
+              isOpen: true,
+              activeSurfaceId: selected === "legacy" ? legacy.id : explicit.id,
+              surfaces: [
+                files,
+                explicitFirst ? explicit : legacy,
+                diff,
+                explicitFirst ? legacy : explicit,
+                ...otherRequests,
+              ],
+            },
+            "env-1:thread-B": otherThread,
+          },
+        },
+      });
+      await useRightPanelStore.persist.rehydrate();
+
+      let restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+      expect(restored.surfaces).toEqual([files, expected, diff, ...otherRequests]);
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+      ).toEqual(expected);
+
+      const store = useRightPanelStore.getState();
+      store.activateSurface(refA, "files");
+      store.openPullRequest(refA, { ...target, host });
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+      ).toEqual(expected);
+      store.closeSurface(refA, expected.id);
+      restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+      expect(restored.surfaces).toEqual([files, diff, ...otherRequests]);
+      expect(restored.activeSurfaceId).toBe("diff");
+
+      store.openPullRequest(refA, { ...target, url });
+      store.openPullRequest(refA, { ...target, host });
+      await useRightPanelStore.persist.rehydrate();
+      restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+      expect(restored.surfaces).toEqual([
+        files,
+        diff,
+        ...otherRequests,
+        pullRequestSurface({ ...target, host, url }),
+      ]);
+      expect(restored.activeSurfaceId).toBe(expected.id);
+      expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB)).toEqual(
+        otherThread,
+      );
+    },
+  );
+
   it("drops the pull-request list's shared panel so a restart opens the page fresh", () => {
     const id = pullRequestSurfaceId({
       projectId: "project-a",
