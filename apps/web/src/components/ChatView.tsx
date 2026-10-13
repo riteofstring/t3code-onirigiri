@@ -4387,7 +4387,10 @@ export default function ChatView(props: ChatViewProps) {
   const [deviceSetupThread, setDeviceSetupThread] = useState<ScopedThreadRef | null>(null);
   const addDeviceSurface = useCallback(() => {
     if (!activeThreadRef) return;
-    if (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled") {
+    if (
+      deviceStateLoaded &&
+      (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled")
+    ) {
       setDeviceSetupThread(activeThreadRef);
       return;
     }
@@ -4396,6 +4399,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef,
     deviceState.onboardingCompleted,
     deviceState.hostStatus,
+    deviceStateLoaded,
     setDeviceSetupThread,
     surfaceNavigation,
   ]);
