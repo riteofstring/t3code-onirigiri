@@ -60,7 +60,9 @@
   inset-block-start: 8px;
   inset-inline-end: 8px;
   width: max-content;
-  max-width: calc(100% - 16px);
+  max-width: calc(
+    100% - var(--workspace-controls-left) - var(--workspace-titlebar-control-size) - 20px
+  );
   z-index: 40;
 }
 
