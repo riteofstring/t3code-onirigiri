@@ -343,6 +343,53 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it.each([true, false])(
+    "restores the selected URL-based pull request with isOpen=%s",
+    async (isOpen) => {
+      const target = {
+        projectId: "project-a",
+        repository: "acme/api",
+        number: 7,
+      };
+      const saved = {
+        ...target,
+        id: pullRequestSurfaceId(target),
+        kind: "pull-request" as const,
+        url: "https://github.fixture.invalid/acme/api/pull/7",
+      };
+      const { storage, name, version } = useRightPanelStore.persist.getOptions();
+      if (!storage || !name) throw new Error("Right panel persistence is not configured");
+      await storage.setItem(name, {
+        version: version ?? 0,
+        state: {
+          byThreadKey: {
+            "env-1:thread-A": {
+              isOpen,
+              activeSurfaceId: saved.id,
+              surfaces: [{ id: "files", kind: "files" }, saved],
+            },
+          },
+        },
+      });
+      await useRightPanelStore.persist.rehydrate();
+
+      const selected = selectSelectedRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        refA,
+      );
+      expect(selected).toMatchObject({ ...target, host: "github.fixture.invalid", url: saved.url });
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+      ).toEqual(isOpen ? selected : null);
+      useRightPanelStore
+        .getState()
+        .openPullRequest(refA, { ...target, host: "github.fixture.invalid" });
+      const restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+      expect(restored.surfaces).toHaveLength(2);
+      expect(restored.activeSurfaceId).toBe(selected?.id);
+    },
+  );
+
   it("drops the pull-request list's shared panel so a restart opens the page fresh", () => {
     const id = pullRequestSurfaceId({
       projectId: "project-a",
@@ -722,8 +769,13 @@ describe("rightPanelStore", () => {
   });
 
   it("tracks one surface per pull request", () => {
-    const first = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4909 };
-    const second = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4910 };
+    const first = {
+      projectId: "project-a",
+      host: "gitlab.example.com",
+      repository: "pingdotgg/t3code",
+      number: 4909,
+    };
+    const second = { ...first, number: 4910 };
     useRightPanelStore.getState().openPullRequest(refA, first);
     useRightPanelStore.getState().openPullRequest(refA, second);
     const url = "https://gitlab.example.com/pingdotgg/t3code/-/merge_requests/4909";
@@ -754,12 +806,116 @@ describe("rightPanelStore", () => {
     );
   });
 
+  it.each([
+    {
+      provider: "GitHub",
+      url: "https://GITHUB.fixture.invalid/acme/api/pull/7",
+      host: "github.fixture.invalid",
+      repository: "acme/api",
+    },
+    {
+      provider: "Forgejo",
+      url: "http://forge.example:3000/acme/api/pulls/7",
+      host: "forge.example:3000",
+      repository: "acme/api",
+    },
+    {
+      provider: "GitLab",
+      url: "https://gitlab.example:8443/acme/api/-/merge_requests/7",
+      host: "gitlab.example",
+      repository: "acme/api",
+    },
+    {
+      provider: "Azure DevOps",
+      url: "https://dev.azure.com/acme/project/_git/api/pullrequest/7",
+      host: "dev.azure.com",
+      repository: "acme/project/_git/api",
+    },
+  ])("refocuses a URL-opened $provider pull request through its explicit host", (target) => {
+    const store = useRightPanelStore.getState();
+    const linked = {
+      projectId: "project-a",
+      repository: target.repository,
+      number: 7,
+      url: target.url,
+    };
+    store.openPullRequest(refA, linked);
+    const original = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    store.open(refA, "files");
+    store.openPullRequest(refA, { ...linked, host: target.host });
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toHaveLength(2);
+    expect(state.activeSurfaceId).toBe(original?.id);
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({
+      ...linked,
+      host: target.host,
+    });
+    expect(pullRequestSurfaceId(linked)).toBe(original?.id);
+  });
+
+  it.each([
+    ["https://github.one.example/acme/api/pull/7", "https://github.two.example/acme/api/pull/7"],
+    ["http://forge.example:3000/acme/api/pulls/7", "http://forge.example:4000/acme/api/pulls/7"],
+  ])("keeps URL authorities distinct: %s and %s", (firstUrl, secondUrl) => {
+    const store = useRightPanelStore.getState();
+    const target = { projectId: "project-a", repository: "acme/api", number: 7 };
+    store.openPullRequest(refA, { ...target, url: firstUrl });
+    const first = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    store.openPullRequest(refA, { ...target, url: secondUrl });
+    const second = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toHaveLength(2);
+    expect(second?.id).not.toBe(first?.id);
+  });
+
+  it("keeps the explicit host authoritative when a pull request has another URL host", () => {
+    const store = useRightPanelStore.getState();
+    const target = {
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 7,
+      host: "github.one.example",
+      url: "https://github.two.example/acme/api/pull/7",
+    };
+    store.openPullRequest(refA, target);
+    store.openPullRequest(refA, { ...target, host: "github.two.example" });
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toHaveLength(2);
+    expect(state.surfaces[0]).toMatchObject(target);
+    expect(state.surfaces[1]).toMatchObject({ ...target, host: "github.two.example" });
+  });
+
+  it.each([
+    "not a URL",
+    "javascript:alert(1)",
+    "https://example.com/acme/api/pull/7",
+    "https://github.com/acme/api/issues/7",
+    "https://github.com/acme/api/pull/8",
+  ])("preserves hostless references for unrecognized URLs: %s", (url) => {
+    const store = useRightPanelStore.getState();
+    const target = { projectId: "project-a", repository: "acme/api", number: 7 };
+    store.openPullRequest(refA, target);
+    store.openPullRequest(refA, { ...target, url });
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toHaveLength(1);
+    expect(state.surfaces[0]).toMatchObject({ ...target, url });
+    expect(state.surfaces[0]).not.toHaveProperty("host");
+  });
+
   it("keeps one pull request read from two servers as two tabs", () => {
     const local = {
       environmentId: "local",
       projectId: "project-a",
       repository: "pingdotgg/t3code",
       number: 4909,
+      url: "https://github.com/pingdotgg/t3code/pull/4909",
     };
     const remote = { ...local, environmentId: "remote" };
 
@@ -771,6 +927,23 @@ describe("rightPanelStore", () => {
       pullRequestSurfaceId(local),
       pullRequestSurfaceId(remote),
     ]);
+  });
+
+  it("keeps the same URL scoped to each project", () => {
+    const store = useRightPanelStore.getState();
+    const first = {
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 7,
+      url: "https://github.com/acme/api/pull/7",
+    };
+    store.openPullRequest(refA, first);
+    store.openPullRequest(refA, { ...first, projectId: "project-b" });
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toHaveLength(2);
+    expect(state.surfaces[0]).toMatchObject(first);
+    expect(state.surfaces[1]).toMatchObject({ ...first, projectId: "project-b" });
   });
 
   it("keeps the page's panel tabs reachable when the set of connected servers changes", () => {

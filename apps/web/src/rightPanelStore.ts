@@ -14,6 +14,7 @@ import {
   type ChatFileAttachment,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -399,19 +400,31 @@ export function readRightPanelSurface(value: unknown): RightPanelSurface | null 
 
 export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
 
+function pullRequestSurfaceHost(target: {
+  host?: string;
+  url?: string;
+  number: number;
+}): string | undefined {
+  if (target.host !== undefined) return target.host.toLowerCase();
+  const parsed = target.url === undefined ? null : parseChangeRequestUrl(target.url);
+  return parsed?.number === target.number ? (parsed.authority ?? parsed.host) : undefined;
+}
+
 export function pullRequestSurfaceId(target: {
   environmentId?: string;
   projectId: string;
   host?: string;
   repository: string;
   number: number;
+  url?: string;
 }): PullRequestSurface["id"] {
   // The environment leads the id where there is one, so the same change request read from two
   // servers is two tabs rather than one tab that changes its mind about which server it is on.
   const scope =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
-  const host = target.host === undefined ? "" : `${encodeURIComponent(target.host.toLowerCase())}:`;
-  return `pull-request:${scope}${encodeURIComponent(target.projectId)}:${host}${encodeURIComponent(target.repository)}:${target.number}`;
+  const host = pullRequestSurfaceHost(target);
+  const authority = host === undefined ? "" : `${encodeURIComponent(host)}:`;
+  return `pull-request:${scope}${encodeURIComponent(target.projectId)}:${authority}${encodeURIComponent(target.repository)}:${target.number}`;
 }
 
 export function pullRequestSurface(target: {
@@ -422,12 +435,13 @@ export function pullRequestSurface(target: {
   number: number;
   url?: string;
 }): PullRequestSurface {
+  const host = pullRequestSurfaceHost(target);
   return {
-    id: pullRequestSurfaceId(target),
+    id: pullRequestSurfaceId(host === undefined ? target : { ...target, host }),
     kind: "pull-request",
     ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
     projectId: target.projectId,
-    ...(typeof target.host === "string" ? { host: target.host.toLowerCase() } : {}),
+    ...(host === undefined ? {} : { host }),
     repository: target.repository,
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
@@ -529,6 +543,8 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
+              const rawActiveSurfaceId = validThreadState?.activeSurfaceId;
+              let normalizedActiveSurfaceId = rawActiveSurfaceId;
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     // Dropped surface kind: plans now render inline in the
@@ -560,12 +576,14 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                       }
                       const { environmentId, ...rest } = surface;
                       // Anything else stored under that name is not an environment.
-                      return [
-                        pullRequestSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
+                      const normalized = pullRequestSurface({
+                        ...rest,
+                        ...(typeof environmentId === "string" ? { environmentId } : {}),
+                      });
+                      if (surface.id === rawActiveSurfaceId) {
+                        normalizedActiveSurfaceId = normalized.id;
+                      }
+                      return [normalized];
                     }
                     if (surface.kind !== "terminal") return [surface];
                     if (
@@ -601,11 +619,10 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     ];
                   })
                 : [];
-              const rawActiveSurfaceId = validThreadState?.activeSurfaceId;
               const persistedActiveSurfaceId = surfaces.some(
-                (surface) => surface.id === rawActiveSurfaceId,
+                (surface) => surface.id === normalizedActiveSurfaceId,
               )
-                ? (rawActiveSurfaceId ?? null)
+                ? (normalizedActiveSurfaceId ?? null)
                 : rawActiveSurfaceId === "pull-request"
                   ? (surfaces.find((surface) => surface.kind === "pull-request")?.id ?? null)
                   : null;
@@ -1015,6 +1032,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       }),
       migrate: migratePersistedRightPanelState,
+      merge: (persistedState, currentState) =>
+        persistedState === undefined
+          ? currentState
+          : { ...currentState, ...migratePersistedRightPanelState(persistedState) },
     },
   ),
 );
