@@ -16,14 +16,13 @@ import {
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import {
   useEnvironmentThreadRefs,
+  useEnvironmentShellBootstrapped,
   useThread,
   useThreadDetail,
   useThreadRefs,
   useThreadShell,
   useThreadStatus,
 } from "../state/entities";
-import { useEnvironmentQuery } from "../state/query";
-import { environmentShell } from "../state/shell";
 import {
   buildThreadRouteParams,
   resolveThreadRouteRenderState,
@@ -75,14 +74,11 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         })
       : null;
 
-  const shell = useEnvironmentQuery(
-    serverThreadRef === null ? null : environmentShell.stateAtom(serverThreadRef.environmentId),
-  );
+  const bootstrapComplete = useEnvironmentShellBootstrapped(serverThreadRef?.environmentId ?? null);
   const serverThreadShell = useThreadShell(serverThreadRef);
   const serverThreadDetail = useThreadDetail(serverThreadRef);
   const serverThreadStatus = useThreadStatus(serverThreadRef);
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
-  const bootstrapComplete = shell.data?.snapshot._tag === "Some";
   const draftThread = useComposerDraftStore((store) =>
     serverThreadRef ? store.getDraftThreadByRef(serverThreadRef) : null,
   );

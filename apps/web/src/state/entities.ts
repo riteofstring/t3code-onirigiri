@@ -8,7 +8,12 @@ import {
   type EnvironmentThreadStatus,
   mergeEnvironmentThread,
 } from "@t3tools/client-runtime/state/threads";
-import type { ScopedProjectRef, ScopedThreadRef, ServerConfig } from "@t3tools/contracts";
+import type {
+  OrchestrationShellSnapshot,
+  ScopedProjectRef,
+  ScopedThreadRef,
+  ServerConfig,
+} from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
@@ -18,10 +23,16 @@ import { environmentServerConfigsAtom } from "./server";
 import {
   allEnvironmentProjectSnapshotsReadyAtom,
   allEnvironmentShellsBootstrappedAtom,
+  environmentSnapshotAtom,
 } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
+
+const EMPTY_SHELL_SNAPSHOT_ATOM = Atom.make<OrchestrationShellSnapshot | null>(null).pipe(
+  Atom.withLabel("web-environment-snapshot:empty"),
+);
+const hasShellSnapshot = (snapshot: OrchestrationShellSnapshot | null) => snapshot !== null;
 
 const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
   Atom.withLabel("web-project:empty"),
@@ -80,6 +91,13 @@ export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   return useAtomValue(allEnvironmentShellsBootstrappedAtom);
+}
+
+export function useEnvironmentShellBootstrapped(environmentId: EnvironmentId | null): boolean {
+  return useAtomValue(
+    environmentId === null ? EMPTY_SHELL_SNAPSHOT_ATOM : environmentSnapshotAtom(environmentId),
+    hasShellSnapshot,
+  );
 }
 
 export function useAllEnvironmentProjectSnapshotsReady(): boolean {
