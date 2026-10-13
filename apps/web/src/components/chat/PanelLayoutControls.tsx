@@ -1,8 +1,17 @@
-import { Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
-import { memo } from "react";
+import {
+  Maximize2Icon,
+  Minimize2Icon,
+  PanelBottomIcon,
+  PanelRightIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
+import { memo, useContext } from "react";
 
+import { ChatPaneControlsContext, type ChatPaneControls } from "../chatPaneControls";
+import { Button } from "../ui/button";
 import { Toggle } from "../ui/toggle";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 
 interface PanelLayoutControlsProps {
   showTerminalControl?: boolean;
@@ -32,6 +41,18 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  const paneControls = useContext(ChatPaneControlsContext);
+  if (paneControls)
+    return (
+      <ChatPaneLayoutControls
+        controls={paneControls}
+        showTerminalControl={showTerminalControl}
+        terminalAvailable={terminalAvailable}
+        terminalOpen={terminalOpen}
+        terminalShortcutLabel={terminalShortcutLabel}
+        onToggleTerminal={onToggleTerminal}
+      />
+    );
   return (
     <div
       className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
@@ -131,3 +152,99 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
     </Tooltip>
   );
 });
+
+function ChatPaneLayoutControls({
+  controls,
+  showTerminalControl,
+  terminalAvailable,
+  terminalOpen,
+  terminalShortcutLabel,
+  onToggleTerminal,
+}: Pick<
+  PanelLayoutControlsProps,
+  | "showTerminalControl"
+  | "terminalAvailable"
+  | "terminalOpen"
+  | "terminalShortcutLabel"
+  | "onToggleTerminal"
+> & { controls: ChatPaneControls }) {
+  const maximizeLabel = controls.maximized ? "Restore pane" : "Maximize pane";
+  const terminalLabel = terminalAvailable
+    ? `Toggle terminal drawer${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
+    : "Terminal drawer is unavailable";
+  return (
+    <TooltipProvider delay={350} closeDelay={100} timeout={400}>
+      <Tooltip<string>>
+        {({ payload }) => (
+          <div
+            className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
+            data-panel-layout-controls
+          >
+            {showTerminalControl ? (
+              <TooltipTrigger
+                payload={terminalLabel}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Toggle terminal drawer"
+                    aria-pressed={terminalOpen}
+                    disabled={!terminalAvailable}
+                    onClick={onToggleTerminal}
+                  />
+                }
+              >
+                <PanelBottomIcon className="size-4" />
+              </TooltipTrigger>
+            ) : null}
+            <TooltipTrigger
+              payload="Add pane to the right"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add pane to the right"
+                  onClick={controls.addPane}
+                />
+              }
+            >
+              <PlusIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipTrigger
+              payload={maximizeLabel}
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={maximizeLabel}
+                  aria-pressed={controls.maximized}
+                  onClick={controls.toggleMaximized}
+                />
+              }
+            >
+              {controls.maximized ? (
+                <Minimize2Icon className="size-4" />
+              ) : (
+                <Maximize2Icon className="size-4" />
+              )}
+            </TooltipTrigger>
+            <TooltipTrigger
+              payload="Close pane"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close pane"
+                  onClick={controls.closePane}
+                />
+              }
+            >
+              <XIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">{payload}</TooltipPopup>
+          </div>
+        )}
+      </Tooltip>
+    </TooltipProvider>
+  );
+}

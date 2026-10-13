@@ -15,6 +15,7 @@ import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -23,6 +24,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { ChatPaneControlsContext } from "../chatPaneControls";
 import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { type DraftId } from "~/composerDraftStore";
@@ -145,6 +147,7 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
 }: ChatHeaderProps) {
+  const paneControls = useContext(ChatPaneControlsContext);
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const headerActionsRef = useRef<HTMLDivElement | null>(null);
@@ -496,7 +499,11 @@ export const ChatHeader = memo(function ChatHeader({
           // plus the same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the
           // terminal toggle does not sit against the last action. The page header adds 8px more
           // right padding at sm.
-          rightPanelOpen ? "pr-0" : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
+          rightPanelOpen
+            ? "pr-0"
+            : paneControls
+              ? "pr-37.25 sm:pr-31.25 @3xl/header-actions:pr-32.25"
+              : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >

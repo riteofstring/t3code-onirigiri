@@ -16,6 +16,7 @@ import {
   use,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -31,6 +32,7 @@ import {
   type ComposerHandleRef,
   useComposerHandleContext,
 } from "@t3tools/web/src/composerHandleContext";
+import { ChatPaneControlsContext } from "@t3tools/web/src/components/chatPaneControls";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { useThreadDetail, useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
@@ -239,13 +241,33 @@ export const ThreadPane = memo(function ThreadPane({
   focused,
   visible,
   onNavigateAway,
+  maximized = false,
+  onAddPane,
+  onClosePane,
+  onToggleMaximized,
 }: {
   thread: ThreadPaneThread;
   paneId: string;
   focused: boolean;
   visible: boolean;
   onNavigateAway: (href: string) => void;
+  maximized?: boolean;
+  onAddPane?: (paneId: string) => void;
+  onClosePane?: (paneId: string) => void;
+  onToggleMaximized?: (paneId: string) => void;
 }) {
+  const paneControls = useMemo(
+    () =>
+      onAddPane && onClosePane && onToggleMaximized
+        ? {
+            maximized,
+            addPane: () => onAddPane(paneId),
+            closePane: () => onClosePane(paneId),
+            toggleMaximized: () => onToggleMaximized(paneId),
+          }
+        : null,
+    [maximized, onAddPane, onClosePane, onToggleMaximized, paneId],
+  );
   const interactive = useOnirigiriPaneInteractive();
   const workspaceActive = use(SpatialWorkspaceActiveContext);
   const active = workspaceActive && focused && interactive;
@@ -404,22 +426,24 @@ export const ThreadPane = memo(function ThreadPane({
   );
 
   return (
-    <ChatViewActivityContext value={activity}>
-      <ComposerHandleContext value={paneComposerRef}>
-        <div
-          ref={contentRef}
-          onKeyDownCapture={leaveComposerOnEscape}
-          className="spatial-thread-pane h-full w-full"
-          data-spatial-thread={thread.threadId}
-          data-spatial-active={String(active)}
-          data-spatial-preparing={preparing ? "" : undefined}
-        >
-          <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-            {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
-          </ChatViewContentReadyProvider>
-        </div>
-      </ComposerHandleContext>
-    </ChatViewActivityContext>
+    <ChatPaneControlsContext value={paneControls}>
+      <ChatViewActivityContext value={activity}>
+        <ComposerHandleContext value={paneComposerRef}>
+          <div
+            ref={contentRef}
+            onKeyDownCapture={leaveComposerOnEscape}
+            className="spatial-thread-pane h-full w-full"
+            data-spatial-thread={thread.threadId}
+            data-spatial-active={String(active)}
+            data-spatial-preparing={preparing ? "" : undefined}
+          >
+            <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
+              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+            </ChatViewContentReadyProvider>
+          </div>
+        </ComposerHandleContext>
+      </ChatViewActivityContext>
+    </ChatPaneControlsContext>
   );
 });
 

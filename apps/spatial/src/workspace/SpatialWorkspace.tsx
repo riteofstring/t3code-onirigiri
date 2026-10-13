@@ -33,6 +33,7 @@ import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { EmptyPane } from "./EmptyPane";
 import { useFocusAnchorPreference } from "./FocusAnchorToggle";
+import { WorkspaceTooltips, WorkspaceControlButton } from "./WorkspaceTooltips";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
 import { overviewZoomChoices, useWorkspacePreferences } from "./useWorkspacePreferences";
 import { keepPaneSizes } from "./workspaceSizing";
@@ -51,6 +52,7 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 
+const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
 
 // A thread's composer usually holds focus, so moving between panes and
@@ -121,7 +123,8 @@ export function SpatialWorkspace({
   useEffect(() => {
     toolPanesRef.current = toolPanes;
   }, [toolPanes]);
-  const panes = useWorkspacePanes(layoutMode, toolPanes);
+  const [dismissedPaneIds, setDismissedPaneIds] = useState<ReadonlySet<string>>(() => new Set());
+  const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
@@ -170,7 +173,8 @@ export function SpatialWorkspace({
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
     for (const pane of panes ?? []) {
-      if (pane.surfaceKind === "thread") byPaneId.set(pane.paneId, pane.data as ThreadPaneData);
+      const data = pane.data as ThreadPaneData;
+      byPaneId.set(threadPaneId(data.environmentId, data.threadId), data);
     }
     return byPaneId;
   }, [panes]);
@@ -383,7 +387,13 @@ export function SpatialWorkspace({
   const pendingRoutePaneRef = useRef<string | null>(null);
   const focusRoutePane = useEffectEvent((paneId: string) => {
     if (requestedRoutesRef.current.delete(paneId)) return;
-    if (!paneData.has(paneId)) {
+    setDismissedPaneIds((current) => {
+      if (!current.has(paneId)) return current;
+      const next = new Set(current);
+      next.delete(paneId);
+      return next;
+    });
+    if (!panes?.some((pane) => pane.paneId === paneId)) {
       pendingRoutePaneRef.current = paneId;
       return;
     }
@@ -414,8 +424,8 @@ export function SpatialWorkspace({
 
   useEffect(() => {
     const pending = pendingRoutePaneRef.current;
-    if (pending && paneData.has(pending)) focusRoutePane(pending);
-  }, [paneData]);
+    if (pending && panes?.some((pane) => pane.paneId === pending)) focusRoutePane(pending);
+  }, [panes]);
 
   const navigateAway = useCallback(
     (href: string) => {
@@ -425,17 +435,20 @@ export function SpatialWorkspace({
   );
 
   // A new empty pane opens beside the focused pane, for its thread.
-  const addPane = useCallback(() => {
-    const focused = focusedPaneIdRef.current;
-    const thread = focused ? paneData.get(focused) : undefined;
-    const tool = toolPanes.find((pane) => pane.paneId === focused);
-    const owner = thread ?? tool;
-    if (!owner) return;
-    pendingFocusPaneIdRef.current = addEmpty(
-      { environmentId: owner.environmentId, threadId: owner.threadId },
-      tool?.paneId ?? null,
-    );
-  }, [addEmpty, paneData, toolPanes]);
+  const addPaneBeside = useCallback(
+    (paneId: string | null) => {
+      const thread = paneId ? paneData.get(paneId) : undefined;
+      const tool = toolPanes.find((pane) => pane.paneId === paneId);
+      const owner = thread ?? tool;
+      if (!owner) return;
+      pendingFocusPaneIdRef.current = addEmpty(
+        { environmentId: owner.environmentId, threadId: owner.threadId },
+        tool?.paneId ?? null,
+      );
+    },
+    [addEmpty, paneData, toolPanes],
+  );
+  const addPane = useCallback(() => addPaneBeside(focusedPaneIdRef.current), [addPaneBeside]);
 
   useEffect(() => {
     if (!active) return;
@@ -460,7 +473,11 @@ export function SpatialWorkspace({
   const onPaneClose = useCallback(
     async (pane: WorkspacePane) => {
       const tool = toolPanes.find((candidate) => candidate.paneId === pane.paneId);
-      if (!tool) return false;
+      if (!tool) {
+        if (pane.surfaceKind !== "thread") return false;
+        setDismissedPaneIds((current) => new Set([...current, pane.paneId]));
+        return false;
+      }
       // A terminal whose session would not close keeps its pane.
       if (tool.kind === "terminal" && tool.terminalId) {
         const closed = await closeTerminal({
@@ -483,8 +500,22 @@ export function SpatialWorkspace({
     [],
   );
 
+  const closeChatPane = useCallback((paneId: string) => {
+    void workspaceRef.current?.closePane(paneId);
+  }, []);
+  const togglePaneMaximized = useCallback((paneId: string) => {
+    workspaceRef.current?.togglePaneMaximized(paneId);
+  }, []);
+
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
+      if (pane.surfaceKind === "empty-frame") {
+        return (
+          <div className="p-6 text-sm text-muted-foreground">
+            Choose a chat in the sidebar to reopen it.
+          </div>
+        );
+      }
       if (pane.surfaceKind === "empty") {
         return (
           <EmptyPane
@@ -517,10 +548,14 @@ export function SpatialWorkspace({
           visible={state.visible}
           paneId={pane.paneId}
           onNavigateAway={navigateAway}
+          maximized={state.maximized}
+          onAddPane={addPaneBeside}
+          onClosePane={closeChatPane}
+          onToggleMaximized={togglePaneMaximized}
         />
       );
     },
-    [choose, navigateAway, navigateFromTerminal],
+    [addPaneBeside, choose, closeChatPane, navigateAway, navigateFromTerminal, togglePaneMaximized],
   );
 
   // A valid picture remains a visual cover while the same thread refreshes.
@@ -546,62 +581,65 @@ export function SpatialWorkspace({
   );
 
   return (
-    <div
-      ref={stageRef}
-      inert={!active}
-      className="spatial-workspace relative flex h-full w-full flex-col"
-    >
-      <WorkspaceToolbar
-        focusAnchor={focusAnchor}
-        onAdd={addPane}
-        onToggleAnchor={toggleFocusAnchor}
-        preferences={preferences}
-        onPreferencesChange={updatePreferences}
-        onResizePanes={resizePanes}
-        controlsRef={setControlsContainer}
-        shortcuts={SHORTCUTS}
-      />
-      {initialPanes && lifecycle ? (
-        <SpatialWorkspaceActiveContext value={active}>
-          <PaneLifecycleContext value={lifecycle}>
-            <PaneSnapshotContext value={paneSnapshots}>
-              <BrowserSurfaceProjectionContext value={browserProjection}>
-                <OnirigiriWorkspace
-                  ref={workspaceRef}
-                  ariaLabel="Onirigiri for T3 Code"
-                  className="min-h-0 flex-1"
-                  cursorRunway={0}
-                  cursorTargets="panes"
-                  desktopControlsContainer={controlsContainer}
-                  focusAnchor={focusAnchor}
-                  getPanePicture={getPanePicture}
-                  getPanePresentation={getPanePresentation}
-                  gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
-                  initialPanes={initialPanes}
-                  liveContent
-                  onFocusedPaneFrame={onFocusedPaneFrame}
-                  onLayoutChange={onLayoutChange}
-                  onPaneClose={onPaneClose}
-                  onPanePictureCaptured={onPanePictureCaptured}
-                  {...(overviewCardWidth === undefined
-                    ? {}
-                    : {
-                        overviewCardMaxWidthPx: overviewCardWidth,
-                        overviewCardMinWidthPx: overviewCardWidth,
-                      })}
-                  paneDefaults={paneDefaults}
-                  renderPane={renderPane}
-                  renderPanePlaceholder={renderPanePlaceholder}
-                  restPictureFade
-                  shortcutScope={active ? "application" : "workspace"}
-                  shortcuts={SHORTCUTS}
-                  workspaceId={WORKSPACE_ID}
-                />
-              </BrowserSurfaceProjectionContext>
-            </PaneSnapshotContext>
-          </PaneLifecycleContext>
-        </SpatialWorkspaceActiveContext>
-      ) : null}
-    </div>
+    <WorkspaceTooltips>
+      <div
+        ref={stageRef}
+        inert={!active}
+        className="spatial-workspace relative flex h-full w-full flex-col"
+      >
+        <WorkspaceToolbar
+          focusAnchor={focusAnchor}
+          onAdd={addPane}
+          onToggleAnchor={toggleFocusAnchor}
+          preferences={preferences}
+          onPreferencesChange={updatePreferences}
+          onResizePanes={resizePanes}
+          controlsRef={setControlsContainer}
+          shortcuts={SHORTCUTS}
+        />
+        {initialPanes && lifecycle ? (
+          <SpatialWorkspaceActiveContext value={active}>
+            <PaneLifecycleContext value={lifecycle}>
+              <PaneSnapshotContext value={paneSnapshots}>
+                <BrowserSurfaceProjectionContext value={browserProjection}>
+                  <OnirigiriWorkspace
+                    ref={workspaceRef}
+                    ariaLabel="Onirigiri for T3 Code"
+                    className="min-h-0 flex-1"
+                    chromeComponents={WORKSPACE_CHROME}
+                    cursorRunway={0}
+                    cursorTargets="panes"
+                    desktopControlsContainer={controlsContainer}
+                    focusAnchor={focusAnchor}
+                    getPanePicture={getPanePicture}
+                    getPanePresentation={getPanePresentation}
+                    gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
+                    initialPanes={initialPanes}
+                    liveContent
+                    onFocusedPaneFrame={onFocusedPaneFrame}
+                    onLayoutChange={onLayoutChange}
+                    onPaneClose={onPaneClose}
+                    onPanePictureCaptured={onPanePictureCaptured}
+                    {...(overviewCardWidth === undefined
+                      ? {}
+                      : {
+                          overviewCardMaxWidthPx: overviewCardWidth,
+                          overviewCardMinWidthPx: overviewCardWidth,
+                        })}
+                    paneDefaults={paneDefaults}
+                    renderPane={renderPane}
+                    renderPanePlaceholder={renderPanePlaceholder}
+                    restPictureFade
+                    shortcutScope={active ? "application" : "workspace"}
+                    shortcuts={SHORTCUTS}
+                    workspaceId={WORKSPACE_ID}
+                  />
+                </BrowserSurfaceProjectionContext>
+              </PaneSnapshotContext>
+            </PaneLifecycleContext>
+          </SpatialWorkspaceActiveContext>
+        ) : null}
+      </div>
+    </WorkspaceTooltips>
   );
 }

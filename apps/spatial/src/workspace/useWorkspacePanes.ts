@@ -79,6 +79,7 @@ function useSidebarProjectGroups() {
 export function useWorkspacePanes(
   layoutMode: WorkspaceLayoutMode,
   toolPanes: readonly ToolPane[],
+  dismissedPaneIds: ReadonlySet<string>,
 ): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const threads = useThreadShells();
@@ -161,15 +162,19 @@ export function useWorkspacePanes(
             data,
           };
           const added = toolPanesByThread.get(pane.threadId) ?? [];
-          return [threadPane, ...added.map((tool) => toolPaneDefinition(tool, thread.title))];
+          return [
+            ...(dismissedPaneIds.has(paneId) ? [] : [threadPane]),
+            ...added.map((tool) => toolPaneDefinition(tool, thread.title)),
+          ];
         }),
-      );
+      )
+      .filter((row) => row.length > 0);
     const planes = layoutMode === "strip" ? [rows.flat()] : rows;
     const panes = planes.flatMap((plane, planeIndex) =>
       plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
     );
-    return panes.length > 0 ? panes : null;
-  }, [arrangement.layout, groups, layoutMode, threads, toolPanes]);
+    return panes;
+  }, [arrangement.layout, dismissedPaneIds, groups, layoutMode, threads, toolPanes]);
 }
 
 const TOOL_TITLES: Record<ToolPane["kind"], string> = {
