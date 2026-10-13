@@ -3,10 +3,13 @@ import { type ReactNode, useMemo } from "react";
 import {
   attachmentSurface,
   browserSurface,
+  closeTerminalSurface,
   deviceSurface,
-  fileSurface,
+  openFileSurface,
   pullRequestSurface,
+  renameDeviceSurface,
   singletonSurface,
+  splitTerminalSurface,
   terminalSurface,
   type RightPanelSurface,
 } from "@t3tools/web/src/rightPanelStore";
@@ -109,6 +112,7 @@ export function createSpatialSurfaceNavigation(
     getUserActionRevision: controller.getUserActionRevision,
     openProactive(ref, surface, expectedRevision) {
       if (controller.getUserActionRevision(ref) !== expectedRevision) return false;
+      // Automatic additions keep the focused pane, including a PR the user is reading.
       open(ref, surface, true);
       return true;
     },
@@ -132,28 +136,14 @@ export function createSpatialSurfaceNavigation(
     openDevice: (ref, target, automatic = false) => open(ref, deviceSurface(target), automatic),
     renameDevice: (ref, id, title) =>
       mutate(ref, id, (surface) =>
-        surface.kind === "device"
-          ? { ...surface, title: title.trim() || surface.target?.name || "Device" }
-          : surface,
+        surface.kind === "device" ? renameDeviceSurface(surface, title) : surface,
       ),
     openFile(ref, requestedPath, line) {
-      if (requestedPath === ".") {
-        open(ref, singletonSurface("files"));
-        return;
-      }
-      const path = /^[A-Za-z]:\/+$/u.test(requestedPath)
-        ? requestedPath
-        : requestedPath.replace(/\/+$/u, "") || requestedPath;
-      const existing = find(ref, `file:${path}`);
-      const surface = existing && toolPaneSurface(existing);
-      open(
-        ref,
-        fileSurface(
-          path,
-          line !== undefined && Number.isFinite(line) ? Math.max(1, Math.trunc(line)) : null,
-          (surface?.kind === "file" ? surface.revealRequestId : 0) + 1,
-        ),
-      );
+      const surfaces = controller.getPanes().flatMap((pane) => {
+        const surface = belongs(ref, pane) && !isPaneClosing(pane.paneId) && toolPaneSurface(pane);
+        return surface ? [surface] : [];
+      });
+      open(ref, openFileSurface(requestedPath, line, surfaces));
     },
     openAttachment: (ref, attachment) => open(ref, attachmentSurface(attachment)),
     openPullRequest: (ref, target) => open(ref, pullRequestSurface(target)),
@@ -161,12 +151,7 @@ export function createSpatialSurfaceNavigation(
     splitTerminal: (ref, id, terminalId, direction = "horizontal") =>
       mutate(ref, id, (surface) =>
         surface.kind === "terminal"
-          ? {
-              ...surface,
-              terminalIds: [...new Set([...surface.terminalIds, terminalId])],
-              activeTerminalId: terminalId,
-              splitDirection: direction,
-            }
+          ? splitTerminalSurface(surface, terminalId, direction)
           : surface,
       ),
     activateTerminal: (ref, id, terminalId) =>
@@ -179,16 +164,9 @@ export function createSpatialSurfaceNavigation(
       const pane = find(ref, id);
       const surface = pane && toolPaneSurface(pane);
       if (surface?.kind !== "terminal") return;
-      const remaining = surface.terminalIds.filter((id) => id !== terminalId);
-      if (!remaining.length) closeSurface(ref, id);
-      else
-        mutate(ref, id, () => ({
-          ...surface,
-          terminalIds: remaining,
-          activeTerminalId: remaining.includes(surface.activeTerminalId)
-            ? surface.activeTerminalId
-            : remaining[0]!,
-        }));
+      const remaining = closeTerminalSurface(surface, terminalId);
+      if (remaining === null) closeSurface(ref, id);
+      else mutate(ref, id, () => remaining);
     },
     closeSurface,
     close(ref) {

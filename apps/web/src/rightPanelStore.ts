@@ -205,7 +205,7 @@ export const fileSurface = (
   relativePath: string,
   revealLine: number | null,
   revealRequestId: number,
-): RightPanelSurface => ({
+): Extract<RightPanelSurface, { kind: "file" }> => ({
   id: `file:${relativePath}`,
   kind: "file",
   relativePath,
@@ -231,6 +231,60 @@ export const terminalSurface = (
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
 });
+
+export function splitTerminalSurface(
+  surface: Extract<RightPanelSurface, { kind: "terminal" }>,
+  terminalId: string,
+  direction: "horizontal" | "vertical" = "horizontal",
+): Extract<RightPanelSurface, { kind: "terminal" }> {
+  const { splitDirection: _splitDirection, ...baseSurface } = surface;
+  return {
+    ...baseSurface,
+    terminalIds: surface.terminalIds.includes(terminalId)
+      ? surface.terminalIds
+      : [...surface.terminalIds, terminalId],
+    activeTerminalId: terminalId,
+    ...(direction === "vertical" ? { splitDirection: "vertical" as const } : {}),
+  };
+}
+
+export function closeTerminalSurface(
+  surface: Extract<RightPanelSurface, { kind: "terminal" }>,
+  terminalId: string,
+): Extract<RightPanelSurface, { kind: "terminal" }> | null {
+  const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
+  if (terminalIds.length === 0) return null;
+  return {
+    ...surface,
+    terminalIds,
+    activeTerminalId:
+      surface.activeTerminalId === terminalId ? terminalIds.at(-1)! : surface.activeTerminalId,
+  };
+}
+
+export function renameDeviceSurface(
+  surface: Extract<RightPanelSurface, { kind: "device" }>,
+  title: string,
+): Extract<RightPanelSurface, { kind: "device" }> {
+  return { ...surface, title: title.trim() || surface.target?.name || "Device" };
+}
+
+export function openFileSurface(
+  requestedPath: string,
+  line: number | undefined,
+  surfaces: readonly RightPanelSurface[],
+): Extract<RightPanelSurface, { kind: "file" | "files" }> {
+  if (requestedPath === ".") return { id: "files", kind: "files" };
+  // Workspace entry paths use '/', including on Windows.
+  const relativePath = /^[A-Za-z]:\/+$/.test(requestedPath)
+    ? requestedPath
+    : requestedPath.replace(/\/+$/, "") || requestedPath;
+  const existing = surfaces.find(
+    (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
+      surface.id === `file:${relativePath}` && surface.kind === "file",
+  );
+  return fileSurface(relativePath, normalizeRevealLine(line), (existing?.revealRequestId ?? 0) + 1);
+}
 
 export function deviceSurface(
   target: DeviceTabTarget,
@@ -658,7 +712,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ...current,
             surfaces: current.surfaces.map((surface) =>
               surface.id === surfaceId && surface.kind === "device"
-                ? { ...surface, title: title.trim() || surface.target?.name || "Device" }
+                ? renameDeviceSurface(surface, title)
                 : surface,
             ),
           })),
@@ -691,26 +745,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       openFile: (ref, requestedPath, line) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
-            if (requestedPath === ".") {
-              return upsertSurface(current, singletonSurface("files"));
-            }
-            // Workspace entry paths use '/', including on Windows.
-            const relativePath = /^[A-Za-z]:\/+$/.test(requestedPath)
-              ? requestedPath
-              : requestedPath.replace(/\/+$/, "") || requestedPath;
+            const surface = openFileSurface(requestedPath, line, current.surfaces);
+            if (surface.kind === "files") return upsertSurface(current, surface);
             const withoutStandaloneExplorer = current.surfaces.filter(
-              (surface) => surface.kind !== "files",
+              (entry) => entry.kind !== "files",
             );
-            const surfaceId = `file:${relativePath}` as const;
-            const existing = withoutStandaloneExplorer.find(
-              (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
-                surface.id === surfaceId && surface.kind === "file",
-            );
-            const surface = fileSurface(
-              relativePath,
-              normalizeRevealLine(line),
-              (existing?.revealRequestId ?? 0) + 1,
-            );
+            const existing = withoutStandaloneExplorer.some((entry) => entry.id === surface.id);
             return {
               isOpen: true,
               activeSurfaceId: surface.id,
@@ -748,15 +788,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             activeSurfaceId: surfaceId,
             surfaces: current.surfaces.map((surface) => {
               if (surface.id !== surfaceId || surface.kind !== "terminal") return surface;
-              const { splitDirection: _splitDirection, ...baseSurface } = surface;
-              return {
-                ...baseSurface,
-                terminalIds: surface.terminalIds.includes(terminalId)
-                  ? surface.terminalIds
-                  : [...surface.terminalIds, terminalId],
-                activeTerminalId: terminalId,
-                ...(direction === "vertical" ? { splitDirection: "vertical" as const } : {}),
-              };
+              return splitTerminalSurface(surface, terminalId, direction);
             }),
           })),
         ),
@@ -781,8 +813,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               (entry) => entry.id === surfaceId && entry.kind === "terminal",
             );
             if (!surface || surface.kind !== "terminal") return current;
-            const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
-            if (terminalIds.length === 0) {
+            const remaining = closeTerminalSurface(surface, terminalId);
+            if (remaining === null) {
               const index = current.surfaces.findIndex((entry) => entry.id === surfaceId);
               const surfaces = current.surfaces.filter((entry) => entry.id !== surfaceId);
               const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
@@ -799,16 +831,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             return {
               ...current,
               surfaces: current.surfaces.map((entry) =>
-                entry.id === surfaceId && entry.kind === "terminal"
-                  ? {
-                      ...entry,
-                      terminalIds,
-                      activeTerminalId:
-                        entry.activeTerminalId === terminalId
-                          ? (terminalIds.at(-1) ?? terminalIds[0]!)
-                          : entry.activeTerminalId,
-                    }
-                  : entry,
+                entry.id === surfaceId && entry.kind === "terminal" ? remaining : entry,
               ),
             };
           }),

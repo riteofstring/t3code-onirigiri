@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
+import { closeTerminalSurface } from "@t3tools/web/src/rightPanelStore";
 import { previewEnvironment } from "@t3tools/web/src/state/preview";
 import { readThreadPreviewState } from "@t3tools/web/src/previewStateStore";
 import { closePreviewSession } from "@t3tools/web/src/components/preview/closePreviewSession";
@@ -627,14 +628,7 @@ export function SpatialWorkspace({
             if (closed._tag !== "Success") return false;
             toolController.updateSurface(tool.paneId, (current) => {
               if (current.kind !== "terminal") return current;
-              const remaining = current.terminalIds.filter((id) => id !== terminalId);
-              return {
-                ...current,
-                terminalIds: remaining,
-                activeTerminalId: remaining.includes(current.activeTerminalId)
-                  ? current.activeTerminalId
-                  : (remaining[0] ?? current.activeTerminalId),
-              };
+              return closeTerminalSurface(current, terminalId) ?? current;
             });
           }
         }

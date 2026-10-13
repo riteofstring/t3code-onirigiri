@@ -300,6 +300,41 @@ it("retains only the failed terminal after partial group closure and retries wit
   expect(group()).toBeNull();
 });
 
+it("selects the last remaining terminal after partial outer closure removes the active one", async () => {
+  const thirdId = "onirigiri-pane-third";
+  const pane = stored()[0]!;
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify([
+      {
+        ...pane,
+        surface: { ...terminalSurface(firstId), terminalIds: [firstId, secondId, thirdId] },
+      },
+    ]),
+  );
+  fixture.closeTerminal
+    .mockResolvedValueOnce({ _tag: "Success" })
+    .mockResolvedValueOnce({ _tag: "Failure" });
+  await mount();
+  await clickClose();
+  expect(toolPaneSurface(stored()[0]!)).toMatchObject({
+    terminalIds: [secondId, thirdId],
+    activeTerminalId: thirdId,
+  });
+  expect(JSON.parse(group()!.querySelector("output")!.textContent!)).toMatchObject({
+    terminalIds: [secondId, thirdId],
+    activeTerminalId: thirdId,
+  });
+  await clickClose();
+  expect(fixture.closeTerminal.mock.calls.map(([request]) => request.input.terminalId)).toEqual([
+    firstId,
+    secondId,
+    secondId,
+    thirdId,
+  ]);
+  expect(stored()).toEqual([]);
+});
+
 it("ignores duplicate close requests during both confirmation and the terminal RPC", async () => {
   const confirmation = deferred<boolean>();
   const closing = deferred<{ _tag: "Success" }>();

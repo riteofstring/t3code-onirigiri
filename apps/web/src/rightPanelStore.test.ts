@@ -880,6 +880,26 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("returns to horizontal layout and selects the last terminal when the active split closes", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "one");
+    store.splitTerminal(refA, "terminal:one", "two", "vertical");
+    store.splitTerminal(refA, "terminal:one", "three");
+    store.splitTerminal(refA, "terminal:one", "two");
+    store.closeTerminal(refA, "terminal:one", "two");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "terminal:one",
+      kind: "terminal",
+      resourceId: "one",
+      terminalIds: ["one", "three"],
+      activeTerminalId: "three",
+    });
+    store.closeTerminal(refA, "terminal:one", "one");
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({ terminalIds: ["three"], activeTerminalId: "three" });
+  });
+
   it("closing the final terminal pane removes its surface and closes the panel", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");

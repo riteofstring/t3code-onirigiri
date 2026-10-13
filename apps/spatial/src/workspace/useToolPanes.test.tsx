@@ -5,7 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { useToolPanes } from "./useToolPanes";
 import { createSpatialSurfaceNavigation } from "./SpatialSurfaceHost";
-import { terminalSurface, type RightPanelSurface } from "@t3tools/web/src/rightPanelStore";
+import {
+  terminalSurface,
+  useRightPanelStore,
+  selectThreadRightPanelState,
+  type RightPanelSurface,
+} from "@t3tools/web/src/rightPanelStore";
 import {
   selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
@@ -35,6 +40,7 @@ const thread = (threadId: string) => ({
 });
 
 beforeEach(() => {
+  useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", {
     localStorage: {
@@ -174,7 +180,8 @@ it("keeps file reveal state and terminal split changes on their own pane", async
   });
   const focused = vi.fn();
   const navigation = () => createSpatialSurfaceNavigation(hook, paneId, focused);
-  await act(() => navigation().open(thread("t1"), "files"));
+  await act(() => navigation().openFile(thread("t1"), "."));
+  expect(hook.toolPanes).toMatchObject([{ paneId, surface: { id: "files", kind: "files" } }]);
   await act(() => navigation().openFile(thread("t1"), "src/app.ts", 20));
   await act(() => navigation().openFile(thread("t1"), "src/app.ts", 36));
   expect(hook.toolPanes).toMatchObject([
@@ -208,6 +215,28 @@ it("rejects late proactive openings after a user choice without moving focus", a
   expect(focused).toHaveBeenCalledTimes(1);
 });
 
+it("adds a proactive diff beside a pull request without moving focus", async () => {
+  await mount();
+  const ref = thread("t1");
+  const focused = vi.fn();
+  const navigation = createSpatialSurfaceNavigation(hook, "thread-source", focused);
+  await act(() =>
+    navigation.openPullRequest(ref, { projectId: "p", repository: "owner/repo", number: 12 }),
+  );
+  const pullRequest = hook.toolPanes[0]!;
+  const revision = navigation.getUserActionRevision(ref);
+  let accepted = false;
+  await act(() => {
+    accepted = navigation.openProactive(ref, { kind: "diff", id: "diff" }, revision);
+  });
+  expect(accepted).toBe(true);
+  expect(hook.toolPanes).toHaveLength(2);
+  expect(hook.toolPanes).toContainEqual(pullRequest);
+  expect(hook.toolPanes.find((pane) => pane.surface?.kind === "diff")).toBeDefined();
+  expect(focused.mock.calls).toEqual([[pullRequest.paneId]]);
+  expect(navigation.getUserActionRevision(ref)).toBe(revision);
+});
+
 it("redocks only the matching floating resource and recovers a remotely closed browser in place", async () => {
   await mount();
   const focused = vi.fn();
@@ -234,4 +263,117 @@ it("redocks only the matching floating resource and recovers a remotely closed b
   expect(hook.toolPanes).toHaveLength(2);
   expect(focused).not.toHaveBeenCalled();
   expect(navigation.getUserActionRevision(thread("t1"))).toBe(revision);
+});
+
+it("matches native terminal selection and split layout while closing a three-terminal group", async () => {
+  await mount();
+  const ref = thread("t1");
+  const native = useRightPanelStore.getState();
+  const navigation = createSpatialSurfaceNavigation(hook, "thread-source", vi.fn());
+  await act(() => {
+    native.openTerminal(ref, "one");
+    navigation.openTerminal(ref, "one");
+    native.splitTerminal(ref, "terminal:one", "two", "vertical");
+    navigation.splitTerminal(ref, "terminal:one", "two", "vertical");
+    native.splitTerminal(ref, "terminal:one", "three", "horizontal");
+    navigation.splitTerminal(ref, "terminal:one", "three", "horizontal");
+    native.activateTerminal(ref, "terminal:one", "two");
+    navigation.activateTerminal(ref, "terminal:one", "two");
+    native.closeTerminal(ref, "terminal:one", "two");
+    navigation.closeTerminal(ref, "terminal:one", "two");
+  });
+  const expected = [
+    {
+      id: "terminal:one",
+      kind: "terminal",
+      resourceId: "one",
+      terminalIds: ["one", "three"],
+      activeTerminalId: "three",
+    },
+  ];
+  expect(hook.toolPanes.map((pane) => pane.surface)).toEqual(expected);
+  expect(
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces,
+  ).toEqual(expected);
+  await act(() => {
+    native.closeTerminal(ref, "terminal:one", "one");
+    navigation.closeTerminal(ref, "terminal:one", "one");
+  });
+  expect(hook.toolPanes[0]?.surface).toMatchObject({
+    terminalIds: ["three"],
+    activeTerminalId: "three",
+  });
+  await act(() => {
+    native.closeTerminal(ref, "terminal:one", "three");
+    navigation.closeTerminal(ref, "terminal:one", "three");
+  });
+  expect(hook.toolPanes).toEqual([]);
+  expect(
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces,
+  ).toEqual([]);
+});
+
+it.each([
+  { first: "docs///", path: "docs", line: 0, expectedLine: 1 },
+  { first: "C:/", path: "C:/", line: 8.75, expectedLine: 8 },
+  { first: "/", path: "/", line: Number.NaN, expectedLine: null },
+  {
+    first: " notes/file ",
+    path: " notes/file ",
+    line: Number.POSITIVE_INFINITY,
+    expectedLine: null,
+  },
+])(
+  "matches native file identity and repeated line reveal for $first",
+  async ({ first, path, line, expectedLine }) => {
+    await mount();
+    const ref = thread("t1");
+    const native = useRightPanelStore.getState();
+    const navigation = createSpatialSurfaceNavigation(hook, "thread-source", vi.fn());
+    await act(() => {
+      native.openFile(ref, first, 3);
+      navigation.openFile(ref, first, 3);
+      native.openFile(ref, path, line);
+      navigation.openFile(ref, path, line);
+    });
+    const expected = [
+      {
+        id: `file:${path}`,
+        kind: "file",
+        relativePath: path,
+        revealLine: expectedLine,
+        revealRequestId: 2,
+      },
+    ];
+    expect(hook.toolPanes.map((pane) => pane.surface)).toEqual(expected);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces,
+    ).toEqual(expected);
+  },
+);
+
+it("matches native device title trimming and fallback without changing the device resource", async () => {
+  await mount();
+  const ref = thread("t1");
+  const native = useRightPanelStore.getState();
+  const navigation = createSpatialSurfaceNavigation(hook, "thread-source", vi.fn());
+  const target = { hostId: "local", deviceId: "phone", platform: "ios", name: "Phone" } as const;
+  await act(() => {
+    native.openDevice(ref, target);
+    navigation.openDevice(ref, target);
+    native.renameDevice(ref, "device:local:phone", "  Test phone  ");
+    navigation.renameDevice(ref, "device:local:phone", "  Test phone  ");
+  });
+  expect(hook.toolPanes[0]?.surface).toMatchObject({ title: "Test phone", target });
+  expect(hook.toolPanes.map((pane) => pane.surface)).toEqual(
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces,
+  );
+  await act(() => {
+    native.renameDevice(ref, "device:local:phone", "  ");
+    navigation.renameDevice(ref, "device:local:phone", "  ");
+  });
+  expect(hook.toolPanes[0]?.surface).toMatchObject({ title: "Phone", target });
+  expect(hook.toolPanes.map((pane) => pane.surface)).toEqual(
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces,
+  );
 });
