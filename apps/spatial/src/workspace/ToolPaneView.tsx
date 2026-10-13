@@ -2,7 +2,7 @@ import {
   useOnirigiriPaneInteractive,
   type OnirigiriWorkspaceHandle,
 } from "@riteofstring/onirigiri";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { ChatViewActivityContext } from "@t3tools/web/src/components/chatViewActivity";
 import { RightPanelEmptyState } from "@t3tools/web/src/components/RightPanelTabs";
 import {
@@ -94,6 +94,13 @@ export function ToolPaneView({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedFilePending, setSelectedFilePending] = useState(false);
+  const selectedFilePath = surface?.kind === "file" ? surface.relativePath : null;
+  const handleFilePendingChange = useCallback(
+    (path: string, pending: boolean) => {
+      if (path === selectedFilePath) setSelectedFilePending(pending);
+    },
+    [selectedFilePath],
+  );
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [activity] = useState(() => createPaneActivity(active));
   const rootRef = useRef<HTMLDivElement>(null);
@@ -343,10 +350,7 @@ export function ToolPaneView({
       : {}),
     onDismissDeviceSetup: onClose,
     onOpenFile: (path) => navigation.openFile(threadRef, path),
-    onFilePendingChange: (path, pending) => {
-      if (surface?.kind === "file" && surface.relativePath === path)
-        setSelectedFilePending(pending);
-    },
+    onFilePendingChange: handleFilePendingChange,
   };
 
   return (

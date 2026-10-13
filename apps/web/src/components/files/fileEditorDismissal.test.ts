@@ -57,7 +57,7 @@ beforeEach(() => {
   });
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     measureText: (text: string) => ({ width: text.length * 8 }),
-  } as unknown as CanvasRenderingContext2D);
+  } as unknown as ReturnType<HTMLCanvasElement["getContext"]>);
 });
 
 afterEach(() => {
