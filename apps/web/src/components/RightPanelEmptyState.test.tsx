@@ -117,7 +117,56 @@ it("keeps typing focus when autofocus is disabled and retains arrow selection", 
   composer.remove();
 });
 
-it("opens the selected native browser profile and blocks launcher letters while its menu is open", async () => {
+it("explains unavailable Browser access and skips disabled rows while enabled options remain usable", async () => {
+  const props = chooserProps();
+  props.browserAvailable = false;
+  const opened: string[] = [];
+  props.onAddTerminal = () => opened.push("terminal");
+  props.onAddFiles = () => opened.push("files");
+  props.onAddAgents = () => opened.push("agents");
+  props.onAddDevice = () => opened.push("device");
+  await act(() =>
+    root.render(
+      <TooltipProvider>
+        <RightPanelEmptyState {...props} />
+      </TooltipProvider>,
+    ),
+  );
+  const browser = [...host.querySelectorAll<HTMLElement>('[aria-disabled="true"]')].find((row) =>
+    row.textContent?.startsWith("Browser"),
+  )!;
+  expect(browser.textContent).toContain("Only available in the desktop app.");
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Open browser in a profile"]')).toBeNull();
+  await act(() => {
+    browser.focus();
+    browser.click();
+  });
+  await key(browser, "Enter");
+  expect((await key(browser, "b")).defaultPrevented).toBe(false);
+  expect(props.onAddBrowser).not.toHaveBeenCalled();
+  expect(props.onAddBrowserInProfile).not.toHaveBeenCalled();
+  expect(opened).toEqual([]);
+
+  const launcher = host.querySelector<HTMLElement>('[aria-label="Open a surface"]')!;
+  launcher.focus();
+  for (let index = 0; index < 4; index++) {
+    await key(launcher, "ArrowDown");
+    await key(launcher, "Enter");
+  }
+  expect(opened).toEqual(["terminal", "files", "agents", "device"]);
+  expect(props.onAddDiff).not.toHaveBeenCalled();
+  expect(props.onAddPullRequest).not.toHaveBeenCalled();
+  expect(props.onAddPullRequests).not.toHaveBeenCalled();
+  await act(() => {
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent?.startsWith("Terminal"))!
+      .click();
+  });
+  expect(opened).toEqual(["terminal", "files", "agents", "device", "terminal"]);
+});
+
+it("opens the default Browser from the keyboard and a chosen profile from its menu", async () => {
   const props = chooserProps();
   await act(() =>
     root.render(
@@ -126,6 +175,11 @@ it("opens the selected native browser profile and blocks launcher letters while 
       </TooltipProvider>,
     ),
   );
+  const launcher = host.querySelector<HTMLElement>('[aria-label="Open a surface"]')!;
+  await key(launcher, "ArrowDown");
+  await key(launcher, "Enter");
+  expect(props.onAddBrowser).toHaveBeenCalledTimes(1);
+  expect(props.onAddBrowserInProfile).not.toHaveBeenCalled();
   await act(() => {
     host.querySelector<HTMLButtonElement>('[aria-label="Open browser in a profile"]')!.click();
   });
@@ -137,5 +191,12 @@ it("opens the selected native browser profile and blocks launcher letters while 
   expect(props.onAddTerminal).not.toHaveBeenCalled();
   await act(() => work.click());
   expect(props.onAddBrowserInProfile).toHaveBeenCalledExactlyOnceWith("work");
-  expect(props.onAddBrowser).not.toHaveBeenCalled();
+  expect(props.onAddBrowser).toHaveBeenCalledTimes(1);
+  await act(() => {
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent?.startsWith("Browser"))!
+      .click();
+  });
+  expect(props.onAddBrowser).toHaveBeenCalledTimes(2);
+  expect(props.onAddBrowserInProfile).toHaveBeenCalledTimes(1);
 });
