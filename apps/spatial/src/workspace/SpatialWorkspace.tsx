@@ -583,8 +583,12 @@ export function SpatialWorkspace({
                   onLayoutChange={onLayoutChange}
                   onPaneClose={onPaneClose}
                   onPanePictureCaptured={onPanePictureCaptured}
-                  overviewCardMaxWidthPx={overviewCardWidth}
-                  overviewCardMinWidthPx={overviewCardWidth}
+                  {...(overviewCardWidth === undefined
+                    ? {}
+                    : {
+                        overviewCardMaxWidthPx: overviewCardWidth,
+                        overviewCardMinWidthPx: overviewCardWidth,
+                      })}
                   paneDefaults={paneDefaults}
                   renderPane={renderPane}
                   renderPanePlaceholder={renderPanePlaceholder}
