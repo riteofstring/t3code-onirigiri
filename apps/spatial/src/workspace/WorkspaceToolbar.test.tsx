@@ -29,6 +29,7 @@ function Workspace() {
       {controls && createPortal(<button>Overview</button>, controls)}
       <output>{JSON.stringify(preferences)}</output>
       <button>Outside</button>
+      <textarea aria-label="Terminal input" />
     </WorkspaceTooltips>
   );
 }
@@ -72,6 +73,14 @@ async function key(target: HTMLElement, value: string) {
   return event;
 }
 
+async function pointer(type: "pointerenter" | "pointerleave", pointerType = "mouse") {
+  await act(() => {
+    const event = new Event(type);
+    Object.defineProperty(event, "pointerType", { value: pointerType });
+    host.querySelector("[data-spatial-workspace-controls]")!.dispatchEvent(event);
+  });
+}
+
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
@@ -86,6 +95,7 @@ afterEach(async () => {
   host.remove();
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -136,7 +146,7 @@ it("discards invalid heights and Escape cancels a draft before restoring focus",
   expect(document.activeElement).toBe(button("Workspace controls"));
 });
 
-it("handles Escape from portalled controls and closes when focus leaves", async () => {
+it("handles Escape from portalled controls and remembers Advanced after hiding", async () => {
   await click("Workspace controls");
   await act(() => button("Overview").focus());
   expect((await key(button("Overview"), "Escape")).defaultPrevented).toBe(true);
@@ -146,29 +156,62 @@ it("handles Escape from portalled controls and closes when focus leaves", async 
   await act(() => button("Outside").focus());
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
   await click("Workspace controls");
+  expect(button("Advanced workspace controls").getAttribute("aria-expanded")).toBe("true");
+  await click("Advanced workspace controls");
+  await act(() => button("Outside").focus());
+  await click("Workspace controls");
   expect(button("Advanced workspace controls").getAttribute("aria-expanded")).toBe("false");
 });
 
 it("opens on mouse hover while touch opens by click and outside press dismisses", async () => {
-  const container = host.querySelector<HTMLElement>("[data-spatial-workspace-controls]")!;
-  const enter = (pointerType: string) => {
-    const event = new Event("pointerenter");
-    Object.defineProperty(event, "pointerType", { value: pointerType });
-    container.dispatchEvent(event);
-  };
-  await act(() => enter("touch"));
+  vi.useFakeTimers();
+  await pointer("pointerenter", "touch");
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
   await click("Workspace controls");
   await act(() => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
   await act(() => button("Outside").focus());
-  await act(() => enter("mouse"));
+  await pointer("pointerenter");
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
-  await act(() => {
-    const leave = new Event("pointerleave");
-    Object.defineProperty(leave, "pointerType", { value: "mouse" });
-    container.dispatchEvent(leave);
-  });
+  await pointer("pointerleave");
+  await act(() => vi.advanceTimersByTime(600));
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
+});
+
+it("allows brief mouse detours and keeps Advanced expanded when the toolbar returns", async () => {
+  vi.useFakeTimers();
+  await pointer("pointerenter");
+  await act(() => button("Advanced workspace controls").click());
+  await pointer("pointerleave");
+  await act(() => vi.advanceTimersByTime(400));
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
+  await pointer("pointerenter");
+  await act(() => vi.advanceTimersByTime(600));
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
+  await pointer("pointerleave");
+  await act(() => vi.advanceTimersByTime(600));
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
+  await pointer("pointerenter");
+  expect(button("Advanced workspace controls").getAttribute("aria-expanded")).toBe("true");
+});
+
+it("keeps hovered controls available when a terminal takes focus, including during the grace period", async () => {
+  vi.useFakeTimers();
+  const terminal = host.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Terminal input"]',
+  )!;
+  await pointer("pointerenter");
+  await act(() => button("Overview").focus());
+  await act(() => terminal.focus());
+  await act(() => vi.advanceTimersByTime(1000));
+  expect(document.activeElement).toBe(terminal);
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
+  await act(() => button("Overview").focus());
+  await pointer("pointerleave");
+  await act(() => terminal.focus());
+  await act(() => vi.advanceTimersByTime(400));
+  expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("true");
+  await act(() => vi.advanceTimersByTime(200));
   expect(button("Workspace controls").getAttribute("aria-expanded")).toBe("false");
 });
 

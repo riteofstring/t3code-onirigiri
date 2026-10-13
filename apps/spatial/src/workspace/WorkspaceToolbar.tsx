@@ -46,6 +46,7 @@ export function WorkspaceToolbar({
   const selectPopupRef = useRef<HTMLDivElement>(null);
   const mouseHoverRef = useRef(false);
   const pointerInsideRef = useRef(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusOnOpenRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -66,16 +67,40 @@ export function WorkspaceToolbar({
     .filter(Boolean)
     .join("; ");
 
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current === null) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
   const close = useCallback(() => {
+    cancelClose();
     const focused = document.activeElement;
     if (focused instanceof HTMLInputElement && containerRef.current?.contains(focused)) {
       focused.blur();
     }
     setOpen(false);
-    setAdvanced(false);
     setSelectOpen(false);
     selectOpenRef.current = false;
-  }, []);
+  }, [cancelClose]);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      if (pointerInsideRef.current || selectOpenRef.current) return;
+      const focused = document.activeElement;
+      if (
+        focused &&
+        (containerRef.current?.contains(focused) || selectPopupRef.current?.contains(focused)) &&
+        focused.matches(":focus-visible")
+      )
+        return;
+      close();
+    }, 600);
+  }, [cancelClose, close]);
+
+  useEffect(() => cancelClose, [cancelClose]);
 
   useLayoutEffect(() => {
     if (open && focusOnOpenRef.current) {
@@ -90,6 +115,7 @@ export function WorkspaceToolbar({
     const container = containerRef.current;
     if (!container) return;
     const enter = (event: PointerEvent) => {
+      cancelClose();
       mouseHoverRef.current = event.pointerType === "mouse";
       pointerInsideRef.current = true;
       if (event.pointerType === "mouse") setOpen(true);
@@ -99,16 +125,16 @@ export function WorkspaceToolbar({
       (container.contains(target) || selectPopupRef.current?.contains(target));
     const leave = (event: PointerEvent) => {
       pointerInsideRef.current = false;
-      if (
-        event.pointerType === "mouse" &&
-        !selectOpenRef.current &&
-        (!contains(document.activeElement) || !document.activeElement?.matches(":focus-visible"))
-      )
-        close();
+      if (event.pointerType === "mouse") scheduleClose();
     };
     const blur = (event: FocusEvent) => {
-      if (event.relatedTarget === null && pointerInsideRef.current) return;
-      if (!selectOpenRef.current && !contains(event.relatedTarget)) {
+      if (pointerInsideRef.current && (mouseHoverRef.current || event.relatedTarget === null))
+        return;
+      if (
+        closeTimerRef.current === null &&
+        !selectOpenRef.current &&
+        !contains(event.relatedTarget)
+      ) {
         close();
       }
     };
@@ -141,7 +167,7 @@ export function WorkspaceToolbar({
       container.removeEventListener("keydown", keyDown);
       document.removeEventListener("pointerdown", dismiss, true);
     };
-  }, [advanced, close, open]);
+  }, [advanced, cancelClose, close, open, scheduleClose]);
 
   return (
     <div
@@ -196,11 +222,8 @@ export function WorkspaceToolbar({
                     onOpenChange={(next) => {
                       selectOpenRef.current = next;
                       setSelectOpen(next);
-                      if (!next && mouseHoverRef.current && !pointerInsideRef.current) {
-                        queueMicrotask(() => {
-                          if (!document.activeElement?.matches(":focus-visible")) close();
-                        });
-                      }
+                      if (next) cancelClose();
+                      else if (mouseHoverRef.current && !pointerInsideRef.current) scheduleClose();
                     }}
                     onValueChange={(value) => {
                       const choice = overviewZoomChoices.find((option) => option.value === value);
