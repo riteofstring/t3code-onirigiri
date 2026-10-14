@@ -744,7 +744,7 @@ it("starts the next queued preparation only after the deferred view commits", as
     "p0",
   );
   lifecycle.setPictures(() => true);
-  // Let the neighbor's settle timer and idle mount run.
+  lifecycle.setVisible("p1", true);
   vi.advanceTimersByTime(650);
   expect(lifecycle.isMounted("p1")).toBe(true);
   lifecycle.setPictures(() => false);
@@ -752,13 +752,13 @@ it("starts the next queued preparation only after the deferred view commits", as
   // Rebuild the wanted queue while the first view is still waiting for detail.
   vi.advanceTimersByTime(250);
   paneId = "p1";
-  await render();
+  await render(false, true, true);
   expect(container.querySelector("textarea")).toBeNull();
   expect(lifecycle.isMounted("p2")).toBe(false);
 
   state.detail = { updatedAt: "u1" };
   state.status = "live";
-  await render();
+  await render(false, true, true);
   expect(container.querySelector("textarea")).not.toBeNull();
   await act(() => vi.advanceTimersByTimeAsync(32));
   expect(state.engineReady).toBe(true);
@@ -776,6 +776,7 @@ it.each(["route", "timeline", "suspended content"])(
       "p0",
     );
     lifecycle.setPictures(() => true);
+    lifecycle.setVisible("p1", true);
     vi.advanceTimersByTime(650);
     expect(lifecycle.isMounted("p1")).toBe(true);
     lifecycle.setPictures(() => false);

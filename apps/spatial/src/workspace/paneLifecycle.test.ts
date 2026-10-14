@@ -852,6 +852,34 @@ it("starts required visible preparation after motion even if focus does not chan
   store.dispose();
 });
 
+it.each(["speculative", "previously visible"])(
+  "prepares visible panes ahead of a stalled %s pane without accepting its late acknowledgement",
+  (kind) => {
+    const store = createPaneLifecycleStore(row(10), "p0-0");
+    store.setPictures(() => true);
+    if (kind === "previously visible") store.setVisible("p0-1", true);
+    vi.advanceTimersByTime(650);
+    expect(store.isMounted("p0-1")).toBe(true);
+    store.setVisible("p0-1", false);
+    store.setMoving(true);
+    store.setVisible("p0-8", true);
+    store.setVisible("p0-9", true);
+    vi.advanceTimersByTime(250);
+    expect(store.isMounted("p0-8")).toBe(false);
+    store.setMoving(false);
+    vi.advanceTimersByTime(1);
+    expect(store.isMounted("p0-8")).toBe(true);
+    expect(store.isMounted("p0-9")).toBe(false);
+    store.committed("p0-1", true);
+    vi.advanceTimersByTime(1);
+    expect(store.isMounted("p0-9")).toBe(false);
+    store.committed("p0-8", true);
+    vi.advanceTimersByTime(1);
+    expect(store.isMounted("p0-9")).toBe(true);
+    store.dispose();
+  },
+);
+
 it("prepares only the next pictured neighbour in the direction of travel", () => {
   const panes = row(6);
   const store = createPaneLifecycleStore(panes, "p0-2");

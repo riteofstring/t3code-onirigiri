@@ -268,6 +268,14 @@ export function createPaneLifecycleStore(
 
   const schedule = () => {
     if (moving) return;
+    if (
+      waitingFor !== null &&
+      waitingFor !== focused &&
+      !visible.has(waitingFor) &&
+      visibleQueued()
+    ) {
+      clearCommitWait();
+    }
     if (waitingFor !== null || idleCallback !== null || quietTimer !== null) return;
     if (pictureTimer !== null) return;
     if (
