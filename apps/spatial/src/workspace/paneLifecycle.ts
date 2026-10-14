@@ -33,7 +33,7 @@ type Direction = "left" | "right" | "up" | "down";
  * Once focus and visibility have been quiet for a moment the focused pane
  * mounts ahead of any other work. A saved picture bridges camera motion before
  * mounting; a destination without one still prepares early. The focused pane's
- * visible peers mount next, one at a time after each commit, regardless of
+ * visible peers mount next, one at a time after initial content is ready, regardless of
  * saved pictures. Visible views are never evicted to meet the retention target.
  * Neighbours, the next one in the direction of travel first, are prepared in
  * spare slots only while the page is idle and input has been quiet.
@@ -494,7 +494,7 @@ export function createPaneLifecycleStore(
         paneListeners.delete(listener);
       };
     },
-    /** Acknowledges the router shell before its route mounts synchronously. */
+    /** Acknowledges initial content readiness or a completed unmount. */
     committed: (paneId: string, isMounted: boolean) => {
       if (waitingFor !== paneId || isMounted !== mounted.has(paneId)) return;
       clearCommitWait();

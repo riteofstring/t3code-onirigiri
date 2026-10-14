@@ -760,11 +760,50 @@ it("starts the next queued preparation only after the deferred view commits", as
   state.status = "live";
   await render();
   expect(container.querySelector("textarea")).not.toBeNull();
-  await act(async () => {
-    await vi.advanceTimersToNextTimerAsync();
-  });
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(state.engineReady).toBe(true);
+  await act(() => vi.advanceTimersByTimeAsync(1));
   expect(lifecycle.isMounted("p2")).toBe(true);
 });
+
+it.each(["route", "timeline", "suspended content"])(
+  "waits for initial %s readiness before preparing another visible pane",
+  async (pending) => {
+    const { createPaneLifecycleStore } =
+      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+    lifecycle = createPaneLifecycleStore(
+      [0, 1, 2].map((slot) => ({ paneId: `p${slot}`, plane: 0, slot })),
+      "p0",
+    );
+    lifecycle.setPictures(() => true);
+    vi.advanceTimersByTime(650);
+    expect(lifecycle.isMounted("p1")).toBe(true);
+    lifecycle.setPictures(() => false);
+    lifecycle.setVisible("p2", true);
+    vi.advanceTimersByTime(250);
+    paneId = "p1";
+    state.detail = { updatedAt: "u1" };
+    state.status = "live";
+    state.hasChatView = pending !== "route";
+    state.timelineReady = pending !== "timeline";
+    state.suspended = pending === "suspended content";
+
+    await render(false, false, true);
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(state.engineReady).toBe(false);
+    expect(lifecycle.isMounted("p2")).toBe(false);
+
+    state.hasChatView = true;
+    state.timelineReady = true;
+    state.suspended = false;
+    await render(false, false, true);
+    expect(lifecycle.isMounted("p2")).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(40));
+    expect(state.engineReady).toBe(true);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(lifecycle.isMounted("p2")).toBe(true);
+  },
+);
 
 it("holds a visible prepared view through motion and renders at rest without waiting for idle", async () => {
   const { createPaneLifecycleStore } =

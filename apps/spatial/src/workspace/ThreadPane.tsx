@@ -105,8 +105,7 @@ const PaneRouter = memo(function PaneRouter({
 });
 
 /**
- * Background panes fetch detail before creating their router shell. Route content
- * mounts synchronously through the router store; readiness follows synchronization
+ * Background panes fetch detail before creating their router shell. Readiness follows synchronization
  * and the composer's initial presentation, then two layout frames. The thread's
  * update and theme form the content revision.
  */
@@ -152,9 +151,6 @@ function usePaneContent(
       };
     }
   }, [contentAvailable, contentMounted, focused, lifecycle, mounted, visible]);
-  useEffect(() => {
-    lifecycle?.committed(paneId, renderContent);
-  }, [lifecycle, mounted, paneId, renderContent]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = shell?.latestTurn?.state === "running";
@@ -174,6 +170,10 @@ function usePaneContent(
   const [presented, setPresented] = useState(false);
   if (presented && !renderContent) setPresented(false);
   else if (!presented && prepared) setPresented(true);
+
+  useEffect(() => {
+    lifecycle?.committed(paneId, renderContent && presented);
+  }, [lifecycle, mounted, paneId, presented, renderContent]);
 
   useLayoutEffect(() => {
     markPaneSynced(
