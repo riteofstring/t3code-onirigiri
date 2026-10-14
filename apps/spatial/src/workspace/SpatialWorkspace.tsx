@@ -847,8 +847,6 @@ export function SpatialWorkspace({
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
                     chromeComponents={WORKSPACE_CHROME}
-                    {...(layoutMode === "strip" ? { cursorRunway: 0 } : {})}
-                    cursorTargets={layoutMode === "strip" ? "panes" : "cells"}
                     desktopControlsContainer={controlsContainer}
                     focusAnchor={focusAnchor}
                     getPanePicture={getPanePicture}

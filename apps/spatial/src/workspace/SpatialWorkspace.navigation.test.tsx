@@ -481,14 +481,34 @@ it("moves a pane to an empty row and negative column with Control+Alt, and resto
   expect(status()).toContain("Grid cell (0, 1), split 1: Empty cell.");
 });
 
-it("keeps strip navigation on occupied panes and the single row", async () => {
+it("visits gaps and positions beyond either end of the strip without leaving its row", async () => {
   window.history.replaceState(null, "", "/?layout=strip");
   fixture.panes = [pane("origin", 0, 0), pane("right", 0, 2)];
   await render();
+  const pictureUpdates = fixture.pictureLayoutChanged.mock.calls.length;
+  await key("ArrowRight");
+  expect(status()).toContain("Grid cell (1, 0), split 1: Empty cell.");
+  await act(() => vi.advanceTimersByTime(1000));
+  expect(fixture.navigate).not.toHaveBeenCalled();
   await key("ArrowRight");
   expect(status()).toContain("right");
   await key("ArrowRight");
+  expect(status()).toContain("Grid cell (3, 0), split 1: Empty cell.");
   await key("ArrowDown");
+  await key("ArrowUp");
+  expect(status()).toContain("Grid cell (3, 0), split 1: Empty cell.");
+  await key("ArrowLeft");
+  expect(status()).toContain("right");
+  await key("ArrowLeft");
+  expect(status()).toContain("Grid cell (1, 0), split 1: Empty cell.");
+  await key("ArrowLeft");
+  expect(status()).toContain("origin");
+  await key("ArrowLeft");
+  expect(status()).toContain("Grid cell (-1, 0), split 1: Empty cell.");
+  await act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(readPaneLayout("strip")?.cursor).toEqual({ column: -1, row: 0, split: 0 });
+  expect(fixture.pictureLayoutChanged).toHaveBeenCalledTimes(pictureUpdates);
+  await explicitRoute("right");
   expect(status()).toContain("right");
   expect(status()).not.toContain("Empty cell");
 });
