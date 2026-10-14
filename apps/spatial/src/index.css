@@ -10,6 +10,10 @@
   height: 100%;
 }
 
+.spatial-workspace .onirigiri-pane {
+  outline-color: var(--onirigiri-focus);
+}
+
 .spatial-workspace .onirigiri-pane__live-content[data-spatial-snapshot],
 .spatial-workspace
   .onirigiri-pane__live-content:has(

@@ -117,7 +117,7 @@ it("keeps typing focus when autofocus is disabled and retains arrow selection", 
   composer.remove();
 });
 
-it("explains unavailable Browser access and skips disabled rows while enabled options remain usable", async () => {
+it("keeps unavailable reasons in tooltips and skips disabled rows while enabled options remain usable", async () => {
   const props = chooserProps();
   props.browserAvailable = false;
   const opened: string[] = [];
@@ -127,7 +127,7 @@ it("explains unavailable Browser access and skips disabled rows while enabled op
   props.onAddDevice = () => opened.push("device");
   await act(() =>
     root.render(
-      <TooltipProvider>
+      <TooltipProvider delay={0}>
         <RightPanelEmptyState {...props} />
       </TooltipProvider>,
     ),
@@ -135,9 +135,15 @@ it("explains unavailable Browser access and skips disabled rows while enabled op
   const browser = [...host.querySelectorAll<HTMLElement>('[aria-disabled="true"]')].find((row) =>
     row.textContent?.startsWith("Browser"),
   )!;
-  expect(browser.textContent).toContain("Only available in the desktop app.");
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(host.textContent).not.toContain("Only available in the desktop app.");
+  expect(host.textContent).not.toContain("No pull request on this branch yet.");
+  expect(host.textContent).not.toContain("No linked pull requests available.");
+  expect(document.querySelector('[data-slot="tooltip-popup"]')).toBeNull();
   expect(host.querySelector('[aria-label="Open browser in a profile"]')).toBeNull();
+  await act(() => browser.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true })));
+  expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(
+    "Only available in the desktop app.",
+  );
   await act(() => {
     browser.focus();
     browser.click();
