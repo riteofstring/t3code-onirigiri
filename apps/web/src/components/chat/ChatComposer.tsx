@@ -3253,11 +3253,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       };
     };
 
-    if (chatViewActivity.isActive() || typeof ResizeObserver === "undefined") {
-      const initialCompactness = measureFooterCompactness();
-      setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
-      setIsComposerFooterCompact(initialCompactness.footerCompact);
-    }
+    const initialCompactness = measureFooterCompactness();
+    setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
+    setIsComposerFooterCompact(initialCompactness.footerCompact);
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       const nextCompactness = measureFooterCompactness();
@@ -3277,7 +3275,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [
     activeThreadId,
-    chatViewActivity,
     composerFooterActionLayoutKey,
     composerFooterHasWideActions,
     isComposerApprovalState,
