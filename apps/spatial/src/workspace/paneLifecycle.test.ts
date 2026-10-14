@@ -1160,6 +1160,7 @@ it("lets the newly focused view commit before preparing its neighbor", () => {
   const store = createPaneLifecycleStore(panes, "p0-0");
   store.setPictures(() => true);
   store.setFocus("p0-8");
+  store.setVisible("p0-9", true);
   vi.advanceTimersByTime(1000);
   expect(store.isMounted("p0-8")).toBe(true);
   expect(store.isMounted("p0-9")).toBe(false);
