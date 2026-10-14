@@ -510,7 +510,37 @@ it.each(["wheel", "scroll"])(
   },
 );
 
-it("reuses pictures when navigation starts in the composer but refreshes keyboard scrolling", async () => {
+it("preserves a prepared picture when a workspace navigation key changes no content", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const button = container.querySelector("button")!;
+  button.focus();
+  requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
+  const revision = state.engineRevision;
+
+  await act(() =>
+    button.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        code: "ArrowRight",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  await render(false);
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(state.engineRevision).toBe(revision);
+  expect(container.querySelector("button")).toBe(button);
+  expect(document.activeElement).not.toBe(button);
+});
+
+it("reuses pictures through composer navigation and refreshes changed styles", async () => {
   state.detail = { updatedAt: "u1" };
   state.status = "live";
   state.interactive = true;
@@ -543,21 +573,45 @@ it("reuses pictures when navigation starts in the composer but refreshes keyboar
   await act(async () => editor.classList.add("text-lg"));
   expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
   expect(requestSnapshot).toHaveBeenCalled();
+});
 
-  for (const options of [
-    { key: "Home", ctrlKey: true },
-    { key: "ArrowDown", altKey: true },
-    { key: "ArrowUp", altKey: true, shiftKey: true },
-  ]) {
-    await render(true);
-    requestSnapshot.mockClear();
-    invalidateSnapshot.mockClear();
-    await act(() =>
-      editor.dispatchEvent(new KeyboardEvent("keydown", { ...options, bubbles: true })),
-    );
-    await render(false);
-    expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
-  }
+it("refreshes a scrolled descendant on departure without predicting its keydown", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const panel = container.querySelector("aside")!;
+  requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
+  const revision = state.engineRevision;
+
+  await act(() =>
+    panel.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown", bubbles: true })),
+  );
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  await act(() => {
+    panel.scrollTop = 120;
+    panel.dispatchEvent(new Event("scroll"));
+  });
+  expect(panel.scrollTop).toBe(120);
+  expect(invalidateSnapshot).toHaveBeenCalledOnce();
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  expect(state.engineRevision).toBe(revision);
+
+  await render(false);
+  expect(state.engineRevision).not.toBe(revision);
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(requestSnapshot).toHaveReturnedWith(1);
+  expect(container.querySelector("aside")).toBe(panel);
+  expect(panel.scrollTop).toBe(120);
+
+  await render(true);
+  invalidateSnapshot.mockClear();
+  const refreshedRevision = state.engineRevision;
+  await render(false);
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(state.engineRevision).toBe(refreshedRevision);
 });
 
 it("ignores repeated and temporary attribute writes but refreshes a changed presentation", async () => {

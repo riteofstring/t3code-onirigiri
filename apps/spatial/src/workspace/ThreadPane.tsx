@@ -378,18 +378,7 @@ export const ThreadPane = memo(function ThreadPane({
       childList: true,
       subtree: true,
     });
-    const onKeyDown = (event: KeyboardEvent) => {
-      const modifierOnly = ["Alt", "Control", "Meta", "Shift"].includes(event.key);
-      const navigating =
-        event.ctrlKey &&
-        event.altKey &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        (event.key.startsWith("Arrow") || event.code === "KeyO");
-      if (!modifierOnly && !navigating) invalidate();
-    };
     const events = ["wheel", "scroll", "pointerdown", "input", "drop", "load"] as const;
-    element.addEventListener("keydown", onKeyDown, true);
     for (const event of events)
       element.addEventListener(event, invalidate, { capture: true, passive: true });
     return () => {
@@ -400,7 +389,6 @@ export const ThreadPane = memo(function ThreadPane({
         if (snapshotPrepared.current && contentChanged(pending)) snapshots?.invalidate(paneId);
       }
       observer.disconnect();
-      element.removeEventListener("keydown", onKeyDown, true);
       for (const event of events) element.removeEventListener(event, invalidate, true);
     };
   }, [active, mounted, paneId, picturable, snapshots]);
