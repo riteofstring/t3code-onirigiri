@@ -4,13 +4,18 @@ import {
   deriveAgentPanelModel,
   foldSubagentActivities,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { OrchestrationThreadActivity, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  OrchestrationCheckpointSummary,
+  OrchestrationThreadActivity,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { Atom } from "effect/unstable/reactivity";
 import { useEffect, useMemo } from "react";
 
 import { useBrowserDefaults } from "../browser/browserDefaults";
@@ -26,19 +31,28 @@ import {
 import { shortcutLabelForCommand } from "../keybindings";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { derivePhase } from "../session-logic";
-import { useProject, useServerConfigs, useThread, useThreadShell } from "../state/entities";
+import { useProject, useServerConfigs, useThreadDetail, useThreadShell } from "../state/entities";
 import { primaryServerAvailableEditorsAtom, primaryServerKeybindingsAtom } from "../state/server";
+import { environmentThreadDetails } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 
 const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
+const EMPTY_ACTIVITIES_ATOM = Atom.make(EMPTY_ACTIVITIES);
+const EMPTY_CHECKPOINTS_ATOM = Atom.make<ReadonlyArray<OrchestrationCheckpointSummary>>([]);
 const TERMINAL_SHORTCUT_CONTEXT = { context: { terminalFocus: true, terminalOpen: true } };
+
+function latestCheckpointCompletedAt(
+  checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>,
+): string | null {
+  return checkpoints.at(-1)?.completedAt ?? null;
+}
 
 export function useThreadSurfaceContext(
   threadRef: ScopedThreadRef,
-  { detail = true }: { detail?: boolean } = {},
+  { detail = "agents" }: { detail?: false | "workspace" | "agents" } = {},
 ) {
-  const detailThread = useThread(detail ? threadRef : null);
   const shell = useThreadShell(threadRef);
+  const detailThread = useThreadDetail(detail !== false && shell === null ? threadRef : null);
   const thread = shell ?? detailThread;
   const projectId = thread?.projectId;
   const projectRef = useMemo(
@@ -66,15 +80,28 @@ export function useThreadSurfaceContext(
     () => getConfiguredPreviewUrls(project ? resolveProjectScripts(settings, project) : []),
     [project, settings],
   );
-  const activities = detailThread?.activities ?? EMPTY_ACTIVITIES;
-  const latestCheckpointCompletedAt = detailThread?.checkpoints.at(-1)?.completedAt ?? null;
-  const workspaceMutationId = useMemo(() => {
-    const activityId = latestWorkspaceMutationId(activities);
-    return activityId === null && latestCheckpointCompletedAt === null
-      ? null
-      : JSON.stringify([activityId, latestCheckpointCompletedAt]);
-  }, [activities, latestCheckpointCompletedAt]);
-  const sessionLive = derivePhase(detailThread?.session ?? null) !== "disconnected";
+  const workspaceActivityId = useAtomValue(
+    detail === false ? EMPTY_ACTIVITIES_ATOM : environmentThreadDetails.activitiesAtom(threadRef),
+    latestWorkspaceMutationId,
+  );
+  const checkpointCompletedAt = useAtomValue(
+    detail === false ? EMPTY_CHECKPOINTS_ATOM : environmentThreadDetails.checkpointsAtom(threadRef),
+    latestCheckpointCompletedAt,
+  );
+  const workspaceMutationId = useMemo(
+    () =>
+      workspaceActivityId === null && checkpointCompletedAt === null
+        ? null
+        : JSON.stringify([workspaceActivityId, checkpointCompletedAt]),
+    [workspaceActivityId, checkpointCompletedAt],
+  );
+  const activities = useAtomValue(
+    detail === "agents"
+      ? environmentThreadDetails.activitiesAtom(threadRef)
+      : EMPTY_ACTIVITIES_ATOM,
+  );
+  const sessionLive =
+    detail === "agents" && derivePhase(thread?.session ?? null) !== "disconnected";
   const agentModel = useMemo(
     () => deriveAgentPanelModel({ agents: foldSubagentActivities(activities, { sessionLive }) }),
     [activities, sessionLive],

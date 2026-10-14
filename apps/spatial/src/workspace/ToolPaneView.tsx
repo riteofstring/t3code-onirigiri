@@ -76,10 +76,11 @@ export function ToolPaneView({
   const surface = toolPaneSurface(pane);
   const data = useToolPaneContext(threadRef, {
     detail:
-      surface?.kind === "agents" ||
-      surface?.kind === "diff" ||
-      surface?.kind === "files" ||
-      surface?.kind === "file",
+      surface?.kind === "agents"
+        ? "agents"
+        : surface?.kind === "diff" || surface?.kind === "files" || surface?.kind === "file"
+          ? "workspace"
+          : false,
   });
   const navigation = useSurfaceNavigation();
   const previewState = useThreadPreviewState(surface?.kind === "preview" ? threadRef : null);
