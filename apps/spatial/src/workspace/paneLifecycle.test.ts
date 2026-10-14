@@ -388,6 +388,43 @@ it("prepares all four neighboring destinations even when saved pictures exist", 
   store.dispose();
 });
 
+it("prepares the next offscreen view beyond a visible strip", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-1");
+  store.setPictures(() => true);
+  for (const { paneId } of panes.slice(0, 4)) store.setVisible(paneId, true);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(panes.slice(0, 5).map(({ paneId }) => paneId));
+
+  store.setMoving(true);
+  store.setFocus("p0-2");
+  store.setVisible("p0-0", false);
+  store.setVisible("p0-4", true);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0-4")).toBe(true);
+  expect(store.isMounted("p0-5")).toBe(false);
+  store.setMoving(false);
+  drain(store, panes);
+  expect(store.isMounted("p0-5")).toBe(true);
+  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  store.dispose();
+});
+
+it("uses spare mounts beyond visible neighbors in both grid axes", () => {
+  const panes = [-2, -1, 0, 1, 2].flatMap((plane) =>
+    [-2, -1, 0, 1, 2].map((slot) => ({ paneId: `${plane}:${slot}`, plane, slot })),
+  );
+  const store = createPaneLifecycleStore(panes, "-1:-1");
+  store.setPictures(() => true);
+  const visible = ["-1:-1", "-1:0", "0:-1", "0:0"];
+  for (const paneId of visible) store.setVisible(paneId, true);
+  drain(store, panes);
+  expect(mountedOf(store, panes).toSorted()).toEqual(
+    [...visible, "-1:-2", "-1:1", "-2:-1", "0:-2"].toSorted(),
+  );
+  store.dispose();
+});
+
 it("keeps a saved picture through motion and mounts its view after the final frame", () => {
   const panes = row(12);
   const store = createPaneLifecycleStore(panes, "p0-0");

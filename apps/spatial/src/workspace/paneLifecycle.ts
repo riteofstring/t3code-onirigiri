@@ -379,6 +379,7 @@ export function createPaneLifecycleStore(
     let best: string | null = null;
     let bestDistance = Infinity;
     for (const pane of panes.values()) {
+      if (visible.has(pane.paneId)) continue;
       const dPlane = pane.plane - center.plane;
       const dSlot = pane.slot - center.slot;
       if (horizontal && dPlane !== 0) continue;
@@ -394,7 +395,7 @@ export function createPaneLifecycleStore(
     return best;
   };
 
-  // The panes adjacent to focus, the next one in the direction of travel first.
+  // The nearest offscreen panes, the next one in the direction of travel first.
   const neighbors = (): string[] => {
     const center = focused ? panes.get(focused) : undefined;
     if (!center) return [];
