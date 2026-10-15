@@ -14,6 +14,10 @@ import {
   useState,
 } from "react";
 
+import {
+  composerDraftHasUserContent,
+  useComposerDraftStore,
+} from "@t3tools/web/src/composerDraftStore";
 import { useTheme } from "@t3tools/web/src/hooks/useTheme";
 import { useClientSettings } from "@t3tools/web/src/hooks/useSettings";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
@@ -27,7 +31,7 @@ import {
 } from "./panePictureStore";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
-import { threadPaneId } from "./useWorkspacePanes";
+import { threadPaneId, type ThreadPaneData } from "./useWorkspacePanes";
 
 interface PaneContentRevision {
   updatedAt: string;
@@ -132,6 +136,7 @@ export function useSavedPanePictures(
   getLayout: () => OnirigiriLayout | null,
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
   defaultRowHeight: number | "viewport" = "viewport",
+  freezeMotion = false,
 ): {
   getPanePicture: OnirigiriPanePictureResolver;
   getPanePresentation: PanePresentationResolver;
@@ -165,7 +170,7 @@ export function useSavedPanePictures(
     setRetained(next);
   }, []);
   const retainedPaneIds = useMemo(() => new Set(retained.keys()), [retained]);
-  const getPanePresentation = useCallback<PanePresentationResolver>(
+  const getLivePanePresentation = useCallback<PanePresentationResolver>(
     (pane) =>
       pane.surfaceKind !== "thread" || retained.get(pane.paneId) === "live" ? "dom" : "auto",
     [retained],
@@ -429,6 +434,39 @@ export function useSavedPanePictures(
     // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
     [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
   );
+  // The engine samples eligibility at phase/focus boundaries; rest always reveals current DOM.
+  const getMotionPanePresentation = useCallback<PanePresentationResolver>(
+    (pane, context) => {
+      if (pane.surfaceKind !== "thread" || retained.get(pane.paneId) === "live") return "dom";
+      const content = contentRevisions.get(pane.paneId);
+      if (
+        !context.focused &&
+        (context.phase === "motion" || context.phase === "overview-motion") &&
+        !retained.has(pane.paneId) &&
+        !runningPanes.has(pane.paneId) &&
+        content &&
+        paneHasCommittedContent(pane.paneId, content, visualRevision(pane.paneId)) &&
+        hasFreshPicture(pane.paneId) &&
+        !composerDraftHasUserContent(
+          useComposerDraftStore.getState().getComposerDraft(pane.data as ThreadPaneData),
+        )
+      ) {
+        const picture = pictureFor(pane.paneId);
+        if (picture && pictureUrls.preparedUrl(picture.image))
+          return { kind: "placeholder", variant: "saved-picture" };
+      }
+      return "auto";
+    },
+    [
+      contentRevisions,
+      hasFreshPicture,
+      pictureFor,
+      pictureUrls,
+      retained,
+      runningPanes,
+      visualRevision,
+    ],
+  );
   const freshPictureForRef = useRef(freshPictureFor);
   useLayoutEffect(() => {
     freshPictureForRef.current = freshPictureFor;
@@ -642,7 +680,7 @@ export function useSavedPanePictures(
 
   return {
     getPanePicture,
-    getPanePresentation,
+    getPanePresentation: freezeMotion ? getMotionPanePresentation : getLivePanePresentation,
     onPanePictureCaptured,
     onLayoutChange,
     pictureFor,

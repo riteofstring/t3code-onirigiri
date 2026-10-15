@@ -21,6 +21,11 @@ const defaultFontSettings = {
   panelAnimationDurationMs: 200,
 };
 const fontRevision = '["","","",16,14,13,true]';
+const drafts = vi.hoisted(() => ({ hasContent: false }));
+vi.mock("@t3tools/web/src/composerDraftStore", () => ({
+  useComposerDraftStore: { getState: () => ({ getComposerDraft: () => drafts.hasContent }) },
+  composerDraftHasUserContent: (hasContent: boolean) => hasContent,
+}));
 
 const store = {
   saved: new Map<string, SavedPanePicture>(),
@@ -112,12 +117,13 @@ let appearance: string;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 let defaultRowHeight: number | "viewport" = "viewport";
+let freezeMotion = false;
 const getLayout = () => currentLayout;
 const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
-  const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight);
+  const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight, freezeMotion);
   useEffect(() => {
     hook = value;
     appearance = pictureAppearance;
@@ -242,6 +248,8 @@ afterEach(async () => {
   store.fontSettings = { ...defaultFontSettings };
   currentLayout = layout(400);
   defaultRowHeight = "viewport";
+  freezeMotion = false;
+  drafts.hasContent = false;
   markPaneSynced(paneId, null);
   snapshot.mockReset();
   snapshotFailures.mockReset();
@@ -1915,3 +1923,101 @@ it("does not persist a capture completed after leaving its display density", asy
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(hook.pictureFor(paneId)?.image).toBe(replacement);
 });
+
+it("uses prepared static pictures only during motion and keeps stationary overview live", async () => {
+  freezeMotion = true;
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const threadPane = {
+    ...pane,
+    surfaceKind: "thread",
+    data: { environmentId: "e", threadId: "t1" },
+  };
+  const context = {
+    focused: false,
+    maximized: false,
+    visible: true,
+    capabilities: { canCapture: false, hasVideo: false },
+    phase: "motion" as const,
+  };
+  expect(hook.getPanePresentation(threadPane, context)).toBe("auto");
+  await act(() => capturePicture(threadPane, new Blob(["png"])));
+  expect(hook.getPanePresentation(threadPane, context)).toBe("auto");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  expect(hook.getPanePresentation(threadPane, context)).toEqual({
+    kind: "placeholder",
+    variant: "saved-picture",
+  });
+  expect(hook.getPanePresentation(threadPane, { ...context, phase: "overview-motion" })).toEqual({
+    kind: "placeholder",
+    variant: "saved-picture",
+  });
+  for (const phase of ["rest", "overview", "resize"] as const)
+    expect(hook.getPanePresentation(threadPane, { ...context, phase })).toBe("auto");
+  expect(hook.getPanePresentation(threadPane, { ...context, focused: true })).toBe("auto");
+  for (const surfaceKind of [
+    "preview",
+    "terminal",
+    "device",
+    "diff",
+    "file",
+    "agents",
+    "pull-request",
+    "pull-requests",
+  ])
+    expect(hook.getPanePresentation({ ...threadPane, surfaceKind }, context)).toBe("dom");
+  drafts.hasContent = true;
+  expect(hook.getPanePresentation(threadPane, context)).toBe("auto");
+  drafts.hasContent = false;
+  expect(hook.getPanePresentation(threadPane, context)).toEqual({
+    kind: "placeholder",
+    variant: "saved-picture",
+  });
+  freezeMotion = false;
+  await act(() => renderer!.update(<Probe />));
+  expect(hook.getPanePresentation(threadPane, context)).toBe("auto");
+});
+
+it.each(["streaming", "visual-change", "resize", "unready", "producer"] as const)(
+  "keeps live content when entering motion with an unsuitable picture: %s",
+  async (change) => {
+    freezeMotion = true;
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const threadPane = {
+      ...pane,
+      surfaceKind: "thread",
+      data: { environmentId: "e", threadId: "t1" },
+    };
+    const context = {
+      focused: false,
+      maximized: false,
+      visible: true,
+      capabilities: { canCapture: false, hasVideo: false },
+      phase: "overview-motion" as const,
+    };
+    await act(() => capturePicture(threadPane, new Blob(["png"])));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(hook.getPanePresentation(threadPane, context)).toEqual({
+      kind: "placeholder",
+      variant: "saved-picture",
+    });
+    await act(() => {
+      if (change === "streaming") {
+        store.running = true;
+        renderer!.update(<Probe />);
+      }
+      if (change === "visual-change") hook.paneSnapshots.invalidate(paneId);
+      if (change === "resize") hook.onLayoutChange(layout(500));
+      if (change === "unready") markPaneSynced(paneId, null);
+      if (change === "producer") hook.paneSnapshots.setLiveProducer(paneId, true);
+    });
+    expect(hook.getPanePresentation(threadPane, context)).toBe(
+      change === "producer" ? "dom" : "auto",
+    );
+  },
+);

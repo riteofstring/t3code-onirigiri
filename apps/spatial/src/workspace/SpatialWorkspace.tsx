@@ -214,7 +214,12 @@ export function SpatialWorkspace({
     setCaptureActivity,
     stageRef,
     stageViewport,
-  } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
+  } = useSavedPanePictures(
+    getLayout,
+    onSnapshotFailure,
+    preferences.rowHeight,
+    preferences.motionPresentation === "pictures",
+  );
   const paneViewport = useMemo(() => {
     if (stageViewport.height <= 0) return null;
     return {
