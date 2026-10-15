@@ -71,7 +71,11 @@ export function BrowserSurfaceSlot(props: {
       const panel = element.closest<HTMLElement>('[data-preview-panel-mode="inline"]');
       const nextObserved = projectionPolicy
         ? [...ancestors, ...projectionPolicy.occluders(element)]
-        : [element, ...(panel ? [panel] : [])];
+        : [
+            element,
+            ...(panel ? [panel] : []),
+            ...document.querySelectorAll<HTMLElement>('[data-slot="sidebar-gap"]'),
+          ];
       if (
         nextObserved.length !== observed.length ||
         nextObserved.some((node, i) => node !== observed[i])

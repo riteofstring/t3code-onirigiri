@@ -19,6 +19,9 @@ class Observations {
   observe(target: Element) {
     this.targets.add(target);
   }
+  notifyFor(target: Element) {
+    if (this.targets.has(target)) this.notify();
+  }
   disconnect() {
     this.targets.clear();
   }
@@ -350,4 +353,55 @@ it("preserves rounded geometry and resize behavior outside spatial projection", 
   await act(() => resizes.notify());
   expect(state().rect).toEqual({ x: 41, y: 30, width: 451, height: 300 });
   expect(state().visible).toBe(true);
+});
+
+it("tracks sidebar shifts without resizing or replacing the classic browser slot", async () => {
+  const sidebarGap = document.createElement("div");
+  sidebarGap.dataset.slot = "sidebar-gap";
+  document.body.prepend(sidebarGap);
+  rect = new DOMRect(300.3, 20.7, 300.4, 200.6);
+  await mount(null);
+  const owner = state().owner;
+  expect(owner).not.toBeNull();
+
+  rect = new DOMRect(40.3, 20.7, 300.4, 200.6);
+  await act(() => resizes.notifyFor(sidebarGap));
+  expect(state().rect).toEqual({ x: 40, y: 21, width: 300, height: 201 });
+  expect(state().owner).toBe(owner);
+  expect(state().visible).toBe(true);
+  expect(state().projection).toBeNull();
+  expect(measure).toHaveBeenCalledOnce();
+
+  rect = new DOMRect(300.3, 20.7, 300.4, 200.6);
+  await act(() => resizes.notifyFor(sidebarGap));
+  expect(state().rect).toEqual({ x: 300, y: 21, width: 300, height: 201 });
+  expect(state().owner).toBe(owner);
+  expect(measure).toHaveBeenCalledTimes(2);
+
+  await act(() => renderer!.unmount());
+  renderer = undefined;
+  const released = state();
+  expect(released.owner).toBeNull();
+  rect = new DOMRect(40.3, 20.7, 300.4, 200.6);
+  await act(() => resizes.notifyFor(sidebarGap));
+  expect(state()).toBe(released);
+  expect(measure).toHaveBeenCalledTimes(2);
+});
+
+it("ignores unrelated sidebar resize while a spatial policy owns geometry", async () => {
+  const sidebarGap = document.createElement("div");
+  sidebarGap.dataset.slot = "sidebar-gap";
+  document.body.prepend(sidebarGap);
+  await mount();
+  const presented = state();
+
+  rect = new DOMRect(200, 80, 400, 600);
+  await act(() => resizes.notifyFor(sidebarGap));
+  expect(state()).toBe(presented);
+  expect(measure).not.toHaveBeenCalled();
+
+  await act(() => resizes.notifyFor(slot));
+  expect(state().rect).toEqual({ x: 200, y: 80, width: 400, height: 600 });
+  expect(state().owner).toBe(presented.owner);
+  expect(measure).toHaveBeenCalledOnce();
 });
