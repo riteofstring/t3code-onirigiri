@@ -2,7 +2,7 @@ import { createContext, startTransition, use, useEffect, useState } from "react"
 
 /** Neighbours of the focused pane prepared ahead of use. */
 const NEIGHBORS = 4;
-/** Warm retention target; visible views and one background capture may exceed it. */
+/** Warm target; visible views, retained producers and one capture may exceed it. */
 const MAX_MOUNTED = 8;
 /** Quiet time after focus or visibility changes before mounting follows them. */
 const SETTLE_MS = 200;
@@ -41,8 +41,8 @@ type Direction = "left" | "right" | "up" | "down";
  * interrupted reservations take turns afterward until they are pictured.
  * Navigation cancels speculative work that has
  * not started yet.
- * Running conversations use spare retained slots after likely destinations;
- * a workspace with more running views than those slots cannot keep them all live.
+ * Viewed running conversations retain their live view until their turn ends.
+ * Unviewed running conversations use spare slots after likely destinations.
  */
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
@@ -122,7 +122,8 @@ export function createPaneLifecycleStore(
     mount(paneId);
   };
 
-  const mustRetain = (paneId: string) => retained.has(paneId) && viewed.has(paneId);
+  const mustRetain = (paneId: string) =>
+    (retained.has(paneId) || running.has(paneId)) && viewed.has(paneId);
 
   const unmount = (paneId: string) => {
     if (panes.has(paneId) && mustRetain(paneId)) return;
@@ -374,7 +375,7 @@ export function createPaneLifecycleStore(
       waitForPicture(wait);
       return;
     }
-    const retainedCount = [...retained].filter(
+    const retainedCount = [...mounted].filter(
       (paneId) => panes.has(paneId) && mustRetain(paneId) && paneId !== focused,
     ).length;
     if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
@@ -433,7 +434,7 @@ export function createPaneLifecycleStore(
       ...[...visible]
         .filter((paneId) => panes.has(paneId))
         .toSorted((a, b) => distance(a) - distance(b)),
-      ...[...retained].filter((paneId) => panes.has(paneId) && mustRetain(paneId)),
+      ...[...mounted].filter((paneId) => panes.has(paneId) && mustRetain(paneId)),
     ]);
     const nearby = neighbors().filter((paneId) => neighborsWanted || mounted.has(paneId));
     const live = [...panes.values()]
