@@ -108,7 +108,11 @@ afterEach(async () => {
 });
 
 it("remembers overview and row defaults across reloads, with a way back to viewport height", async () => {
-  expect(settings()).toEqual({ overviewZoom: "auto", rowHeight: "viewport" });
+  expect(settings()).toEqual({
+    overviewZoom: "auto",
+    rowHeight: "viewport",
+    motionPresentation: "live",
+  });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await act(() => {
@@ -123,16 +127,20 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     option.click();
   });
   await typeHeight("384");
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384 });
+  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, motionPresentation: "live" });
 
   await act(() => root.unmount());
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384 });
+  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, motionPresentation: "live" });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await typeHeight("880");
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: "viewport" });
+  expect(settings()).toEqual({
+    overviewZoom: "near",
+    rowHeight: "viewport",
+    motionPresentation: "live",
+  });
 });
 
 it("keeps drag previews local and applies only the final pane height", async () => {
@@ -265,9 +273,13 @@ it("uses safe defaults for malformed saved preferences", async () => {
   await act(() => root.unmount());
   localStorage.setItem(
     "onirigiri-t3:workspace-preferences",
-    '{"overviewZoom":"invalid","rowHeight":-20}',
+    '{"overviewZoom":"invalid","rowHeight":-20,"motionPresentation":"invalid"}',
   );
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "auto", rowHeight: "viewport" });
+  expect(settings()).toEqual({
+    overviewZoom: "auto",
+    rowHeight: "viewport",
+    motionPresentation: "live",
+  });
 });
