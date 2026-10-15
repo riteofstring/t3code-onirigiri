@@ -22,9 +22,22 @@
   content-visibility: visible;
 }
 
-/* Recording must keep the timeline's custom scrollbar gutters so its virtual
-   rows do not reflow. Code blocks keep their standard thin scrollbar styling. */
 @layer onirigiri {
+  /* Dense T3 panes request layers through overview without changing the
+     library's default text rendering. */
+  .spatial-workspace
+    .onirigiri-pane[data-onirigiri-presentation-live="true"][data-onirigiri-renderer="dom"]:is(
+      [data-moving="true"],
+      [data-presentation-mode="overview"]
+    )
+    > .onirigiri-pane__content
+    > .onirigiri-pane__content-surface
+    > .onirigiri-pane__native-surface:not([hidden]) {
+    will-change: transform;
+  }
+
+  /* Recording must keep the timeline's custom scrollbar gutters so its virtual
+     rows do not reflow. Code blocks keep their standard thin scrollbar styling. */
   .spatial-workspace
     [data-onirigiri-recording]
     .spatial-thread-pane
