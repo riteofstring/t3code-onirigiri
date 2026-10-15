@@ -85,6 +85,7 @@ import { didComposerSelectionChangeVisibly } from "./composerSelection";
 import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 
 export interface ComposerPromptEditorHandle {
+  destroyBeforeRemoval: () => void;
   focus: () => void;
   focusAt: (cursor: number) => void;
   focusAtEnd: () => void;
@@ -1247,6 +1248,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   useImperativeHandle(
     editorRef,
     () => ({
+      destroyBeforeRemoval: () => {
+        if (editor && !editor.isDestroyed) editor.destroy();
+      },
       focus: () => {
         focusAt(snapshotRef.current.cursor);
       },

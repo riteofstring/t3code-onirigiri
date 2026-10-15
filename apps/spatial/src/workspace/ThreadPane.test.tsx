@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { act } from "react";
+import { act, startTransition, StrictMode, Suspense } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -11,6 +11,7 @@ import {
   type ComposerHandleRef,
 } from "@t3tools/web/src/composerHandleContext";
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
+import type { ComposerPromptEditorHandle } from "@t3tools/web/src/components/ComposerPromptEditor";
 
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
@@ -21,6 +22,11 @@ const state = vi.hoisted(() => ({
   interactive: false,
   composerVersion: 0,
   composerActions: [] as number[],
+  composerDisposals: [] as { version: number; editorConnected: boolean }[],
+  realComposer: false,
+  draft: { value: "Keep **bold** @README.md safely", cursor: 0 },
+  suspendPane: false,
+  strict: false,
   activeKeys: 0,
   shellUpdatedAt: "u1",
   running: false,
@@ -84,15 +90,33 @@ vi.mock("@t3tools/web/src/hooks/useMediaQuery", () => ({
   useMediaQuery: () => state.reducedMotion,
 }));
 vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
-  const { useImperativeHandle, useLayoutEffect, useState, useSyncExternalStore } =
+  const { useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore } =
     await import("react");
+  const { ComposerPromptEditor } = await import("@t3tools/web/src/components/ComposerPromptEditor");
+  const { EMPTY_COMPOSER_CONTEXT_RECORDS } =
+    await import("@t3tools/web/src/components/composerContextPresentation");
+  const { TooltipProvider } = await import("@t3tools/web/src/components/ui/tooltip");
   const { useComposerHandleContext } = await import("@t3tools/web/src/composerHandleContext");
   const { usePanelAnimationSettings, usePanelPresence } =
     await import("@t3tools/web/src/panelAnimations");
   const { ChatViewPendingContent, useChatViewContentReady, useComposerSyncPhase } =
     await import("@t3tools/web/src/components/chatViewContentReady");
   const { useActiveChatViewEffect } = await import("@t3tools/web/src/components/chatViewActivity");
-  function ChatContent() {
+  function ChatContent({
+    version,
+    checkoutReady,
+    timelineReady,
+    suspended,
+    status,
+    realComposer,
+  }: {
+    version: number;
+    checkoutReady: boolean;
+    timelineReady: boolean;
+    suspended: boolean;
+    status: typeof state.status;
+    realComposer: boolean;
+  }) {
     useActiveChatViewEffect(() => {
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "x") state.activeKeys += 1;
@@ -101,17 +125,31 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
       return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
     const composerRef = useComposerHandleContext();
-    const version = state.composerVersion;
+    const editorRef = useRef<ComposerPromptEditorHandle | null>(null);
     useImperativeHandle(
       composerRef,
       () =>
         ({
+          destroyBeforeRemoval: () => {
+            if (realComposer) {
+              editorRef.current?.destroyBeforeRemoval();
+              return;
+            }
+            state.composerDisposals.push({
+              version,
+              editorConnected: document.querySelector("textarea")?.isConnected === true,
+            });
+          },
+          readSnapshot: () => {
+            if (!editorRef.current) throw new Error("The real composer handle did not mount");
+            return editorRef.current.readSnapshot();
+          },
           isModelPickerOpen: () => version % 2 === 1,
           focusAtEnd: () => {
             state.composerActions.push(version);
           },
         }) as ChatComposerHandle,
-      [version],
+      [realComposer, version],
     );
     useLayoutEffect(() => {
       state.panelRenders++;
@@ -119,20 +157,34 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     const [open, setOpen] = useState(true);
     const { active, durationMs } = usePanelAnimationSettings();
     const panel = usePanelPresence(open, "Restored panel", active, "thread-one", durationMs);
-    const onSyncReadyChange = useChatViewContentReady(
-      "thread-one",
-      state.checkoutReady,
-      state.timelineReady,
-    );
+    const onSyncReadyChange = useChatViewContentReady("thread-one", checkoutReady, timelineReady);
     const shownSyncPhase = useComposerSyncPhase(
       "thread-one",
-      state.status === "synchronizing" ? "syncing" : null,
+      status === "synchronizing" ? "syncing" : null,
       onSyncReadyChange,
     );
     return (
       <>
-        {state.suspended ? <ChatViewPendingContent /> : null}
-        <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
+        {suspended ? <ChatViewPendingContent /> : null}
+        {realComposer ? (
+          <TooltipProvider>
+            <ComposerPromptEditor
+              {...state.draft}
+              richTextEnabled
+              contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
+              skills={[]}
+              disabled={false}
+              placeholder="Message"
+              editorRef={editorRef}
+              onChange={(value, cursor) => {
+                state.draft = { value, cursor };
+              }}
+              onPaste={() => {}}
+            />
+          </TooltipProvider>
+        ) : (
+          <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
+        )}
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
         <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
         {panel.present ? <aside aria-label="Thread panel">{panel.value}</aside> : null}
@@ -147,9 +199,18 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
           return () => state.listeners.delete(listener);
         },
         () =>
-          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}:${state.suspended}`,
+          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}:${state.suspended}:${state.realComposer}`,
       );
-      return state.hasChatView ? <ChatContent /> : null;
+      return state.hasChatView ? (
+        <ChatContent
+          version={state.composerVersion}
+          checkoutReady={state.checkoutReady}
+          timelineReady={state.timelineReady}
+          suspended={state.suspended}
+          status={state.status}
+          realComposer={state.realComposer}
+        />
+      ) : null;
     },
   };
 });
@@ -171,31 +232,43 @@ let liveProducer: boolean;
 let appComposerRef: ComposerHandleRef;
 let workspaceActive: boolean;
 
-async function render(focused = false, paintFrames = true, visible = focused) {
+const suspendedPane = new Promise<never>(() => {});
+function PaneSuspension() {
+  if (state.suspendPane) throw suspendedPane;
+  return null;
+}
+
+async function render(focused = false, paintFrames = true, visible = focused, transition = false) {
   await act(async () => {
     for (const listener of state.listeners) listener();
-    root.render(
-      <SpatialWorkspaceActiveContext value={workspaceActive}>
-        <ComposerHandleContext value={appComposerRef}>
-          <PanelAnimationSuppressionProvider value={appSuppressed}>
-            <PaneLifecycleContext value={lifecycle}>
-              <PaneSnapshotContext value={snapshots}>
-                <ThreadPane
-                  paneId={paneId}
-                  thread={{
-                    environmentId: "environment-one" as EnvironmentId,
-                    threadId: "thread-one" as ThreadId,
-                  }}
-                  focused={focused}
-                  visible={visible}
-                  onNavigateAway={() => {}}
-                />
-              </PaneSnapshotContext>
-            </PaneLifecycleContext>
-          </PanelAnimationSuppressionProvider>
-        </ComposerHandleContext>
-      </SpatialWorkspaceActiveContext>,
+    const pane = (
+      <Suspense fallback={<p>Pane suspended</p>}>
+        <SpatialWorkspaceActiveContext value={workspaceActive}>
+          <ComposerHandleContext value={appComposerRef}>
+            <PanelAnimationSuppressionProvider value={appSuppressed}>
+              <PaneLifecycleContext value={lifecycle}>
+                <PaneSnapshotContext value={snapshots}>
+                  <ThreadPane
+                    paneId={paneId}
+                    thread={{
+                      environmentId: "environment-one" as EnvironmentId,
+                      threadId: "thread-one" as ThreadId,
+                    }}
+                    focused={focused}
+                    visible={visible}
+                    onNavigateAway={() => {}}
+                  />
+                </PaneSnapshotContext>
+              </PaneLifecycleContext>
+            </PanelAnimationSuppressionProvider>
+          </ComposerHandleContext>
+        </SpatialWorkspaceActiveContext>
+        <PaneSuspension />
+      </Suspense>
     );
+    const update = () => root.render(state.strict ? <StrictMode>{pane}</StrictMode> : pane);
+    if (transition) startTransition(update);
+    else update();
   });
   await act(async () => {
     if (paintFrames) await vi.advanceTimersByTimeAsync(32);
@@ -218,6 +291,11 @@ beforeEach(() => {
   state.interactive = false;
   state.composerVersion = 0;
   state.composerActions = [];
+  state.composerDisposals = [];
+  state.realComposer = false;
+  state.draft = { value: "Keep **bold** @README.md safely", cursor: 0 };
+  state.suspendPane = false;
+  state.strict = false;
   state.activeKeys = 0;
   appComposerRef = { current: null };
   workspaceActive = true;
@@ -866,6 +944,167 @@ it("releases command-palette actions while content is shielded and restores them
   expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
   appComposerRef.current?.focusAtEnd();
   expect(state.composerActions).toEqual([1]);
+});
+
+it("disposes the current composer before committed eviction, including after remount", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  state.composerVersion = 1;
+  await render(true);
+
+  state.mounted = false;
+  await render(false);
+  expect(state.composerDisposals).toEqual([{ version: 1, editorConnected: true }]);
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(appComposerRef.current).toBeNull();
+
+  state.composerVersion = 2;
+  state.mounted = true;
+  await render(true);
+  expect(container.querySelector("textarea")).not.toBeNull();
+  state.mounted = false;
+  await render(false);
+  expect(state.composerDisposals).toEqual([
+    { version: 1, editorConnected: true },
+    { version: 2, editorConnected: true },
+  ]);
+
+  state.mounted = true;
+  await render(true);
+  await act(() => root.render(null));
+  expect(state.composerDisposals).toHaveLength(2);
+});
+
+it("preserves the same draft through Suspense hiding and a cancelled eviction", async () => {
+  state.strict = true;
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep the unfinished draft";
+  editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+
+  state.suspendPane = true;
+  await render(true, false);
+  expect(container.textContent).toContain("Pane suspended");
+  expect(state.composerDisposals).toEqual([]);
+
+  state.suspendPane = false;
+  await render(true);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep the unfinished draft");
+
+  state.mounted = false;
+  state.suspendPane = true;
+  await render(true, false, true, true);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(state.composerDisposals).toEqual([]);
+
+  state.mounted = true;
+  state.suspendPane = false;
+  await render(true);
+  editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep the unfinished draft");
+  expect(state.composerDisposals).toEqual([]);
+});
+
+it("destroys a real editor during committed eviction without redrawing or invalidating its picture", async () => {
+  const consoleErrors: unknown[][] = [];
+  vi.spyOn(console, "error").mockImplementation((...args) => consoleErrors.push(args));
+  vi.spyOn(console, "warn").mockImplementation((...args) => consoleErrors.push(args));
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  state.realComposer = true;
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  type EditorElement = HTMLElement & {
+    editor?: {
+      view: {
+        isDestroyed: boolean;
+        setProps: (props: { nodeViews?: Record<string, unknown> }) => void;
+        destroy: () => void;
+      };
+    };
+  };
+  const element = container.querySelector<EditorElement>('[data-testid="composer-editor"]');
+  if (!element?.editor) throw new Error("The real composer editor did not mount");
+  const view = element.editor.view;
+  const setProps = vi.spyOn(view, "setProps");
+  const destroy = vi.spyOn(view, "destroy");
+  const nodeViews = [...container.querySelectorAll(".react-renderer")];
+  expect(nodeViews).toHaveLength(1);
+  expect(container.querySelector("[data-composer-mention-chip]")).not.toBeNull();
+  expect(state.engineReady).toBe(true);
+  expect(requestSnapshot).toHaveBeenCalled();
+  const draft = appComposerRef.current?.readSnapshot();
+  expect(draft?.value).toBe(state.draft.value);
+  const revision = state.engineRevision;
+  invalidateSnapshot.mockClear();
+  requestSnapshot.mockClear();
+
+  state.mounted = false;
+  await render(false);
+
+  expect(destroy).toHaveBeenCalledTimes(1);
+  expect(view.isDestroyed).toBe(true);
+  expect(element.isConnected).toBe(false);
+  expect(nodeViews.every((node) => !node.isConnected)).toBe(true);
+  expect(container.querySelector(".react-renderer")).toBeNull();
+  expect(container.querySelector('[data-testid="composer-editor"]')).toBeNull();
+  expect(appComposerRef.current).toBeNull();
+  expect(
+    setProps.mock.calls.some(
+      ([props]) => props.nodeViews !== undefined && Object.keys(props.nodeViews).length === 0,
+    ),
+  ).toBe(false);
+  expect(state.engineReady).toBe(false);
+  expect(state.engineRevision).toBe(revision);
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  state.mounted = true;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(32));
+
+  expect(container.querySelector('[data-testid="composer-editor"]')).not.toBe(element);
+  expect(container.querySelector("[data-composer-mention-chip]")).not.toBeNull();
+  expect(appComposerRef.current?.readSnapshot()).toEqual(draft);
+  expect(state.engineReady).toBe(true);
+  expect(state.engineRevision).toBe(revision);
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  await act(() => root.render(null));
+  await act(() => vi.runOnlyPendingTimersAsync());
+  expect(consoleErrors).toEqual([]);
+});
+
+it("releases a hidden editor only when removal commits, then accepts a fresh editor", async () => {
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  state.suspendPane = true;
+  await render(true, false);
+  expect(state.composerDisposals).toEqual([]);
+
+  state.mounted = false;
+  state.suspendPane = false;
+  await render(false);
+  expect(container.querySelector("textarea")).toBeNull();
+
+  state.mounted = true;
+  await render(true);
+  expect(container.querySelector("textarea")).not.toBe(editor);
+  expect(container.querySelector("textarea")).not.toBeNull();
 });
 
 it("leaves no stale composer handle after its view is evicted and accepts its replacement", async () => {

@@ -10,6 +10,7 @@ import {
   useParams,
 } from "@tanstack/react-router";
 import {
+  Component,
   createContext,
   memo,
   startTransition,
@@ -19,6 +20,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 
 import {
@@ -426,7 +428,9 @@ export const ThreadPane = memo(function ThreadPane({
             data-spatial-preparing={preparing ? "" : undefined}
           >
             <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+              <MountedPaneContent mounted={mounted} composerRef={paneComposerRef}>
+                <PaneRouter router={router} threadPath={threadPath} />
+              </MountedPaneContent>
             </ChatViewContentReadyProvider>
           </div>
         </ComposerHandleContext>
@@ -434,6 +438,26 @@ export const ThreadPane = memo(function ThreadPane({
     </ChatPaneControlsContext>
   );
 });
+
+class MountedPaneContent extends Component<{
+  mounted: boolean;
+  composerRef: ComposerHandleRef;
+  children: ReactNode;
+}> {
+  override getSnapshotBeforeUpdate(previous: Readonly<typeof this.props>) {
+    // This commit removes the children. Suspense hiding and abandoned renders
+    // must keep their editors, so ordinary unmount callbacks cannot do this.
+    if (previous.mounted && !this.props.mounted)
+      this.props.composerRef.current?.destroyBeforeRemoval();
+    return null;
+  }
+
+  override componentDidUpdate() {}
+
+  override render() {
+    return this.props.mounted ? this.props.children : null;
+  }
+}
 
 // Shared commands see the real handle or null, including composer replacements.
 function usePaneComposerHandle(active: boolean): ComposerHandleRef {
