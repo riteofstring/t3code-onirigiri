@@ -1266,8 +1266,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 // --------------------------------------------------------------------------
 
 export interface ChatComposerHandle {
-  /** Only call before a committed removal of the composer subtree. */
-  destroyBeforeRemoval: () => void;
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   /** Expand the desktop composer at the timeline end without taking focus. */
@@ -5891,9 +5889,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useImperativeHandle(
     composerRef,
     () => ({
-      destroyBeforeRemoval: () => {
-        composerEditorRef.current?.destroyBeforeRemoval();
-      },
       focusAtEnd: () => {
         composerEditorRef.current?.focusAtEnd();
       },
