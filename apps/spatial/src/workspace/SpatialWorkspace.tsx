@@ -389,6 +389,9 @@ export function SpatialWorkspace({
   useEffect(() => {
     lifecycle?.setRunning(active ? runningPanes : new Set());
   }, [active, lifecycle, runningPanes]);
+  const onPresentationModeChange = useCallback<
+    NonNullable<OnirigiriWorkspaceProps["onPresentationModeChange"]>
+  >((mode) => lifecycle?.setOverview(mode === "overview"), [lifecycle]);
   // Preparation and snapshot drawing explicitly lay out offscreen content.
   // Covered workspaces have no measurable viewport and must not start captures.
   useEffect(() => {
@@ -491,11 +494,13 @@ export function SpatialWorkspace({
   // request focused a pane, reaches the lifecycle once it shows again.
   useEffect(() => {
     if (!lifecycle) return;
+    const snapshot = workspaceRef.current?.getSnapshot();
+    if (snapshot) lifecycle.setOverview(snapshot.presentationMode === "overview");
     if (!active) {
       lifecycle.setMoving(false);
       return;
     }
-    const paneId = workspaceRef.current?.getSnapshot().focusedPaneId;
+    const paneId = snapshot?.focusedPaneId;
     if (paneId && paneId !== focusedPaneIdRef.current && paneData.has(paneId)) {
       focusedPaneIdRef.current = paneId;
       lifecycle.setFocus(paneId);
@@ -859,6 +864,7 @@ export function SpatialWorkspace({
                     onLayoutChange={onLayoutChange}
                     onPaneClose={onPaneClose}
                     onPanePictureCaptured={onPanePictureCaptured}
+                    onPresentationModeChange={onPresentationModeChange}
                     {...(overviewCardWidth === undefined
                       ? {}
                       : {
