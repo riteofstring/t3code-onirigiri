@@ -513,6 +513,11 @@ it("keeps archived detail fallback and resumes shell authority after recovery", 
   await act(() => publishDetail(thread({ archivedAt: DATE, title: "Stale detail title" })));
   expect(fixture.cardRenders).toBe(before);
   expect(fixture.timelineRender).toHaveBeenCalledTimes(commits);
+  await act(() => publishShells([]));
+  await openMenu();
+  expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
+    "/workspace/local/packages/app/src/index.ts",
+  );
 });
 
 it("isolates colliding thread/project IDs across environments and switches the file menu target", async () => {
