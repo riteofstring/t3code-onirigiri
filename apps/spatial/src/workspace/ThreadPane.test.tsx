@@ -1107,6 +1107,50 @@ it("releases a hidden editor only when removal commits, then accepts a fresh edi
   expect(container.querySelector("textarea")).not.toBeNull();
 });
 
+it("defers content removal while its ancestor remains suspended", async () => {
+  const consoleErrors: unknown[][] = [];
+  vi.spyOn(console, "error").mockImplementation((...args) => consoleErrors.push(args));
+  vi.spyOn(console, "warn").mockImplementation((...args) => consoleErrors.push(args));
+  state.detail = { updatedAt: "u1" };
+  state.status = "live";
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep the retained draft";
+
+  state.suspendPane = true;
+  await render(true, false);
+  expect(container.textContent).toContain("Pane suspended");
+  expect(appComposerRef.current).toBeNull();
+
+  state.mounted = false;
+  await render(false);
+  expect(container.textContent).toContain("Pane suspended");
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.isConnected).toBe(true);
+  expect(editor.value).toBe("Keep the retained draft");
+  expect(appComposerRef.current).toBeNull();
+  expect(state.composerDisposals).toEqual([]);
+
+  state.suspendPane = false;
+  await render(false);
+  expect(container.textContent).not.toContain("Pane suspended");
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(editor.isConnected).toBe(false);
+  expect(appComposerRef.current).toBeNull();
+  expect(state.composerDisposals).toEqual([]);
+
+  state.mounted = true;
+  await render(true);
+  expect(container.querySelector("textarea")).not.toBeNull();
+  expect(container.querySelector("textarea")).not.toBe(editor);
+  expect(appComposerRef.current).not.toBeNull();
+  await act(() => root.render(null));
+  await act(() => vi.runOnlyPendingTimersAsync());
+  expect(state.composerDisposals).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 it("leaves no stale composer handle after its view is evicted and accepts its replacement", async () => {
   state.interactive = true;
   await render(true);
