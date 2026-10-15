@@ -109,7 +109,9 @@ vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({ ThreadCard: () => null }));
 vi.mock("./ThreadPane", async () => {
-  const { createContext, use } = await import("react");
+  const { createContext, use, useEffect } = await import("react");
+  const { useOnirigiriPaneContentReady } = await import("@riteofstring/onirigiri");
+  const { PaneLifecycleContext, usePaneMounted } = await import("./paneLifecycle");
   const { BrowserSurfaceProjectionContext } =
     await import("@t3tools/web/src/browser/browserSurfaceProjection");
   return {
@@ -117,18 +119,24 @@ vi.mock("./ThreadPane", async () => {
     ThreadPane: ({
       thread,
       paneId,
+      visible,
       onAddPane,
     }: {
       thread: { threadId: string };
       paneId: string;
+      visible: boolean;
       onAddPane: (paneId: string) => void;
     }) => {
       fixture.threadRenders.push(thread.threadId);
       fixture.browserProjection = use(BrowserSurfaceProjectionContext);
+      const lifecycle = use(PaneLifecycleContext);
+      const mounted = usePaneMounted(paneId, visible);
+      useEffect(() => lifecycle?.committed(paneId, mounted), [lifecycle, mounted, paneId]);
+      useOnirigiriPaneContentReady(mounted);
       return (
         <div data-browser-keyboard-slot>
           <button onClick={() => onAddPane(paneId)}>Add beside {thread.threadId}</button>
-          <textarea aria-label="Thread composer" />
+          {mounted ? <textarea aria-label="Thread composer" data-thread={thread.threadId} /> : null}
         </div>
       );
     },
@@ -259,6 +267,35 @@ it("delivers global surface focus only after the initial workspace and route are
   await act(() => vi.advanceTimersByTime(120));
   expect(status()).toContain("right");
   expect(status()).not.toContain("origin");
+});
+
+it("prepares an offscreen neighbor during idle overview before navigation reaches it", async () => {
+  fixture.panes = [pane("origin", 0, 0), pane("distant", 0, 20)];
+  await render();
+  await key("o");
+  expect(workspace().dataset.presentationMode).toBe("overview");
+  const neighbor = host.querySelector<HTMLElement>('[data-onirigiri-pane-id="thread:e:distant"]')!;
+  expect(neighbor.dataset.visible).toBe("false");
+  expect(neighbor.querySelector("textarea")).toBeNull();
+
+  await act(() => vi.advanceTimersByTime(4000));
+  const preparedComposer = neighbor.querySelector("textarea");
+  expect(preparedComposer).not.toBeNull();
+  expect(neighbor.dataset.visible).toBe("false");
+  expect(workspace().dataset.presentationMode).toBe("overview");
+  expect(status()).toContain("origin");
+
+  await explicitRoute("distant");
+  await act(() => vi.runOnlyPendingTimers());
+  expect(workspace().dataset.presentationMode).toBe("normal");
+  expect(status()).toContain("distant");
+  expect(neighbor.dataset.visible).toBe("true");
+  expect(neighbor.querySelector("textarea")).toBe(preparedComposer);
+  expect(
+    neighbor
+      .querySelector('[data-onirigiri-slot="pane-live-content"]')
+      ?.getAttribute("aria-hidden"),
+  ).toBe("false");
 });
 
 it("keeps mounted chat content stable across a shell refresh and uses the clicked pane's owner", async () => {
