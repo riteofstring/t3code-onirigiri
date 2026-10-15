@@ -109,8 +109,7 @@ vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({ ThreadCard: () => null }));
 vi.mock("./ThreadPane", async () => {
-  const { createContext, use, useEffect } = await import("react");
-  const { PaneLifecycleContext, usePaneMounted } = await import("./paneLifecycle");
+  const { createContext, use } = await import("react");
   const { BrowserSurfaceProjectionContext } =
     await import("@t3tools/web/src/browser/browserSurfaceProjection");
   return {
@@ -118,23 +117,18 @@ vi.mock("./ThreadPane", async () => {
     ThreadPane: ({
       thread,
       paneId,
-      visible,
       onAddPane,
     }: {
       thread: { threadId: string };
       paneId: string;
-      visible: boolean;
       onAddPane: (paneId: string) => void;
     }) => {
       fixture.threadRenders.push(thread.threadId);
       fixture.browserProjection = use(BrowserSurfaceProjectionContext);
-      const lifecycle = use(PaneLifecycleContext);
-      const mounted = usePaneMounted(paneId, visible);
-      useEffect(() => lifecycle?.committed(paneId, mounted), [lifecycle, mounted, paneId]);
       return (
         <div data-browser-keyboard-slot>
           <button onClick={() => onAddPane(paneId)}>Add beside {thread.threadId}</button>
-          {mounted ? <textarea aria-label="Thread composer" data-thread={thread.threadId} /> : null}
+          <textarea aria-label="Thread composer" />
         </div>
       );
     },
@@ -265,23 +259,6 @@ it("delivers global surface focus only after the initial workspace and route are
   await act(() => vi.advanceTimersByTime(120));
   expect(status()).toContain("right");
   expect(status()).not.toContain("origin");
-});
-
-it("warms offscreen chats after leaving overview without changing focus", async () => {
-  fixture.panes = [pane("origin", 0, 0), pane("distant", 0, 20)];
-  await render();
-  await key("o");
-  expect(workspace().dataset.presentationMode).toBe("overview");
-  await act(() => vi.advanceTimersByTime(4000));
-  expect(host.querySelector('textarea[data-thread="origin"]')).not.toBeNull();
-  expect(host.querySelector('textarea[data-thread="distant"]')).toBeNull();
-  expect(status()).toContain("origin");
-
-  await key("o");
-  expect(workspace().dataset.presentationMode).toBe("normal");
-  await act(() => vi.advanceTimersByTime(4000));
-  expect(host.querySelector('textarea[data-thread="distant"]')).not.toBeNull();
-  expect(status()).toContain("origin");
 });
 
 it("keeps mounted chat content stable across a shell refresh and uses the clicked pane's owner", async () => {

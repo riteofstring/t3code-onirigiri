@@ -425,133 +425,6 @@ it("uses spare mounts beyond visible neighbors in both grid axes", () => {
   store.dispose();
 });
 
-it("keeps focused, visible and running panes live without warming new overview neighbors", () => {
-  const panes = row(12);
-  const store = createPaneLifecycleStore(panes, "p0-1");
-  store.setPictures(() => true);
-  store.setBackgroundPictures(true);
-  store.setOverview(true);
-  for (const { paneId } of panes.slice(0, 4)) store.setVisible(paneId, true);
-  drain(store, panes);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2", "p0-3"]);
-
-  store.setFocus("p0-8");
-  drain(store, panes);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2", "p0-3", "p0-8"]);
-
-  store.setRunning(new Set(["p0-10"]));
-  drain(store, panes);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2", "p0-3", "p0-8", "p0-10"]);
-  store.dispose();
-});
-
-it.each([false, true])(
-  "drops queued normal neighbors but retains mounted ones on overview entry with moving=%s",
-  (moving) => {
-    const panes = row(6);
-    const store = createPaneLifecycleStore(panes, "p0-2");
-    store.setPictures(() => true);
-    vi.advanceTimersByTime(650);
-    expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3"]);
-
-    store.setMoving(moving);
-    store.setOverview(true);
-    store.committed("p0-3", true);
-    vi.advanceTimersByTime(1000);
-    expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3"]);
-    store.setMoving(false);
-    drain(store, panes);
-    expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3"]);
-    store.dispose();
-  },
-);
-
-it.each([
-  {
-    direction: "left",
-    focus: "p2-1",
-    ahead: "p2-0",
-    warm: ["p1-1", "p2-0", "p2-1", "p2-2", "p3-1"],
-  },
-  {
-    direction: "right",
-    focus: "p2-3",
-    ahead: "p2-4",
-    warm: ["p1-3", "p2-2", "p2-3", "p2-4", "p3-3"],
-  },
-  {
-    direction: "up",
-    focus: "p1-2",
-    ahead: "p0-2",
-    warm: ["p0-2", "p1-1", "p1-2", "p1-3", "p2-2"],
-  },
-  {
-    direction: "down",
-    focus: "p3-2",
-    ahead: "p4-2",
-    warm: ["p2-2", "p3-1", "p3-2", "p3-3", "p4-2"],
-  },
-])("resumes $direction warming on a same-focus return from overview", ({ focus, ahead, warm }) => {
-  const panes = [0, 1, 2, 3, 4].flatMap((plane) => row(5, plane));
-  const store = createPaneLifecycleStore(panes, "p2-2");
-  store.setPictures(() => true);
-  store.setOverview(true);
-  store.setFocus(focus);
-  drain(store, panes);
-  expect(mountedOf(store, panes).toSorted()).toEqual(["p2-2", focus].toSorted());
-
-  const mounts: string[] = [];
-  for (const { paneId } of panes) {
-    store.subscribe(paneId, () => {
-      if (store.isMounted(paneId)) mounts.push(paneId);
-    });
-  }
-  store.setOverview(false);
-  drain(store, panes);
-  expect(mounts[0]).toBe(ahead);
-  expect(mountedOf(store, panes)).toEqual(warm);
-  store.dispose();
-});
-
-it("pictures a crossed overview pane after three quiet seconds and retries its stale picture", () => {
-  const input = new EventTarget();
-  vi.stubGlobal("window", input);
-  const panes = row(8);
-  const store = createPaneLifecycleStore(panes, "p0-0");
-  const pictured = new Set(panes.map(({ paneId }) => paneId));
-  pictured.delete("p0-6");
-  store.setPictures((paneId) => pictured.has(paneId));
-  store.setBackgroundPictures(true);
-  store.setOverview(true);
-  store.setMoving(true);
-  store.setVisible("p0-6", true);
-  vi.advanceTimersByTime(45);
-  store.setVisible("p0-6", false);
-  vi.advanceTimersByTime(1000);
-  expect(store.isMounted("p0-6")).toBe(false);
-
-  input.dispatchEvent(new Event("keydown"));
-  store.setMoving(false);
-  vi.advanceTimersByTime(2999);
-  expect(store.isMounted("p0-6")).toBe(false);
-  vi.advanceTimersByTime(2);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-6"]);
-  store.committed("p0-6", true);
-  pictured.add("p0-6");
-  store.setPictures((paneId) => pictured.has(paneId));
-  vi.advanceTimersByTime(1200);
-  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
-
-  pictured.delete("p0-6");
-  store.setPictures((paneId) => pictured.has(paneId));
-  input.dispatchEvent(new Event("keydown"));
-  vi.advanceTimersByTime(2999);
-  expect(store.isMounted("p0-6")).toBe(false);
-  vi.advanceTimersByTime(2);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-6"]);
-  store.dispose();
-});
-
 it("keeps a saved picture through motion and mounts its view after the final frame", () => {
   const panes = row(12);
   const store = createPaneLifecycleStore(panes, "p0-0");
@@ -846,14 +719,12 @@ it("keeps every visible pane live even when overview exceeds the retention budge
   const panes = [...row(4, 0), ...row(12, 1)];
   const store = createPaneLifecycleStore(panes, "p0-0");
   store.setPictures(() => true);
-  store.setOverview(true);
   for (const { paneId } of row(12, 1)) store.setVisible(paneId, true);
   store.setFocus("p0-1");
   drain(store, panes);
   const mounted = mountedOf(store, panes);
   expect(mounted).toEqual(["p0-1", ...row(12, 1).map(({ paneId }) => paneId)]);
   for (const { paneId } of row(12, 1)) store.setVisible(paneId, false);
-  store.setOverview(false);
   drain(store, panes);
   expect(mountedOf(store, panes)).toHaveLength(8);
   expect(store.isMounted("p0-2")).toBe(true);

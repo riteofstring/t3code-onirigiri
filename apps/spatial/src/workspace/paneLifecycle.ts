@@ -36,7 +36,7 @@ type Direction = "left" | "right" | "up" | "down";
  * visible peers mount next, one at a time after initial content is ready, regardless of
  * saved pictures. Visible views are never evicted to meet the retention target.
  * Neighbours, the next one in the direction of travel first, are prepared in
- * spare slots in normal view while the page is idle and input has been quiet.
+ * spare slots only while the page is idle and input has been quiet.
  * When nothing else is wanted, untried visits precede untouched panes;
  * interrupted reservations take turns afterward until they are pictured.
  * Navigation cancels speculative work that has
@@ -70,7 +70,6 @@ export function createPaneLifecycleStore(
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
   let settleDue = false;
   let moving = false;
-  let overview = false;
   let neighborTimer: ReturnType<typeof setTimeout> | null = null;
   let neighborsWanted = false;
   let lastInput = 0;
@@ -436,9 +435,7 @@ export function createPaneLifecycleStore(
         .toSorted((a, b) => distance(a) - distance(b)),
       ...[...retained].filter((paneId) => panes.has(paneId) && mustRetain(paneId)),
     ]);
-    const nearby = neighbors().filter(
-      (paneId) => mounted.has(paneId) || (!overview && neighborsWanted),
-    );
+    const nearby = neighbors().filter((paneId) => neighborsWanted || mounted.has(paneId));
     const live = [...panes.values()]
       .filter((pane) => running.has(pane.paneId) && (neighborsWanted || mounted.has(pane.paneId)))
       .toSorted(
@@ -513,12 +510,6 @@ export function createPaneLifecycleStore(
     },
     pictureFailed: (paneId: string, startedAt: number) => {
       if (picturing?.paneId === paneId && startedAt >= picturing.since) picturing.failed = true;
-    },
-    setOverview: (next: boolean) => {
-      if (overview === next) return;
-      overview = next;
-      cancelSpeculation();
-      settle();
     },
     /** Saved pictures bridge camera motion before expensive view mounts resume. */
     setMoving: (next: boolean) => {
