@@ -241,7 +241,23 @@ export function useSavedPanePictures(
     stopObservingStageRef.current = null;
     observedStageRef.current = stage;
     stageSizeRef.current = "";
-    if (!stage) return;
+    const engine = stage?.parentElement;
+    if (!workspace || !stage || !engine) return;
+    const syncCompact = () => {
+      if (observedStageRef.current !== stage) return;
+      const compact = engine.dataset.compactLayout === "true";
+      if (workspace.dataset.spatialCompact !== String(compact))
+        workspace.dataset.spatialCompact = String(compact);
+      setStageViewport((previous) =>
+        previous.compact === compact ? previous : { ...previous, compact },
+      );
+    };
+    const compactObserver = new MutationObserver(syncCompact);
+    compactObserver.observe(engine, {
+      attributes: true,
+      attributeFilter: ["data-compact-layout"],
+    });
+    syncCompact();
     const observer = new ResizeObserver(([entry]) => {
       if (observedStageRef.current !== stage) return;
       const size = entry?.contentRect;
@@ -249,14 +265,11 @@ export function useSavedPanePictures(
       const viewport = {
         width: Math.round(size.width),
         height: Math.round(size.height),
-        compact: stage.parentElement?.dataset.compactLayout === "true",
       };
       setStageViewport((previous) =>
-        previous.width === viewport.width &&
-        previous.height === viewport.height &&
-        previous.compact === viewport.compact
+        previous.width === viewport.width && previous.height === viewport.height
           ? previous
-          : viewport,
+          : { ...previous, ...viewport },
       );
       const next = `${Math.round(size.width)}x${Math.round(size.height)}`;
       if (stageSizeRef.current === next) return;
@@ -274,6 +287,8 @@ export function useSavedPanePictures(
     };
     resolution.addEventListener("change", pixelRatioChanged);
     stopObservingStageRef.current = () => {
+      compactObserver.disconnect();
+      delete workspace.dataset.spatialCompact;
       observer.disconnect();
       resolution.removeEventListener("change", pixelRatioChanged);
     };

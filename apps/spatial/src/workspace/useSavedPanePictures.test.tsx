@@ -126,11 +126,12 @@ function Probe() {
   return null;
 }
 
-async function mount() {
+async function mount({ compact = false, resizeStage = true } = {}) {
   workspace?.remove();
   workspace = document.createElement("div");
   const engine = document.createElement("div");
   engine.dataset.onirigiriSlot = "workspace";
+  engine.dataset.compactLayout = String(compact);
   stage = document.createElement("div");
   stage.dataset.onirigiriSlot = "stage";
   engine.append(stage);
@@ -141,7 +142,7 @@ async function mount() {
   });
   await act(() => {
     hook.stageRef(workspace);
-    resize(800, 600);
+    if (resizeStage) resize(800, 600);
   });
 }
 
@@ -326,6 +327,79 @@ it("refreshes pictures when the engine stage grows inside an unchanged workspace
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(hook.getPanePicture(pane)?.image).not.toBe(oldImage);
   expect(store.writes[1]!.revision).not.toBe(oldRevision);
+});
+
+it("follows committed compact layout after a same-size resize without resizing again", async () => {
+  await mount();
+  const engine = stage.parentElement!;
+  const geometryVersion = hook.paneSnapshots.geometryVersion;
+  await act(() => resize(800, 600));
+  await act(async () => {
+    engine.dataset.compactLayout = "true";
+  });
+  expect(workspace.dataset.spatialCompact).toBe("true");
+  expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: true });
+  await act(() => resize(0, 0));
+  await act(async () => {
+    engine.dataset.compactLayout = "false";
+  });
+  expect(workspace.dataset.spatialCompact).toBe("false");
+  expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: false });
+  expect(hook.paneSnapshots.geometryVersion).toBe(geometryVersion);
+});
+
+it("initializes compact controls before any positive stage measurement", async () => {
+  await mount({ compact: true, resizeStage: false });
+  expect(workspace.dataset.spatialCompact).toBe("true");
+  expect(hook.stageViewport).toEqual({ width: 0, height: 0, compact: true });
+});
+
+it("releases compact ownership and ignores callbacks from replaced stages", async () => {
+  const NativeMutationObserver = MutationObserver;
+  const observed: { callback: MutationCallback; observer: MutationObserver }[] = [];
+  vi.stubGlobal(
+    "MutationObserver",
+    class extends NativeMutationObserver {
+      constructor(callback: MutationCallback) {
+        super(callback);
+        observed.push({ callback, observer: this });
+      }
+    },
+  );
+  await mount({ compact: true });
+  const oldEngine = stage.parentElement!;
+  const oldResize = resizeObservers.get(stage)!;
+  const oldCompact = observed[0]!;
+  const replacement = document.createElement("div");
+  replacement.dataset.onirigiriSlot = "workspace";
+  replacement.dataset.compactLayout = "false";
+  const nextStage = document.createElement("div");
+  nextStage.dataset.onirigiriSlot = "stage";
+  replacement.append(nextStage);
+  await act(() => {
+    oldEngine.replaceWith(replacement);
+    stage = nextStage;
+    hook.onLayoutChange(currentLayout);
+    resizeElement(stage, 700, 500);
+  });
+  expect(workspace.dataset.spatialCompact).toBe("false");
+  await act(async () => {
+    oldEngine.dataset.compactLayout = "false";
+    oldEngine.dataset.compactLayout = "true";
+    oldCompact.callback([], oldCompact.observer);
+    oldResize([{ contentRect: { width: 100, height: 100 } }]);
+  });
+  expect(workspace.dataset.spatialCompact).toBe("false");
+  expect(hook.stageViewport).toEqual({ width: 700, height: 500, compact: false });
+  const currentCompact = observed.at(-1)!;
+  await act(() => hook.stageRef(null));
+  expect(workspace.hasAttribute("data-spatial-compact")).toBe(false);
+  await act(async () => {
+    replacement.dataset.compactLayout = "true";
+    currentCompact.callback([], currentCompact.observer);
+  });
+  expect(workspace.hasAttribute("data-spatial-compact")).toBe(false);
+  expect(hook.stageViewport.compact).toBe(false);
 });
 
 it.each(["capture", "snapshot"] as const)(

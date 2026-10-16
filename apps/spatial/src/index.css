@@ -88,8 +88,7 @@
   --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.spatial-workspace:has(> .onirigiri-workspace[data-compact-layout="true"])
-  > .spatial-workspace-controls {
+.spatial-workspace[data-spatial-compact="true"] > .spatial-workspace-controls {
   inset-block-end: calc(var(--spatial-compact-toolbar-height) + env(safe-area-inset-bottom) + 8px);
 }
 
