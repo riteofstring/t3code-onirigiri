@@ -1,6 +1,7 @@
 import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { useEffect } from "react";
 
+import { isElectron } from "../env";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { shouldShowThreadJumpHintsForModifiers } from "../keybindings";
 import { isModelPickerOpen } from "../modelPickerVisibility";
@@ -23,6 +24,8 @@ export function ThreadJumpHintTracker({
       terminalFocus: terminalFocused,
       terminalOpen,
       modelPickerOpen: isModelPickerOpen(),
+      isWeb: !isElectron,
+      isDesktop: isElectron,
     },
   });
 

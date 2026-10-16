@@ -9,7 +9,7 @@ import {
   type PreviewSessionSnapshot,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -22,9 +22,22 @@ const mocks = vi.hoisted(() => ({
   getPreviewConfig: vi.fn<DesktopPreviewBridge["getPreviewConfig"]>(),
   getClientSettings: vi.fn<() => Promise<typeof DEFAULT_CLIENT_SETTINGS | null>>(),
   activeRecordings: new Set<string>(),
+  canOperate: true,
+  openPreview: vi.fn(),
+  setColorScheme: vi.fn<DesktopPreviewBridge["setColorScheme"]>(),
+  setZoomFactor: vi.fn<DesktopPreviewBridge["setZoomFactor"]>(),
 }));
 
 vi.mock("~/env", () => ({ isElectron: true }));
+vi.mock("~/state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/state/session")>()),
+  useEnvironmentScope: () => mocks.canOperate,
+}));
+vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => mocks.openPreview }));
+vi.mock("~/state/primaryEnvironment", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { primaryEnvironmentIdAtom: Atom.make<EnvironmentId | null>(null) };
+});
 vi.mock("~/hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "light" }) }));
 vi.mock("~/components/preview/previewBridge", () => ({ previewBridge: mocks }));
 vi.mock("~/localApi", () => ({
@@ -60,6 +73,8 @@ import { appAtomRegistry, AppAtomRegistryProvider } from "~/rpc/atomRegistry";
 import { useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { ElectronBrowserHost } from "./ElectronBrowserHost";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
+
+import { primaryEnvironmentIdAtom as primaryAtom } from "~/state/primaryEnvironment";
 
 const listAtoms = Atom.family((_key: string) =>
   Atom.make<AsyncResult.AsyncResult<PreviewListResult, Error>>(AsyncResult.initial(false)),
@@ -113,6 +128,10 @@ async function mountHost() {
 
 beforeEach(() => {
   resetPreviewStateForTests();
+  mocks.canOperate = true;
+  appAtomRegistry.set(primaryAtom, null);
+  mocks.setColorScheme.mockReset().mockResolvedValue(undefined);
+  mocks.setZoomFactor.mockReset().mockResolvedValue(undefined);
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
   mocks.createTab.mockReset().mockResolvedValue(undefined);
@@ -152,6 +171,103 @@ afterEach(async () => {
 });
 
 describe("ElectronBrowserHost server identity", () => {
+  it.each(["primary-server", "remote-server", "remote-desktop"] as const)(
+    "respects the native owner for %s tabs and releases it when access is revoked",
+    async (kind) => {
+      vi.useFakeTimers();
+      const { threadRef, snapshot, list } = threadFixture();
+      const session = {
+        ...snapshot,
+        runtime: kind === "remote-desktop" ? ("desktop" as const) : ("server" as const),
+      };
+      appAtomRegistry.set(
+        primaryAtom,
+        kind === "primary-server" ? threadRef.environmentId : EnvironmentId.make("other"),
+      );
+      applyPreviewServerSnapshot(threadRef, session);
+      await mountHost();
+      await act(() =>
+        appAtomRegistry.set(
+          list,
+          AsyncResult.success({ sessions: [session], serverEpoch: "server-a", revision: 1 }),
+        ),
+      );
+      const native = kind !== "remote-server";
+      expect(createGuest).toHaveBeenCalledTimes(native ? 1 : 0);
+      expect(mocks.createTab).toHaveBeenCalledTimes(native ? 1 : 0);
+      if (native) {
+        const runtimeTabId = previewRuntimeTabId(threadRef, "server-a", session.tabId);
+        expect(mocks.createTab).toHaveBeenCalledWith(runtimeTabId, {
+          zoomFactor: 1,
+          colorScheme: "system",
+          ...(kind === "primary-server"
+            ? { serverTab: { threadId: threadRef.threadId, tabId: session.tabId } }
+            : {}),
+        });
+        await act(() => {
+          mocks.canOperate = false;
+          appAtomRegistry.set(
+            list,
+            AsyncResult.success({ sessions: [session], serverEpoch: "server-a", revision: 2 }),
+          );
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mocks.closeTab).toHaveBeenCalledExactlyOnceWith(runtimeTabId);
+      }
+    },
+  );
+
+  it("applies server rendering after settings hydrate and native creation completes", async () => {
+    vi.useFakeTimers();
+    __resetClientSettingsPersistenceForTests();
+    let hydrate!: (settings: typeof DEFAULT_CLIENT_SETTINGS) => void;
+    mocks.getClientSettings.mockReturnValueOnce(
+      new Promise((resolve) => {
+        hydrate = resolve;
+      }),
+    );
+    vi.stubGlobal("desktopBridge", {
+      preview: {
+        setColorScheme: mocks.setColorScheme,
+        setZoomFactor: mocks.setZoomFactor,
+        onPointerEvent: () => () => undefined,
+        onOpenLink: () => () => undefined,
+        setAnnotationTheme: async () => undefined,
+      },
+    });
+    const { threadRef, snapshot, list } = threadFixture();
+    const session = {
+      ...snapshot,
+      runtime: "server" as const,
+      colorScheme: "dark" as const,
+      zoomFactor: 1.5,
+    };
+    appAtomRegistry.set(primaryAtom, threadRef.environmentId);
+    applyPreviewServerSnapshot(threadRef, session);
+    await mountHost();
+    await act(() =>
+      appAtomRegistry.set(
+        list,
+        AsyncResult.success({ sessions: [session], serverEpoch: "server-a", revision: 1 }),
+      ),
+    );
+    expect(mocks.createTab).not.toHaveBeenCalled();
+    expect(mocks.setColorScheme).not.toHaveBeenCalled();
+    expect(mocks.setZoomFactor).not.toHaveBeenCalled();
+    await act(async () => hydrate(DEFAULT_CLIENT_SETTINGS));
+    const runtimeTabId = previewRuntimeTabId(threadRef, "server-a", session.tabId);
+    expect(mocks.createTab).toHaveBeenCalledOnce();
+    expect(mocks.setColorScheme).toHaveBeenCalledExactlyOnceWith(runtimeTabId, "dark");
+    expect(mocks.setZoomFactor).toHaveBeenCalledExactlyOnceWith(runtimeTabId, 1.5);
+    expect(mocks.createTab.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setColorScheme.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.createTab.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setZoomFactor.mock.invocationCallOrder[0]!,
+    );
+    expect(createGuest).toHaveBeenCalledOnce();
+  });
+
   it("retains an early navigation while saved settings hydrate and the host takes ownership", async () => {
     vi.useFakeTimers();
     __resetClientSettingsPersistenceForTests();

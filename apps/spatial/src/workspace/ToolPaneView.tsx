@@ -76,11 +76,9 @@ export function ToolPaneView({
   const surface = toolPaneSurface(pane);
   const data = useToolPaneContext(threadRef, {
     detail:
-      surface?.kind === "agents"
-        ? "agents"
-        : surface?.kind === "diff" || surface?.kind === "files" || surface?.kind === "file"
-          ? "workspace"
-          : false,
+      surface?.kind === "diff" || surface?.kind === "files" || surface?.kind === "file"
+        ? "workspace"
+        : false,
   });
   const navigation = useSurfaceNavigation();
   const previewState = useThreadPreviewState(surface?.kind === "preview" ? threadRef : null);
@@ -296,7 +294,7 @@ export function ToolPaneView({
         break;
       case "terminal.close": {
         const id = surface.activeTerminalId;
-        const summary = terminalSessions.find((session) => session.target.terminalId === id)?.state
+        const summary = terminalSessions?.find((session) => session.target.terminalId === id)?.state
           .summary;
         void confirmTerminalClose([resolveTerminalSessionLabel(id, summary)]).then((confirmed) => {
           if (confirmed) void removeTerminal(id);
@@ -426,7 +424,7 @@ export function ToolPaneView({
                   navigation.openPullRequest(threadRef, data.linkedPullRequest);
               }}
               onAddPullRequests={() => navigation.open(threadRef, "pull-requests")}
-              onAddAgents={() => navigation.open(threadRef, "agents")}
+              onAddLineage={() => navigation.open(threadRef, "lineage")}
               onAddDevice={() => navigation.open(threadRef, "device")}
             />
           </div>

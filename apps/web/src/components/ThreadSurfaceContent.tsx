@@ -3,7 +3,7 @@ import type { ProjectId, ResolvedKeybindingsConfig, ScopedThreadRef } from "@t3t
 import { type ComponentProps, lazy, Suspense } from "react";
 
 import type { RightPanelSurface } from "../rightPanelStore";
-import { AgentsPanel } from "./AgentsPanel";
+import { ThreadRelationshipsPanel } from "./chat/ThreadRelationshipsControl";
 import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
@@ -45,7 +45,6 @@ export interface ThreadSurfaceContext {
     supported: boolean;
     thread: Parameters<typeof pullRequestPanelContext>[0];
   };
-  agentModel: ComponentProps<typeof AgentsPanel>["model"];
   files: {
     project: { title: string } | null;
     workspaceRoot: string | undefined;
@@ -161,10 +160,9 @@ export function ThreadSurfaceContent({
       );
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
-    case "agents":
+    case "lineage":
       return (
-        <AgentsPanel
-          model={context.agentModel}
+        <ThreadRelationshipsPanel
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
         />

@@ -64,6 +64,7 @@ export function useChatViewContentReady(
   checkoutReady: boolean,
   timelineReady: boolean,
   environmentUnavailable = false,
+  composerMounted = true,
 ) {
   const report = useContext(ChatViewContentReadyContext)?.report;
   const [checkoutReadyFor, setCheckoutReadyFor] = useState<string | null>(null);
@@ -86,8 +87,7 @@ export function useChatViewContentReady(
   const ready =
     timelineReady &&
     (environmentUnavailable || checkoutReadyFor === threadKey || checkoutReady) &&
-    composer?.threadKey === threadKey &&
-    composer.ready;
+    (!composerMounted || (composer?.threadKey === threadKey && composer.ready));
 
   useLayoutEffect(() => {
     report?.(ready);

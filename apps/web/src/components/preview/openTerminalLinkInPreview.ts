@@ -9,8 +9,9 @@ import {
 } from "~/browser/browserDefaults";
 import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserLinkTarget";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
+import { isPreviewAvailableFor, previewRuntimeFor } from "~/browser/previewRuntime";
 import { recordVisitForThread } from "~/browserHistoryStore";
-import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
+import { applyPreviewServerSnapshot } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import type { SurfaceNavigation } from "~/surfaceNavigation";
 
@@ -50,7 +51,7 @@ export async function openTerminalLinkInPreview<E>(
   const supportsPreview =
     !input.forceBrowser &&
     isWebUrl(input.url) &&
-    isPreviewSupportedInRuntime() &&
+    isPreviewAvailableFor(input.threadRef.environmentId) &&
     input.threadRef.threadId.length > 0 &&
     (await resolveBrowserLinkTargetPreference()) === "app";
 
@@ -66,6 +67,7 @@ export async function openTerminalLinkInPreview<E>(
   };
 
   const defaults = await resolveBrowserDefaults();
+  const runtime = previewRuntimeFor(input.threadRef.environmentId);
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
@@ -75,6 +77,7 @@ export async function openTerminalLinkInPreview<E>(
       // mapping, so the configured defaults are applied explicitly.
       viewport: browserDefaultOpenViewport(defaults),
       profileId: browserDefaultOpenProfileId(defaults),
+      ...(runtime === undefined ? {} : { runtime }),
     },
   });
   if (result._tag === "Failure") {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { getSharedHighlighter } from "@pierre/diffs";
-import { Editor } from "@pierre/diffs/editor";
+import type { Editor, EditorFactory } from "@pierre/diffs/edit";
+import type { EditProviderProps } from "@pierre/diffs/react";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { compileResolvedKeybindingsConfig } from "../../../../../packages/shared/src/keybindings";
 import { fileSurface } from "~/rightPanelStore";
@@ -18,7 +19,9 @@ const state = vi.hoisted(() => ({
   addReviewComment: vi.fn(),
   removeReviewComment: vi.fn(),
   refresh: vi.fn(),
-  editor: undefined as Editor<unknown> | undefined,
+  editor: undefined as
+    | Pick<Editor<"file">, "getText" | "canUndo" | "applyEdits" | "undo">
+    | undefined,
   contents: "Keep this editable.\n",
 }));
 
@@ -35,7 +38,9 @@ const enginePath = await vi.hoisted(async () => {
 vi.mock(enginePath, () => ({ useOnirigiriPaneInteractive: () => true }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("~/components/RightPanelTabs", () => ({ RightPanelEmptyState: () => null }));
-vi.mock("~/components/AgentsPanel", () => ({ AgentsPanel: () => null }));
+vi.mock("~/components/chat/ThreadRelationshipsControl", () => ({
+  ThreadRelationshipsPanel: () => null,
+}));
 vi.mock("~/components/pullRequest/PullRequestDetailPanel", () => ({
   PullRequestDetailPanel: () => null,
 }));
@@ -53,9 +58,21 @@ vi.mock("@pierre/diffs/react", async (importOriginal) => {
   const original = await importOriginal<typeof import("@pierre/diffs/react")>();
   return {
     ...original,
-    EditProvider: (props: { editor: Editor<unknown>; children: ReactNode }) => {
-      state.editor = props.editor;
-      return <original.EditProvider {...props} />;
+    EditProvider: (props: EditProviderProps<unknown, unknown> & { children: ReactNode }) => {
+      const createEditor: EditorFactory<unknown, unknown> = (type, options, key) =>
+        props.createEditor(
+          type,
+          {
+            ...options,
+            onAttach: (editor, instance) => {
+              state.editor = editor;
+              options.onAttach?.(editor, instance);
+              onAttach();
+            },
+          },
+          key,
+        );
+      return <original.EditProvider {...props} createEditor={createEditor} />;
     },
     Virtualizer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   };
@@ -79,9 +96,21 @@ vi.mock("~/composerDraftStore", () => ({
   useComposerDraftStore: (select: (store: typeof state) => unknown) => select(state),
 }));
 vi.mock("~/state/entities", () => ({
-  useThread: () => ({ environmentId: "environment", projectId: "project", worktreePath: null }),
+  useThreadShell: () => ({
+    environmentId: "environment",
+    projectId: "project",
+    worktreePath: null,
+  }),
   useProject: () => ({ workspaceRoot: "/repo" }),
 }));
+vi.mock("~/state/filesystem", () => ({
+  useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false, error: null }),
+}));
+vi.mock("~/state/session", () => ({
+  useEnvironmentScope: () => true,
+  readEnvironmentScope: () => true,
+}));
+vi.mock("~/browser/previewRuntime", () => ({ usePreviewAvailable: () => false }));
 vi.mock("~/state/terminalSessions", () => ({ useKnownTerminalSessions: () => [] }));
 vi.mock("~/state/projects", () => ({ projectEnvironment: { writeFile: { write: true } } }));
 vi.mock("~/state/use-atom-command", () => ({
@@ -113,6 +142,8 @@ vi.mock("~/components/files/projectFilesQueryState", () => ({
   },
   confirmProjectFileQueryData: state.confirmFile,
   getOptimisticProjectFileQueryData: () => null,
+  getUnsavedProjectFileQueryData: () => null,
+  getProjectFileContents: () => state.contents,
 }));
 vi.mock("../../../../spatial/src/workspace/useToolPaneContext", () => ({
   useToolPaneContext: (threadRef: unknown) => ({
@@ -161,7 +192,7 @@ function render(focused = true, visible = true) {
       visible={visible}
       onNavigate={() => false}
       onFocusThread={() => {}}
-      onClose={() => {}}
+      onDismissDeviceSetup={() => {}}
       isPresent={() => true}
     />,
   );
@@ -202,11 +233,6 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     measureText: (text: string) => ({ width: text.length * 8 }),
   } as unknown as ReturnType<HTMLCanvasElement["getContext"]>);
-  const edit = Editor.prototype.edit;
-  vi.spyOn(Editor.prototype, "edit").mockImplementation(function (this: Editor<unknown>, instance) {
-    this.setOptions({ onAttach: () => onAttach() });
-    return edit.call(this, instance);
-  });
   attached = new Promise((resolve) => {
     onAttach = resolve;
   });
@@ -231,8 +257,8 @@ afterEach(async () => {
 
 it("preserves a pending file edit and undo history when its pane loses focus or visibility", async () => {
   await act(() => render());
-  expect(state.editor, host.innerHTML).toBeDefined();
   await act(() => attached);
+  expect(state.editor, host.innerHTML).toBeDefined();
   const editor = state.editor!;
   expect(editor.getText()).toBe("Keep this editable.\n");
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });

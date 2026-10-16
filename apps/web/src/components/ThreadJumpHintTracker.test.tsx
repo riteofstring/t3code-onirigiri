@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS, useThreadJumpHintVisibility } from "./Sidebar.logic";
 import { ThreadJumpHintTracker } from "./ThreadJumpHintTracker";
 
+vi.mock("../env", () => ({ isElectron: false }));
+
 const keybindings = compileResolvedKeybindingsConfig([
   { key: "mod+1", command: "thread.jump.1", when: "!terminalOpen && !modelPickerOpen" },
 ]);
@@ -80,6 +82,19 @@ describe("ThreadJumpHintTracker", () => {
     await act(async () => root.render(<Sidebar key="unmodified" bindings={bindings} />));
     await waitForHints();
     expect(hint()).toBe("Ctrl+1");
+  });
+
+  it.each([
+    ["isWeb", "Ctrl+1"],
+    ["isDesktop", "hidden"],
+  ])("respects a binding restricted to %s", async (when, expected) => {
+    const bindings = compileResolvedKeybindingsConfig([
+      { key: "mod+1", command: "thread.jump.1", when },
+    ]);
+    await act(async () => root.render(<Sidebar bindings={bindings} />));
+    await key("keydown", "Control", { ctrlKey: true });
+    await waitForHints();
+    expect(hint()).toBe(expected);
   });
 
   it("keeps navigation modifier tracking out of the sidebar render path", async () => {

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -22,9 +24,10 @@ const state = vi.hoisted(() => ({
   composerVersion: 0,
   composerActions: [] as number[],
   activeKeys: 0,
-  shellUpdatedAt: "u1",
-  running: false,
-  detail: null as { updatedAt: string } | null,
+  shellUpdatedAt: "2026-10-15T12:00:00.000Z",
+  runtimeStatus: null as ThreadRuntimeSummary["status"] | null,
+  historyLoading: false,
+  projection: null as { updatedAt: string } | null,
   status: "synchronizing" as "synchronizing" | "live" | "deleted",
   panelDurationMs: 200,
   reducedMotion: false,
@@ -59,9 +62,13 @@ vi.mock("./paneLifecycle", async () => {
 vi.mock("@t3tools/web/src/state/entities", () => ({
   useThreadShell: () => ({
     updatedAt: state.shellUpdatedAt,
-    latestTurn: state.running ? { state: "running" } : null,
+    runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
   }),
-  useThreadDetail: (ref: ScopedThreadRef | null) => (ref === null ? null : state.detail),
+  useThreadProjection: (ref: ScopedThreadRef | null) =>
+    ref === null || state.projection === null
+      ? null
+      : { projection: { updatedAt: DateTime.makeUnsafe(state.projection.updatedAt) } },
+  useThreadHistory: () => ({ loading: state.historyLoading }),
   useThreadStatus: (ref: ScopedThreadRef | null) => (ref === null ? "empty" : state.status),
 }));
 vi.mock("./useSavedPanePictures", async () => {
@@ -221,9 +228,10 @@ beforeEach(() => {
   state.activeKeys = 0;
   appComposerRef = { current: null };
   workspaceActive = true;
-  state.shellUpdatedAt = "u1";
-  state.running = false;
-  state.detail = null;
+  state.shellUpdatedAt = "2026-10-15T12:00:00.000Z";
+  state.runtimeStatus = null;
+  state.historyLoading = false;
+  state.projection = null;
   state.status = "synchronizing";
   state.panelDurationMs = 200;
   state.reducedMotion = false;
@@ -266,11 +274,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("prepares a background view after its detail arrives and retains its draft during reconnect", async () => {
+it("prepares a background view after its projection arrives and retains its draft during reconnect", async () => {
   await render();
   expect(container.querySelector("textarea")).toBeNull();
 
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render();
   await act(() => vi.advanceTimersByTimeAsync(32));
@@ -280,7 +288,7 @@ it("prepares a background view after its detail arrives and retains its draft du
   const revision = state.engineRevision;
   requestSnapshot.mockClear();
 
-  state.detail = null;
+  state.projection = null;
   state.status = "synchronizing";
   await render();
   expect(container.querySelector("textarea")).toBe(editor);
@@ -297,12 +305,12 @@ it("prepares a background view after its detail arrives and retains its draft du
   expect(container.querySelector("textarea")).toBeNull();
 });
 
-it("keeps the focused view available while its first detail loads", async () => {
+it("keeps the focused view available while its first projection loads", async () => {
   await render(true);
   const editor = container.querySelector("textarea")!;
   expect(editor).not.toBeNull();
   editor.value = "Draft while connecting";
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   expect(container.querySelector("textarea")).toBe(editor);
@@ -312,7 +320,7 @@ it("keeps the focused view available while its first detail loads", async () => 
 it.each(["checkoutReady", "timelineReady"] as const)(
   "keeps the cover and postpones capture until %s settles",
   async (readiness) => {
-    state.detail = { updatedAt: "u1" };
+    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
     state.status = "live";
     state[readiness] = false;
     await render(true);
@@ -341,7 +349,7 @@ it("waits for the displayed sync row to clear before revealing or capturing the 
   await render(true, false);
   await act(() => vi.advanceTimersByTimeAsync(450));
   expect(container.querySelector('[role="status"]')).not.toBeNull();
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true, false);
   await act(() => vi.advanceTimersByTimeAsync(349));
@@ -358,7 +366,7 @@ it("waits for the displayed sync row to clear before revealing or capturing the 
 });
 
 it("retains the editor while a reconnect delays readiness and cancels the pending reveal", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -384,7 +392,7 @@ it("retains the editor while a reconnect delays readiness and cancels the pendin
 });
 
 it("releases deleted content without waiting for a ChatView readiness report", async () => {
-  state.detail = null;
+  state.projection = null;
   state.status = "deleted";
   state.hasChatView = false;
   await render(true);
@@ -394,7 +402,7 @@ it("releases deleted content without waiting for a ChatView readiness report", a
 
 it("keeps a live editor presented while suspended content postpones new pictures", async () => {
   const { markPaneSynced } = await import("./useSavedPanePictures");
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -422,7 +430,7 @@ it("keeps a live editor presented while suspended content postpones new pictures
   expect(markPaneSynced).toHaveBeenLastCalledWith(
     paneId,
     {
-      updatedAt: "u1",
+      updatedAt: "2026-10-15T12:00:00.000Z",
       theme: "default|dark",
     },
     0,
@@ -446,7 +454,7 @@ it("keeps a live editor presented while suspended content postpones new pictures
 });
 
 it("reuses an unchanged picture through repeated focus changes without replacing the editor", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   state.interactive = true;
   await render(true);
@@ -468,7 +476,7 @@ it("reuses an unchanged picture through repeated focus changes without replacing
 });
 
 it("requests replacement pixels after a resize without remounting live content", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   state.interactive = true;
   await render(true);
@@ -485,7 +493,7 @@ it("requests replacement pixels after a resize without remounting live content",
 it.each(["wheel", "scroll"])(
   "defers a picture refresh after %s input until departure and reuses an unchanged visit",
   async (event) => {
-    state.detail = { updatedAt: "u1" };
+    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
     state.status = "live";
     state.interactive = true;
     await render(true);
@@ -511,7 +519,7 @@ it.each(["wheel", "scroll"])(
 );
 
 it("preserves a prepared picture when a workspace navigation key changes no content", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   state.interactive = true;
   await render(true);
@@ -541,7 +549,7 @@ it("preserves a prepared picture when a workspace navigation key changes no cont
 });
 
 it("reuses pictures through composer navigation and refreshes changed styles", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   state.interactive = true;
   await render(true);
@@ -576,7 +584,7 @@ it("reuses pictures through composer navigation and refreshes changed styles", a
 });
 
 it("refreshes a scrolled descendant on departure without predicting its keydown", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   state.interactive = true;
   await render(true);
@@ -615,7 +623,7 @@ it("refreshes a scrolled descendant on departure without predicting its keydown"
 });
 
 it("ignores repeated and temporary attribute writes but refreshes a changed presentation", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   await render(false);
@@ -644,7 +652,7 @@ it("ignores repeated and temporary attribute writes but refreshes a changed pres
 });
 
 it("refreshes a picture when background content changes without a new message revision", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   await render(false);
@@ -662,7 +670,7 @@ it("refreshes a picture when background content changes without a new message re
 });
 
 it("refreshes a picture after a same-source image finishes loading in the background", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   await render(false);
@@ -677,7 +685,7 @@ it("refreshes a picture after a same-source image finishes loading in the backgr
 });
 
 it("keeps a closing panel present when the app route follows another pane", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -701,7 +709,7 @@ it("keeps a closing panel present when the app route follows another pane", asyn
 });
 
 it("suppresses panel motion until the pane's own initial paint, including after remount", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true, false);
   await act(() => container.querySelector("button")!.click());
@@ -729,7 +737,10 @@ it.each([
 ])(
   "closes panels immediately with $panelDurationMs ms and reduced motion $reducedMotion",
   async (settings) => {
-    Object.assign(state, settings, { detail: { updatedAt: "u1" }, status: "live" });
+    Object.assign(state, settings, {
+      projection: { updatedAt: "2026-10-15T12:00:00.000Z" },
+      status: "live",
+    });
     await render(true);
     await act(() => container.querySelector("button")!.click());
     expect(container.querySelector("aside")).toBeNull();
@@ -749,14 +760,14 @@ it("starts the next queued preparation only after the deferred view commits", as
   expect(lifecycle.isMounted("p1")).toBe(true);
   lifecycle.setPictures(() => false);
   lifecycle.setVisible("p2", true);
-  // Rebuild the wanted queue while the first view is still waiting for detail.
+  // Rebuild the wanted queue while the first view is still waiting for projection.
   vi.advanceTimersByTime(250);
   paneId = "p1";
   await render(false, true, true);
   expect(container.querySelector("textarea")).toBeNull();
   expect(lifecycle.isMounted("p2")).toBe(false);
 
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(false, true, true);
   expect(container.querySelector("textarea")).not.toBeNull();
@@ -783,7 +794,7 @@ it.each(["route", "timeline", "suspended content"])(
     lifecycle.setVisible("p2", true);
     vi.advanceTimersByTime(250);
     paneId = "p1";
-    state.detail = { updatedAt: "u1" };
+    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
     state.status = "live";
     state.hasChatView = pending !== "route";
     state.timelineReady = pending !== "timeline";
@@ -811,7 +822,7 @@ it("holds a visible prepared view through motion and renders at rest without wai
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
   lifecycle.setMoving(true);
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   vi.stubGlobal("requestIdleCallback", () => 99);
   await render(false, false, true);
@@ -824,7 +835,7 @@ it("cancels an offscreen content mount if motion starts before its idle callback
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 100));
   await render(false, false);
@@ -963,7 +974,7 @@ it("returns from a covered eviction before a replacement composer is available",
 });
 
 it("publishes a pending scroll revision after its content is remounted", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   state.interactive = true;
   await render(true);
@@ -982,7 +993,7 @@ it("publishes a pending scroll revision after its content is remounted", async (
 });
 
 it("reuses the picture revision when unchanged content is released and remounted", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const before = state.engineRevision;
@@ -1003,7 +1014,7 @@ it("reuses the picture revision when unchanged content is released and remounted
 });
 
 it("invalidates the picture revision when the shell changes while content is released", async () => {
-  state.detail = { updatedAt: "u1" };
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const before = state.engineRevision;
@@ -1012,22 +1023,22 @@ it("invalidates the picture revision when the shell changes while content is rel
   expect(state.engineRevision).toBe(before);
   requestSnapshot.mockClear();
 
-  state.shellUpdatedAt = "u2";
+  state.shellUpdatedAt = "2026-10-15T12:01:00.000Z";
   await render(false);
   expect(state.engineReady).toBe(false);
   expect(state.engineRevision).not.toBe(before);
   expect(requestSnapshot).not.toHaveBeenCalled();
 });
 
-it("invalidates the picture revision when mounted detail changes", async () => {
-  state.detail = { updatedAt: "u1" };
+it("invalidates the picture revision when mounted projection changes", async () => {
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const before = state.engineRevision;
   const editor = container.querySelector("textarea");
   requestSnapshot.mockClear();
 
-  state.detail = { updatedAt: "u2" };
+  state.projection = { updatedAt: "2026-10-15T12:01:00.000Z" };
   await render(true);
   expect(state.engineReady).toBe(true);
   expect(state.engineRevision).not.toBe(before);
@@ -1035,8 +1046,8 @@ it("invalidates the picture revision when mounted detail changes", async () => {
   expect(requestSnapshot).toHaveBeenCalledOnce();
 });
 
-it("invalidates the picture revision when remounted detail has changed", async () => {
-  state.detail = { updatedAt: "u1" };
+it("invalidates the picture revision when remounted projection has changed", async () => {
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const before = state.engineRevision;
@@ -1045,7 +1056,7 @@ it("invalidates the picture revision when remounted detail has changed", async (
   await render(false);
   expect(state.engineRevisions).toEqual(revisions);
 
-  state.detail = { updatedAt: "u2" };
+  state.projection = { updatedAt: "2026-10-15T12:01:00.000Z" };
   state.mounted = true;
   await render(true);
   await act(() => vi.advanceTimersByTimeAsync(32));
@@ -1054,14 +1065,14 @@ it("invalidates the picture revision when remounted detail has changed", async (
   expect(state.engineRevisions).toEqual([...revisions, state.engineRevision]);
 });
 
-it("invalidates the picture revision when subscribed detail is deleted", async () => {
-  state.detail = { updatedAt: "u1" };
+it("invalidates the picture revision when subscribed projection is deleted", async () => {
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
   const before = state.engineRevision;
   requestSnapshot.mockClear();
 
-  state.detail = null;
+  state.projection = null;
   state.status = "deleted";
   state.hasChatView = false;
   await render(true);
@@ -1071,23 +1082,54 @@ it("invalidates the picture revision when subscribed detail is deleted", async (
   expect(requestSnapshot).not.toHaveBeenCalled();
 });
 
-it("defers shell and detail picture revisions until a running turn settles", async () => {
-  state.detail = { updatedAt: "u1" };
+it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
+  "defers shell and projection picture revisions while the runtime is %s",
+  async (status) => {
+    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
+    state.status = "live";
+    await render(true);
+    const before = state.engineRevision;
+    requestSnapshot.mockClear();
+
+    state.runtimeStatus = status;
+    state.shellUpdatedAt = "2026-10-15T12:01:00.000Z";
+    state.projection = { updatedAt: "2026-10-15T12:01:00.000Z" };
+    await render(true);
+    expect(state.engineRevision).toBe(before);
+    expect(requestSnapshot).not.toHaveBeenCalled();
+
+    state.runtimeStatus = null;
+    await render(true);
+    expect(state.engineReady).toBe(true);
+    expect(state.engineRevision).not.toBe(before);
+    expect(requestSnapshot).toHaveBeenCalledOnce();
+  },
+);
+
+it("retains the presented editor while earlier history loads and waits for its final layout", async () => {
+  const { markPaneSynced } = await import("./useSavedPanePictures");
+  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
   state.status = "live";
   await render(true);
-  const before = state.engineRevision;
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep this draft during paging";
+  const revision = state.engineRevision;
   requestSnapshot.mockClear();
 
-  state.running = true;
-  state.shellUpdatedAt = "u2";
-  state.detail = { updatedAt: "u2" };
-  await render(true);
-  expect(state.engineRevision).toBe(before);
-  expect(requestSnapshot).not.toHaveBeenCalled();
-
-  state.running = false;
+  state.historyLoading = true;
   await render(true);
   expect(state.engineReady).toBe(true);
-  expect(state.engineRevision).not.toBe(before);
+  expect(state.engineRevision).not.toBe(revision);
+  expect(markPaneSynced).toHaveBeenLastCalledWith(paneId, null, 0);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep this draft during paging");
+
+  state.historyLoading = false;
+  await render(true, false);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(state.engineReady).toBe(true);
   expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(container.querySelector("textarea")).toBe(editor);
 });

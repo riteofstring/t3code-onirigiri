@@ -9,16 +9,19 @@ import {
 } from "@t3tools/client-runtime/state/terminal";
 import {
   ThreadId,
+  AuthTerminalReadScope,
+  AuthTerminalOperateScope,
   type EnvironmentId,
   type TerminalAttachInput,
   type TerminalSummary,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback, useMemo } from "react";
 
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
+import { useEnvironmentScope } from "./session";
 
 const EMPTY_KNOWN_TERMINAL_SESSIONS = Object.freeze<ReadonlyArray<KnownTerminalSession>>([]);
 type TerminalMetadataResult = AsyncResult.AsyncResult<ReadonlyArray<TerminalSummary>, unknown>;
@@ -136,18 +139,27 @@ export function useAttachedTerminalSession(input: {
   readonly environmentId: EnvironmentId | null;
   readonly terminal: TerminalAttachInput | null;
 }): TerminalSessionState {
+  const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
+  const canOperate = useEnvironmentScope(input.environmentId, AuthTerminalOperateScope);
   const attach = useEnvironmentQuery(
     input.environmentId !== null && input.terminal !== null
-      ? terminalEnvironment.attach({
-          environmentId: input.environmentId,
-          input: input.terminal,
-        })
+      ? canOperate
+        ? terminalEnvironment.attach({
+            environmentId: input.environmentId,
+            input: input.terminal,
+          })
+        : canRead
+          ? terminalEnvironment.observe({
+              environmentId: input.environmentId,
+              input: { threadId: input.terminal.threadId, terminalId: input.terminal.terminalId },
+            })
+          : null
       : null,
   );
   const threadId = input.terminal?.threadId;
   const terminalId = input.terminal?.terminalId;
   const summary = useAtomValue(
-    terminalMetadataAtom(input.environmentId),
+    terminalMetadataAtom(canRead ? input.environmentId : null),
     useCallback(
       (result: TerminalMetadataResult) => {
         const metadata = Option.getOrNull(AsyncResult.value(result));
@@ -173,16 +185,17 @@ export function useAttachedTerminalSession(input: {
 export function useKnownTerminalSessions(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
-}): ReadonlyArray<KnownTerminalSession> {
+}): ReadonlyArray<KnownTerminalSession> | null {
+  const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
   return useAtomValue(
-    terminalMetadataAtom(input.environmentId),
+    terminalMetadataAtom(canRead ? input.environmentId : null),
     useCallback(
-      (result: TerminalMetadataResult) =>
-        selectKnownTerminalSessions(
-          Option.getOrNull(AsyncResult.value(result)),
-          input.environmentId,
-          input.threadId,
-        ),
+      (result: TerminalMetadataResult) => {
+        const metadata = Option.getOrNull(AsyncResult.value(result));
+        return metadata === null || result._tag === "Failure"
+          ? null
+          : selectKnownTerminalSessions(metadata, input.environmentId, input.threadId);
+      },
       [input.environmentId, input.threadId],
     ),
   );
@@ -193,5 +206,5 @@ export function useThreadRunningTerminalIds(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<string> {
   const sessions = useKnownTerminalSessions(input);
-  return useMemo(() => selectRunningSubprocessTerminalIds(sessions), [sessions]);
+  return useMemo(() => selectRunningSubprocessTerminalIds(sessions ?? []), [sessions]);
 }

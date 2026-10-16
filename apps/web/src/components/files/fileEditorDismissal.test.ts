@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
-import { File, getSharedHighlighter } from "@pierre/diffs";
-import { Editor } from "@pierre/diffs/editor";
-import * as NodeTimers from "node:timers";
+import { clearRenderQueue, File, getSharedHighlighter } from "@pierre/diffs";
+import { Editor } from "@pierre/diffs/edit";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { installFileEditorDismissal } from "./fileEditorDismissal";
 
 const disposals: (() => void)[] = [];
-const frames = new Set<ReturnType<typeof NodeTimers.setImmediate>>();
+const frames = new Set<ReturnType<typeof setImmediate>>();
 let errors: unknown[];
 
 beforeAll(async () => {
@@ -35,16 +34,16 @@ beforeEach(() => {
     },
   );
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    const frame = NodeTimers.setImmediate(() => {
+    const frame = setImmediate(() => {
       frames.delete(frame);
       callback(0);
     });
     frames.add(frame);
     return frame;
   });
-  vi.stubGlobal("cancelAnimationFrame", (frame: ReturnType<typeof NodeTimers.setImmediate>) => {
+  vi.stubGlobal("cancelAnimationFrame", (frame: ReturnType<typeof setImmediate>) => {
     frames.delete(frame);
-    NodeTimers.clearImmediate(frame);
+    clearImmediate(frame);
   });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   Object.defineProperty(CSSStyleSheet.prototype, "replaceSync", {
@@ -62,7 +61,8 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const dispose of disposals.splice(0).toReversed()) dispose();
-  for (const frame of frames) NodeTimers.clearImmediate(frame);
+  clearRenderQueue();
+  for (const frame of frames) clearImmediate(frame);
   frames.clear();
   document.body.replaceChildren();
   vi.restoreAllMocks();
@@ -81,7 +81,16 @@ function makeFile() {
   const attached = new Promise<void>((resolve) => {
     onAttach = resolve;
   });
-  const editor = new Editor<undefined>({ onAttach });
+  let attachedEditor: Editor<"file"> | null = null;
+  const editor = new Editor("file", {
+    onAttach: (nextEditor) => {
+      attachedEditor = nextEditor;
+      onAttach();
+    },
+    onComplete: () => {
+      attachedEditor = null;
+    },
+  });
   const file = new File({
     theme: "pierre-dark",
     themeType: "dark",
@@ -101,7 +110,7 @@ function makeFile() {
   let blocked = false;
   const uninstall = installFileEditorDismissal({
     root,
-    editor,
+    editor: { setSelections: (selections) => attachedEditor?.setSelections(selections) },
     isBlocked: () => blocked,
     onDismiss,
   });
@@ -113,6 +122,7 @@ function makeFile() {
     container,
     onDismiss,
     attached,
+    isAttached: () => attachedEditor !== null,
     block: () => {
       blocked = true;
     },
@@ -133,13 +143,14 @@ function makeFile() {
 }
 
 describe("file editor dismissal", () => {
-  it("allows outside clicks while the rendered file is waiting for its editor document", async () => {
+  it("allows outside clicks before the rendered editor is attached", async () => {
     const view = makeFile();
-    expect(view.editor.getFile()).toBeUndefined();
+    expect(view.isAttached()).toBe(false);
     view.clickOutside();
     expect(errors).toEqual([]);
     await view.attached;
-    expect(view.editor.getFile()?.contents).toBe("Keep this editable.\n");
+    expect(view.isAttached()).toBe(true);
+    expect(view.editor.getText()).toBe("Keep this editable.\n");
   });
 
   it("allows outside clicks after the editor document is cleaned up", async () => {
@@ -155,9 +166,9 @@ describe("file editor dismissal", () => {
     const view = makeFile();
     await view.attached;
     view.select();
-    expect(view.editor.getState().selections).toHaveLength(1);
+    expect(view.editor.getViewState().selections).toHaveLength(1);
     view.clickOutside();
-    expect(view.editor.getState().selections).toBeUndefined();
+    expect(view.editor.getViewState().selections).toBeUndefined();
     expect(view.onDismiss).toHaveBeenCalledOnce();
     expect(errors).toEqual([]);
   });
@@ -168,10 +179,10 @@ describe("file editor dismissal", () => {
     view.select();
     const content = view.focus();
     content.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, composed: true }));
-    expect(view.editor.getState().selections).toHaveLength(1);
+    expect(view.editor.getViewState().selections).toHaveLength(1);
     view.block();
     view.clickOutside();
-    expect(view.editor.getState().selections).toHaveLength(1);
+    expect(view.editor.getViewState().selections).toHaveLength(1);
     expect(view.onDismiss).not.toHaveBeenCalled();
     expect(errors).toEqual([]);
   });
@@ -188,7 +199,7 @@ describe("file editor dismissal", () => {
     });
     view.outside.dispatchEvent(outsideEscape);
     expect(outsideEscape.defaultPrevented).toBe(false);
-    expect(view.editor.getState().selections).toHaveLength(1);
+    expect(view.editor.getViewState().selections).toHaveLength(1);
     const content = view.focus();
     const escape = new KeyboardEvent("keydown", {
       key: "Escape",
@@ -198,7 +209,7 @@ describe("file editor dismissal", () => {
     });
     content.dispatchEvent(escape);
     expect(escape.defaultPrevented).toBe(true);
-    expect(view.editor.getState().selections).toBeUndefined();
+    expect(view.editor.getViewState().selections).toBeUndefined();
     expect(view.container.shadowRoot?.activeElement).toBeNull();
     expect(errors).toEqual([]);
   });

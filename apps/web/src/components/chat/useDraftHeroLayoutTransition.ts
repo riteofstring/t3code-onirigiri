@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { readLayoutScale } from "./layoutGeometry";
 
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -27,9 +28,9 @@ export function useDraftHeroLayoutTransition(
 
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
-    const nextComposerRect = animationsActive
-      ? (composerAnchorRef.current?.getBoundingClientRect() ?? null)
-      : null;
+    const composerAnchor = composerAnchorRef.current;
+    const nextComposerRect =
+      animationsActive && composerAnchor ? composerAnchor.getBoundingClientRect() : null;
     const stateChanged = previousStateRef.current !== isDraftHeroState;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
@@ -44,12 +45,14 @@ export function useDraftHeroLayoutTransition(
       animationsActive &&
       !mobileComposerTransitionActive &&
       transitionGroup &&
+      composerAnchor &&
       previousComposerRect &&
       nextComposerRect &&
       typeof transitionGroup.animate === "function"
     ) {
-      const translateX = previousComposerRect.left - nextComposerRect.left;
-      const translateY = previousComposerRect.top - nextComposerRect.top;
+      const scale = readLayoutScale(composerAnchor, nextComposerRect);
+      const translateX = (previousComposerRect.left - nextComposerRect.left) / scale;
+      const translateY = (previousComposerRect.top - nextComposerRect.top) / scale;
       if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
         const animation = transitionGroup.animate(
           [

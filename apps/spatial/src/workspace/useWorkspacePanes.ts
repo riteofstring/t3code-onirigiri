@@ -220,8 +220,8 @@ function toolSurfaceTitle(surface: NonNullable<ToolPane["surface"]>): string {
       return `Pull request #${surface.number}`;
     case "pull-requests":
       return "Linked pull requests";
-    case "agents":
-      return "Agents";
+    case "lineage":
+      return "Lineage";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
   }

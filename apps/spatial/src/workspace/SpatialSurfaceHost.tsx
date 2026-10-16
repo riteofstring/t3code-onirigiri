@@ -64,14 +64,11 @@ export function createSpatialSurfaceNavigation(
         )
     )
       return;
+    const players = usePreviewMiniPlayerStore.getState();
+    const floating = selectThreadPreviewMiniPlayer(players.byThreadKey, ref);
+    if (floating && previewMiniPlayerSourceKey(floating.source) === surface.id) players.close(ref);
     if (automatic && find(ref, surface.id)) return;
-    if (!automatic) {
-      controller.recordUserAction(ref);
-      const players = usePreviewMiniPlayerStore.getState();
-      const floating = selectThreadPreviewMiniPlayer(players.byThreadKey, ref);
-      if (floating && previewMiniPlayerSourceKey(floating.source) === surface.id)
-        players.close(ref);
-    }
+    if (!automatic) controller.recordUserAction(ref);
     const id = controller.openSurface(ref, surface, sourcePaneId);
     if (!automatic) focusPane(id);
   };
@@ -132,7 +129,7 @@ export function createSpatialSurfaceNavigation(
             : singletonSurface(kind),
       );
     },
-    openBrowser: (ref, tabId) => open(ref, browserSurface(tabId)),
+    openBrowser: (ref, tabId, automatic = false) => open(ref, browserSurface(tabId), automatic),
     openDevice: (ref, target, automatic = false) => open(ref, deviceSurface(target), automatic),
     renameDevice: (ref, id, title) =>
       mutate(ref, id, (surface) =>

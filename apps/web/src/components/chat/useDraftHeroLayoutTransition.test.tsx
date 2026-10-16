@@ -21,9 +21,18 @@ function rect(top: number): DOMRect {
 
 let renderer: ReactTestRenderer | undefined;
 let position = rect(200);
+let cameraScale = 1;
 let capture = () => {};
 let mobileTransition = false;
-const measure = vi.fn(() => position);
+const measure = vi.fn(() => ({
+  ...position,
+  left: position.left * cameraScale,
+  right: position.right * cameraScale,
+  top: position.top * cameraScale,
+  bottom: position.bottom * cameraScale,
+  width: position.width * cameraScale,
+  height: position.height * cameraScale,
+}));
 const animations: { id: string; cancel: ReturnType<typeof vi.fn>; finished: Promise<void> }[] = [];
 const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => {
   const animation = { id: "", cancel: vi.fn(), finished: new Promise<void>(() => {}) };
@@ -60,6 +69,8 @@ async function render(hero: boolean, active: boolean) {
 
 beforeEach(() => {
   position = rect(200);
+  cameraScale = 1;
+  vi.stubGlobal("getComputedStyle", () => ({ width: "400px", boxSizing: "border-box" }));
   mobileTransition = false;
   animations.length = 0;
   measure.mockClear();
@@ -106,17 +117,21 @@ describe("draft hero layout transitions", () => {
     expect(animations[0]?.id).toBe(DRAFT_HERO_TRANSITION_ANIMATION_ID);
   });
 
-  it("uses the submit-time position when the composer moved since its previous render", async () => {
-    await render(true, true);
-    position = rect(280);
-    capture();
-    position = rect(700);
-    await render(false, true);
-    expect(animate.mock.calls[0]?.[0]).toEqual([
-      { transform: "translate3d(0px, -420px, 0)" },
-      { transform: "translate3d(0, 0, 0)" },
-    ]);
-  });
+  it.each([0.68, 1, 1.5])(
+    "uses layout-pixel translation from the submit-time position at camera scale %s",
+    async (scale) => {
+      cameraScale = scale;
+      await render(true, true);
+      position = rect(280);
+      capture();
+      position = rect(700);
+      await render(false, true);
+      expect(animate.mock.calls[0]?.[0]).toEqual([
+        { transform: "translate3d(0px, -420px, 0)" },
+        { transform: "translate3d(0, 0, 0)" },
+      ]);
+    },
+  );
 
   it("preserves a reverse transition after a dock is canceled", async () => {
     await render(true, true);

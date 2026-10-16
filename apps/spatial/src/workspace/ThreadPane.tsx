@@ -1,5 +1,7 @@
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
+import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import {
   Outlet,
   RouterProvider,
@@ -34,7 +36,12 @@ import {
 } from "@t3tools/web/src/composerHandleContext";
 import { ChatPaneControlsContext } from "@t3tools/web/src/components/chatPaneControls";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
-import { useThreadDetail, useThreadShell, useThreadStatus } from "@t3tools/web/src/state/entities";
+import {
+  useThreadHistory,
+  useThreadProjection,
+  useThreadShell,
+  useThreadStatus,
+} from "@t3tools/web/src/state/entities";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import {
   PanelAnimationSuppressionProvider,
@@ -105,7 +112,7 @@ const PaneRouter = memo(function PaneRouter({
 });
 
 /**
- * Background panes fetch detail before creating their router shell. Readiness follows synchronization
+ * Background panes fetch their projection before creating their router shell. Readiness follows synchronization
  * and the composer's initial presentation, then two layout frames. The thread's
  * update and theme form the content revision.
  */
@@ -124,12 +131,13 @@ function usePaneContent(
   const lifecycle = use(PaneLifecycleContext);
   const mounted = usePaneMounted(paneId, visible);
   const shell = useThreadShell(thread);
-  const detail = useThreadDetail(mounted ? thread : null);
+  const projection = useThreadProjection(mounted ? thread : null)?.projection ?? null;
+  const history = useThreadHistory(mounted ? thread : null);
   const updatedAt = shell?.updatedAt ?? null;
-  const detailUpdatedAt = detail?.updatedAt ?? null;
+  const projectionUpdatedAt = projection ? DateTime.formatIso(projection.updatedAt) : null;
   const status = useThreadStatus(mounted ? thread : null);
   const [contentMounted, setContentMounted] = useState(false);
-  const contentAvailable = focused || detail !== null || status === "deleted";
+  const contentAvailable = focused || projection !== null || status === "deleted";
   const renderContent = mounted && contentMounted;
   useEffect(() => {
     if (!mounted) setContentMounted(false);
@@ -153,19 +161,21 @@ function usePaneContent(
   }, [contentAvailable, contentMounted, focused, lifecycle, mounted, visible]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
-  const running = shell?.latestTurn?.state === "running";
-  const [contentRevision, setContentRevision] = useState({ updatedAt, detailUpdatedAt });
-  const nextDetailUpdatedAt = mounted ? detailUpdatedAt : contentRevision.detailUpdatedAt;
+  const running = threadRuntimeIsActive(shell?.runtime);
+  const [contentRevision, setContentRevision] = useState({ updatedAt, projectionUpdatedAt });
+  const nextProjectionUpdatedAt = mounted
+    ? projectionUpdatedAt
+    : contentRevision.projectionUpdatedAt;
   if (
     !running &&
     (contentRevision.updatedAt !== updatedAt ||
-      contentRevision.detailUpdatedAt !== nextDetailUpdatedAt)
+      contentRevision.projectionUpdatedAt !== nextProjectionUpdatedAt)
   )
-    setContentRevision({ updatedAt, detailUpdatedAt: nextDetailUpdatedAt });
-  const revision = `${contentRevision.updatedAt}|${contentRevision.detailUpdatedAt}|${pictureTheme}`;
+    setContentRevision({ updatedAt, projectionUpdatedAt: nextProjectionUpdatedAt });
+  const revision = `${contentRevision.updatedAt}|${contentRevision.projectionUpdatedAt}|${pictureTheme}`;
   const [settled, setSettled] = useState(false);
   const [viewReady, setViewReady] = useState(false);
-  const contentReady = status === "deleted" || viewReady;
+  const contentReady = status === "deleted" || (viewReady && !history.loading);
   const prepared = renderContent && synced && contentReady && settled;
   const [presented, setPresented] = useState(false);
   if (presented && !renderContent) setPresented(false);
@@ -178,13 +188,13 @@ function usePaneContent(
   useLayoutEffect(() => {
     markPaneSynced(
       paneId,
-      prepared && detailUpdatedAt !== null
-        ? { updatedAt: detailUpdatedAt, theme: pictureTheme }
+      prepared && projectionUpdatedAt !== null
+        ? { updatedAt: projectionUpdatedAt, theme: pictureTheme }
         : null,
       visualRevision,
     );
     return () => markPaneSynced(paneId, null);
-  }, [detailUpdatedAt, paneId, pictureTheme, prepared, visualRevision]);
+  }, [projectionUpdatedAt, paneId, pictureTheme, prepared, visualRevision]);
 
   // Later async work can delay a new picture without covering a live editor.
   useOnirigiriPaneContentReady(
@@ -212,9 +222,9 @@ function usePaneContent(
     picturable:
       prepared &&
       !running &&
-      detailUpdatedAt !== null &&
+      projectionUpdatedAt !== null &&
       updatedAt !== null &&
-      detailUpdatedAt >= updatedAt
+      projectionUpdatedAt >= updatedAt
         ? revision
         : null,
   };

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId, TurnId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId, RunId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -12,6 +13,7 @@ import DiffPanel from "./DiffPanel";
 const route = vi.hoisted(() => ({
   params: { environmentId: "route-environment", threadId: "route-thread" },
   reads: 0,
+  deniedEnvironmentId: null as string | null,
 }));
 vi.mock("@tanstack/react-router", () => ({
   useParams: ({ select }: { select: (params: typeof route.params) => unknown }) => {
@@ -29,21 +31,42 @@ vi.mock("../editorPreferences", () => ({ useOpenInPreferredEditor: () => vi.fn()
 vi.mock("../fileContextMenu", () => ({ useFileContextMenuHandler: () => vi.fn() }));
 vi.mock("../state/entities", () => ({
   useProject: () => null,
-  useThread: (ref: typeof route.params | null) =>
+  useThreadShell: (ref: typeof route.params | null) =>
     ref
       ? {
           ...ref,
           projectId: "project",
           worktreePath: null,
-          checkpoints: [
-            {
-              turnId: `${ref.threadId}-latest`,
-              checkpointTurnCount: 1,
-              completedAt: "2026-10-13T00:00:00Z",
-            },
-          ],
         }
       : null,
+  useThreadProjection: (ref: typeof route.params | null) =>
+    ref
+      ? {
+          environmentId: ref.environmentId,
+          projection: {
+            checkpoints: [
+              {
+                id: `${ref.threadId}-checkpoint`,
+                scopeId: `${ref.threadId}-scope`,
+                runId: `${ref.threadId}-latest`,
+                appRunOrdinal: 1,
+                ref: "refs/t3/checkpoint/latest",
+                status: "ready",
+                files: [],
+                capturedAt: DateTime.makeUnsafe("2026-10-13T00:00:00Z"),
+              },
+            ],
+            messages: [],
+          },
+        }
+      : null,
+}));
+vi.mock("../state/filesystem", () => ({
+  useFilesystemReadAccess: (environmentId: string | null) => ({
+    canReadFiles: environmentId !== route.deniedEnvironmentId,
+    isPending: false,
+    error: null,
+  }),
 }));
 vi.mock("../lib/checkpointDiffState", () => ({ useCheckpointDiff: () => ({}) }));
 vi.mock("../hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: vi.fn() }));
@@ -66,7 +89,7 @@ const routed = scopeThreadRef(
   EnvironmentId.make(route.params.environmentId),
   ThreadId.make(route.params.threadId),
 );
-const previousTurn = TurnId.make("previous");
+const previousRun = RunId.make("previous");
 const selection = (ref: typeof owner) =>
   useDiffPanelStore.getState().byThreadKey[scopedThreadKey(ref)];
 
@@ -77,9 +100,10 @@ describe("diff surface ownership", () => {
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     route.reads = 0;
+    route.deniedEnvironmentId = null;
     useDiffPanelStore.setState({ byThreadKey: {}, branchBaseRefByThreadKey: {} });
-    useDiffPanelStore.getState().selectTurn(owner, previousTurn);
-    useDiffPanelStore.getState().selectTurn(routed, previousTurn);
+    useDiffPanelStore.getState().selectTurn(owner, previousRun);
+    useDiffPanelStore.getState().selectTurn(routed, previousRun);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -98,7 +122,7 @@ describe("diff surface ownership", () => {
       ),
     );
     expect(selection(owner)).toMatchObject({ kind: "turn", turnId: "owner-latest" });
-    expect(selection(routed)).toMatchObject({ kind: "turn", turnId: previousTurn });
+    expect(selection(routed)).toMatchObject({ kind: "turn", turnId: previousRun });
     expect(route.reads).toBe(0);
   });
 
@@ -107,6 +131,19 @@ describe("diff surface ownership", () => {
       root.render(<DiffPanel composerDraftTarget={routed} workspaceMutationId={null} />),
     );
     expect(selection(routed)).toMatchObject({ kind: "turn", turnId: "route-thread-latest" });
-    expect(selection(owner)).toMatchObject({ kind: "turn", turnId: previousTurn });
+    expect(selection(owner)).toMatchObject({ kind: "turn", turnId: previousRun });
+  });
+
+  it("applies the explicit owner's file permissions while another environment owns the route", async () => {
+    route.deniedEnvironmentId = owner.environmentId;
+    useDiffPanelStore.getState().selectGitScope(owner, "branch");
+    await act(() =>
+      root.render(
+        <DiffPanel threadRef={owner} composerDraftTarget={owner} workspaceMutationId={null} />,
+      ),
+    );
+    expect(container.textContent).toContain("This connection cannot read local diffs.");
+    expect(selection(routed)).toMatchObject({ kind: "turn", turnId: previousRun });
+    expect(route.reads).toBe(0);
   });
 });

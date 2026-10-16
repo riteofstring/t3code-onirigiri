@@ -3,6 +3,7 @@
 import { useContext, useLayoutEffect, useRef } from "react";
 
 import { acquireBrowserSurface, type BrowserSurfaceRect } from "./browserSurfaceStore";
+import { observeResize } from "../lib/observeResize";
 import {
   BrowserSurfaceProjectionContext,
   browserSurfaceAncestors,
@@ -49,7 +50,7 @@ export function BrowserSurfaceSlot(props: {
           keyDown: (event: KeyboardEvent) => projectionPolicy.keyboard?.keyDown(element, event),
         }
       : undefined;
-    const observer = new ResizeObserver(() => update());
+    let stopObserving = () => {};
     // Camera transforms do not resize the slot. Observe presented ancestor
     // writes, including moves that do not affect the focused pane.
     const transforms = projectionPolicy
@@ -80,13 +81,13 @@ export function BrowserSurfaceSlot(props: {
         nextObserved.length !== observed.length ||
         nextObserved.some((node, i) => node !== observed[i])
       ) {
-        observer.disconnect();
+        stopObserving();
         transforms?.disconnect();
         for (const node of nextObserved) {
-          observer.observe(node);
           transforms?.observe(node, { attributes: true, childList: true });
         }
         observed = nextObserved;
+        stopObserving = observeResize(observed, () => update());
       }
       if (
         source === "mutation" &&
@@ -153,7 +154,7 @@ export function BrowserSurfaceSlot(props: {
     window.addEventListener("scroll", measure, true);
     return () => {
       disposed = true;
-      observer.disconnect();
+      stopObserving();
       transforms?.disconnect();
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);

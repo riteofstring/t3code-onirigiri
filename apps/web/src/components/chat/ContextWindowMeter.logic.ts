@@ -9,7 +9,8 @@ import {
 } from "../../providerInstances";
 import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
-const CLAUDE_RESUME_COMPACTION_MINUTES = 70;
+// Used when the provider did not report its cache TTL: Claude's 1h cache plus slack.
+const CLAUDE_RESUME_COMPACTION_FALLBACK_MS = 70 * 60_000;
 const CLAUDE_RESUME_COMPACTION_TOKENS = 100_000;
 
 export function providerSupportsManualCompaction(
@@ -60,26 +61,25 @@ export function hasDismissedResumeCompaction(
   });
 }
 
-/** When resuming with less context becomes worth offering, or null if never. */
 export function resumeCompactionOfferAt(input: {
   readonly provider: string | null | undefined;
   readonly usedTokens: number | null | undefined;
   readonly updatedAt: string | null | undefined;
+  readonly promptCacheTtlMs?: number | undefined;
 }): number | null {
-  if (
-    input.provider !== "claudeAgent" ||
-    (input.usedTokens ?? 0) < CLAUDE_RESUME_COMPACTION_TOKENS
-  ) {
+  if (input.provider !== "claudeAgent" || (input.usedTokens ?? 0) < CLAUDE_RESUME_COMPACTION_TOKENS)
     return null;
-  }
   const updatedAt = Date.parse(input.updatedAt ?? "");
-  return Number.isFinite(updatedAt) ? updatedAt + CLAUDE_RESUME_COMPACTION_MINUTES * 60_000 : null;
+  return Number.isFinite(updatedAt)
+    ? updatedAt + (input.promptCacheTtlMs ?? CLAUDE_RESUME_COMPACTION_FALLBACK_MS)
+    : null;
 }
 
 export function shouldOfferResumeCompaction(input: {
   readonly provider: string | null | undefined;
   readonly usedTokens: number | null | undefined;
   readonly updatedAt: string | null | undefined;
+  readonly promptCacheTtlMs?: number | undefined;
   readonly now: string;
 }): boolean {
   const offerAt = resumeCompactionOfferAt(input);
@@ -139,4 +139,12 @@ export function shouldReserveContextWindowMeter(input: {
     input.threadStarted &&
     input.providerReportsContextWindow !== false
   );
+}
+
+export function formatContextWindowCost(cost: {
+  readonly amount: number;
+  readonly currency: string;
+}): string {
+  const fractionDigits = Math.abs(cost.amount) > 0 && Math.abs(cost.amount) < 0.01 ? 4 : 2;
+  return `${cost.currency} ${cost.amount.toFixed(fractionDigits)}`;
 }

@@ -19,14 +19,21 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@riteofstring/onirigiri", () => ({ useOnirigiriPaneInteractive: () => true }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@t3tools/web/src/state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/web/src/state/session")>()),
+  readEnvironmentScope: () => true,
+  useEnvironmentScope: () => true,
+}));
 vi.mock("@t3tools/web/src/components/RightPanelTabs", () => ({
   RightPanelEmptyState: () => null,
 }));
-vi.mock("@t3tools/web/src/components/AgentsPanel", () => ({ AgentsPanel: () => null }));
+vi.mock("@t3tools/web/src/components/chat/ThreadRelationshipsControl", () => ({
+  ThreadRelationshipsPanel: () => null,
+}));
 vi.mock("@t3tools/web/src/components/pullRequest/PullRequestDetailPanel", () => ({
   PullRequestDetailPanel: () => null,
 }));
-vi.mock("@t3tools/web/src/components/ThreadPullRequestsPanel", () => ({
+vi.mock("@t3tools/web/src/components/pullRequest/ThreadPullRequestsPanel", () => ({
   ThreadPullRequestsPanel: () => null,
 }));
 vi.mock("@t3tools/web/src/components/ui/toast", () => ({
@@ -47,7 +54,11 @@ vi.mock("@t3tools/web/src/composerDraftStore", () => ({
     select({ getDraftThreadByRef: () => null }),
 }));
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThread: () => ({ environmentId: "environment", projectId: "project", worktreePath: null }),
+  useThreadShell: () => ({
+    environmentId: "environment",
+    projectId: "project",
+    worktreePath: null,
+  }),
   useProject: () => ({ workspaceRoot: "/repo" }),
 }));
 vi.mock("@t3tools/web/src/state/terminalSessions", () => ({
@@ -113,6 +124,7 @@ vi.mock("~/terminal/ghostty/surface", () => ({
           input.setAttribute("aria-label", "Terminal input");
           mount.append(input);
           resolve({
+            input,
             setVisible: vi.fn(),
             setTheme: vi.fn(),
             focus: () => input.focus(),

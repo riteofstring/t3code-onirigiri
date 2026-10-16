@@ -2,7 +2,7 @@ import { RegistryContext } from "@effect/atom-react";
 import type { VcsStatusResult } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -113,7 +113,7 @@ describe("ChatView VCS selection", () => {
     expect(active).toHaveBeenCalledOnce();
     expect(passive).toHaveBeenCalledOnce();
     expect(displayed("passive")).toEqual({
-      data: { isRepo: true, refName: "main", hasWorkingTreeChanges: false },
+      data: { isRepo: true, refName: "main", hasWorkingTreeChanges: false, pr: null },
       error: null,
     });
 
@@ -136,12 +136,14 @@ describe("ChatView VCS selection", () => {
       isRepo: true,
       refName: "feature",
       hasWorkingTreeChanges: false,
+      pr: null,
     });
     await publish(atom, AsyncResult.success({ ...STATUS, isRepo: false, refName: null }));
     expect(displayed().data).toEqual({
       isRepo: false,
       refName: null,
       hasWorkingTreeChanges: false,
+      pr: null,
     });
     expect(onRender).toHaveBeenCalledTimes(4);
   });
@@ -189,6 +191,18 @@ describe("ChatView VCS selection", () => {
     expect(onRender).toHaveBeenCalledTimes(previousRenderCount);
     expect(onData.mock.lastCall![0]).toEqual(remoteChange);
     expect(onData.mock.lastCall![0]?.workingTree.files[0]?.path).toBe("src/app.ts");
+
+    await publish(
+      atom,
+      AsyncResult.success({ ...remoteChange, pr: { ...remoteChange.pr, state: "closed" } }),
+    );
+    expect(displayed().data.pr).toEqual({
+      number: 12,
+      url: "https://example.com/pr/12",
+      state: "closed",
+      headRef: "feature",
+    });
+    expect(onRender).toHaveBeenCalledTimes(previousRenderCount + 1);
   });
 
   it("shows initial failure, retains successful data through failure, and clears recovered errors", async () => {
@@ -209,7 +223,7 @@ describe("ChatView VCS selection", () => {
       }),
     );
     expect(displayed()).toEqual({
-      data: { isRepo: true, refName: "main", hasWorkingTreeChanges: false },
+      data: { isRepo: true, refName: "main", hasWorkingTreeChanges: false, pr: null },
       error: "Status failed",
     });
     await publish(atom, AsyncResult.waiting(registry.get(atom)));
@@ -237,7 +251,7 @@ describe("ChatView VCS selection", () => {
 
     expect(attempts).toBe(2);
     expect(displayed()).toEqual({
-      data: { isRepo: true, refName: "recovered", hasWorkingTreeChanges: false },
+      data: { isRepo: true, refName: "recovered", hasWorkingTreeChanges: false, pr: null },
       error: null,
     });
   });

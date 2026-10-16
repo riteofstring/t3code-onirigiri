@@ -1,35 +1,39 @@
 // @vitest-environment jsdom
+import {
+  v2Now,
+  v2Projection,
+  v2ThreadShell,
+} from "../../../../../packages/client-runtime/src/state/orchestrationV2TestFixtures.ts";
 import { RegistryContext } from "@effect/atom-react";
 import type { LegendListRef } from "@legendapp/list/react";
 import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
 import {
   CheckpointRef,
   EnvironmentId,
-  EventId,
   MessageId,
   ProjectId,
-  ProviderInstanceId,
   ThreadId,
-  TurnId,
+  RunId,
   type EditorId,
   type OrchestrationProjectShell,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThread,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
-import { AsyncResult, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { act, createRef, Profiler, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import { useThread } from "../../state/entities";
+import { useThreadProjection } from "../../state/entities";
 import { useUiStateStore } from "../../uiStateStore";
 import { MessagesTimeline } from "./MessagesTimeline";
 
 const fixture = vi.hoisted(() => ({
   cardRenders: 0,
+  onListLoad: undefined as (() => void) | undefined,
   timelineRender: vi.fn(),
   menu: vi.fn().mockResolvedValue("editor:vscode"),
   openInEditor: vi.fn().mockResolvedValue({ _tag: "Success" }),
@@ -37,7 +41,7 @@ const fixture = vi.hoisted(() => ({
 }));
 
 const atoms = await vi.hoisted(async () => {
-  const { Atom, AsyncResult, AtomRegistry } = await import("effect/unstable/reactivity");
+  const { Atom, AsyncResult, AtomRegistry } = await import("effect/reactivity");
   const {
     createEnvironmentThreadDetailAtoms,
     createEnvironmentThreadShellAtoms,
@@ -46,7 +50,7 @@ const atoms = await vi.hoisted(async () => {
   const { createEnvironmentProjectAtoms } = await import("@t3tools/client-runtime/state/projects");
   const { mergeWithDefaultKeybindings } = await import("@t3tools/shared/keybindings");
   const snapshots = Atom.family((_id: EnvironmentId) =>
-    Atom.make<OrchestrationShellSnapshot | null>(null).pipe(Atom.keepAlive),
+    Atom.make<OrchestrationV2ShellSnapshot | null>(null).pipe(Atom.keepAlive),
   );
   const detail = Atom.family((_key: string) =>
     Atom.make<AsyncResult.AsyncResult<EnvironmentThreadState, Error>>(
@@ -124,15 +128,19 @@ vi.mock("@legendapp/list/react", () => ({
     renderItem: (input: { item: { id: string } }) => ReactNode;
     ListHeaderComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
-  }) => (
-    <div>
-      {props.ListHeaderComponent}
-      {props.data.map((item) => (
-        <div key={item.id}>{props.renderItem({ item })}</div>
-      ))}
-      {props.ListFooterComponent}
-    </div>
-  ),
+    onLoad?: () => void;
+  }) => {
+    fixture.onListLoad = props.onLoad;
+    return (
+      <div>
+        {props.ListHeaderComponent}
+        {props.data.map((item) => (
+          <div key={item.id}>{props.renderItem({ item })}</div>
+        ))}
+        {props.ListFooterComponent}
+      </div>
+    );
+  },
 }));
 vi.mock("./ChangedFilesTree", () => ({
   ChangedFilesCard: (
@@ -149,7 +157,7 @@ vi.mock("./ChangedFilesTree", () => ({
           <button
             key={file.path}
             data-file={file.path}
-            onClick={() => props.onOpenTurnDiff(props.turnId, file.path)}
+            onClick={() => props.onOpenTurnDiff(props.runId, file.path)}
             onContextMenu={(event) => props.onFileContextMenu?.(file.path, event)}
           >
             {file.path}
@@ -165,7 +173,7 @@ const REMOTE = EnvironmentId.make("remote");
 const THREAD = ThreadId.make("thread");
 const PROJECT = ProjectId.make("project");
 const OTHER_PROJECT = ProjectId.make("other-project");
-const TURN = TurnId.make("turn");
+const TURN = RunId.make("turn");
 const MESSAGE = MessageId.make("assistant");
 const DATE = "2026-10-15T00:00:00.000Z";
 const FILE = "packages/app/src/index.ts";
@@ -173,42 +181,30 @@ let registry: AtomRegistry.AtomRegistry;
 let host: HTMLDivElement;
 let root: Root;
 
-function shell(overrides: Partial<OrchestrationThreadShell> = {}): OrchestrationThreadShell {
+function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): OrchestrationV2ThreadShell {
   return {
+    ...v2ThreadShell,
     id: THREAD,
     projectId: PROJECT,
     title: "Thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: DATE,
-    updatedAt: DATE,
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    linkedPullRequest: null,
-    pullRequests: [],
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
+    lineage: { ...v2ThreadShell.lineage, rootThreadId: THREAD },
     ...overrides,
   };
 }
 
-function thread(overrides: Partial<OrchestrationThread> = {}): OrchestrationThread {
+function thread(
+  overrides: Partial<OrchestrationV2ThreadProjection["thread"]> = {},
+): OrchestrationV2ThreadProjection {
   return {
-    ...shell(),
-    deletedAt: null,
-    messages: [],
-    activities: [],
-    proposedPlans: [],
-    checkpoints: [],
-    ...overrides,
+    ...v2Projection,
+    thread: {
+      ...v2Projection.thread,
+      id: THREAD,
+      projectId: PROJECT,
+      title: "Thread",
+      lineage: { ...v2Projection.thread.lineage, rootThreadId: THREAD },
+      ...overrides,
+    },
   };
 }
 
@@ -234,41 +230,51 @@ function project(environmentId = LOCAL, id = PROJECT): OrchestrationProjectShell
 }
 
 function publishShells(
-  threads: readonly OrchestrationThreadShell[],
+  threads: readonly OrchestrationV2ThreadShell[],
   environmentId = LOCAL,
   projects: readonly OrchestrationProjectShell[] = [project(environmentId)],
 ) {
   registry.set(atoms.snapshots(environmentId), {
+    schemaVersion: 1,
     snapshotSequence: 1,
-    updatedAt: DATE,
+    archivedThreads: [],
     projects,
     threads,
   });
 }
 
-function publishDetail(value: OrchestrationThread | null, environmentId = LOCAL) {
+function publishDetail(value: OrchestrationV2ThreadProjection | null, environmentId = LOCAL) {
   registry.set(
     atoms.detail(`${environmentId}:${THREAD}`),
     AsyncResult.success(
       value === null
         ? atoms.emptyDetail
-        : { data: Option.some(value), status: "live", error: Option.none(), page: Option.none() },
+        : { ...atoms.emptyDetail, data: Option.some(value), status: "live", error: Option.none() },
     ),
   );
 }
 
 function DetailWitness({ environmentId }: { environmentId: EnvironmentId }) {
-  const value = useThread({ environmentId, threadId: THREAD });
-  return <output>{value?.messages.at(-1)?.text ?? value?.activities.at(-1)?.summary}</output>;
+  const value = useThreadProjection({ environmentId, threadId: THREAD });
+  return (
+    <output>{value?.projection.messages.at(-1)?.text ?? value?.projection.thread.title}</output>
+  );
 }
 
 function props(environmentId = LOCAL): ComponentProps<typeof MessagesTimeline> {
   return {
     isWorking: false,
+    providerStatuses: [],
+    runs: [],
+    onAnchorSizeChanged: () => {},
     activeTurnStartedAt: null,
+    activeTurnInProgress: false,
+    onOpenThread: () => {},
+    onForkFromRun: async () => {},
+    onRollbackCheckpoint: () => {},
     listRef: createRef<LegendListRef | null>(),
-    latestTurn: { turnId: TURN, state: "completed", startedAt: DATE, completedAt: DATE },
-    runningTurnId: null,
+    latestRun: { runId: TURN, status: "completed", startedAt: DATE, completedAt: DATE },
+    runningRunId: null,
     timelineEntries: [
       {
         id: "assistant-entry",
@@ -278,7 +284,7 @@ function props(environmentId = LOCAL): ComponentProps<typeof MessagesTimeline> {
           id: MESSAGE,
           role: "assistant",
           text: "Updated the file.",
-          turnId: TURN,
+          runId: TURN,
           createdAt: DATE,
           updatedAt: DATE,
           streaming: false,
@@ -287,7 +293,7 @@ function props(environmentId = LOCAL): ComponentProps<typeof MessagesTimeline> {
     ],
     turnDiffSummaries: [
       {
-        turnId: TURN,
+        runId: TURN,
         checkpointTurnCount: 1,
         checkpointRef: CheckpointRef.make("checkpoint"),
         status: "ready",
@@ -382,7 +388,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it.each(["messages", "activities"] as const)(
+it.each(["messages", "metadata"] as const)(
   "keeps changed files untouched by unrelated same-thread %s",
   async (kind) => {
     await render();
@@ -391,32 +397,26 @@ it.each(["messages", "activities"] as const)(
     const content = card().textContent;
     const value =
       kind === "messages"
-        ? thread({
+        ? {
+            ...thread(),
             messages: [
               {
                 id: MessageId.make("new-message"),
-                role: "assistant",
+                threadId: THREAD,
+                runId: TURN,
+                nodeId: null,
+                role: "assistant" as const,
                 text: "Live detail advanced",
-                turnId: TURN,
-                createdAt: DATE,
-                updatedAt: DATE,
+                attachments: [],
                 streaming: true,
+                createdAt: v2Now,
+                updatedAt: v2Now,
+                createdBy: "agent" as const,
+                creationSource: "provider" as const,
               },
             ],
-          })
-        : thread({
-            activities: [
-              {
-                id: EventId.make("agent-progress"),
-                kind: "agent.updated",
-                tone: "info",
-                summary: "Live detail advanced",
-                payload: { progress: "working" },
-                turnId: TURN,
-                createdAt: DATE,
-              },
-            ],
-          });
+          }
+        : thread({ title: "Live detail advanced" });
     await act(() => publishDetail(value));
     expect(host.querySelector("output")?.textContent).toBe("Live detail advanced");
     expect(card().textContent).toBe(content);
@@ -485,35 +485,26 @@ it("updates file actions for project and worktree changes and keeps menu capabil
   expect(card().textContent).toContain("Collapse folders");
 });
 
-it("keeps archived detail fallback and resumes shell authority after recovery", async () => {
+it("recovers file context when shell metadata returns without subscribing to live detail", async () => {
   publishShells([]);
-  publishDetail(thread({ archivedAt: DATE }));
+  publishDetail(thread());
   await render();
   await openMenu();
   expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
-    "/workspace/local/packages/app/src/index.ts",
-  );
-  await act(() => publishDetail(null));
-  await openMenu();
-  expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
     "/workspace/local/packages/app/packages/app/src/index.ts",
   );
-  await act(() => publishDetail(thread({ archivedAt: DATE })));
+  await act(() => publishShells([shell()]));
   await openMenu();
   expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
     "/workspace/local/packages/app/src/index.ts",
-  );
-  await act(() => publishShells([shell({ worktreePath: "/worktrees/recovered" })]));
-  await openMenu();
-  expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
-    "/workspace/local/packages/app/packages/app/src/index.ts",
   );
   const before = fixture.cardRenders;
   const commits = fixture.timelineRender.mock.calls.length;
-  await act(() => publishDetail(thread({ archivedAt: DATE, title: "Stale detail title" })));
+  await act(() =>
+    publishDetail(thread({ worktreePath: "/stale-worktree", title: "Stale detail title" })),
+  );
   expect(fixture.cardRenders).toBe(before);
   expect(fixture.timelineRender).toHaveBeenCalledTimes(commits);
-  await act(() => publishShells([]));
   await openMenu();
   expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
     "/workspace/local/packages/app/src/index.ts",
@@ -533,4 +524,32 @@ it("isolates colliding thread/project IDs across environments and switches the f
     environmentId: REMOTE,
     input: { cwd: "/workspace/remote/packages/app/src/index.ts", editor: "vscode" },
   });
+});
+
+it("holds a populated timeline until the native list is ready and releases readiness when unmounted", async () => {
+  const onReadyChange = vi.fn();
+  const value = { ...props(), onReadyChange };
+  await render(value);
+  expect(onReadyChange).toHaveBeenLastCalledWith(false, value.routeThreadKey);
+  await act(() => fixture.onListLoad?.());
+  expect(onReadyChange).toHaveBeenLastCalledWith(true, value.routeThreadKey);
+  await act(() => root.render(null));
+  expect(onReadyChange).toHaveBeenLastCalledWith(false, value.routeThreadKey);
+});
+
+it("reports an empty timeline ready and waits for a newly mounted list after messages arrive", async () => {
+  const onReadyChange = vi.fn();
+  const value = props();
+  await render({
+    ...value,
+    onReadyChange,
+    timelineEntries: [],
+    turnDiffSummaries: [],
+    latestRun: null,
+  });
+  expect(onReadyChange).toHaveBeenLastCalledWith(true, value.routeThreadKey);
+  await render({ ...value, onReadyChange });
+  expect(onReadyChange).toHaveBeenLastCalledWith(false, value.routeThreadKey);
+  await act(() => fixture.onListLoad?.());
+  expect(onReadyChange).toHaveBeenLastCalledWith(true, value.routeThreadKey);
 });

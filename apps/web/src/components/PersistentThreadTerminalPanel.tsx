@@ -7,7 +7,7 @@ import { memo, useMemo } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
 import type { TerminalContextSelection } from "../lib/terminalContext";
 import type { RightPanelSurface } from "../rightPanelStore";
-import { useProject, useThread } from "../state/entities";
+import { useProject, useThreadShell } from "../state/entities";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 
@@ -56,7 +56,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
   closeShortcutLabel,
 }: PersistentThreadTerminalPanelProps) {
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
-  const serverThread = useThread(threadRef, { waitForShell: draftThread !== null });
+  const serverThread = useThreadShell(threadRef);
   const projectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
@@ -67,15 +67,21 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
   });
+  const launchCwd = launchContext?.cwd;
+  const launchWorktreePath = launchContext?.worktreePath;
   const threadWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const activeSummary =
-    knownTerminalSessions.find((session) => session.target.terminalId === surface.activeTerminalId)
+    knownTerminalSessions?.find((session) => session.target.terminalId === surface.activeTerminalId)
       ?.state.summary ?? null;
   const worktreePath =
-    launchContext?.worktreePath ?? activeSummary?.worktreePath ?? threadWorktreePath;
+    launchWorktreePath !== undefined
+      ? launchWorktreePath
+      : activeSummary !== null
+        ? activeSummary.worktreePath
+        : threadWorktreePath;
   const cwd = useMemo(
     () =>
-      launchContext?.cwd ??
+      launchCwd ??
       activeSummary?.cwd ??
       (project
         ? projectScriptCwd({
@@ -83,7 +89,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
             worktreePath,
           })
         : null),
-    [activeSummary?.cwd, launchContext?.cwd, project, worktreePath],
+    [activeSummary?.cwd, launchCwd, project, worktreePath],
   );
   const runtimeEnv = useMemo(
     () =>
@@ -99,7 +105,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     const labels = new Map<string, string>();
     for (const terminalId of surface.terminalIds) {
       const summary =
-        knownTerminalSessions.find((session) => session.target.terminalId === terminalId)?.state
+        knownTerminalSessions?.find((session) => session.target.terminalId === terminalId)?.state
           .summary ?? null;
       labels.set(terminalId, resolveTerminalSessionLabel(terminalId, summary));
     }
@@ -116,12 +122,16 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     >();
     for (const terminalId of surface.terminalIds) {
       const summary =
-        knownTerminalSessions.find((session) => session.target.terminalId === terminalId)?.state
+        knownTerminalSessions?.find((session) => session.target.terminalId === terminalId)?.state
           .summary ?? null;
       const terminalWorktreePath =
-        launchContext?.worktreePath ?? summary?.worktreePath ?? threadWorktreePath;
+        launchWorktreePath !== undefined
+          ? launchWorktreePath
+          : summary !== null
+            ? summary.worktreePath
+            : threadWorktreePath;
       const terminalCwd =
-        launchContext?.cwd ??
+        launchCwd ??
         summary?.cwd ??
         (project
           ? projectScriptCwd({
@@ -142,8 +152,8 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     return locations;
   }, [
     knownTerminalSessions,
-    launchContext?.cwd,
-    launchContext?.worktreePath,
+    launchCwd,
+    launchWorktreePath,
     project,
     surface.terminalIds,
     threadWorktreePath,

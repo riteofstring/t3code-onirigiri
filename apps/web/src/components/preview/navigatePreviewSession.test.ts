@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
@@ -86,6 +86,18 @@ afterEach(async () => {
 });
 
 describe("navigatePreviewSession", () => {
+  it("binds an early native server tab before navigating it", async () => {
+    const serverSnapshot = { ...snapshot, runtime: "server" as const };
+    reconcilePreviewServerSessions(threadRef, { ...result, sessions: [serverSnapshot] });
+    await expect(navigate()).resolves.toBe(true);
+    expect(mocks.createTab).toHaveBeenCalledExactlyOnceWith(runtimeTabId, {
+      zoomFactor: 1.25,
+      colorScheme: "dark",
+      serverTab: { threadId: threadRef.threadId, tabId: snapshot.tabId },
+    });
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith(runtimeTabId, url);
+  });
+
   it("resolves the first epoch and applies saved defaults before an early address submission", async () => {
     const list = deferred<AtomCommandResult<PreviewListResult, Error>>();
     listPreviews.mockReturnValueOnce(list.promise);

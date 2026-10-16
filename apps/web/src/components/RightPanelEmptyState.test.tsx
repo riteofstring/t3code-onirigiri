@@ -22,7 +22,7 @@ function chooserProps(): ComponentProps<typeof RightPanelEmptyState> {
     onAddFiles: vi.fn(),
     onAddPullRequest: vi.fn(),
     onAddPullRequests: vi.fn(),
-    onAddAgents: vi.fn(),
+    onAddLineage: vi.fn(),
     onAddDevice: vi.fn(),
     browserAvailable: true,
     terminalAvailable: true,
@@ -30,9 +30,8 @@ function chooserProps(): ComponentProps<typeof RightPanelEmptyState> {
     filesAvailable: true,
     pullRequestAvailable: false,
     pullRequestsAvailable: false,
-    agentsAvailable: true,
+    lineageAvailable: true,
     deviceAvailable: true,
-    liveAgentCount: 0,
   };
 }
 
@@ -123,7 +122,7 @@ it("keeps unavailable reasons in tooltips and skips disabled rows while enabled 
   const opened: string[] = [];
   props.onAddTerminal = () => opened.push("terminal");
   props.onAddFiles = () => opened.push("files");
-  props.onAddAgents = () => opened.push("agents");
+  props.onAddLineage = () => opened.push("lineage");
   props.onAddDevice = () => opened.push("device");
   await act(() =>
     root.render(
@@ -160,7 +159,7 @@ it("keeps unavailable reasons in tooltips and skips disabled rows while enabled 
     await key(launcher, "ArrowDown");
     await key(launcher, "Enter");
   }
-  expect(opened).toEqual(["terminal", "files", "agents", "device"]);
+  expect(opened).toEqual(["terminal", "files", "lineage", "device"]);
   expect(props.onAddDiff).not.toHaveBeenCalled();
   expect(props.onAddPullRequest).not.toHaveBeenCalled();
   expect(props.onAddPullRequests).not.toHaveBeenCalled();
@@ -169,7 +168,7 @@ it("keeps unavailable reasons in tooltips and skips disabled rows while enabled 
       .find((button) => button.textContent?.startsWith("Terminal"))!
       .click();
   });
-  expect(opened).toEqual(["terminal", "files", "agents", "device", "terminal"]);
+  expect(opened).toEqual(["terminal", "files", "lineage", "device", "terminal"]);
 });
 
 it("opens the default Browser from the keyboard and a chosen profile from its menu", async () => {

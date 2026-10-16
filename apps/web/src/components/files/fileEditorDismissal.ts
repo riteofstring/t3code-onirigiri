@@ -1,8 +1,6 @@
-import type { Editor } from "@pierre/diffs/editor";
-
 interface FileEditorDismissalOptions {
   root: HTMLElement;
-  editor: Pick<Editor<unknown>, "getFile" | "setSelections">;
+  editor: { setSelections: (selections: []) => void };
   isBlocked: () => boolean;
   onDismiss: () => void;
 }
@@ -13,7 +11,7 @@ function dismissFileEditorInteraction({
   onDismiss,
 }: Pick<FileEditorDismissalOptions, "root" | "editor" | "onDismiss">): void {
   onDismiss();
-  if (editor.getFile() !== undefined) editor.setSelections([]);
+  editor.setSelections([]);
 
   const file = root.querySelector<HTMLElement>("diffs-container");
   const activeElement = file?.shadowRoot?.activeElement;

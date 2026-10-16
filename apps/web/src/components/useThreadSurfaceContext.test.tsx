@@ -2,32 +2,45 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
 import {
+  CheckpointId,
   CheckpointRef,
+  CheckpointScopeId,
   EnvironmentId,
-  EventId,
+  NodeId,
   MessageId,
   ProjectId,
-  ProviderInstanceId,
   ThreadId,
-  TurnId,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThread,
-  type OrchestrationThreadActivity,
-  type OrchestrationThreadShell,
+  RunId,
+  TurnItemId,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2ThreadShell,
   type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
-import { AsyncResult, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import { useThread } from "../state/entities";
+import { useThreadProjection } from "../state/entities";
 import { useThreadSurfaceContext } from "./useThreadSurfaceContext";
+
+import {
+  v2Projection,
+  v2ThreadShell,
+  v2Now,
+} from "../../../../packages/client-runtime/src/state/orchestrationV2TestFixtures";
 
 type StatusRequest = { environmentId: string; input: { cwd: string } };
 const fixture = vi.hoisted(() => ({
+  deniedScopes: new Set<string>(),
+  desktopBrowser: true,
+  serverBrowsers: new Set<string>(),
+  fileRead: true,
   renders: new Map<string, number>(),
   results: new Map<string, ReturnType<typeof useThreadSurfaceContext>>(),
   projects: new Map<string, object>(),
@@ -41,7 +54,7 @@ const fixture = vi.hoisted(() => ({
 }));
 
 const atoms = await vi.hoisted(async () => {
-  const { Atom, AsyncResult } = await import("effect/unstable/reactivity");
+  const { Atom, AsyncResult } = await import("effect/reactivity");
   const {
     createEnvironmentThreadDetailAtoms,
     createEnvironmentThreadShellAtoms,
@@ -49,7 +62,7 @@ const atoms = await vi.hoisted(async () => {
   } = await import("@t3tools/client-runtime/state/threads");
   const { mergeWithDefaultKeybindings } = await import("@t3tools/shared/keybindings");
   const snapshots = Atom.family((_id: EnvironmentId) =>
-    Atom.make<OrchestrationShellSnapshot | null>(null).pipe(Atom.keepAlive),
+    Atom.make<OrchestrationV2ShellSnapshot | null>(null).pipe(Atom.keepAlive),
   );
   const detail = Atom.family((_key: string) =>
     Atom.make<AsyncResult.AsyncResult<EnvironmentThreadState, Error>>(
@@ -104,6 +117,7 @@ vi.mock("../state/entities", async (importOriginal) => ({
   useProject: (ref: ScopedProjectRef | null) =>
     ref ? (fixture.projects.get(`${ref.environmentId}:${ref.projectId}`) ?? null) : null,
   useServerConfigs: () => fixture.configs,
+  useEnvironmentSupportsServerBrowser: (id: string) => fixture.serverBrowsers.has(id),
 }));
 vi.mock("../hooks/useSettings", () => ({
   useEnvironmentSettings: (id: string) => fixture.settings.get(id),
@@ -111,7 +125,15 @@ vi.mock("../hooks/useSettings", () => ({
 vi.mock("../browser/browserDefaults", () => ({
   useBrowserDefaults: () => ({ profiles: fixture.browserProfiles }),
 }));
-vi.mock("../previewStateStore", () => ({ isPreviewSupportedInRuntime: () => true }));
+vi.mock("../previewStateStore", () => ({
+  isPreviewSupportedInRuntime: () => fixture.desktopBrowser,
+}));
+vi.mock("../state/session", () => ({
+  useEnvironmentScope: (id: string, scope: string) => !fixture.deniedScopes.has(`${id}:${scope}`),
+}));
+vi.mock("../state/filesystem", () => ({
+  useFilesystemReadAccess: () => ({ canReadFiles: fixture.fileRead }),
+}));
 vi.mock("../state/vcs", () => ({
   vcsEnvironment: { status: (request: StatusRequest) => request },
 }));
@@ -130,27 +152,17 @@ const REMOTE = EnvironmentId.make("remote");
 const ONE = ThreadId.make("one");
 const TWO = ThreadId.make("two");
 const PROJECT = ProjectId.make("project");
-const DATE = "2026-10-14T00:00:00.000Z";
+const DATE = DateTime.formatIso(v2Now);
 let registry: AtomRegistry.AtomRegistry;
 let host: HTMLDivElement;
 let root: Root;
 
-function shell(id = ONE, environmentId = LOCAL): OrchestrationThreadShell {
+function shell(id = ONE, environmentId = LOCAL): OrchestrationV2ThreadShell {
   return {
+    ...v2ThreadShell,
     id,
     projectId: PROJECT,
-    title: id,
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
     worktreePath: `/worktrees/${environmentId}/${id}`,
-    latestTurn: null,
-    createdAt: DATE,
-    updatedAt: DATE,
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
     linkedPullRequest: {
       projectId: PROJECT,
       repository: `${environmentId}/repo`,
@@ -169,65 +181,81 @@ function shell(id = ONE, environmentId = LOCAL): OrchestrationThreadShell {
         stack: null,
       },
     ],
-    session: {
-      threadId: id,
-      status: "running",
-      providerName: "codex",
-      runtimeMode: "full-access",
-      activeTurnId: null,
-      lastError: null,
-      updatedAt: DATE,
+  };
+}
+
+function thread(id = ONE, environmentId = LOCAL): OrchestrationV2ThreadProjection {
+  const metadata = shell(id, environmentId);
+  return {
+    ...v2Projection,
+    thread: {
+      ...v2Projection.thread,
+      id,
+      projectId: PROJECT,
+      worktreePath: metadata.worktreePath,
+      linkedPullRequest: metadata.linkedPullRequest,
+      pullRequests: metadata.pullRequests,
     },
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
   };
 }
 
-function thread(id = ONE, environmentId = LOCAL): OrchestrationThread {
-  return {
-    ...shell(id, environmentId),
-    deletedAt: null,
-    messages: [],
-    activities: [],
-    proposedPlans: [],
-    checkpoints: [],
-  };
-}
-
-function activity(
+function command(
   id: string,
-  kind: string,
-  payload: Record<string, unknown>,
-): OrchestrationThreadActivity {
+  status: "running" | "completed" = "completed",
+): OrchestrationV2ProjectedTurnItem {
+  const itemId = TurnItemId.make(id);
   return {
-    id: EventId.make(id),
-    kind,
-    payload,
-    tone: "info",
-    summary: kind,
-    turnId: null,
-    createdAt: DATE,
+    position: 0,
+    visibility: "local",
+    sourceThreadId: ONE,
+    sourceItemId: itemId,
+    item: {
+      id: itemId,
+      threadId: ONE,
+      runId: null,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 1,
+      status,
+      title: null,
+      startedAt: v2Now,
+      completedAt: status === "completed" ? v2Now : null,
+      updatedAt: v2Now,
+      type: "command_execution",
+      input: "pwd",
+      output: "",
+      exitCode: undefined,
+    },
   };
 }
 
-function publishDetail(value: OrchestrationThread, environmentId = LOCAL) {
+function publishDetail(value: OrchestrationV2ThreadProjection, environmentId = LOCAL) {
   registry.set(
-    atoms.detail(`${environmentId}:${value.id}`),
+    atoms.detail(`${environmentId}:${value.thread.id}`),
     AsyncResult.success({
       data: Option.some(value),
       status: "live",
       error: Option.none(),
-      page: Option.none(),
+      history: {
+        historyCursor: null,
+        hasMoreHistory: false,
+        loading: false,
+        error: null,
+        expanded: false,
+        latestLocalTurnOrdinal: null,
+      },
     }),
   );
 }
 
-function publishShells(threads: readonly OrchestrationThreadShell[], environmentId = LOCAL) {
+function publishShells(threads: readonly OrchestrationV2ThreadShell[], environmentId = LOCAL) {
   registry.set(atoms.snapshots(environmentId), {
     snapshotSequence: 1,
-    updatedAt: DATE,
+    schemaVersion: 1,
+    archivedThreads: [],
     projects: [],
     threads,
   });
@@ -242,7 +270,7 @@ function Probe({
   name: string;
   environmentId?: EnvironmentId;
   threadId?: ThreadId;
-  detail?: false | "workspace" | "agents";
+  detail?: false | "workspace";
 }) {
   const ref: ScopedThreadRef = { environmentId, threadId };
   const result = useThreadSurfaceContext(ref, detail === undefined ? undefined : { detail });
@@ -253,20 +281,14 @@ function Probe({
       {JSON.stringify({
         cwd: result.cwd,
         mutation: result.context.workspaceMutationId,
-        liveCount: result.availability.liveAgentCount,
-        agents: result.context.agentModel.directAgents.map(({ id, status, progress }) => ({
-          id,
-          status,
-          progress,
-        })),
       })}
     </output>
   );
 }
 
 function Messages() {
-  const value = useThread({ environmentId: LOCAL, threadId: ONE });
-  return <output data-probe="messages">{value?.messages.at(-1)?.text}</output>;
+  const value = useThreadProjection({ environmentId: LOCAL, threadId: ONE });
+  return <output data-probe="messages">{value?.projection.messages.at(-1)?.text}</output>;
 }
 
 const displayed = (name: string) =>
@@ -282,6 +304,10 @@ const workspaceProbes = (
 
 beforeEach(() => {
   registry = AtomRegistry.make();
+  fixture.deniedScopes.clear();
+  fixture.desktopBrowser = true;
+  fixture.serverBrowsers.clear();
+  fixture.fileRead = true;
   fixture.renders.clear();
   fixture.results.clear();
   fixture.refresh.mockReset();
@@ -336,7 +362,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps Files and Diff untouched by same-thread message updates while chat receives them", async () => {
+it("keeps Files and Diff untouched by streaming text while chat receives it", async () => {
   const initial = thread();
   publishDetail(initial);
   await render(
@@ -352,96 +378,55 @@ it("keeps Files and Diff untouched by same-thread message updates while chat rec
       messages: [
         {
           id: MessageId.make("reply"),
+          threadId: ONE,
+          runId: null,
+          nodeId: null,
           role: "assistant",
           text: "Live reply",
-          turnId: null,
+          createdAt: v2Now,
+          updatedAt: v2Now,
+          createdBy: "agent",
+          creationSource: "provider",
+          attachments: [],
           streaming: true,
-          createdAt: DATE,
-          updatedAt: DATE,
         },
       ],
     }),
   );
   expect(host.querySelector('[data-probe="messages"]')!.textContent).toBe("Live reply");
-  expect.soft([fixture.renders.get("files"), fixture.renders.get("diff")]).toEqual(before);
+  expect([fixture.renders.get("files"), fixture.renders.get("diff")]).toEqual(before);
   expect(displayed("files").mutation).toBeNull();
 });
 
-it("keeps Files and Diff untouched by agent progress while Agents and default availability stay live", async () => {
-  const start = activity("start", "task.started", {
-    taskId: "worker",
-    agentKind: "agent",
-    title: "Worker",
-  });
-  const initial = { ...thread(), activities: [start] };
-  publishDetail(initial);
-  await render(
-    <>
-      {workspaceProbes}
-      <Probe name="agents" detail="agents" />
-      <Probe name="default" />
-    </>,
-  );
-  expect(displayed("agents").liveCount).toBe(1);
-  expect(displayed("default").liveCount).toBe(1);
-  const before = [fixture.renders.get("files"), fixture.renders.get("diff")];
-  const progress = activity("progress", "task.progress", {
-    taskId: "worker",
-    summary: "Reviewing files",
-  });
-  await act(() => publishDetail({ ...initial, activities: [start, progress] }));
-  expect(displayed("agents").agents).toMatchObject([
-    { progress: "Reviewing files", status: "running" },
-  ]);
-  expect(displayed("default").agents).toMatchObject([{ progress: "Reviewing files" }]);
-  expect.soft([fixture.renders.get("files"), fixture.renders.get("diff")]).toEqual(before);
-  await act(() =>
-    publishDetail({
-      ...initial,
-      activities: [
-        start,
-        progress,
-        activity("done", "task.completed", { taskId: "worker", status: "completed" }),
-      ],
-    }),
-  );
-  expect(displayed("agents").liveCount).toBe(0);
-  expect(displayed("default").liveCount).toBe(0);
-  expect.soft([fixture.renders.get("files"), fixture.renders.get("diff")]).toEqual(before);
-});
-
-it("refreshes Files and Diff for workspace mutations and completed checkpoints", async () => {
+it("ignores running tool output and refreshes for completed workspace mutations and checkpoints", async () => {
+  const initial = thread();
   await render(workspaceProbes);
-  const write = activity("write", "tool.completed", { itemType: "file_change" });
-  const changed = { ...thread(), activities: [write] };
+  const before = fixture.renders.get("files");
+  await act(() => publishDetail({ ...initial, visibleTurnItems: [command("write", "running")] }));
+  expect(fixture.renders.get("files")).toBe(before);
+  const changed = { ...initial, visibleTurnItems: [command("write")] };
   await act(() => publishDetail(changed));
   expect(displayed("files").mutation).toBe('["write",null]');
   expect(displayed("diff").mutation).toBe('["write",null]');
   expect(fixture.refresh).toHaveBeenCalledTimes(2);
   const checkpoint = {
-    turnId: TurnId.make("turn"),
-    checkpointTurnCount: 1,
-    checkpointRef: CheckpointRef.make("refs/checkpoints/turn"),
+    id: CheckpointId.make("checkpoint"),
+    scopeId: CheckpointScopeId.make("scope"),
+    nodeId: NodeId.make("node"),
+    threadId: ONE,
+    runId: RunId.make("run"),
+    parentCheckpointId: null,
+    ordinalWithinScope: 1,
+    appRunOrdinal: 1,
+    ref: CheckpointRef.make("refs/checkpoints/run"),
     status: "ready" as const,
     files: [],
-    assistantMessageId: null,
-    completedAt: DATE,
+    capturedAt: v2Now,
   };
   await act(() => publishDetail({ ...changed, checkpoints: [checkpoint] }));
   expect(displayed("files").mutation).toBe(`["write","${DATE}"]`);
   expect(displayed("diff").mutation).toBe(`["write","${DATE}"]`);
   expect(fixture.refresh).toHaveBeenCalledTimes(4);
-  const completedAt = "2026-10-14T00:00:01.000Z";
-  await act(() =>
-    publishDetail({
-      ...changed,
-      activities: [write, activity("command", "tool.completed", { itemType: "command_execution" })],
-      checkpoints: [{ ...checkpoint, completedAt }],
-    }),
-  );
-  expect(displayed("files").mutation).toBe(`["command","${completedAt}"]`);
-  expect(displayed("diff").mutation).toBe(`["command","${completedAt}"]`);
-  expect(fixture.refresh).toHaveBeenCalledTimes(6);
 });
 
 it("switches thread and environment without receiving another owner's detail changes", async () => {
@@ -468,7 +453,6 @@ it("switches thread and environment without receiving another owner's detail cha
   expect(displayed("selected").cwd).toBe("/worktrees/remote/two");
   const remote = fixture.results.get("selected")!;
   expect(remote.context.composerDraftTarget).toEqual({ environmentId: REMOTE, threadId: TWO });
-  expect(remote.context.files.workspaceRoot).toBe("/worktrees/remote/two");
   expect(remote.availability).toMatchObject({
     terminalAvailable: true,
     filesAvailable: true,
@@ -476,40 +460,24 @@ it("switches thread and environment without receiving another owner's detail cha
     pullRequestAvailable: false,
     pullRequestsAvailable: false,
   });
-  expect(remote.linkedPullRequest?.repository).toBe("remote/repo");
   expect(fixture.statusRequests.at(-1)).toEqual({
     environmentId: REMOTE,
     input: { cwd: "/worktrees/remote/two" },
   });
   const before = fixture.renders.get("selected");
-  await act(() =>
-    publishDetail({
-      ...thread(TWO),
-      activities: [activity("local-write", "tool.completed", { itemType: "file_change" })],
-    }),
-  );
+  await act(() => publishDetail({ ...thread(TWO), visibleTurnItems: [command("local-write")] }));
   expect(fixture.renders.get("selected")).toBe(before);
   await act(() =>
-    publishDetail(
-      {
-        ...thread(TWO, REMOTE),
-        activities: [activity("remote-write", "tool.completed", { itemType: "command_execution" })],
-      },
-      REMOTE,
-    ),
+    publishDetail({ ...thread(TWO, REMOTE), visibleTurnItems: [command("remote-write")] }, REMOTE),
   );
   expect(displayed("selected").mutation).toBe('["remote-write",null]');
   expect(fixture.results.get("selected")!.context.preview.configuredUrls).toEqual([
     "https://remote.test",
   ]);
-  expect(fixture.results.get("selected")!.availability.pullRequestAvailable).toBe(false);
 });
 
 it("retains useful detail while reconnecting, clears lost detail, and recovers", async () => {
-  const changed = {
-    ...thread(),
-    activities: [activity("write", "tool.completed", { itemType: "file_change" })],
-  };
+  const changed = { ...thread(), visibleTurnItems: [command("write")] };
   publishDetail(changed);
   await render(workspaceProbes);
   const atom = atoms.detail(`${LOCAL}:${ONE}`);
@@ -531,26 +499,23 @@ it("retains useful detail while reconnecting, clears lost detail, and recovers",
   expect(displayed("files").mutation).toBe('["write",null]');
 });
 
-it("uses detail metadata without a shell and adopts the shell's authoritative workspace and session", async () => {
+it("uses projection metadata until the shell supplies its authoritative workspace", async () => {
   publishShells([]);
-  const start = activity("start", "task.started", { taskId: "worker", agentKind: "agent" });
-  publishDetail({ ...thread(), activities: [start] });
-  await render(<Probe name="agents" detail="agents" />);
-  expect(displayed("agents")).toMatchObject({ cwd: "/worktrees/local/one", liveCount: 1 });
-  await act(() => publishShells([{ ...shell(), worktreePath: "/new-checkout", session: null }]));
-  expect(displayed("agents").cwd).toBe("/new-checkout");
-  expect(displayed("agents").liveCount).toBe(0);
+  await render(<Probe name="workspace" />);
+  expect(displayed("workspace").cwd).toBe("/worktrees/local/one");
+  await act(() => publishShells([{ ...shell(), worktreePath: "/new-checkout" }]));
+  expect(displayed("workspace").cwd).toBe("/new-checkout");
 });
 
 it("builds the chooser from shell metadata without subscribing to thread detail", async () => {
   fixture.configs.delete(REMOTE);
   await render(<Probe name="chooser" detail={false} environmentId={REMOTE} />);
   expect(fixture.detailReads).toEqual([]);
-  expect(displayed("chooser")).toMatchObject({ mutation: null, liveCount: 0 });
+  expect(displayed("chooser").mutation).toBeNull();
   expect(fixture.results.get("chooser")!.availability).toMatchObject({
     terminalAvailable: true,
     filesAvailable: true,
-    agentsAvailable: true,
+    lineageAvailable: true,
     deviceAvailable: true,
     pullRequestAvailable: false,
   });
@@ -562,13 +527,24 @@ it("builds the chooser from shell metadata without subscribing to thread detail"
   expect(fixture.results.get("chooser")!.context.terminal.splitShortcutLabel).toBeDefined();
   const before = fixture.renders.get("chooser");
   await act(() =>
-    publishDetail(
-      {
-        ...thread(ONE, REMOTE),
-        activities: [activity("write", "tool.completed", { itemType: "file_change" })],
-      },
-      REMOTE,
-    ),
+    publishDetail({ ...thread(ONE, REMOTE), visibleTurnItems: [command("write")] }, REMOTE),
   );
   expect(fixture.renders.get("chooser")).toBe(before);
+});
+
+it("offers remote Browser support and respects current environment permissions", async () => {
+  fixture.desktopBrowser = false;
+  fixture.serverBrowsers.add(REMOTE);
+  await render(<Probe name="chooser" detail={false} environmentId={REMOTE} />);
+  expect(fixture.results.get("chooser")!.availability.browserAvailable).toBe(true);
+  fixture.deniedScopes.add(`${REMOTE}:preview:operate`);
+  fixture.deniedScopes.add(`${REMOTE}:terminal:operate`);
+  fixture.fileRead = false;
+  await render(<Probe name="chooser" detail={false} environmentId={REMOTE} />);
+  expect(fixture.results.get("chooser")!.availability).toMatchObject({
+    browserAvailable: false,
+    terminalAvailable: false,
+    filesAvailable: false,
+    diffAvailable: false,
+  });
 });

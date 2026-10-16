@@ -1,4 +1,4 @@
-import { File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
+import { File, Virtualizer } from "@pierre/diffs/react";
 
 import { DiffWorkerPoolProvider } from "~/components/DiffWorkerPoolProvider";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -7,7 +7,7 @@ import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
 import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
-import { useFileViewport } from "./useFileViewport";
+import { useFileViewport, type FilePostRender } from "./useFileViewport";
 
 /**
  * Highlighted source for files that cannot be edited: captured attachments,
@@ -18,7 +18,7 @@ export default function ReadOnlySourcePreview(props: {
   readonly name: string;
   readonly text: string;
   readonly cacheKey?: string;
-  readonly onPostRender?: FileOptions<unknown>["onPostRender"];
+  readonly onPostRender?: FilePostRender;
 }) {
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);

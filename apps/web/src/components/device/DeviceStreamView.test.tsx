@@ -1,4 +1,4 @@
-import { act, useSyncExternalStore } from "react";
+import { act, useEffect, useSyncExternalStore } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -20,6 +20,20 @@ vi.mock("~/state/device", () => ({
   useDeviceHubAccess: () => useSyncExternalStore(accessStore.subscribe, () => accessStore.value),
   refreshDeviceHubAccess: () => accessStore.refresh(),
 }));
+// Replace GPU allocation while keeping the real React and stream lifecycles.
+let viewerMounts = 0;
+let viewerUnmounts = 0;
+vi.mock("./DevicePhoneViewport", () => ({
+  DevicePhoneViewport: function Viewer() {
+    useEffect(() => {
+      viewerMounts++;
+      return () => {
+        viewerUnmounts++;
+      };
+    }, []);
+    return null;
+  },
+}));
 import { DeviceStreamView } from "./DeviceStreamView";
 
 class Image extends EventTarget {
@@ -34,6 +48,8 @@ let renderer: ReactTestRenderer | undefined;
 let primes = 0;
 beforeEach(() => {
   primes = 0;
+  viewerMounts = 0;
+  viewerUnmounts = 0;
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -42,18 +58,57 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup(scale = 1) {
+async function setup({ scale = 1, h264 = false } = {}) {
   vi.useFakeTimers();
+  vi.stubGlobal("window", globalThis);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("fetch", () => {
+  let videoBody: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let output: VideoFrameOutputCallback | undefined;
+  if (h264) {
+    vi.stubGlobal(
+      "VideoDecoder",
+      class {
+        static isConfigSupported = async () => ({ supported: true });
+        state = "unconfigured";
+        constructor(callbacks: VideoDecoderInit) {
+          output = callbacks.output;
+        }
+        configure() {
+          this.state = "configured";
+        }
+        close() {
+          this.state = "closed";
+        }
+      },
+    );
+    vi.stubGlobal("EncodedVideoChunk", vi.fn());
+  }
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    if (url.endsWith("stream.avcc")) {
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              videoBody = controller;
+              init.signal?.addEventListener("abort", () => controller.error(new Error("aborted")));
+            },
+          }),
+        ),
+      );
+    }
     primes++;
     return Promise.resolve(new Response("prime"));
   });
+  const sockets: Array<{ onmessage?: (event: { data: ArrayBuffer }) => void }> = [];
   vi.stubGlobal(
     "WebSocket",
     class {
       static OPEN = 1;
       readyState = 1;
+      constructor() {
+        sockets.push(this);
+      }
+      onmessage?: (event: { data: ArrayBuffer }) => void;
       send() {}
       close() {}
     },
@@ -63,6 +118,7 @@ async function setup(scale = 1) {
     clientWidth: 400,
     clientHeight: 800,
     style: { setProperty() {} },
+    getContext: () => ({ drawImage() {} }),
     getBoundingClientRect: () => ({
       width: host.clientWidth * scale,
       height: host.clientHeight * scale,
@@ -71,10 +127,17 @@ async function setup(scale = 1) {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(callback: () => void) {
-        measure = callback;
+      constructor(callback: ResizeObserverCallback) {
+        measure = () =>
+          callback(
+            [
+              { target: host, contentRect: { width: host.clientWidth, height: host.clientHeight } },
+            ] as unknown as ResizeObserverEntry[],
+            this as unknown as ResizeObserver,
+          );
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -86,6 +149,7 @@ async function setup(scale = 1) {
       deviceId="test"
       platform="ios"
       visible={visible}
+      allowPhoneView={h264}
     />
   );
   await act(async () => {
@@ -108,11 +172,25 @@ async function setup(scale = 1) {
       host.clientHeight = height;
       measure();
     },
+    configure() {
+      const json = new TextEncoder().encode(
+        JSON.stringify({ width: 400, height: 800, orientation: "portrait" }),
+      );
+      const packet = new Uint8Array(1 + json.length);
+      packet[0] = 0x82;
+      packet.set(json, 1);
+      sockets[0]?.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+      sockets[0]?.onmessage?.({ data: packet.buffer });
+      videoBody?.enqueue(new Uint8Array([0, 0, 0, 5, 1, 1, 0x64, 0, 0x1f]));
+    },
+    frame() {
+      output?.({ displayWidth: 400, displayHeight: 800, close() {} } as VideoFrame);
+    },
   };
 }
 
 it.each([1, 0.3, 1.5])("fits the device frame in local dimensions at %s zoom", async (scale) => {
-  const { images, resize } = await setup(scale);
+  const { images, resize } = await setup({ scale });
   await act(async () => {
     images[0]!.naturalWidth = 400;
     images[0]!.naturalHeight = 800;
@@ -174,4 +252,26 @@ it("starts exactly one new stream per Reconnect press", async () => {
   expect(primes).toBe(1);
   await act(async () => renderer!.root.findByType("button").props.onClick());
   expect(primes).toBe(2);
+});
+
+it("keeps the 3D viewer mounted across iOS video recovery and releases it when hidden", async () => {
+  const { configure, frame, view } = await setup({ h264: true });
+  await act(async () => configure());
+  expect(viewerMounts).toBe(0);
+  await act(async () => frame());
+  expect(viewerMounts).toBe(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15_000);
+  });
+  expect(viewerUnmounts).toBe(0);
+  expect(viewerMounts).toBe(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+    configure();
+  });
+  await act(async () => frame());
+  expect(viewerMounts).toBe(1);
+  await act(async () => renderer!.update(view(false)));
+  expect(viewerUnmounts).toBe(1);
+  expect(vi.getTimerCount()).toBe(0);
 });

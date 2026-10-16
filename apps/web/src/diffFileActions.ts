@@ -3,7 +3,7 @@ import { isWindowsAbsolutePath, normalizeProjectPathForComparison } from "@t3too
 
 import { useRightPanelStore } from "./rightPanelStore";
 import type { SurfaceNavigation } from "./surfaceNavigation";
-import { resolvePathLinkTarget } from "./terminal-links";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 
 interface OpenDiffFilePrimaryActionInput {
   readonly threadRef: ScopedThreadRef | null;

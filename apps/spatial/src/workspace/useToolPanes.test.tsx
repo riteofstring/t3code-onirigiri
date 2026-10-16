@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useToolPanes } from "./useToolPanes";
 import { createSpatialSurfaceNavigation } from "./SpatialSurfaceHost";
 import {
+  browserSurface,
   pullRequestSurface,
   terminalSurface,
   useRightPanelStore,
@@ -145,6 +146,36 @@ it("does not let a dismissed setup clear a replacement surface or recreate a clo
   expect(hook.toolPanes).toEqual([]);
 });
 
+it("keeps the position of a restored Agents pane while using native Lineage", async () => {
+  storage.set(
+    "onirigiri-t3:tool-panes",
+    JSON.stringify([
+      {
+        ...thread("t1"),
+        paneId: "tool-old-agents",
+        kind: "surface",
+        surface: { id: "agents", kind: "agents" },
+      },
+      {
+        ...thread("t1"),
+        paneId: "tool-files",
+        kind: "surface",
+        surface: { id: "files", kind: "files" },
+      },
+    ]),
+  );
+  await mount();
+  expect(hook.toolPanes.map(({ paneId, surface }) => ({ paneId, surface }))).toEqual([
+    { paneId: "tool-old-agents", surface: { id: "lineage", kind: "lineage" } },
+    { paneId: "tool-files", surface: { id: "files", kind: "files" } },
+  ]);
+  const saved = hook.toolPanes;
+  await act(() => renderer!.unmount());
+  renderer = undefined;
+  await mount();
+  expect(hook.toolPanes).toEqual(saved);
+});
+
 it("persists every supported surface and drops malformed records without losing valid neighbors", async () => {
   const surfaces: RightPanelSurface[] = [
     { id: "browser:page", kind: "preview", resourceId: "page" },
@@ -166,7 +197,7 @@ it("persists every supported surface and drops malformed records without losing 
       number: 12,
     },
     { id: "pull-requests", kind: "pull-requests" },
-    { id: "agents", kind: "agents" },
+    { id: "lineage", kind: "lineage" },
     {
       id: "device:local:phone",
       kind: "device",
@@ -518,3 +549,35 @@ it("matches native device title trimming and fallback without changing the devic
     selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces,
   );
 });
+
+it.each([false, true])(
+  "keeps one browser owner after a background reveal (existing pane=%s)",
+  async (existing) => {
+    await mount();
+    const focused = vi.fn();
+    const ref = thread("background");
+    const other = thread("other");
+    const navigation = createSpatialSurfaceNavigation(hook, "thread-source", focused);
+    if (existing) await act(() => navigation.openBrowser(ref, "shared-tab"));
+    const paneId = hook.toolPanes[0]?.paneId;
+    const revision = navigation.getUserActionRevision(ref);
+    focused.mockClear();
+    usePreviewMiniPlayerStore.getState().open(ref, { kind: "browser", tabId: "shared-tab" });
+    usePreviewMiniPlayerStore.getState().open(other, { kind: "browser", tabId: "shared-tab" });
+    await act(() => {
+      navigation.openBrowser(ref, "shared-tab", true);
+    });
+    expect(hook.toolPanes).toHaveLength(1);
+    expect(hook.toolPanes[0]?.surface).toEqual(browserSurface("shared-tab"));
+    if (existing) expect(hook.toolPanes[0]?.paneId).toBe(paneId);
+    expect(focused).not.toHaveBeenCalled();
+    expect(navigation.getUserActionRevision(ref)).toBe(revision);
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, ref),
+    ).toBeNull();
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, other)
+        ?.source,
+    ).toEqual({ kind: "browser", tabId: "shared-tab" });
+  },
+);

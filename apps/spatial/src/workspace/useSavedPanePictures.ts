@@ -4,6 +4,7 @@ import type {
   OnirigiriPanePictureResolver,
   PanePresentationResolver,
 } from "@riteofstring/onirigiri";
+import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import {
   createContext,
   useCallback,
@@ -37,7 +38,7 @@ interface PaneContentRevision {
 const syncedPanes = new Map<string, PaneContentRevision & { visualRevision: number }>();
 
 function contentKey(content: PaneContentRevision): string {
-  return `${content.updatedAt}|${content.theme}|chat-chrome-1`;
+  return `${content.updatedAt}|${content.theme}|chat-chrome-2`;
 }
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
@@ -337,7 +338,7 @@ export function useSavedPanePictures(
     () =>
       new Set(
         threads
-          .filter((thread) => thread.latestTurn?.state === "running")
+          .filter((thread) => threadRuntimeIsActive(thread.runtime))
           .map((thread) => threadPaneId(thread.environmentId, thread.id)),
       ),
     [threads],

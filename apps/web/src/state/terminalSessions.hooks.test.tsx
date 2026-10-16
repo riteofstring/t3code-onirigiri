@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { RegistryContext } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
@@ -8,23 +8,35 @@ import {
   type TerminalBufferState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
+  AuthTerminalReadScope,
+  AuthTerminalOperateScope,
   EnvironmentId,
   ThreadId,
   type TerminalAttachInput,
   type TerminalMetadataStreamEvent,
+  type TerminalObserveInput,
   type TerminalSummary,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { useAttachedTerminalSession, useKnownTerminalSessions } from "./terminalSessions";
+import { terminalEnvironment } from "./terminal";
 
 const atoms = await vi.hoisted(async () => {
-  const { Atom, AsyncResult } = await import("effect/unstable/reactivity");
+  const { Atom, AsyncResult } = await import("effect/reactivity");
   return {
+    scopes: Atom.family((_environmentId: EnvironmentId | null) =>
+      Atom.make<ReadonlySet<string>>(new Set<string>()).pipe(Atom.keepAlive),
+    ),
+    observe: Atom.family((_key: string) =>
+      Atom.make<AsyncResult.AsyncResult<TerminalBufferState, Error>>(AsyncResult.initial()).pipe(
+        Atom.keepAlive,
+      ),
+    ),
     metadata: Atom.family((_environmentId: EnvironmentId) =>
       Atom.make<AsyncResult.AsyncResult<ReadonlyArray<TerminalSummary>, Error>>(
         AsyncResult.initial(),
@@ -38,17 +50,24 @@ const atoms = await vi.hoisted(async () => {
   };
 });
 
+vi.mock("./session", () => ({
+  useEnvironmentScope: (environmentId: EnvironmentId | null, scope: string) =>
+    useAtomValue(atoms.scopes(environmentId)).has(scope),
+}));
+
 vi.mock("./terminal", () => ({
   terminalEnvironment: {
-    metadata: ({ environmentId }: { environmentId: EnvironmentId }) =>
+    metadata: vi.fn(({ environmentId }: { environmentId: EnvironmentId }) =>
       atoms.metadata(environmentId),
-    attach: ({
-      environmentId,
-      input,
-    }: {
-      environmentId: EnvironmentId;
-      input: TerminalAttachInput;
-    }) => atoms.attach(JSON.stringify([environmentId, input.threadId, input.terminalId])),
+    ),
+    observe: vi.fn(
+      ({ environmentId, input }: { environmentId: EnvironmentId; input: TerminalObserveInput }) =>
+        atoms.observe(JSON.stringify([environmentId, input.threadId, input.terminalId])),
+    ),
+    attach: vi.fn(
+      ({ environmentId, input }: { environmentId: EnvironmentId; input: TerminalAttachInput }) =>
+        atoms.attach(JSON.stringify([environmentId, input.threadId, input.terminalId])),
+    ),
   },
 }));
 
@@ -100,12 +119,12 @@ function Known({
   return (
     <output data-probe={name}>
       {JSON.stringify(
-        sessions.map(({ target, state }) => ({
+        sessions?.map(({ target, state }) => ({
           ...target,
           label: state.summary?.label,
           status: state.status,
           running: state.hasRunningSubprocess,
-        })),
+        })) ?? null,
       )}
     </output>
   );
@@ -141,6 +160,13 @@ const render = (children: ReactNode) =>
 
 beforeEach(() => {
   registry = AtomRegistry.make();
+  for (const environmentId of [LOCAL, REMOTE]) {
+    registry.set(
+      atoms.scopes(environmentId),
+      new Set([AuthTerminalReadScope, AuthTerminalOperateScope]),
+    );
+  }
+  vi.clearAllMocks();
   renders.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   host = document.createElement("div");
@@ -199,29 +225,99 @@ it("switches thread and environment subscriptions and supports the all-threads v
     "Changed local two",
   ]);
   await render(<Known name="selected" environmentId={null} />);
-  expect(displayed("selected")).toEqual([]);
+  expect(displayed("selected")).toBeNull();
   await render(<Known name="selected" />);
   expect(displayed("selected")).toMatchObject([{ label: "Local one" }]);
 });
 
-it("retains cached metadata while reconnecting and clears or recovers when data changes", async () => {
+it("retains metadata while refreshing but reports unknown after a failed subscription", async () => {
   await render(<Known name="selected" />);
-  expect(displayed("selected")).toEqual([]);
+  expect(displayed("selected")).toBeNull();
   const ready = AsyncResult.success([summary(ONE, "Cached")]);
   await act(() => registry.set(atoms.metadata(LOCAL), ready));
   const before = renders.get("selected");
-  for (const value of [
-    AsyncResult.waiting(ready),
-    AsyncResult.fail(new Error("offline"), { previousSuccess: Option.some(ready) }),
-  ]) {
-    await act(() => registry.set(atoms.metadata(LOCAL), value));
-    expect(displayed("selected")).toMatchObject([{ label: "Cached" }]);
-    expect.soft(renders.get("selected")).toBe(before);
-  }
+  await act(() => registry.set(atoms.metadata(LOCAL), AsyncResult.waiting(ready)));
+  expect(displayed("selected")).toMatchObject([{ label: "Cached" }]);
+  expect(renders.get("selected")).toBe(before);
+  await act(() =>
+    registry.set(
+      atoms.metadata(LOCAL),
+      AsyncResult.fail(new Error("offline"), { previousSuccess: Option.some(ready) }),
+    ),
+  );
+  expect(displayed("selected")).toBeNull();
   await act(() => registry.set(atoms.metadata(LOCAL), AsyncResult.fail(new Error("offline"))));
+  expect(displayed("selected")).toBeNull();
+  await act(() => metadata({ type: "snapshot", terminals: [] }));
   expect(displayed("selected")).toEqual([]);
   await act(() => metadata({ type: "snapshot", terminals: [summary(ONE, "Recovered")] }));
   expect(displayed("selected")).toMatchObject([{ label: "Recovered" }]);
+});
+
+it("uses each environment's read and operate grants and stops exposing metadata after revocation", async () => {
+  metadata({ type: "snapshot", terminals: [summary(ONE, "Local")] });
+  metadata({ type: "snapshot", terminals: [summary(ONE, "Remote")] }, REMOTE);
+  registry.set(atoms.scopes(LOCAL), new Set([AuthTerminalReadScope]));
+  registry.set(atoms.scopes(REMOTE), new Set<string>());
+  const terminal = {
+    ...ATTACH_INPUT,
+    cwd: "/repo",
+    worktreePath: "/worktree",
+    env: { CUSTOM: "value" },
+  };
+  const observed = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
+    type: "snapshot",
+    snapshot: { ...summary(ONE, "Local"), history: "Read-only output" },
+  });
+  registry.set(
+    atoms.observe(JSON.stringify([LOCAL, ONE, TERMINAL])),
+    AsyncResult.success(observed),
+  );
+  await render(
+    <>
+      <Known name="selected" />
+      <Attached terminal={terminal} />
+    </>,
+  );
+  expect(terminalEnvironment.attach).not.toHaveBeenCalled();
+  expect(terminalEnvironment.observe).toHaveBeenCalledWith({
+    environmentId: LOCAL,
+    input: ATTACH_INPUT,
+  });
+  expect(displayed("selected")).toMatchObject([{ label: "Local" }]);
+  expect(displayed("attached")).toMatchObject({ output: "Read-only output" });
+  vi.clearAllMocks();
+  await act(() => registry.set(atoms.scopes(LOCAL), new Set<string>()));
+  expect(displayed("selected")).toBeNull();
+  expect(displayed("attached")).toMatchObject({ output: "", status: "closed" });
+  expect(terminalEnvironment.metadata).not.toHaveBeenCalled();
+  expect(terminalEnvironment.observe).not.toHaveBeenCalled();
+  expect(terminalEnvironment.attach).not.toHaveBeenCalled();
+  await render(
+    <>
+      <Known name="selected" environmentId={REMOTE} />
+      <Attached environmentId={REMOTE} terminal={terminal} />
+    </>,
+  );
+  expect(displayed("selected")).toBeNull();
+  expect(displayed("attached")).toMatchObject({ output: "", status: "closed" });
+  await act(() =>
+    registry.set(atoms.scopes(REMOTE), new Set([AuthTerminalReadScope, AuthTerminalOperateScope])),
+  );
+  expect(displayed("selected")).toMatchObject([{ label: "Remote" }]);
+  expect(terminalEnvironment.attach).toHaveBeenCalledWith({
+    environmentId: REMOTE,
+    input: terminal,
+  });
+  expect(terminalEnvironment.observe).not.toHaveBeenCalled();
+  vi.clearAllMocks();
+  await act(() => registry.set(atoms.scopes(REMOTE), new Set([AuthTerminalOperateScope])));
+  expect(displayed("selected")).toBeNull();
+  expect(terminalEnvironment.metadata).not.toHaveBeenCalled();
+  expect(terminalEnvironment.attach).toHaveBeenCalledWith({
+    environmentId: REMOTE,
+    input: terminal,
+  });
 });
 
 it("keeps an attached terminal unchanged by other metadata while preserving its live output and errors", async () => {

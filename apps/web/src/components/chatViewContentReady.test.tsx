@@ -135,6 +135,28 @@ it("keeps the visual cover until both the timeline and composer are ready", asyn
   expect(container.querySelector('[aria-busy="false"]')).not.toBeNull();
 });
 
+it("releases a provider subagent view after its timeline settles without a composer", async () => {
+  function Subagent({ timelineReady }: { timelineReady: boolean }) {
+    useChatViewContentReady("subagent", true, timelineReady, false, false);
+    return <p>Provider subagent activity</p>;
+  }
+  function SubagentHost({ timelineReady }: { timelineReady: boolean }) {
+    const [ready, setReady] = useState(false);
+    return (
+      <ChatViewContentReadyProvider onReadyChange={setReady}>
+        <div aria-busy={!ready}>
+          <Subagent timelineReady={timelineReady} />
+        </div>
+      </ChatViewContentReadyProvider>
+    );
+  }
+  await act(() => root.render(<SubagentHost timelineReady={false} />));
+  expect(container.querySelector('[aria-busy="false"]')).toBeNull();
+  await act(() => root.render(<SubagentHost timelineReady />));
+  expect(container.querySelector('[aria-busy="false"]')).not.toBeNull();
+  expect(container.textContent).toBe("Provider subagent activity");
+});
+
 it.each([false, true])(
   "keeps suspended content covered with pending blocks first: %s",
   async (pendingFirst) => {

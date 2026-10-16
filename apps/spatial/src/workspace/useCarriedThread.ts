@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
-import { isLatestTurnSettled } from "@t3tools/web/src/session-logic";
+import { isLatestRunSettled } from "@t3tools/web/src/session-logic";
 import { useThreadShell } from "@t3tools/web/src/state/entities";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
@@ -20,7 +20,7 @@ export function useCarriedThread(target: ThreadRouteTarget | null): string | nul
     threadRef ? store.getDraftIdByRef(threadRef) : null,
   );
   const shell = useThreadShell(threadRef);
-  const settled = shell ? isLatestTurnSettled(shell.latestTurn, shell.session) : false;
+  const settled = shell ? isLatestRunSettled(shell.latestRun, shell.runtime) : false;
   const [lastDraftId, setLastDraftId] = useState<string | null>(null);
   if (draftId !== null && draftId !== lastDraftId) setLastDraftId(draftId);
   const [carried, setCarried] = useState<string | null>(null);

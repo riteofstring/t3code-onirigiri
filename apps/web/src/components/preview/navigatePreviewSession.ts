@@ -57,7 +57,12 @@ export async function navigatePreviewSession<E>(input: {
   };
   // The address can be submitted before the host commits its first guest.
   // Share its creation lease so saved defaults precede the pending navigation.
-  const lease = acquireDesktopTab(runtimeTabId);
+  const lease = acquireDesktopTab(
+    runtimeTabId,
+    state.sessions[tabId]?.runtime === "server"
+      ? { threadId: threadRef.threadId, tabId }
+      : undefined,
+  );
   try {
     await lease.ready;
     if (!isCurrent()) return false;

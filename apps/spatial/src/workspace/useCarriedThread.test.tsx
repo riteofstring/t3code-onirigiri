@@ -1,3 +1,5 @@
+import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
+import { RunId } from "@t3tools/contracts";
 import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vite-plus/test";
@@ -9,8 +11,8 @@ import { useCarriedThread } from "./useCarriedThread";
 const state = {
   draftIdByThread: new Map<string, string>(),
   shell: null as null | {
-    latestTurn: { turnId: string; startedAt: string | null; completedAt: string | null } | null;
-    session: null;
+    latestRun: Pick<ThreadRunSummary, "runId" | "status" | "startedAt" | "completedAt"> | null;
+    runtime: Pick<ThreadRuntimeSummary, "status" | "activeRunId"> | null;
   },
 };
 
@@ -32,6 +34,16 @@ vi.mock("./useWorkspacePanes", () => ({
 const draft = { kind: "draft", draftId: "d1" } as unknown as ThreadRouteTarget;
 const thread = (threadId: string) =>
   ({ kind: "server", threadRef: { environmentId: "e", threadId } }) as unknown as ThreadRouteTarget;
+const runId = RunId.make("a");
+
+function run(status: ThreadRunSummary["status"]): NonNullable<typeof state.shell>["latestRun"] {
+  return {
+    runId,
+    status,
+    startedAt: "2026-10-15T12:00:00.000Z",
+    completedAt: status === "completed" ? "2026-10-15T12:01:00.000Z" : null,
+  };
+}
 
 let renderer: ReactTestRenderer | undefined;
 let carried: string | null = null;
@@ -62,15 +74,52 @@ it("carries a thread promoted from the shown draft until its turn settles", asyn
   expect(carried).toBeNull();
 
   state.draftIdByThread.set("t1", "d1");
-  state.shell = { latestTurn: { turnId: "a", startedAt: "s", completedAt: null }, session: null };
+  state.shell = { latestRun: run("running"), runtime: { status: "running", activeRunId: runId } };
   await show(thread("t1"));
   expect(carried).toBe("thread:e:t1");
 
-  state.shell = { latestTurn: { turnId: "a", startedAt: "s", completedAt: "c" }, session: null };
+  state.shell = { latestRun: run("completed"), runtime: null };
   await show(thread("t1"));
   expect(carried).toBe("thread:e:t1");
 
   state.draftIdByThread.clear();
+  await show(thread("t1"));
+  expect(carried).toBeNull();
+});
+
+it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
+  "retains the promoted ChatView after its draft record leaves during %s",
+  async (status) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    await show(draft);
+    state.draftIdByThread.set("t1", "d1");
+    state.shell = { latestRun: run(status), runtime: { status, activeRunId: runId } };
+    await show(thread("t1"));
+    state.draftIdByThread.clear();
+    await show(thread("t1"));
+    expect(carried).toBe("thread:e:t1");
+
+    state.shell = { latestRun: run("completed"), runtime: null };
+    await show(thread("t1"));
+    expect(carried).toBeNull();
+  },
+);
+
+it("waits for the runtime to release the completed run before handing off its view", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  await show(draft);
+  state.draftIdByThread.set("t1", "d1");
+  state.shell = { latestRun: run("running"), runtime: { status: "running", activeRunId: runId } };
+  await show(thread("t1"));
+  state.draftIdByThread.clear();
+  state.shell = { latestRun: run("completed"), runtime: { status: "waiting", activeRunId: runId } };
+  await show(thread("t1"));
+  expect(carried).toBe("thread:e:t1");
+
+  state.shell = {
+    latestRun: run("completed"),
+    runtime: { status: "completed", activeRunId: null },
+  };
   await show(thread("t1"));
   expect(carried).toBeNull();
 });

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from "react";
+import { observeResize } from "../../lib/observeResize";
 
 import { useChatViewActivity } from "../chatViewActivity";
 
@@ -31,19 +32,19 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
 
   useLayoutEffect(() => {
     if (!body) return;
-    let observedEditor: HTMLElement | null = null;
+    let observedEditor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
+    let stopObserving = () => {};
     const measure = () => {
       // Switching editor modes replaces its element; follow the current one.
       const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
       if (editor !== observedEditor) {
-        if (observedEditor) resizeObserver.unobserve(observedEditor);
-        if (editor) resizeObserver.observe(editor);
+        stopObserving();
         observedEditor = editor;
+        stopObserving = observeResize(editor ? [body, editor] : body, measure);
       }
       const next = measureComposerMultilinePrompt(body);
       if (next !== null) setIsMultiline(next);
     };
-    // One measurement per frame, still before paint, covers bursts of changes.
     let frame: number | null = null;
     const scheduleMeasure = () => {
       frame ??= requestAnimationFrame(() => {
@@ -51,16 +52,13 @@ export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
         measure();
       });
     };
-    const resizeObserver = new ResizeObserver(scheduleMeasure);
-    resizeObserver.observe(body);
-    // A passive view waits for the observer's first notification, so a
-    // mount does not force a layout of its own.
+    stopObserving = observeResize(observedEditor ? [body, observedEditor] : body, measure);
     if (activity.isActive()) measure();
     const mutationObserver = new MutationObserver(scheduleMeasure);
     mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
+      stopObserving();
       mutationObserver.disconnect();
     };
   }, [activity, body]);

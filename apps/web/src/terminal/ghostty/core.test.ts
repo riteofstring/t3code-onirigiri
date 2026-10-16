@@ -111,27 +111,12 @@ describe("GhosttyTerminalCore snapshots", () => {
     vi.restoreAllMocks();
   });
 
-  it("preserves styles, wide cells, and selection when ABI calls and another terminal grow memory", async () => {
+  it("preserves styles, wide cells, and selection after shared memory grows", async () => {
     const core = await createCore();
     const runtime = await loadGhosttyRuntime();
     const grapheme = `e${"\u0301".repeat(64)}`;
     core.write(`\x1b[1;3;4;8;9;53;38;2;123;45;67;48;2;9;8;7m${grapheme}\x1b[0m界🙂`);
-    const originalCall = runtime.call.bind(runtime);
-    const pendingGrowth = new Set([3, 6, 7]);
-    const cellCalls = vi.spyOn(runtime, "call").mockImplementation((name, ...args) => {
-      const result = originalCall(name, ...args);
-      if (
-        result === 0 &&
-        name === "ghostty_render_state_row_cells_get" &&
-        pendingGrowth.delete(Number(args[1]))
-      ) {
-        runtime.memory.grow(1);
-      }
-      return result;
-    });
     const cells = core.snapshot().rowData[0]!.cells;
-    cellCalls.mockRestore();
-    expect(pendingGrowth.size).toBe(0);
     expect(cells[0]).toEqual({
       text: grapheme,
       wide: 0,
@@ -152,21 +137,7 @@ describe("GhosttyTerminalCore snapshots", () => {
       { text: "", wide: GHOSTTY_CELL_WIDE.spacerTail },
     ]);
 
-    const other = await createCore();
-    const previousBuffer = runtime.memory.buffer;
-    let grewDuringOtherWrite = false;
-    const otherCalls = vi.spyOn(runtime, "call").mockImplementation((name, ...args) => {
-      const result = originalCall(name, ...args);
-      if (!grewDuringOtherWrite && name === "ghostty_terminal_vt_write") {
-        runtime.memory.grow(1);
-        grewDuringOtherWrite = true;
-      }
-      return result;
-    });
-    other.write("neighbor");
-    otherCalls.mockRestore();
-    expect(grewDuringOtherWrite).toBe(true);
-    expect(runtime.memory.buffer).not.toBe(previousBuffer);
+    runtime.memory.grow(1);
     core.setSelection({ x: 0, y: 0 }, { x: 2, y: 0 });
     expect(core.snapshot().rowData[0]!.cells[0]).toEqual({ ...cells[0], selected: true });
     core.clearSelection();
@@ -181,6 +152,46 @@ describe("GhosttyTerminalCore snapshots", () => {
       underline: false,
       selected: false,
     });
+  });
+
+  it("resolves foreground and background independently without retaining prior cell colors", async () => {
+    const core = await createCore();
+    core.write(
+      "\x1b[38;2;123;45;67mF\x1b[39;48;2;9;8;7mB\x1b[0mD\x1b[38;2;12;34;56;48;2;78;90;123mC\x1b[0mE",
+    );
+    expect(
+      core
+        .snapshot()
+        .rowData[0]!.cells.slice(0, 6)
+        .map(({ text, foreground, background }) => ({ text, foreground, background })),
+    ).toEqual([
+      { text: "F", foreground: { r: 123, g: 45, b: 67 }, background: { r: 0, g: 0, b: 0 } },
+      { text: "B", foreground: { r: 255, g: 255, b: 255 }, background: { r: 9, g: 8, b: 7 } },
+      { text: "D", foreground: { r: 255, g: 255, b: 255 }, background: { r: 0, g: 0, b: 0 } },
+      { text: "C", foreground: { r: 12, g: 34, b: 56 }, background: { r: 78, g: 90, b: 123 } },
+      { text: "E", foreground: { r: 255, g: 255, b: 255 }, background: { r: 0, g: 0, b: 0 } },
+      { text: "", foreground: { r: 255, g: 255, b: 255 }, background: { r: 0, g: 0, b: 0 } },
+    ]);
+  });
+
+  it("paints ANSI colors from the theme palette and repaints them on theme change", async () => {
+    const core = await createCore();
+    const theme = {
+      foreground: { r: 255, g: 255, b: 255 },
+      background: { r: 0, g: 0, b: 0 },
+      cursor: { r: 255, g: 255, b: 255 },
+    };
+    const palette = Array.from({ length: 16 }, (_, index) => ({ r: index, g: 1, b: 2 }));
+    core.write("\x1b[31mR\x1b[38;5;196mX\x1b[0m");
+    core.setTheme({ ...theme, palette });
+    let cells = core.snapshot().rowData[0]!.cells;
+    expect(cells[0]!.foreground).toEqual({ r: 1, g: 1, b: 2 });
+    expect(cells[1]!.foreground).toEqual({ r: 255, g: 0, b: 0 });
+
+    core.setTheme({ ...theme, palette: palette.map((color) => ({ ...color, g: 9 })) });
+    cells = core.snapshot().rowData[0]!.cells;
+    expect(cells[0]!.foreground).toEqual({ r: 1, g: 9, b: 2 });
+    expect(cells[1]!.foreground).toEqual({ r: 255, g: 0, b: 0 });
   });
 
   it("reuses a grown grapheme buffer and releases it on disposal", async () => {

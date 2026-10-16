@@ -22,6 +22,9 @@ class Observations {
   notifyFor(target: Element) {
     if (this.targets.has(target)) this.notify();
   }
+  unobserve(target: Element) {
+    this.targets.delete(target);
+  }
   disconnect() {
     this.targets.clear();
   }
@@ -72,9 +75,26 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
-    vi.fn(function (notify: () => void) {
-      resizes = new Observations(notify);
-      return resizes;
+    vi.fn(function (notify: ResizeObserverCallback) {
+      const observations = new Observations(() =>
+        notify(
+          [...observations.targets].map(
+            (target) =>
+              ({
+                target,
+                contentRect: new DOMRect(
+                  0,
+                  0,
+                  (target as HTMLElement).clientWidth,
+                  (target as HTMLElement).clientHeight,
+                ),
+              }) as ResizeObserverEntry,
+          ),
+          observations as unknown as ResizeObserver,
+        ),
+      );
+      resizes = observations;
+      return observations;
     }),
   );
   vi.stubGlobal(

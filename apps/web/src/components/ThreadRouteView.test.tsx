@@ -1,19 +1,24 @@
 // @vitest-environment jsdom
+import {
+  v2Projection,
+  v2ThreadShell,
+} from "../../../../packages/client-runtime/src/state/orchestrationV2TestFixtures.ts";
 import { RegistryContext } from "@effect/atom-react";
 import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
+import {
+  EMPTY_THREAD_HISTORY_META,
+  type EnvironmentThreadState,
+} from "@t3tools/client-runtime/state/threads";
 import {
   EnvironmentId,
-  MessageId,
   ProjectId,
-  ProviderInstanceId,
   ThreadId,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThread,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -31,7 +36,7 @@ const fixture = vi.hoisted(() => ({
 }));
 
 const atoms = await vi.hoisted(async () => {
-  const { Atom, AsyncResult, AtomRegistry } = await import("effect/unstable/reactivity");
+  const { Atom, AsyncResult, AtomRegistry } = await import("effect/reactivity");
   const Option = await import("effect/Option");
   const { PrimaryConnectionTarget } = await import("@t3tools/client-runtime/connection");
   const { createEnvironmentSnapshotAtom } = await import("@t3tools/client-runtime/state/shell");
@@ -75,6 +80,9 @@ const atoms = await vi.hoisted(async () => {
     shell,
     detail,
     snapshot,
+    stateValue: Atom.family((environmentId: EnvironmentId) =>
+      Atom.make((get) => Option.getOrNull(AsyncResult.value(get(shell(environmentId))))),
+    ),
     registry: AtomRegistry.make(),
     projects: createEnvironmentProjectAtoms({ catalogValueAtom, snapshotAtom: snapshot }),
     shells: createEnvironmentThreadShellAtoms({ catalogValueAtom, snapshotAtom: snapshot }),
@@ -87,7 +95,7 @@ const atoms = await vi.hoisted(async () => {
 });
 
 vi.mock("../state/shell", () => ({
-  environmentShell: { stateAtom: atoms.shell },
+  environmentShell: { stateAtom: atoms.shell, stateValueAtom: atoms.stateValue },
   environmentSnapshotAtom: atoms.snapshot,
   allEnvironmentShellsBootstrappedAtom: atoms.unusedBoolean,
   allEnvironmentProjectSnapshotsReadyAtom: atoms.unusedBoolean,
@@ -127,16 +135,21 @@ vi.mock("./ui/sidebar", () => ({
 }));
 vi.mock("./ChatView", async () => {
   const { useState } = await import("react");
-  const { useThread } = await import("../state/entities");
+  const { useThreadShell, useThreadProjection } = await import("../state/entities");
   return {
     default: (props: { environmentId: EnvironmentId; threadId: ThreadId; routeKind: string }) => {
-      const thread = useThread(props.routeKind === "server" ? props : null);
+      const thread = useThreadShell(props.routeKind === "server" ? props : null);
+      const detail = useThreadProjection(props.routeKind === "server" ? props : null);
       const [edits, setEdits] = useState(0);
       const key = `${props.environmentId}:${props.threadId}`;
       fixture.renders.set(key, (fixture.renders.get(key) ?? 0) + 1);
       return (
         <button data-chat={key} onClick={() => setEdits((count) => count + 1)}>
-          {JSON.stringify({ title: thread?.title, messages: thread?.messages.length, edits })}
+          {JSON.stringify({
+            title: thread?.title,
+            detailTitle: detail?.projection.thread.title,
+            edits,
+          })}
         </button>
       );
     },
@@ -147,46 +160,35 @@ const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
 const ONE = ThreadId.make("one");
 const TWO = ThreadId.make("two");
-const DATE = "2026-10-13T00:00:00.000Z";
-const thread = (id: ThreadId): OrchestrationThreadShell => ({
+const thread = (id: ThreadId): OrchestrationV2ThreadShell => ({
+  ...v2ThreadShell,
   id,
   projectId: ProjectId.make("project"),
   title: id,
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  branch: null,
-  worktreePath: null,
-  latestTurn: null,
-  createdAt: DATE,
-  updatedAt: DATE,
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  pullRequests: [],
-  session: null,
-  latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
+  lineage: { ...v2ThreadShell.lineage, rootThreadId: id },
 });
-const snapshot = (threads: readonly OrchestrationThreadShell[]): OrchestrationShellSnapshot => ({
+const snapshot = (
+  threads: readonly OrchestrationV2ThreadShell[],
+): OrchestrationV2ShellSnapshot => ({
+  schemaVersion: 1,
   snapshotSequence: 1,
-  updatedAt: DATE,
   projects: [],
   threads,
+  archivedThreads: [],
 });
 const shellState = (
-  value: OrchestrationShellSnapshot,
+  value: OrchestrationV2ShellSnapshot,
   status: EnvironmentShellState["status"] = "live",
 ): EnvironmentShellState => ({ snapshot: Option.some(value), status, error: Option.none() });
-const detail = (shell: OrchestrationThreadShell): OrchestrationThread => ({
-  ...shell,
-  deletedAt: null,
-  messages: [],
-  activities: [],
-  proposedPlans: [],
-  checkpoints: [],
+const detail = (shell: OrchestrationV2ThreadShell): OrchestrationV2ThreadProjection => ({
+  ...v2Projection,
+  thread: {
+    ...v2Projection.thread,
+    id: shell.id,
+    projectId: shell.projectId,
+    title: shell.title,
+    lineage: shell.lineage,
+  },
 });
 const target = (threadId = ONE, environmentId = LOCAL): ThreadRouteTarget => ({
   kind: "server",
@@ -195,14 +197,14 @@ const target = (threadId = ONE, environmentId = LOCAL): ThreadRouteTarget => ({
 let host: HTMLDivElement;
 let root: Root;
 
-function setDetail(value: OrchestrationThread, environmentId = LOCAL) {
+function setDetail(value: OrchestrationV2ThreadProjection, environmentId = LOCAL) {
   atoms.registry.set(
-    atoms.detail(`${environmentId}:${value.id}`),
+    atoms.detail(`${environmentId}:${value.thread.id}`),
     AsyncResult.success({
       data: Option.some(value),
       status: "live",
       error: Option.none(),
-      page: Option.none(),
+      history: EMPTY_THREAD_HISTORY_META,
     }),
   );
 }
@@ -267,22 +269,9 @@ it("keeps unrelated routed chats untouched while their own shell and detail upda
   const afterShell = fixture.renders.get("local:two");
 
   await act(() =>
-    setDetail({
-      ...detail(one),
-      messages: [
-        {
-          id: MessageId.make("message"),
-          role: "assistant",
-          text: "Live reply",
-          turnId: null,
-          streaming: false,
-          createdAt: DATE,
-          updatedAt: DATE,
-        },
-      ],
-    }),
+    setDetail({ ...detail(one), thread: { ...detail(one).thread, title: "Live reply" } }),
   );
-  expect(displayed(ONE)).toMatchObject({ title: "Renamed one", messages: 1 });
+  expect(displayed(ONE)).toMatchObject({ title: "Renamed one", detailTitle: "Live reply" });
   expect(fixture.renders.get("local:two")).toBe(afterShell);
   expect(chat(TWO)).toBe(retained);
   expect(displayed(TWO)).toMatchObject({ title: "two", edits: 1 });
