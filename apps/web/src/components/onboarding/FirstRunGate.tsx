@@ -83,6 +83,8 @@ export function FirstRunGate({
   const pathname = useLocation({ select: (location) => location.pathname });
   const hydrationStatus = useClientSettingsHydrationStatus();
   const hydrated = hydrationStatus === "ready";
+  // Changing this mode restarts the desktop app.
+  const [localEnvironmentDisabled] = useState(isLocalEnvironmentDisabled);
   const completeOnboarding = useCompleteOnboarding();
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
@@ -127,7 +129,7 @@ export function FirstRunGate({
 
   const { decision: nextDecision, persistCompletion } = hostedStatic
     ? resolveHostedFirstRunDecision({
-        localEnvironmentDisabled: isLocalEnvironmentDisabled(),
+        localEnvironmentDisabled,
         hydrated,
         completed: onboardingCompletedAt !== null,
         catalogReady: environmentCatalogReady,

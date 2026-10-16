@@ -213,3 +213,31 @@ it.each(["strip", "rows"] as const)(
     ]);
   },
 );
+
+it("keeps layout changes responsive without repeated synchronous desktop settings reads", async () => {
+  data.primaryEnvironmentId = null;
+  data.localEnvironmentEnabled = false;
+  const readEnabled = vi.spyOn(window.desktopBridge!, "getLocalEnvironmentEnabled");
+  await render("strip");
+  expect(panes?.map((pane) => pane.paneId)).toEqual([id("one"), id("two"), id("three")]);
+
+  await render("rows", new Set([id("two")]));
+  expect(positions()).toEqual([
+    [id("one"), 0, 0],
+    [id("three"), 1, 0],
+  ]);
+  await render("strip");
+  expect(positions()).toEqual([
+    [id("one"), 0, 0],
+    [id("two"), 0, 1],
+    [id("three"), 0, 2],
+  ]);
+  expect(readEnabled).toHaveBeenCalledTimes(1);
+
+  await act(() => renderer!.unmount());
+  renderer = undefined;
+  data.localEnvironmentEnabled = true;
+  await render("strip");
+  expect(panes).toBeNull();
+  expect(readEnabled).toHaveBeenCalledTimes(2);
+});

@@ -88,9 +88,11 @@ export function useWorkspacePanes(
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const catalogReady = useAtomValue(environmentCatalog.catalogValueAtom).isReady;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  // Changing this mode restarts the desktop app.
+  const [localEnvironmentDisabled] = useState(isLocalEnvironmentDisabled);
   const catalogRegistered =
     catalogReady &&
-    (isHostedStaticApp() || isLocalEnvironmentDisabled() || primaryEnvironmentId !== null);
+    (isHostedStaticApp() || localEnvironmentDisabled || primaryEnvironmentId !== null);
   const threads = useThreadShells();
   const groups = useSidebarProjectGroups();
 
