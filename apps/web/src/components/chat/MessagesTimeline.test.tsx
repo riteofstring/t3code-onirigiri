@@ -765,6 +765,8 @@ describe("MessagesTimeline", () => {
     const timeline = {
       props,
       scale: 1,
+      rowOffset: 0,
+      contentLength: 2000,
       scrollTop: 1400,
       keyDown: (key: string) => onScrollKey?.(new KeyboardEvent("keydown", { key })),
       flushFrame: () =>
@@ -779,7 +781,9 @@ describe("MessagesTimeline", () => {
         return timeline.scrollTop;
       },
       getBoundingClientRect: () => ({ top: 0, width: 400 * timeline.scale }),
-      scrollHeight: 2000,
+      get scrollHeight() {
+        return timeline.contentLength;
+      },
       clientHeight: 600,
       addEventListener() {},
       removeEventListener() {},
@@ -802,24 +806,88 @@ describe("MessagesTimeline", () => {
         timeline.scrollTop = offset;
       },
       scrollToEnd: async () => {
-        timeline.scrollTop = 1400;
+        timeline.scrollTop = timeline.contentLength - 600;
       },
       getState: () => ({
         data: legendListTestState.data,
         scroll: timeline.scrollTop,
         scrollLength: 600,
-        contentLength: 2000,
-        getAverageItemSizes: () => ({ message: { average: 2000, count: 1 } }),
+        contentLength: timeline.contentLength,
+        getAverageItemSizes: () => ({ message: { average: timeline.contentLength, count: 1 } }),
         indexByKey: () => 0,
         positionAtIndex: () => 0,
-        sizeAtIndex: () => 2000,
+        sizeAtIndex: () => timeline.contentLength,
         elementAtIndex: () => ({
-          getBoundingClientRect: () => ({ top: -timeline.scrollTop * timeline.scale }),
+          getBoundingClientRect: () => ({
+            top: (timeline.rowOffset - timeline.scrollTop) * timeline.scale,
+          }),
         }),
       }),
     } as unknown as LegendListRef;
     return timeline;
   }
+
+  it.each([
+    [false, 1400],
+    [true, 1400],
+    [true, 1300],
+  ] as const)(
+    "returns to the latest content without measuring a reading offset with follow=%s and scroll=%s",
+    async (liveFollowEnabled, scrollTop) => {
+      const { readTimelinePosition } = await import("./timelineScrollAnchoring");
+      const timeline = stubFollowTimeline(
+        `environment-local:end-follow-${liveFollowEnabled}-${scrollTop}`,
+      );
+      const { props } = timeline;
+      timeline.scrollTop = scrollTop;
+      const entries = [buildUserTimelineEntry("First prompt")];
+      const onManualNavigation = vi.fn();
+      const render = (routeThreadKey: string) => (
+        <MessagesTimeline
+          {...props}
+          routeThreadKey={routeThreadKey}
+          timelineEntries={entries}
+          liveFollowEnabled={liveFollowEnabled}
+          onManualNavigation={onManualNavigation}
+        />
+      );
+      const viewport = props.listRef.current!.getScrollableNode()!;
+      const rectRead = vi.spyOn(viewport, "getBoundingClientRect");
+      const scrollRead = vi.spyOn(viewport, "scrollTop", "get");
+      let renderer: ReactTestRenderer | undefined;
+      try {
+        await act(() => {
+          renderer = create(render(props.routeThreadKey));
+        });
+        await timeline.flushFrame();
+        rectRead.mockImplementation(() => {
+          throw new Error("Saving end-follow must not measure the viewport");
+        });
+        scrollRead.mockImplementation(() => {
+          throw new Error("Saving end-follow must not read DOM scroll geometry");
+        });
+        await act(() => legendListTestState.onScroll?.());
+        expect(readTimelinePosition(props.routeThreadKey)).toMatchObject({
+          atEnd: true,
+          estimatedRowSize: 2000,
+          disclosures: { runs: new Set(), workGroups: new Set(), attempts: new Set() },
+        });
+        rectRead.mockRestore();
+        scrollRead.mockRestore();
+
+        await act(() => renderer?.update(render(`${props.routeThreadKey}-away`)));
+        timeline.contentLength = 3200;
+        timeline.scrollTop = 0;
+        await act(() => renderer?.update(render(props.routeThreadKey)));
+        expect(timeline.scrollTop).toBe(2600);
+        expect(onManualNavigation).not.toHaveBeenCalled();
+      } finally {
+        rectRead.mockRestore();
+        scrollRead.mockRestore();
+        await act(() => renderer?.unmount());
+      }
+    },
+  );
 
   it.each([0.68, 1, 1.5])(
     "remembers a manual reading position in layout pixels at camera scale %s",
@@ -827,6 +895,7 @@ describe("MessagesTimeline", () => {
       const { readTimelinePosition } = await import("./timelineScrollAnchoring");
       const timeline = stubFollowTimeline(`environment-local:manual-departure-${scale}`);
       timeline.scale = scale;
+      timeline.rowOffset = 16.75;
       const { props } = timeline;
       let navigateManually = () => {};
       function ChatProbe() {
@@ -861,7 +930,7 @@ describe("MessagesTimeline", () => {
         expect(readTimelinePosition(props.routeThreadKey)).toMatchObject({
           atEnd: false,
           scrollOffset: 1300,
-          offsetWithinRow: 1300,
+          offsetWithinRow: 1283.25,
           estimatedRowSize: 2000,
         });
       } finally {
@@ -959,6 +1028,7 @@ describe("MessagesTimeline", () => {
     const timeline = stubFollowTimeline("environment-local:anchored-first-send");
     const { props } = timeline;
     timeline.scrollTop = 1300;
+    timeline.rowOffset = 23.5;
     let renderer: ReactTestRenderer | undefined;
     try {
       await act(() => {
@@ -976,6 +1046,7 @@ describe("MessagesTimeline", () => {
       expect(readTimelinePosition(props.routeThreadKey)).toMatchObject({
         atEnd: false,
         scrollOffset: 1300,
+        offsetWithinRow: 1276.5,
         estimatedRowSize: 2000,
       });
     } finally {

@@ -1246,8 +1246,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
       const row = index === undefined ? undefined : state.elementAtIndex(index);
       const element = listRef.current?.getScrollableNode();
       if (row && element) {
-        const elementRect = element.getBoundingClientRect();
-        const scale = readLayoutScale(element, elementRect);
+        const followEnd = liveFollowEnabled && !anchoredEndSpace;
+        let { offsetWithinRow, scrollOffset } = position;
+        // End-follow restores via scrollToEnd; only a reading position needs DOM geometry.
+        if (!isAtEnd && !followEnd) {
+          const elementRect = element.getBoundingClientRect();
+          const scale = readLayoutScale(element, elementRect);
+          // DOM geometry includes the header and the virtualizer's layout adjustment.
+          offsetWithinRow = (elementRect.top - row.getBoundingClientRect().top) / scale;
+          scrollOffset = element.scrollTop;
+        }
         let measuredHeight = 0;
         let measuredCount = 0;
         for (const { average, count } of Object.values(state.getAverageItemSizes())) {
@@ -1258,9 +1266,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
           listIdentityKey,
           {
             ...position,
-            // DOM geometry includes the header and the virtualizer's layout adjustment.
-            offsetWithinRow: (elementRect.top - row.getBoundingClientRect().top) / scale,
-            scrollOffset: element.scrollTop,
+            offsetWithinRow,
+            scrollOffset,
             atEnd: isAtEnd,
             estimatedRowSize:
               measuredCount > 0 && measuredHeight > 0
@@ -1273,7 +1280,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               workGroupState: workGroupViewState,
             },
           },
-          liveFollowEnabled && !anchoredEndSpace,
+          followEnd,
         );
       }
     }
