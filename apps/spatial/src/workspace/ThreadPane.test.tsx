@@ -13,6 +13,7 @@ import {
   type ComposerHandleRef,
 } from "@t3tools/web/src/composerHandleContext";
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
+import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
@@ -39,6 +40,7 @@ const state = vi.hoisted(() => ({
   engineReady: false,
   engineRevision: "",
   engineRevisions: [] as string[],
+  navigateToThread: null as ((ref: ScopedThreadRef) => Promise<void>) | null,
   listeners: new Set<() => void>(),
 }));
 
@@ -93,6 +95,8 @@ vi.mock("@t3tools/web/src/hooks/useMediaQuery", () => ({
 vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
   const { useImperativeHandle, useLayoutEffect, useState, useSyncExternalStore } =
     await import("react");
+  const { useNavigate } = await import("@tanstack/react-router");
+  const { buildThreadRouteParams } = await import("@t3tools/web/src/threadRoutes");
   const { useComposerHandleContext } = await import("@t3tools/web/src/composerHandleContext");
   const { usePanelAnimationSettings, usePanelPresence } =
     await import("@t3tools/web/src/panelAnimations");
@@ -147,7 +151,16 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     );
   }
   return {
-    ThreadRouteView: () => {
+    ThreadRouteView: ({ target }: { target: ThreadRouteTarget }) => {
+      const navigate = useNavigate();
+      useLayoutEffect(() => {
+        state.navigateToThread = async (ref) => {
+          await navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(ref),
+          });
+        };
+      }, [navigate]);
       useSyncExternalStore(
         (listener) => {
           state.listeners.add(listener);
@@ -156,7 +169,14 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
         () =>
           `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}:${state.suspended}`,
       );
-      return state.hasChatView ? <ChatContent /> : null;
+      return state.hasChatView ? (
+        <>
+          <output aria-label="Routed thread">
+            {target.kind === "server" ? target.threadRef.threadId : target.draftId}
+          </output>
+          <ChatContent />
+        </>
+      ) : null;
     },
   };
 });
@@ -177,6 +197,8 @@ let snapshots: {
 let liveProducer: boolean;
 let appComposerRef: ComposerHandleRef;
 let workspaceActive: boolean;
+let thread: ScopedThreadRef;
+let onNavigateAway: ReturnType<typeof vi.fn<(href: string) => void>>;
 
 async function render(focused = false, paintFrames = true, visible = focused) {
   await act(async () => {
@@ -189,13 +211,10 @@ async function render(focused = false, paintFrames = true, visible = focused) {
               <PaneSnapshotContext value={snapshots}>
                 <ThreadPane
                   paneId={paneId}
-                  thread={{
-                    environmentId: "environment-one" as EnvironmentId,
-                    threadId: "thread-one" as ThreadId,
-                  }}
+                  thread={{ ...thread }}
                   focused={focused}
                   visible={visible}
-                  onNavigateAway={() => {}}
+                  onNavigateAway={onNavigateAway}
                 />
               </PaneSnapshotContext>
             </PaneLifecycleContext>
@@ -221,6 +240,11 @@ beforeEach(() => {
   vi.stubGlobal("cancelIdleCallback", clearTimeout);
   lifecycle = null;
   paneId = "thread:environment-one:thread-one";
+  thread = {
+    environmentId: "environment-one" as EnvironmentId,
+    threadId: "thread-one" as ThreadId,
+  };
+  onNavigateAway = vi.fn();
   state.mounted = true;
   state.interactive = false;
   state.composerVersion = 0;
@@ -243,6 +267,7 @@ beforeEach(() => {
   state.engineReady = false;
   state.engineRevision = "";
   state.engineRevisions = [];
+  state.navigateToThread = null;
   let visualRevision = 0;
   requestSnapshot = vi.fn(() => visualRevision);
   invalidateSnapshot = vi.fn(() => {
@@ -273,6 +298,38 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+it.each([
+  "thread-one",
+  "thread:provider:codex:native-thread:fixture-child%3Alocal-v2-7",
+  "thread:provider:codex:native-thread:slash%2Fhash%23query%3F",
+])(
+  "preserves opaque thread identity and its draft through native route navigation: %s",
+  async (id) => {
+    thread = { ...thread, threadId: id as ThreadId };
+    paneId = `thread:${thread.environmentId}:${thread.threadId}`;
+    state.projection = { updatedAt: state.shellUpdatedAt };
+    state.status = "live";
+    await render(true);
+    expect(container.querySelector('[aria-label="Routed thread"]')?.textContent).toBe(id);
+    const editor = container.querySelector("textarea")!;
+    editor.value = "Keep this child draft";
+
+    await act(async () => state.navigateToThread!(thread));
+    expect(onNavigateAway).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Routed thread"]')?.textContent).toBe(id);
+    expect(container.querySelector("textarea")).toBe(editor);
+    expect(editor.value).toBe("Keep this child draft");
+
+    await act(async () =>
+      state.navigateToThread!({ ...thread, threadId: "another-thread" as ThreadId }),
+    );
+    expect(onNavigateAway).toHaveBeenCalledExactlyOnceWith("/environment-one/another-thread");
+    expect(container.querySelector('[aria-label="Routed thread"]')?.textContent).toBe(id);
+    expect(container.querySelector("textarea")).toBe(editor);
+    expect(editor.value).toBe("Keep this child draft");
+  },
+);
 
 it("prepares a background view after its projection arrives and retains its draft during reconnect", async () => {
   await render();
