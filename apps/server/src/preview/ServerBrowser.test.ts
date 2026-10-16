@@ -52,6 +52,7 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
     async connectDesktopPage(endpoint: string) {
       const context = makeContext();
       desktopConnections.push({ endpoint, context });
+      await prepareDesktopPage?.(context.page);
       return { browser: { close: async () => {} }, page: context.page as unknown as Page };
     }
     async close() {
@@ -122,6 +123,10 @@ function makeContext(onClose?: (context: BrowserContext) => void) {
     mainFrame: () => page,
     frames: () => [page],
     url: () => url,
+    commitNavigation: (next: string) => {
+      url = next;
+      events.emit("framenavigated", page);
+    },
     title: vi.fn(async () => "test page"),
     viewportSize: () => viewport,
     setViewportSize: vi.fn(async (size: typeof viewport) => {
@@ -202,6 +207,8 @@ const desktopRenders = (tabId: string) => {
 };
 const releasedDesktopTabs: Array<string> = [];
 const desktopConnections: Array<{ endpoint: string; context: ReturnType<typeof makeContext> }> = [];
+let prepareDesktopPage: ((page: ReturnType<typeof makeContext>["page"]) => Promise<void>) | null =
+  null;
 const testThread = {
   threadId: ThreadId.make("browser-test-thread"),
   providerSessionId: "agent-a",
@@ -311,6 +318,7 @@ beforeEach(() => {
   desktopRendersNext = false;
   releasedDesktopTabs.length = 0;
   desktopConnections.length = 0;
+  prepareDesktopPage = null;
 });
 
 it.live("readiness none responds immediately but takeover input waits for navigation commit", () =>
@@ -1424,6 +1432,118 @@ it.live("drives the desktop's own page for a tab the desktop renders", () =>
       while (releasedDesktopTabs.length === 0) yield* Effect.yieldNow;
       expect(releasedDesktopTabs).toEqual([opened.tabId]);
       expect(page.close).not.toHaveBeenCalled();
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("publishes a desktop navigation that loaded before the CDP connection subscribed", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      const manager = yield* Manager.PreviewManager;
+      const events = yield* manager.subscribeEvents;
+      const url = "http://localhost:5173/already-loaded";
+      prepareDesktopPage = async (page) => {
+        await page.goto(url);
+      };
+      desktopRendersNext = true;
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* browser.attachViewer(viewerInput(opened.tabId, false));
+      let status = yield* PubSub.take(events);
+      while (status.type !== "navigated" || status.snapshot.navStatus._tag !== "Success") {
+        status = yield* PubSub.take(events);
+      }
+      expect(status.snapshot.navStatus).toEqual({ _tag: "Success", url, title: "test page" });
+      expect(
+        (yield* manager.list({ threadId: scope.thread.threadId })).sessions[0]?.navStatus,
+      ).toEqual(status.snapshot.navStatus);
+      expect(desktopConnections[0]!.context.page.goto).toHaveBeenCalledOnce();
+      expect(contexts).toEqual([]);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("keeps a desktop navigation pending until its existing document has loaded", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      const manager = yield* Manager.PreviewManager;
+      const events = yield* manager.subscribeEvents;
+      const loading = Promise.withResolvers<void>();
+      const observingLoad = Promise.withResolvers<void>();
+      const url = "http://localhost:5173/still-loading";
+      prepareDesktopPage = async (page) => {
+        page.commitNavigation(url);
+        page.waitForLoadState.mockImplementationOnce(() => {
+          observingLoad.resolve();
+          return loading.promise;
+        });
+      };
+      yield* Effect.addFinalizer(() => Effect.sync(() => loading.resolve()));
+      desktopRendersNext = true;
+      const opened = yield* manager.open({
+        threadId: scope.thread.threadId,
+        runtime: "server",
+        url,
+      });
+      yield* browser.attachViewer(viewerInput(opened.tabId, false));
+      yield* Effect.promise(() => observingLoad.promise);
+      expect(
+        (yield* manager.list({ threadId: scope.thread.threadId })).sessions[0]?.navStatus,
+      ).toEqual({
+        _tag: "Loading",
+        url,
+        title: "",
+      });
+      loading.resolve();
+      let status = yield* PubSub.take(events);
+      while (status.type !== "navigated" || status.snapshot.navStatus._tag !== "Success") {
+        status = yield* PubSub.take(events);
+      }
+      expect(status.snapshot.navStatus).toEqual({ _tag: "Success", url, title: "test page" });
+      expect(desktopConnections[0]!.context.page.goto).not.toHaveBeenCalled();
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("a newer desktop navigation owns status while the initial title is being read", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      const manager = yield* Manager.PreviewManager;
+      const events = yield* manager.subscribeEvents;
+      const readingTitle = Promise.withResolvers<void>();
+      const title = Promise.withResolvers<string>();
+      prepareDesktopPage = async (page) => {
+        await page.goto("http://localhost:5173/previous");
+        page.title.mockImplementationOnce(() => {
+          readingTitle.resolve();
+          return title.promise;
+        });
+      };
+      yield* Effect.addFinalizer(() => Effect.sync(() => title.resolve("previous title")));
+      desktopRendersNext = true;
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* browser.attachViewer(viewerInput(opened.tabId, false));
+      yield* Effect.promise(() => readingTitle.promise);
+      const page = desktopConnections[0]!.context.page;
+      const url = "http://localhost:5173/next";
+      page.emit("request", {
+        isNavigationRequest: () => true,
+        frame: () => page,
+        url: () => url,
+      });
+      let status = yield* PubSub.take(events);
+      while (status.type !== "navigated") status = yield* PubSub.take(events);
+      expect(status.snapshot.navStatus).toEqual({ _tag: "Loading", url, title: "" });
+      title.resolve("previous title");
+      page.commitNavigation(url);
+      page.emit("load");
+      status = yield* PubSub.take(events);
+      expect(status).toMatchObject({
+        type: "navigated",
+        snapshot: { navStatus: { _tag: "Success", url, title: "test page" } },
+      });
     }),
   ).pipe(Effect.provide(layer)),
 );
