@@ -1044,6 +1044,49 @@ it("captures first pixels between ordinary navigation inputs, only after motion 
   expect(store.writes).toHaveLength(1);
 });
 
+it.each([
+  { covered: false, quietMs: 400 },
+  { covered: true, quietMs: 3000 },
+])(
+  "waits through programmatic navigation before capturing a covered=$covered pane",
+  async ({ covered, quietMs }) => {
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const cover = new Blob(["cover"]);
+    if (covered) {
+      await act(() => capturePicture(pane, cover));
+      hook.paneSnapshots.invalidate(paneId);
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
+    for (let step = 0; step < 3; step++) {
+      hook.setCaptureActivity(true, true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      hook.setCaptureActivity(true, false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(snapshot).not.toHaveBeenCalled();
+    }
+    expect(pictureImageFor(paneId)).toBe(covered ? cover : null);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(quietMs - 301);
+    });
+    expect(snapshot).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
+    });
+    expect(snapshot).toHaveBeenCalledOnce();
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(store.writes).toHaveLength(covered ? 2 : 1);
+  },
+);
+
 it("keeps refresh work deferred when a usable cover already exists", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
