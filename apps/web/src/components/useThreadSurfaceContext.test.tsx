@@ -199,6 +199,23 @@ function thread(id = ONE, environmentId = LOCAL): OrchestrationV2ThreadProjectio
   };
 }
 
+function checkpoint(): OrchestrationV2ThreadProjection["checkpoints"][number] {
+  return {
+    id: CheckpointId.make("checkpoint"),
+    scopeId: CheckpointScopeId.make("scope"),
+    nodeId: NodeId.make("node"),
+    threadId: ONE,
+    runId: RunId.make("run"),
+    parentCheckpointId: null,
+    ordinalWithinScope: 1,
+    appRunOrdinal: 1,
+    ref: CheckpointRef.make("refs/checkpoints/run"),
+    status: "ready",
+    files: [],
+    capturedAt: v2Now,
+  };
+}
+
 function command(
   id: string,
   status: "running" | "completed" = "completed",
@@ -363,7 +380,7 @@ afterEach(async () => {
 });
 
 it("keeps Files and Diff untouched by streaming text while chat receives it", async () => {
-  const initial = thread();
+  const initial = { ...thread(), checkpoints: [checkpoint()] };
   publishDetail(initial);
   await render(
     <>
@@ -395,7 +412,7 @@ it("keeps Files and Diff untouched by streaming text while chat receives it", as
   );
   expect(host.querySelector('[data-probe="messages"]')!.textContent).toBe("Live reply");
   expect([fixture.renders.get("files"), fixture.renders.get("diff")]).toEqual(before);
-  expect(displayed("files").mutation).toBeNull();
+  expect(displayed("files").mutation).toBe(`[null,"${DATE}"]`);
 });
 
 it("ignores running tool output and refreshes for completed workspace mutations and checkpoints", async () => {
@@ -409,25 +426,60 @@ it("ignores running tool output and refreshes for completed workspace mutations 
   expect(displayed("files").mutation).toBe('["write",null]');
   expect(displayed("diff").mutation).toBe('["write",null]');
   expect(fixture.refresh).toHaveBeenCalledTimes(2);
-  const checkpoint = {
-    id: CheckpointId.make("checkpoint"),
-    scopeId: CheckpointScopeId.make("scope"),
-    nodeId: NodeId.make("node"),
-    threadId: ONE,
-    runId: RunId.make("run"),
-    parentCheckpointId: null,
-    ordinalWithinScope: 1,
-    appRunOrdinal: 1,
-    ref: CheckpointRef.make("refs/checkpoints/run"),
-    status: "ready" as const,
-    files: [],
-    capturedAt: v2Now,
-  };
-  await act(() => publishDetail({ ...changed, checkpoints: [checkpoint] }));
+  const captured = checkpoint();
+  await act(() => publishDetail({ ...changed, checkpoints: [captured] }));
   expect(displayed("files").mutation).toBe(`["write","${DATE}"]`);
   expect(displayed("diff").mutation).toBe(`["write","${DATE}"]`);
   expect(fixture.refresh).toHaveBeenCalledTimes(4);
+  await act(() => publishDetail({ ...changed, checkpoints: [{ ...captured, status: "error" }] }));
+  expect(fixture.refresh).toHaveBeenCalledTimes(4);
+  const recapturedAt = DateTime.add(v2Now, { seconds: 10 });
+  await act(() =>
+    publishDetail({ ...changed, checkpoints: [{ ...captured, capturedAt: recapturedAt }] }),
+  );
+  expect(displayed("files").mutation).toBe(`["write","${DateTime.formatIso(recapturedAt)}"]`);
+  expect(fixture.refresh).toHaveBeenCalledTimes(6);
 });
+
+it.each(["ready", "missing", "error", "stale"] as const)(
+  "refreshes for the last eligible %s checkpoint in projection order without an assistant message",
+  async (status) => {
+    const captured = checkpoint();
+    publishDetail({
+      ...thread(),
+      messages: [],
+      checkpoints: [
+        {
+          ...captured,
+          id: CheckpointId.make("newer-time"),
+          appRunOrdinal: 9,
+          capturedAt: DateTime.add(v2Now, { seconds: 10 }),
+        },
+        { ...captured, status },
+        {
+          ...captured,
+          id: CheckpointId.make("no-run"),
+          runId: null,
+          capturedAt: DateTime.add(v2Now, { seconds: 20 }),
+        },
+        {
+          ...captured,
+          id: CheckpointId.make("no-app-run"),
+          appRunOrdinal: null,
+          capturedAt: DateTime.add(v2Now, { seconds: 30 }),
+        },
+      ],
+    });
+    await render(workspaceProbes);
+    expect(displayed("files").mutation).toBe(`[null,"${DATE}"]`);
+    expect(displayed("diff").mutation).toBe(`[null,"${DATE}"]`);
+    expect(fixture.refresh).toHaveBeenCalledTimes(2);
+    await act(() => publishDetail({ ...thread(), checkpoints: [{ ...captured, runId: null }] }));
+    expect(displayed("files").mutation).toBeNull();
+    expect(displayed("diff").mutation).toBeNull();
+    expect(fixture.refresh).toHaveBeenCalledTimes(2);
+  },
+);
 
 it("switches thread and environment without receiving another owner's detail changes", async () => {
   await render(<Probe name="selected" detail="workspace" />);

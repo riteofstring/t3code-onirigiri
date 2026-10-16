@@ -1,7 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThread } from "@t3tools/client-runtime/state/models";
-import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
 import {
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
@@ -14,6 +13,7 @@ import {
 } from "@t3tools/shared/projectScripts";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { useEffect, useMemo } from "react";
+import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
 
 import { useBrowserDefaults } from "../browser/browserDefaults";
@@ -44,13 +44,16 @@ import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.lo
 const TERMINAL_SHORTCUT_CONTEXT = { context: { terminalFocus: true, terminalOpen: true } };
 const EMPTY_DETAIL_ATOM = Atom.make<EnvironmentThread | null>(null);
 const threadMetadata = (thread: EnvironmentThread | null) => thread?.projection.thread ?? null;
-const threadWorkspaceMutationId = (thread: EnvironmentThread | null) =>
-  thread === null
-    ? null
-    : latestWorkspaceMutationId(
-        thread.projection.visibleTurnItems,
-        deriveThreadCheckpointSummaries(thread.projection).at(-1)?.completedAt ?? null,
-      );
+const threadWorkspaceMutationId = (thread: EnvironmentThread | null) => {
+  if (thread === null) return null;
+  const checkpoint = thread.projection.checkpoints.findLast(
+    (checkpoint) => checkpoint.appRunOrdinal !== null && checkpoint.runId !== null,
+  );
+  return latestWorkspaceMutationId(
+    thread.projection.visibleTurnItems,
+    checkpoint ? DateTime.formatIso(checkpoint.capturedAt) : null,
+  );
+};
 
 export function useThreadSurfaceContext(
   threadRef: ScopedThreadRef,
