@@ -23,11 +23,12 @@ describe("resolveHostedBrowserWebviewWrapperStyle", () => {
       },
     });
     expect(style).toMatchObject({
-      left: 100.25,
+      left: 0,
+      top: 0,
       width: 400,
       height: 300,
-      transform: "scale(0.5, 0.5)",
-      transformOrigin: "0 0",
+      transform: "translate3d(100.25px, 30px, 0px) scale(0.5, 0.5)",
+      transformOrigin: "0px 0px",
       clipPath: "inset(0 40px 0 0)",
       pointerEvents: "none",
     });

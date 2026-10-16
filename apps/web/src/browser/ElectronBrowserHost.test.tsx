@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {
   DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
@@ -99,7 +100,12 @@ async function mountHost() {
         createNodeMock: (element) =>
           element.type === "webview"
             ? createGuest()
-            : { scrollLeft: 0, scrollTop: 0, scrollTo: () => undefined },
+            : {
+                style: document.createElement("div").style,
+                scrollLeft: 0,
+                scrollTop: 0,
+                scrollTo: () => undefined,
+              },
       },
     );
   });

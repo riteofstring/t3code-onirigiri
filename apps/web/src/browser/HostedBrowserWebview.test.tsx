@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {
   DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
@@ -138,7 +139,12 @@ describe("HostedBrowserWebview settings hydration", () => {
           createNodeMock: (element) =>
             element.type === "webview"
               ? createGuest(element.props)
-              : { scrollLeft: 0, scrollTop: 0, scrollTo: () => undefined },
+              : {
+                  style: document.createElement("div").style,
+                  scrollLeft: 0,
+                  scrollTop: 0,
+                  scrollTo: () => undefined,
+                },
         },
       );
     });
@@ -223,6 +229,7 @@ describe("HostedBrowserWebview content presentation", () => {
     const readLeft = vi.fn(() => scrollLeft);
     const readTop = vi.fn(() => scrollTop);
     const wrapper = {
+      style: document.createElement("div").style,
       get scrollLeft() {
         return readLeft();
       },

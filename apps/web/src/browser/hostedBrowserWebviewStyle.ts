@@ -44,16 +44,16 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   } = input;
   if (active && rect) {
     return {
-      left: rect.x,
-      top: rect.y,
+      left: projection ? 0 : rect.x,
+      top: projection ? 0 : rect.y,
       width: projection?.width ?? rect.width,
       height: projection?.height ?? rect.height,
       zIndex,
       pointerEvents: projection?.interactive === false ? "none" : "auto",
       ...(projection
         ? {
-            transform: `scale(${projection.scaleX}, ${projection.scaleY})`,
-            transformOrigin: "0 0",
+            transform: `translate3d(${rect.x}px, ${rect.y}px, 0px) scale(${projection.scaleX}, ${projection.scaleY})`,
+            transformOrigin: "0px 0px",
             clipPath: projection.clipPath,
           }
         : {}),
@@ -85,4 +85,27 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
     pointerEvents: "none",
     visibility: keepPaintableWhenInactive ? "visible" : "hidden",
   };
+}
+
+export function applyHostedBrowserWebviewWrapperStyle(
+  element: HTMLElement,
+  style: HostedBrowserWebviewWrapperStyle,
+): void {
+  const properties = {
+    left: `${style.left}px`,
+    top: `${style.top}px`,
+    width: `${style.width}px`,
+    height: `${style.height}px`,
+    "z-index": String(style.zIndex),
+    "pointer-events": style.pointerEvents,
+    "border-radius": style.borderRadius === undefined ? "" : `${style.borderRadius}px`,
+    visibility: style.visibility ?? "",
+    transform: style.transform ?? "",
+    "transform-origin": style.transformOrigin ?? "",
+    "clip-path": style.clipPath ?? "",
+  };
+  for (const [property, value] of Object.entries(properties)) {
+    if (element.style.getPropertyValue(property) !== value)
+      element.style.setProperty(property, value);
+  }
 }

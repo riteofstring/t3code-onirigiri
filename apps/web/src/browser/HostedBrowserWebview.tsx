@@ -12,14 +12,14 @@ import {
   matchesPreviewHostShortcut,
 } from "@t3tools/shared/previewHostKeyboard";
 import { useShallow } from "zustand/react/shallow";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { cn, isMacPlatform } from "~/lib/utils";
 
-import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
+import { useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { useActiveBrowserRecordingTabIds } from "./browserRecording";
 import {
   browserViewportSettingKey,
@@ -29,7 +29,10 @@ import {
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
-import { resolveHostedBrowserWebviewWrapperStyle } from "./hostedBrowserWebviewStyle";
+import {
+  applyHostedBrowserWebviewWrapperStyle,
+  resolveHostedBrowserWebviewWrapperStyle,
+} from "./hostedBrowserWebviewStyle";
 import { usePreviewWebviewConfig } from "./previewWebviewConfigState";
 import { useBrowserViewportResize } from "./useBrowserViewportResize";
 import {
@@ -89,15 +92,20 @@ export function HostedBrowserWebview(props: {
   const presentation = useBrowserSurfaceStore(
     useShallow((state) => {
       const current = state.byTabId[runtimeTabId];
+      const rect = current?.rect ?? null;
+      const projection = current?.projection ?? null;
+      const size = projection ?? rect;
       return {
+        active: current?.visible === true && rect !== null,
         content: current?.content ?? null,
-        cornerRadius: current?.cornerRadius ?? 0,
         fitSourceContent: current?.fitSourceContent ?? false,
         fittedSourceContent: current?.fittedSourceContent ?? null,
-        rect: resolveBrowserSurfacePanelRect(state.byTabId, runtimeTabId),
-        projection: current?.projection ?? null,
-        visible: current?.visible ?? false,
-        zIndex: current?.zIndex ?? 30,
+        hasRect: rect !== null,
+        projected: projection !== null,
+        interactive: projection?.interactive ?? false,
+        keyboard: projection?.keyboard,
+        width: size?.width ?? null,
+        height: size?.height ?? null,
       };
     }),
   );
@@ -198,9 +206,11 @@ export function HostedBrowserWebview(props: {
     };
   }, [clientSettingsHydrated, config, initialSrc, runtimeTabId, webviewGeneration]);
 
-  const active = presentation.visible && presentation.rect !== null;
-  const lastRect = presentation.rect;
-  const logicalSize = presentation.projection ?? lastRect;
+  const active = presentation.active;
+  const logicalSize =
+    presentation.width !== null && presentation.height !== null
+      ? { width: presentation.width, height: presentation.height }
+      : null;
   const normalizedZoomFactor = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
   const viewportWidth = viewport._tag === "fill" ? null : viewport.width;
   const viewportHeight = viewport._tag === "fill" ? null : viewport.height;
@@ -245,7 +255,7 @@ export function HostedBrowserWebview(props: {
     aspectRatio: lockedAspectRatio,
   });
   const fittedSourceViewport =
-    presentation.fitSourceContent && lastRect
+    presentation.fitSourceContent && presentation.hasRect
       ? resolveFittedBrowserViewport(
           viewport,
           presentation.fittedSourceContent,
@@ -279,8 +289,8 @@ export function HostedBrowserWebview(props: {
   }, [contentHeight, contentWidth, runtimeTabId, viewportScale, viewportX, viewportY]);
 
   const webviewReady = clientSettingsHydrated && config !== null;
-  const keyboard = presentation.projection?.keyboard;
-  const keyboardEnabled = active && presentation.projection?.interactive === true;
+  const keyboard = presentation.keyboard;
+  const keyboardEnabled = active && presentation.interactive;
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webviewReady || !webview || !keyboard) return;
@@ -341,29 +351,60 @@ export function HostedBrowserWebview(props: {
     wrapper.scrollTo({ left: 0, top: 0 });
   }, [runtimeTabId, viewport._tag, viewportHeight, viewportWidth]);
 
-  if (!clientSettingsHydrated || !config) return null;
-
   const renderingActive = active || backgroundActivity || pictureInPicture || recordingActive;
-  const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({
-    active,
-    renderingActive,
-    // Electron 43 can permanently blank a macOS webview after `visibility: hidden`.
-    // Inactive macOS guests intentionally remain paintable offscreen; other platforms still
-    // suspend them, and automation continues to see the macOS guests as inactive.
-    keepPaintableWhenInactive: isMacPlatform(navigator.platform),
-    cornerRadius: presentation.cornerRadius,
-    zIndex: presentation.zIndex,
-    rect: lastRect,
-    projection: presentation.projection,
-    hiddenSize,
-  });
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!webviewReady || !wrapper) return;
+    const present = () => {
+      const state = useBrowserSurfaceStore.getState();
+      const current = state.byTabId[runtimeTabId];
+      const rect = current?.rect ?? null;
+      const showing = current?.visible === true && rect !== null;
+      applyHostedBrowserWebviewWrapperStyle(
+        wrapper,
+        resolveHostedBrowserWebviewWrapperStyle({
+          active: showing,
+          renderingActive:
+            showing ||
+            (state.activityByTabId[runtimeTabId] ?? 0) > 0 ||
+            pictureInPicture ||
+            recordingActive,
+          // Electron 43 can permanently blank a macOS guest after visibility: hidden.
+          keepPaintableWhenInactive: isMacPlatform(navigator.platform),
+          cornerRadius: current?.cornerRadius ?? 0,
+          zIndex: current?.zIndex ?? 30,
+          rect,
+          projection: current?.projection ?? null,
+          hiddenSize: { width: hiddenSize.width, height: hiddenSize.height },
+        }),
+      );
+    };
+    const unsubscribe = useBrowserSurfaceStore.subscribe((state, previous) => {
+      if (
+        state.byTabId[runtimeTabId] !== previous.byTabId[runtimeTabId] ||
+        state.activityByTabId[runtimeTabId] !== previous.activityByTabId[runtimeTabId]
+      )
+        present();
+    });
+    present();
+    return unsubscribe;
+  }, [
+    hiddenSize.height,
+    hiddenSize.width,
+    pictureInPicture,
+    recordingActive,
+    runtimeTabId,
+    webviewReady,
+  ]);
+
+  if (!clientSettingsHydrated || !config) return null;
 
   return (
     <div
       ref={wrapperRef}
       className="fixed overflow-hidden bg-muted/35"
-      style={{ ...wrapperStyle, overscrollBehavior: "contain" }}
-      inert={presentation.projection !== null && (!active || !presentation.projection.interactive)}
+      style={{ overscrollBehavior: "contain" }}
+      inert={presentation.projected && (!active || !presentation.interactive)}
       onScroll={syncContentPresentation}
       data-preview-rendering={renderingActive ? "active" : "suspended"}
       data-preview-viewport={runtimeTabId}
