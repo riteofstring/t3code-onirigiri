@@ -1,17 +1,24 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { DuoViewer } from "@t3tools/client-runtime/device/duo-viewer";
 import type { DeviceModelSource } from "@t3tools/client-runtime/device/model";
 import { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-interaction";
 import { createCanvasFrameSink } from "@t3tools/client-runtime/device/frame";
-import type { DeviceScreenSize, DeviceStreamClient } from "@t3tools/client-runtime/device/stream";
+import type {
+  DeviceScreenSize,
+  DeviceStreamClient,
+  DuoPanelSinks,
+} from "@t3tools/client-runtime/device/stream";
 import { createDuoPinch } from "@t3tools/client-runtime/device/duo-control";
 import { bindPhoneTrackpad } from "./phoneTrackpad";
 import { observeResize } from "../../lib/observeResize";
+import { readLayoutRect } from "../chat/layoutGeometry";
 
 const loadDuoViewer = () => import("@t3tools/client-runtime/device/duo-viewer");
 
 /** Web shell for the framework-independent viewer. The decoded screen and input connection remain owned by DeviceStreamView. */
 export function DeviceDuoViewport(props: {
+  readonly active: boolean;
+  readonly stream: DeviceStreamClient | null;
   readonly model: DeviceModelSource;
   readonly source: RefObject<HTMLCanvasElement | null>;
   readonly onFrameListener: (listener: (() => void) | null) => void;
@@ -32,7 +39,25 @@ export function DeviceDuoViewport(props: {
   const screenRef = useRef(props.screen);
   const modelRef = useRef(props.model);
   const previewRef = useRef(props.hingePreview);
+  const activeRef = useRef(props.active);
+  const resizeRef = useRef<(() => void) | null>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
+  const [panelSinks, setPanelSinks] = useState<DuoPanelSinks | null>(null);
   const { source, client, onInputCancel, onResetReady, onUnavailable, onFrameListener } = props;
+
+  useEffect(() => {
+    activeRef.current = props.active;
+    if (!props.active) cancelRef.current?.();
+    viewerRef.current?.setActive(props.active);
+    if (props.active) resizeRef.current?.();
+  }, [props.active]);
+
+  useEffect(() => {
+    const stream = props.stream;
+    if (!stream || !panelSinks) return;
+    stream.setDuoPanels(panelSinks);
+    return () => stream.setDuoPanels(null);
+  }, [props.stream, panelSinks]);
 
   useEffect(() => {
     screenRef.current = props.screen;
@@ -62,15 +87,17 @@ export function DeviceDuoViewport(props: {
     let trackpad: ReturnType<typeof bindPhoneTrackpad> | null = null;
     let stopTrackpadEnd: (() => void) | undefined;
     const resize = () => {
-      const { width, height } = host.getBoundingClientRect();
+      const { width, height } = readLayoutRect(host);
       viewerRef.current?.resize(width, height, window.devicePixelRatio);
     };
+    resizeRef.current = resize;
     const stopObserving = observeResize(host, resize);
     const blur = () => {
       interactionRef.current?.end();
       trackpad?.cancel();
       viewerRef.current?.cancelInput();
     };
+    cancelRef.current = blur;
     onInputCancel(blur);
     window.addEventListener("blur", blur);
     void loadDuoViewer()
@@ -95,6 +122,7 @@ export function DeviceDuoViewport(props: {
           model: modelRef.current,
         });
         viewerRef.current = viewer;
+        viewer.setActive(activeRef.current);
         onResetReady(viewer.resetPose);
         viewer.setScreen(screenRef.current);
         const primaryFrame = () => {
@@ -104,7 +132,7 @@ export function DeviceDuoViewport(props: {
         onFrameListener(primaryFrame);
         primaryFrame();
         viewer.setHingePreview(previewRef.current);
-        client.current?.setDuoPanels({
+        setPanelSinks({
           onScreen(next) {
             screenRef.current = next;
             interactionRef.current?.end();
@@ -149,6 +177,8 @@ export function DeviceDuoViewport(props: {
       });
     return () => {
       disposed = true;
+      resizeRef.current = null;
+      cancelRef.current = null;
       stopTrackpadEnd?.();
       trackpad?.dispose();
       trackpadRef.current = null;
@@ -158,7 +188,6 @@ export function DeviceDuoViewport(props: {
       onInputCancel(null);
       onResetReady(null);
       onFrameListener(null);
-      client.current?.setDuoPanels(null);
       stopObserving();
       window.removeEventListener("blur", blur);
       viewerRef.current?.dispose();
@@ -174,7 +203,7 @@ export function DeviceDuoViewport(props: {
     };
   };
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0" inert={!props.active}>
       <div ref={hostRef} className="absolute inset-0">
         <div
           aria-hidden

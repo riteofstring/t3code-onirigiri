@@ -6,13 +6,24 @@ export function createRenderScheduler(
 ) {
   let pending: number | null = null;
   let disposed = false;
+  let active = true;
+  const invalidate = () => {
+    if (disposed || !active || pending !== null) return;
+    pending = request(() => {
+      pending = null;
+      if (!disposed && active) render();
+    });
+  };
   return {
-    invalidate() {
-      if (disposed || pending !== null) return;
-      pending = request(() => {
+    invalidate,
+    setActive(next: boolean) {
+      if (disposed || active === next) return;
+      active = next;
+      if (active) invalidate();
+      else {
+        if (pending !== null) cancel(pending);
         pending = null;
-        if (!disposed) render();
-      });
+      }
     },
     dispose() {
       disposed = true;

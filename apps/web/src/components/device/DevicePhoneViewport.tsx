@@ -9,11 +9,13 @@ import { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-int
 import type { DeviceScreenSize, DeviceStreamClient } from "@t3tools/client-runtime/device/stream";
 import { bindPhoneTrackpad } from "./phoneTrackpad";
 import { observeResize } from "../../lib/observeResize";
+import { readLayoutRect } from "../chat/layoutGeometry";
 
 const loadPhoneViewer = () => import("@t3tools/client-runtime/device/phone-viewer");
 
 /** Web shell for the framework-independent viewer. The decoded screen and input connection remain owned by DeviceStreamView. */
 export function DevicePhoneViewport(props: {
+  readonly active: boolean;
   readonly profile: DeviceShapeProfile;
   readonly model: DeviceModelSource | null;
   readonly accessory: DeviceAccessorySource | null;
@@ -35,7 +37,17 @@ export function DevicePhoneViewport(props: {
   const profileRef = useRef(props.profile);
   const modelRef = useRef(props.model);
   const accessoryRef = useRef(props.accessory);
+  const activeRef = useRef(props.active);
+  const resizeRef = useRef<(() => void) | null>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
   const { source, onFrameListener, client, onInputCancel, onResetReady, onUnavailable } = props;
+
+  useEffect(() => {
+    activeRef.current = props.active;
+    if (!props.active) cancelRef.current?.();
+    viewerRef.current?.setActive(props.active);
+    if (props.active) resizeRef.current?.();
+  }, [props.active]);
 
   useEffect(() => {
     foldAngleRef.current = props.foldAngle;
@@ -62,14 +74,16 @@ export function DevicePhoneViewport(props: {
     let trackpad: ReturnType<typeof bindPhoneTrackpad> | null = null;
     let stopTrackpadEnd: (() => void) | undefined;
     const resize = () => {
-      const { width, height } = host.getBoundingClientRect();
+      const { width, height } = readLayoutRect(host);
       viewerRef.current?.resize(width, height, window.devicePixelRatio);
     };
+    resizeRef.current = resize;
     const stopObserving = observeResize(host, resize);
     const blur = () => {
       interactionRef.current?.end();
       trackpad?.cancel();
     };
+    cancelRef.current = blur;
     onInputCancel(blur);
     window.addEventListener("blur", blur);
     void loadPhoneViewer()
@@ -86,6 +100,7 @@ export function DevicePhoneViewport(props: {
           foldAngle: foldAngleRef.current,
         });
         viewerRef.current = viewer;
+        viewer.setActive(activeRef.current);
         onResetReady(viewer.resetPose);
         viewer.setScreen(screenRef.current);
         onFrameListener(viewer.frameUpdated);
@@ -106,6 +121,8 @@ export function DevicePhoneViewport(props: {
       });
     return () => {
       disposed = true;
+      resizeRef.current = null;
+      cancelRef.current = null;
       stopTrackpadEnd?.();
       trackpad?.dispose();
       interactionRef.current?.end();
@@ -128,7 +145,7 @@ export function DevicePhoneViewport(props: {
     };
   };
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0" inert={!props.active}>
       <div ref={hostRef} className="absolute inset-0">
         <div
           aria-hidden

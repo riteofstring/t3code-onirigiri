@@ -202,6 +202,58 @@ it("coalesces resize with redraw, retains the renderer and scene, and settles wi
   expect(pending.size).toBe(0);
 });
 
+it("retains the Duo renderer while hidden and cancels an outstanding native panel handoff", async () => {
+  vi.useFakeTimers();
+  const request = vi.fn();
+  const { viewer, draw, pending, state } = fixture(true, vi.fn(), request);
+  const dispose = vi.fn();
+  models.resolve({ asset: asset(), dispose });
+  await Promise.resolve();
+  viewer.resize(500, 700, 2);
+  const screen = {
+    width: 2007,
+    height: 2853,
+    orientation: "portrait" as const,
+    screenId: 3,
+    hingeAngle: 90,
+    supportsPhysicalOrientation: true,
+  };
+  viewer.setScreen(screen);
+  draw();
+  viewer.setInteractionActive(true, "orbit");
+  viewer.orbit(Math.PI / 3, 0);
+  draw();
+  viewer.setInteractionActive(false, "orbit");
+  draw();
+  expect(request).toHaveBeenCalledExactlyOnceWith(1);
+  expect(vi.getTimerCount()).toBe(1);
+  const unconfirmed = state.views.at(-1)!.quaternion.clone();
+  const scene = state.frames.at(-1);
+  const frames = state.frames.length;
+  const allocations = state.allocations;
+  viewer.setActive(false);
+  viewer.resize(400.25, 600.5, 1.5);
+  viewer.frameUpdated(3);
+  draw();
+  expect(vi.getTimerCount()).toBe(0);
+  expect(pending.size).toBe(0);
+  expect(state.frames).toHaveLength(frames);
+  expect(state.allocations).toBe(allocations);
+  expect(state.blank).toBe(false);
+  expect(state.dispose).not.toHaveBeenCalled();
+  viewer.setScreen(screen);
+  viewer.setActive(true);
+  draw();
+  expect(state.frames).toHaveLength(frames + 1);
+  expect(state.frames.at(-1)).toBe(scene);
+  expect(state.views.at(-1)!.quaternion.angleTo(unconfirmed)).toBeGreaterThan(0.5);
+  expect(gpu.instances).toHaveLength(1);
+  viewer.dispose();
+  expect(dispose).toHaveBeenCalledOnce();
+  expect(state.dispose).toHaveBeenCalledOnce();
+  expect(pending.size).toBe(0);
+});
+
 it("cancels loading and disposes a late model after unmount without installing or rendering it", async () => {
   const { viewer, draw, state } = fixture();
   viewer.resize(400, 700, 2);

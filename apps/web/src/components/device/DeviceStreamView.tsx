@@ -45,13 +45,7 @@ export interface DeviceStreamHandle {
   readonly inputConnected: boolean;
 }
 
-/**
- * The live device screen. Pointer events map onto normalized coordinates in
- * the displayed frame and go to the device; keyboard input is forwarded while
- * the surface is focused. `visible=false` tears the stream down so a hidden
- * panel decodes nothing.
- */
-export function DeviceStreamView(props: {
+interface DeviceStreamViewProps {
   readonly environmentId: EnvironmentId;
   readonly platform: DevicePlatform;
   readonly deviceId: string;
@@ -66,7 +60,19 @@ export function DeviceStreamView(props: {
   readonly axOverlay?: boolean;
   readonly onHandle?: (handle: DeviceStreamHandle | null) => void;
   readonly onScreen?: (screen: DeviceScreenSize | null) => void;
-}) {
+}
+
+/** Hidden devices stop streaming and rendering while retaining their last frame and 3D resources. */
+export function DeviceStreamView(props: DeviceStreamViewProps) {
+  return (
+    <DeviceStreamSession
+      key={`${props.environmentId}\0${props.hostId}\0${props.platform}\0${props.deviceId}`}
+      {...props}
+    />
+  );
+}
+
+function DeviceStreamSession(props: DeviceStreamViewProps) {
   const [duoControl, setDuoControl] = useState<DuoControlState>({
     pending: false,
     requested: null,
@@ -94,6 +100,7 @@ export function DeviceStreamView(props: {
   const access = useDeviceHubAccess(props.environmentId, props.hostId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const clientRef = useRef<DeviceStreamClient | null>(null);
+  const [duoClient, setDuoClient] = useState<DeviceStreamClient | null>(null);
   const [status, setStatus] = useState<DeviceStreamStatus>("connecting");
   const [hasFrame, setHasFrame] = useState(false);
   const [detail, setDetail] = useState<string | undefined>(undefined);
@@ -131,6 +138,7 @@ export function DeviceStreamView(props: {
         },
         onScreen: (next) => {
           setScreen(next);
+          setDuoClient(next.supportsHingeAngle ? client : null);
           onScreen?.(next);
         },
         onUnauthorized: () => {
@@ -154,7 +162,6 @@ export function DeviceStreamView(props: {
     );
     clientRef.current = client;
     setPhoneUnavailable(false);
-    setHasFrame(false);
     setMjpegUrl(null);
     setInputState({ connected: false });
     client.start();
@@ -163,9 +170,10 @@ export function DeviceStreamView(props: {
       cancelPhoneInput();
       client.stop();
       clientRef.current = null;
+      setDuoClient(null);
+      setInputState({ connected: false });
       onHandle?.(null);
       onScreen?.(null);
-      setScreen(null);
     };
   }, [
     access,
@@ -199,18 +207,17 @@ export function DeviceStreamView(props: {
     status === "connecting" && hasFrame && inputState.connected && screen !== null;
   const showPhone =
     props.allowPhoneView &&
-    (status === "streaming" || retainingFrame) &&
-    props.visible &&
+    hasFrame &&
     presentation === "phone" &&
     !phoneUnavailable &&
     !mjpegUrl &&
     !props.axOverlay &&
     (!isDuo || screen?.supportsHingeAngle === true);
   useEffect(() => {
-    if (!retainingFrame || !showPhone) return;
+    if (!props.visible || !retainingFrame || !showPhone) return;
     const timeout = window.setTimeout(() => setShowRestartNotice(true), 2_000);
     return () => window.clearTimeout(timeout);
-  }, [retainingFrame, showPhone]);
+  }, [props.visible, retainingFrame, showPhone]);
   const controlsInset = props.renderControls && !showPhone ? CONTROLS_RAIL_WIDTH : 0;
 
   // The frame is the largest box at `aspect` that fits the container, so a
@@ -474,6 +481,9 @@ export function DeviceStreamView(props: {
         </div>
         {showPhone && isDuo && model ? (
           <DeviceDuoViewport
+            key={`${model.id}\0${model.url}`}
+            active={props.visible}
+            stream={duoClient}
             onFrameListener={onFrameListener}
             model={model}
             controlError={duoControl.error}
@@ -489,6 +499,7 @@ export function DeviceStreamView(props: {
           />
         ) : showPhone ? (
           <DevicePhoneViewport
+            active={props.visible}
             profile={profile}
             model={deviceModel(props.platform, props.deviceName ?? "")}
             accessory={keyboardAttached ? keyboardSource : null}
@@ -555,6 +566,7 @@ export function DeviceStreamView(props: {
                     // An expired ticket surfaces as unauthorized on restart and
                     // refreshes access through the effect; no need to mint one here.
                     clientRef.current?.stop();
+                    setDuoClient(null);
                     setPhoneUnavailable(false);
                     clientRef.current?.start();
                   }}

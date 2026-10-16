@@ -1,4 +1,4 @@
-/** The composer lives in a uniformly scaled pane, but its CSS uses layout pixels. */
+/** Pane contents may be uniformly scaled, but their CSS uses layout pixels. */
 export function readLayoutScale(element: HTMLElement, rect = element.getBoundingClientRect()) {
   const style = getComputedStyle(element);
   let width = Number.parseFloat(style.width);

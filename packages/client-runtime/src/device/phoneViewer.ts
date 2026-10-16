@@ -32,6 +32,7 @@ import type { DeviceScreenSize } from "./stream.ts";
 import { IOS_PHONE_SHAPE, type DeviceShapeProfile } from "./shapeProfile.ts";
 
 export interface PhoneViewer {
+  readonly setActive: (active: boolean) => void;
   readonly setModel: (source: DeviceModelSource | null) => void;
   readonly setAccessory: (source: DeviceAccessorySource | null) => void;
   readonly frameUpdated: () => void;
@@ -379,6 +380,7 @@ export function createPhoneViewer(options: {
       }
       scheduler.invalidate();
     },
+    setActive: scheduler.setActive,
     frameUpdated() {
       if (disposed) return;
       updateLayout();

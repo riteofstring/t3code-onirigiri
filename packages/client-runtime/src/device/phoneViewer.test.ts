@@ -175,6 +175,34 @@ it("retains the drawn phone until resize and redraw commit together, without rep
   viewer.dispose();
 });
 
+it("retains the image and renderer without drawing while hidden, then resumes the latest layout", () => {
+  const { viewer, draw, pending, state } = fixture();
+  const previous = state.frames.at(-1)!;
+  const frames = state.frames.length;
+  const allocations = state.allocations;
+  viewer.frameUpdated();
+  viewer.setActive(false);
+  viewer.resize(500.25, 600.5, 1.5);
+  viewer.frameUpdated();
+  draw(1000);
+  expect(pending.size).toBe(0);
+  expect(state.frames).toHaveLength(frames);
+  expect(state.allocations).toBe(allocations);
+  expect(state.blank).toBe(false);
+  expect(state.disposed).toBe(false);
+  viewer.setActive(true);
+  draw();
+  expect(state.frames).toHaveLength(frames + 1);
+  expect(state.frames.at(-1)?.scene).toBe(previous.scene);
+  expect(state.frames.at(-1)?.phone).toBe(previous.phone);
+  expect(state.frames.at(-1)!.rotation!.angleTo(previous.rotation!)).toBeLessThan(1e-6);
+  expect(state.size).toEqual({ width: 500.25, height: 600.5, pixelRatio: 1.5 });
+  expect(gpu.instances).toHaveLength(1);
+  viewer.dispose();
+  expect(state.disposed).toBe(true);
+  expect(pending.size).toBe(0);
+});
+
 it("ignores redundant and invalid sizes and combines a DPR change into one allocation and draw", () => {
   const { viewer, draw, pending, state } = fixture();
   const allocations = state.allocations;

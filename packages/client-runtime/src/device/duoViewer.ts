@@ -32,6 +32,7 @@ import type { DeviceScreenSize } from "./stream.ts";
 import { duoScreenSettled, type DuoPose } from "./duoControl.ts";
 
 export interface DuoViewer {
+  readonly setActive: (active: boolean) => void;
   readonly setScreen: (screen: DeviceScreenSize | null) => void;
   /** A pinch holds the leaf under it and follows the fingers; a fold button eases the hinge and re-presents the device. */
   readonly setHingePreview: (angle: number | null, pinch?: boolean) => void;
@@ -313,7 +314,24 @@ export function createDuoViewer(options: {
   };
   options.canvas.addEventListener("webglcontextlost", lost);
   slot.set(options.model);
+  const rejectOrientation = () => {
+    if (disposed || (requestedOrientation === null && requestedPanel === null)) return;
+    clearHandoff();
+    requestedOrientation = null;
+    viewOrientation = screen?.orientation ?? null;
+    const confirmed = activeSnaps().filter((snap) => snap.orientation === screen?.orientation);
+    const snap = nearestDuoView(orbit.rotation, confirmed);
+    if (snap) {
+      restFace = snap.face;
+      orbit.setPose(snap.rotation, performance.now());
+    }
+    scheduler.invalidate();
+  };
   return {
+    setActive(active) {
+      if (!active) rejectOrientation();
+      scheduler.setActive(active);
+    },
     setScreen(next) {
       if (disposed) return;
       const wasMoving = moving() || orbit.needsFrame();
@@ -463,19 +481,7 @@ export function createDuoViewer(options: {
       }
       scheduler.invalidate();
     },
-    rejectOrientation() {
-      if (disposed || (requestedOrientation === null && requestedPanel === null)) return;
-      clearHandoff();
-      requestedOrientation = null;
-      viewOrientation = screen?.orientation ?? null;
-      const confirmed = activeSnaps().filter((snap) => snap.orientation === screen?.orientation);
-      const snap = nearestDuoView(orbit.rotation, confirmed);
-      if (snap) {
-        restFace = snap.face;
-        orbit.setPose(snap.rotation, performance.now());
-      }
-      scheduler.invalidate();
-    },
+    rejectOrientation,
     frameUpdated(id, primary) {
       if (disposed || screen?.screenId !== id) return;
       const key = duoDisplayKey(screen);
