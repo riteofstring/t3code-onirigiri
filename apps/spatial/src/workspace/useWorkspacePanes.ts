@@ -12,6 +12,7 @@ import { sortLogicalProjectsForSidebar } from "@t3tools/web/src/components/Sideb
 import { useClientSettings } from "@t3tools/web/src/hooks/useSettings";
 import { environmentCatalog } from "@t3tools/web/src/connection/catalog";
 import { isHostedStaticApp } from "@t3tools/web/src/hostedPairing";
+import { isLocalEnvironmentDisabled } from "@t3tools/web/src/localEnvironment";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "@t3tools/web/src/logicalProject";
 import { orderItemsByPreferredIds } from "@t3tools/web/src/components/Sidebar.logic";
 import { buildSidebarProjectSnapshots } from "@t3tools/web/src/sidebarProjectGrouping";
@@ -87,7 +88,9 @@ export function useWorkspacePanes(
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const catalogReady = useAtomValue(environmentCatalog.catalogValueAtom).isReady;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const catalogRegistered = catalogReady && (isHostedStaticApp() || primaryEnvironmentId !== null);
+  const catalogRegistered =
+    catalogReady &&
+    (isHostedStaticApp() || isLocalEnvironmentDisabled() || primaryEnvironmentId !== null);
   const threads = useThreadShells();
   const groups = useSidebarProjectGroups();
 

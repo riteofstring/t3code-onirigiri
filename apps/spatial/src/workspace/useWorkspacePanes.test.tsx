@@ -8,6 +8,8 @@ import { useToolPanes } from "./useToolPanes";
 
 const data = vi.hoisted(() => ({
   catalogReady: true,
+  bootstrapped: true,
+  localEnvironmentEnabled: true,
   primaryEnvironmentId: "e" as string | null,
   threads: [
     {
@@ -42,7 +44,7 @@ const data = vi.hoisted(() => ({
   })),
 }));
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useAllEnvironmentShellsBootstrapped: () => true,
+  useAllEnvironmentShellsBootstrapped: () => data.bootstrapped,
   useProjects: () => data.groups,
   useThreadShells: () => data.threads,
 }));
@@ -94,9 +96,14 @@ const id = (thread: string) => threadPaneId("e", thread);
 const positions = () => panes!.map((pane) => [pane.paneId, pane.planeIndex, pane.slotIndex]);
 beforeEach(() => {
   data.catalogReady = true;
+  data.bootstrapped = true;
+  data.localEnvironmentEnabled = true;
   data.primaryEnvironmentId = "e";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("window", { localStorage: { getItem: () => null, setItem: () => {} } });
+  vi.stubGlobal("window", {
+    localStorage: { getItem: () => null, setItem: () => {} },
+    desktopBridge: { getLocalEnvironmentEnabled: () => data.localEnvironmentEnabled },
+  });
 });
 
 it("waits for the environment catalog before providing an initial pane layout", async () => {
@@ -187,3 +194,22 @@ it("waits for local primary discovery even when the persisted catalog is already
   await render("strip");
   expect(panes?.map((pane) => pane.paneId)).toEqual([id("one"), id("two"), id("three")]);
 });
+
+it.each(["strip", "rows"] as const)(
+  "loads remote %s panes when the local environment is disabled",
+  async (mode) => {
+    data.primaryEnvironmentId = null;
+    data.localEnvironmentEnabled = false;
+    data.bootstrapped = false;
+    await render(mode);
+    expect(panes).toBeNull();
+
+    data.bootstrapped = true;
+    await render(mode);
+    expect(positions()).toEqual([
+      [id("one"), 0, 0],
+      [id("two"), 0, 1],
+      [id("three"), mode === "strip" ? 0 : 1, mode === "strip" ? 2 : 0],
+    ]);
+  },
+);
