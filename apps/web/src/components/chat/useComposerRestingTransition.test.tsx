@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useLayoutEffect, useRef, useState } from "react";
+import { act, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -115,20 +115,50 @@ class ControlledResizeObserver {
   }
 }
 
-function Surface({
+function Composer({
   collapsed,
   resting,
-  stripHeight,
+  restingControls,
 }: {
   collapsed: boolean;
   resting: boolean;
-  stripHeight: number;
+  restingControls: RefObject<HTMLDivElement | null>;
 }) {
-  const restingControls = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     reportedResting = resting;
   }, [resting]);
   const ref = useComposerRestingTransition(collapsed, resting, restingControls, publish, true, 240);
+  return (
+    <div
+      ref={ref}
+      data-part="composer"
+      data-collapsed={String(collapsed)}
+      style={{ width: "520.5px", boxSizing: "border-box" }}
+    >
+      <div data-chat-composer-surface="true" data-part="surface">
+        <div data-chat-composer-body="true" data-part="body">
+          <div data-composer-prompt-surface="true" data-part="prompt" />
+          <div data-chat-composer-transition-actions="true" data-part="actions" />
+          <div data-chat-composer-controls="left" data-part="controls" />
+        </div>
+      </div>
+      <div data-chat-composer-footer="true" data-part="footer" />
+    </div>
+  );
+}
+
+function Surface({
+  collapsed,
+  resting,
+  stripHeight,
+  mounted,
+}: {
+  collapsed: boolean;
+  resting: boolean;
+  stripHeight: number;
+  mounted: boolean;
+}) {
+  const restingControls = useRef<HTMLDivElement>(null);
   return (
     <div data-slot="composer-shell" data-part="shell">
       <div
@@ -136,29 +166,21 @@ function Surface({
         data-part="overlay"
         style={{ width: "520.5px", boxSizing: "border-box" }}
       >
-        <div
-          ref={ref}
-          data-part="composer"
-          data-collapsed={String(collapsed)}
-          style={{ width: "520.5px", boxSizing: "border-box" }}
-        >
-          <div data-chat-composer-surface="true" data-part="surface">
-            <div data-chat-composer-body="true" data-part="body">
-              <div data-composer-prompt-surface="true" data-part="prompt" />
-              <div data-chat-composer-transition-actions="true" data-part="actions" />
-              <div data-chat-composer-controls="left" data-part="controls" />
-            </div>
+        {mounted ? (
+          <Composer collapsed={collapsed} resting={resting} restingControls={restingControls} />
+        ) : (
+          <div data-part="status">Provider status</div>
+        )}
+        {mounted && (
+          <div
+            data-composer-model-strip="true"
+            data-part="strip"
+            data-height={stripHeight}
+            style={{ marginTop: "-16.25px" }}
+          >
+            <div ref={restingControls} data-part="resting-controls" />
           </div>
-          <div data-chat-composer-footer="true" data-part="footer" />
-        </div>
-        <div
-          data-composer-model-strip="true"
-          data-part="strip"
-          data-height={stripHeight}
-          style={{ marginTop: "-16.25px" }}
-        >
-          <div ref={restingControls} data-part="resting-controls" />
-        </div>
+        )}
       </div>
     </div>
   );
@@ -168,19 +190,35 @@ function Parent({
   collapsed,
   resting,
   stripHeight,
+  mounted,
 }: {
   collapsed: boolean;
   resting: boolean;
   stripHeight: number;
+  mounted: boolean;
 }) {
   const [committedStripHeight, setCommittedStripHeight] = useState(0);
   useLayoutEffect(() => setCommittedStripHeight(stripHeight), [stripHeight]);
-  return <Surface collapsed={collapsed} resting={resting} stripHeight={committedStripHeight} />;
+  return (
+    <Surface
+      collapsed={collapsed}
+      resting={resting}
+      stripHeight={committedStripHeight}
+      mounted={mounted}
+    />
+  );
 }
 
-async function render(collapsed = false, resting = false, stripHeight = 27.5) {
+async function render(collapsed = false, resting = false, stripHeight = 27.5, mounted = true) {
   await act(() => {
-    root?.render(<Parent collapsed={collapsed} resting={resting} stripHeight={stripHeight} />);
+    root?.render(
+      <Parent
+        collapsed={collapsed}
+        resting={resting}
+        stripHeight={stripHeight}
+        mounted={mounted}
+      />,
+    );
   });
 }
 
@@ -348,15 +386,23 @@ describe("composer resting geometry", () => {
     expect(observer.targets.size).toBe(0);
   });
 
-  it("cancels an active transition and releases its captured overlay on removal", async () => {
+  it("cancels an active transition and releases the surviving shell and overlay on removal", async () => {
     await render(true, true);
     await resize();
     await render(false, false);
     const overlay = node("overlay");
+    const shell = node("shell");
     const active = [...animations];
     expect(overlay.style.height).toBe("184.25px");
-    await act(() => root?.unmount());
-    root = undefined;
+    expect(shell.hasAttribute("data-model-strip-transition")).toBe(true);
+    await render(false, false, 27.5, false);
+    expect(node("shell")).toBe(shell);
+    expect(shell.isConnected).toBe(true);
+    expect(node("overlay")).toBe(overlay);
+    expect(node("status").textContent).toBe("Provider status");
+    expect(shell.querySelector('[data-part="composer"]')).toBeNull();
+    expect(shell.querySelector('[data-part="strip"]')).toBeNull();
+    expect(shell.hasAttribute("data-model-strip-transition")).toBe(false);
     expect(overlay.style.height).toBe("");
     expect(overlay.style.display).toBe("");
     for (const animation of active) expect(animation.cancel).toHaveBeenCalled();
@@ -367,5 +413,6 @@ describe("composer resting geometry", () => {
     });
     expect(publications).toHaveBeenCalledTimes(published);
     expect(overlay.style.height).toBe("");
+    expect(shell.hasAttribute("data-model-strip-transition")).toBe(false);
   });
 });

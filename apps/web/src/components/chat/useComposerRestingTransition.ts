@@ -58,39 +58,41 @@ export function useComposerRestingTransition(
     overlay?.style.removeProperty("justify-content");
   }, []);
 
-  const clearTransitionStyles = useCallback(() => {
-    const element = elementRef.current;
-    const footer = element?.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
-    element?.style.removeProperty("overflow");
-    element?.style.removeProperty("clip-path");
-    element?.style.removeProperty("overflow-clip-margin");
-    element
-      ?.querySelector<HTMLElement>('[data-chat-composer-surface="true"]')
-      ?.style.removeProperty("height");
-    footer?.style.removeProperty("position");
-    footer?.style.removeProperty("top");
-    footer?.style.removeProperty("bottom");
-    footer?.style.removeProperty("left");
-    footer?.style.removeProperty("right");
-    footer?.style.removeProperty("height");
-    const shell = element?.closest<HTMLElement>('[data-slot="composer-shell"]');
-    shell?.removeAttribute("data-model-strip-transition");
-    const modelStrip = shell?.querySelector<HTMLElement>('[data-composer-model-strip="true"]');
-    for (const property of [
-      "position",
-      "top",
-      "visibility",
-      "height",
-      "min-height",
-      "padding-top",
-      "align-items",
-      "z-index",
-      "pointer-events",
-    ]) {
-      modelStrip?.style.removeProperty(property);
-    }
-    clearOverlayPin();
-  }, [clearOverlayPin]);
+  const clearTransitionStyles = useCallback(
+    (shell = elementRef.current?.closest<HTMLElement>('[data-slot="composer-shell"]')) => {
+      const element = elementRef.current;
+      const footer = element?.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
+      element?.style.removeProperty("overflow");
+      element?.style.removeProperty("clip-path");
+      element?.style.removeProperty("overflow-clip-margin");
+      element
+        ?.querySelector<HTMLElement>('[data-chat-composer-surface="true"]')
+        ?.style.removeProperty("height");
+      footer?.style.removeProperty("position");
+      footer?.style.removeProperty("top");
+      footer?.style.removeProperty("bottom");
+      footer?.style.removeProperty("left");
+      footer?.style.removeProperty("right");
+      footer?.style.removeProperty("height");
+      shell?.removeAttribute("data-model-strip-transition");
+      const modelStrip = shell?.querySelector<HTMLElement>('[data-composer-model-strip="true"]');
+      for (const property of [
+        "position",
+        "top",
+        "visibility",
+        "height",
+        "min-height",
+        "padding-top",
+        "align-items",
+        "z-index",
+        "pointer-events",
+      ]) {
+        modelStrip?.style.removeProperty(property);
+      }
+      clearOverlayPin();
+    },
+    [clearOverlayPin],
+  );
 
   isCollapsedRef.current = isCollapsed;
 
@@ -552,6 +554,7 @@ export function useComposerRestingTransition(
   }, [restingControlsRef, transitionToCurrentGeometry]);
 
   useEffect(() => {
+    const shell = elementRef.current?.closest<HTMLElement>('[data-slot="composer-shell"]');
     // Host discovery and width measurement settle through layout updates on
     // mount. Treat that bootstrap as initial geometry so an existing thread
     // paints at rest instead of visibly collapsing from the expanded height.
@@ -568,7 +571,7 @@ export function useComposerRestingTransition(
       contentAnimationsRef.current = [];
       for (const animation of stateChangeAnimationsRef.current) animation.cancel();
       stateChangeAnimationsRef.current = [];
-      clearTransitionStyles();
+      clearTransitionStyles(shell);
     };
   }, [clearTransitionStyles]);
 
