@@ -181,8 +181,8 @@ app keeps one routed thread.
 - Browser surface projection reads lifecycle metadata only and must not force layout. A preview
   address can be submitted before the host commits its first guest, so navigation shares the
   guest's creation lease and saved defaults apply first.
-- Pierre keeps its old render range after hidden code is replaced by a placeholder, so the file
-  viewport re-measures when a file pane is shown again.
+- Pierre keeps its old render range after hidden code is replaced by a placeholder, so
+  `useFileViewport` re-renders a virtualized file whenever it intersects its editor viewport again.
 
 ## Styling
 
