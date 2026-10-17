@@ -62,9 +62,6 @@ function reconcileRow(
       kept.push(pane);
     }
   }
-  const added = [...remaining].map((threadId): WorkspacePane => ({
-    kind: "thread",
-    threadId,
-  }));
+  const added = [...remaining].map((threadId) => ({ threadId }));
   return { projectId, panes: [...added, ...kept] };
 }

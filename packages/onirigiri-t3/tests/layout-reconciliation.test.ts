@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { reconcileWorkspaceLayout, type LiveThread, type WorkspaceLayout } from "../src/index.js";
+import { reconcileWorkspaceLayout, type WorkspaceLayout } from "../src/index.js";
+import type { LiveThread } from "../src/workspace-layout.js";
 
 function thread(id: string, projectId: string, archived = false): LiveThread {
   return { id, projectId, archived };
@@ -29,13 +30,10 @@ describe("reconcileWorkspaceLayout", () => {
 
     expect(layout).toEqual({
       rows: [
-        { projectId: "api", panes: [{ kind: "thread", threadId: "t2" }] },
+        { projectId: "api", panes: [{ threadId: "t2" }] },
         {
           projectId: "web",
-          panes: [
-            { kind: "thread", threadId: "t1" },
-            { kind: "thread", threadId: "t3" },
-          ],
+          panes: [{ threadId: "t1" }, { threadId: "t3" }],
         },
       ],
     });
@@ -47,12 +45,9 @@ describe("reconcileWorkspaceLayout", () => {
         rows: [
           {
             projectId: "web",
-            panes: [
-              { kind: "thread", threadId: "t3" },
-              { kind: "thread", threadId: "t1" },
-            ],
+            panes: [{ threadId: "t3" }, { threadId: "t1" }],
           },
-          { projectId: "api", panes: [{ kind: "thread", threadId: "t2" }] },
+          { projectId: "api", panes: [{ threadId: "t2" }] },
         ],
       },
       {
@@ -78,14 +73,10 @@ describe("reconcileWorkspaceLayout", () => {
     const layout = reconcileWorkspaceLayout(
       {
         rows: [
-          { projectId: "gone", panes: [{ kind: "thread", threadId: "g1" }] },
+          { projectId: "gone", panes: [{ threadId: "g1" }] },
           {
             projectId: "web",
-            panes: [
-              { kind: "thread", threadId: "t1" },
-              { kind: "thread", threadId: "deleted" },
-              { kind: "thread", threadId: "t2" },
-            ],
+            panes: [{ threadId: "t1" }, { threadId: "deleted" }, { threadId: "t2" }],
           },
         ],
       },
@@ -96,7 +87,7 @@ describe("reconcileWorkspaceLayout", () => {
     );
 
     expect(layout).toEqual({
-      rows: [{ projectId: "web", panes: [{ kind: "thread", threadId: "t2" }] }],
+      rows: [{ projectId: "web", panes: [{ threadId: "t2" }] }],
     });
   });
 
@@ -119,14 +110,10 @@ describe("reconcileWorkspaceLayout", () => {
         rows: [
           {
             projectId: "api",
-            panes: [
-              { kind: "thread", threadId: "w1" },
-              { kind: "thread", threadId: "a1" },
-              { kind: "thread", threadId: "a1" },
-            ],
+            panes: [{ threadId: "w1" }, { threadId: "a1" }, { threadId: "a1" }],
           },
-          { projectId: "web", panes: [{ kind: "thread", threadId: "w2" }] },
-          { projectId: "api", panes: [{ kind: "thread", threadId: "a2" }] },
+          { projectId: "web", panes: [{ threadId: "w2" }] },
+          { projectId: "api", panes: [{ threadId: "a2" }] },
         ],
       },
       {
@@ -157,10 +144,7 @@ describe("reconcileWorkspaceLayout", () => {
         rows: [
           {
             projectId: "web",
-            panes: [
-              { kind: "thread", threadId: "t3" },
-              { kind: "thread", threadId: "stale" },
-            ],
+            panes: [{ threadId: "t3" }, { threadId: "stale" }],
           },
         ],
       },

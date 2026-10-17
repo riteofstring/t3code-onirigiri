@@ -1,9 +1,6 @@
-export interface ThreadPane {
-  readonly kind: "thread";
+export interface WorkspacePane {
   readonly threadId: string;
 }
-
-export type WorkspacePane = ThreadPane;
 
 export interface ProjectRow {
   readonly projectId: string;
@@ -14,10 +11,6 @@ export interface WorkspaceLayout {
   readonly rows: readonly ProjectRow[];
 }
 
-export interface LiveProject {
-  readonly id: string;
-}
-
 export interface LiveThread {
   readonly id: string;
   readonly projectId: string;
@@ -25,6 +18,6 @@ export interface LiveThread {
 }
 
 export interface LiveWorkspace {
-  readonly projects: readonly LiveProject[];
+  readonly projects: readonly { readonly id: string }[];
   readonly threads: readonly LiveThread[];
 }

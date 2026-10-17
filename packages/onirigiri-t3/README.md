@@ -1,16 +1,16 @@
 # Onirigiri workspace adapter
 
-Private workspace package used by `apps/spatial`. It exports the existing
-`reconcileWorkspaceLayout` function and layout types directly from TypeScript
+Private workspace package used by `apps/spatial`. It exports
+`reconcileWorkspaceLayout` and its layout types directly from TypeScript
 source, following the other T3 workspace packages. No separate build is needed.
 
 ## Layout reconciliation
 
 A saved workspace layout is a list of project rows, each holding thread panes.
 The layout outlives the data it refers to: projects are removed, threads are
-archived or deleted, and new threads appear while the layout sits in local
-storage. `reconcileWorkspaceLayout` brings a saved layout up to date with the
-live projects and threads before the workspace renders it.
+archived or deleted, and new threads appear between live updates.
+`reconcileWorkspaceLayout` brings a saved layout up to date with the live
+projects and threads before the workspace renders it.
 
 ### Rules
 
@@ -35,6 +35,4 @@ live projects and threads before the workspace renders it.
 The function is pure and takes its own minimal types, not T3's or
 Onirigiri's. `apps/spatial` maps T3's project and thread selectors to
 `LiveWorkspace` and maps rows and panes to Onirigiri's layout, so neither
-upstream's types nor Onirigiri's scene format leak into this package. Callers
-validate the shape of saved data first; reconciliation assumes a well-formed
-layout.
+upstream's types nor Onirigiri's scene format leak into this package.
