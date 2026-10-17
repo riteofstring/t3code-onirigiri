@@ -7,15 +7,8 @@ import { scopeAncestorSelectors } from "./scopeAncestorSelectors";
 
 const webSource = new URL("../web/src/", import.meta.url).pathname;
 
-function isRouterPlugin(plugin: PluginOption): boolean {
-  return (
-    typeof plugin === "object" &&
-    plugin !== null &&
-    "name" in plugin &&
-    typeof plugin.name === "string" &&
-    /^(?:tanstack-router|tanstack:router)/.test(plugin.name)
-  );
-}
+const isRouterPlugin = (plugin: PluginOption) =>
+  !!plugin && "name" in plugin && /^tanstack[-:]router/.test(plugin.name);
 
 // Inherits the web app's toolchain (React Compiler, Tailwind, defines, dev
 // proxy) so T3 components compile exactly as they do upstream. The app runs
@@ -27,7 +20,7 @@ export default defineConfig(async (env) => {
   return {
     ...web,
     plugins: [
-      ...plugins.slice(0, routerIndex).filter((plugin) => !isRouterPlugin(plugin)),
+      ...plugins.slice(0, routerIndex),
       tanstackRouter({
         autoCodeSplitting: true,
         routesDirectory: `${webSource}routes`,
