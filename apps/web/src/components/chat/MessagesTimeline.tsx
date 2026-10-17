@@ -1112,6 +1112,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     !isWorking &&
     parentThreadLink === null &&
     historyControls === undefined &&
+    // A status line (settled, snoozed) still needs the list, whose footer renders it.
     footer === null;
   if (onReadyChange && findListReady && showEmptyState) setFindListReady(false);
   const timelineReady = showEmptyState || (findListReady && !restoringThreadPosition);

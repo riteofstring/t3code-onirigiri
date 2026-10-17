@@ -47,7 +47,6 @@ it.each(["light", "dark"] as const)(
     const theme = getThemeDefinition("t3-chat")!;
     const colors = getThemeColorsForMode(theme, appearance)!;
     applyThemePalette("t3-chat", appearance);
-    // jsdom does not resolve the stylesheet's var(--app-theme-chrome) alias.
     document.documentElement.style.setProperty("--app-chrome-background", colors.chrome);
     const reads = vi.spyOn(window, "getComputedStyle");
 

@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 
+/**
+ * The latest settled item after which files on disk may have changed.
+ * File tools are explicit; completed commands are included because a shell
+ * command can mutate the workspace without reporting the paths it touched.
+ */
 export function latestWorkspaceMutationId(
   items: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
   checkpointCompletedAt: string | null,

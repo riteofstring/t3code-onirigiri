@@ -62,7 +62,12 @@ interface DeviceStreamViewProps {
   readonly onScreen?: (screen: DeviceScreenSize | null) => void;
 }
 
-/** Hidden devices stop streaming and rendering while retaining their last frame and 3D resources. */
+/**
+ * The live device screen. Pointer events map onto normalized coordinates in
+ * the displayed frame and go to the device; keyboard input is forwarded while
+ * the surface is focused. `visible=false` tears the stream down so a hidden
+ * panel decodes nothing.
+ */
 export function DeviceStreamView(props: DeviceStreamViewProps) {
   return (
     <DeviceStreamSession

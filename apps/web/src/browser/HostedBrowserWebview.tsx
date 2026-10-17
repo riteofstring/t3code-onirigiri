@@ -399,7 +399,9 @@ export function HostedBrowserWebview(props: {
             (state.activityByTabId[runtimeTabId] ?? 0) > 0 ||
             pictureInPicture ||
             recordingActive,
-          // Electron 43 can permanently blank a macOS guest after visibility: hidden.
+          // Electron 43 can permanently blank a macOS webview after `visibility: hidden`.
+          // Inactive macOS guests intentionally remain paintable offscreen; other platforms still
+          // suspend them, and automation continues to see the macOS guests as inactive.
           keepPaintableWhenInactive: isMacPlatform(navigator.platform),
           cornerRadius: current?.cornerRadius ?? 0,
           zIndex: current?.zIndex ?? 30,

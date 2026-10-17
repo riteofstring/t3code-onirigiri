@@ -16,7 +16,6 @@ export function useFileViewport(onPostRender?: FilePostRender): FilePostRender {
   useEffect(() => {
     if (!file) return;
     const { container, instance } = file;
-    // Pierre retains the old render range after replacing hidden code with a placeholder.
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) instance.rerender();

@@ -137,8 +137,11 @@ export function ThreadSurfaceContent({
           />
         );
       }
-      // Closing belongs to the containing surface. Only the thread's own pull
-      // request suppresses checkout; other requests retain their page actions.
+      // No onClose: the surface tab's own X owns closing here, and a second X in the header
+      // would be the same action twice. The thread context also drops the checkout button, so it
+      // is only right for the thread's own pull request, whose branch is already under the
+      // reader's feet. A link the agent wrote can open any other one here, and that one has to be
+      // checkable out like it is anywhere else.
       return (
         <PullRequestDetailPanel
           getShortcutContext={actions.getShortcutContext}

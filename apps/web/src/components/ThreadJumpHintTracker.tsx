@@ -16,6 +16,9 @@ export function ThreadJumpHintTracker({
   terminalOpen: boolean;
   onVisibilityChange: (visible: boolean) => void;
 }) {
+  // Same predicate as v1: hints show only while the held modifiers exactly
+  // match a thread-jump binding. Adding Shift (screenshots) or Alt no
+  // longer matches ⌘1..9, so the overlay hides for chords like ⌘⇧4.
   const modifiers = useShortcutModifierState();
   const terminalFocused = useTerminalFocus();
   const shouldShow = shouldShowThreadJumpHintsForModifiers(modifiers, keybindings, {

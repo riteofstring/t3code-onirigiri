@@ -16,7 +16,6 @@ const ChatViewContentReadyContext = createContext<{
   suspend: () => () => void;
 } | null>(null);
 
-/** A host keeps its cover until layout, synchronization and suspended content settle. */
 export function ChatViewContentReadyProvider({
   children,
   onReadyChange,
@@ -39,7 +38,6 @@ export function ChatViewContentReadyProvider({
   return <ChatViewContentReadyContext value={context}>{children}</ChatViewContentReadyContext>;
 }
 
-/** A committed Suspense fallback keeps hosted content from being pictured as complete. */
 export function ChatViewPendingContent() {
   const suspend = useContext(ChatViewContentReadyContext)?.suspend;
   useLayoutEffect(() => suspend?.(), [suspend]);
@@ -70,7 +68,6 @@ export function useChatViewContentReady(
   const [checkoutReadyFor, setCheckoutReadyFor] = useState<string | null>(null);
   const [composer, setComposer] = useState<{ threadKey: string; ready: boolean } | null>(null);
 
-  // Later checkout changes remain ordinary live updates, not new initialization.
   if (report && checkoutReady && checkoutReadyFor !== threadKey) {
     setCheckoutReadyFor(threadKey);
   }
