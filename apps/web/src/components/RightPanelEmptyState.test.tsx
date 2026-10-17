@@ -72,7 +72,7 @@ it("routes launcher letters only to the active pane as focus ownership changes",
       root.render(
         <TooltipProvider>
           <RightPanelEmptyState {...first} active={firstActive} />
-          <RightPanelEmptyState {...second} active={!firstActive} autoFocus={false} />
+          <RightPanelEmptyState {...second} active={!firstActive} />
         </TooltipProvider>,
       ),
     );
@@ -89,30 +89,6 @@ it("routes launcher letters only to the active pane as focus ownership changes",
   expect(second.onAddTerminal).toHaveBeenCalledTimes(1);
   expect((await key(document.body, "d")).defaultPrevented).toBe(false);
   expect(second.onAddDiff).not.toHaveBeenCalled();
-});
-
-it("keeps typing focus when autofocus is disabled and retains arrow selection", async () => {
-  const props = chooserProps();
-  const composer = document.createElement("textarea");
-  host.before(composer);
-  composer.focus();
-  await act(() =>
-    root.render(
-      <TooltipProvider>
-        <RightPanelEmptyState {...props} autoFocus={false} />
-      </TooltipProvider>,
-    ),
-  );
-  expect(document.activeElement).toBe(composer);
-  expect((await key(composer, "t")).defaultPrevented).toBe(false);
-  expect(props.onAddTerminal).not.toHaveBeenCalled();
-  const launcher = host.querySelector<HTMLElement>('[aria-label="Open a surface"]')!;
-  launcher.focus();
-  await key(launcher, "ArrowDown");
-  await key(launcher, "ArrowDown");
-  await key(launcher, "Enter");
-  expect(props.onAddTerminal).toHaveBeenCalledTimes(1);
-  composer.remove();
 });
 
 it("keeps unavailable reasons in tooltips and skips disabled rows while enabled options remain usable", async () => {

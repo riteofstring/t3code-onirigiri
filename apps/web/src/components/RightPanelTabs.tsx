@@ -334,7 +334,6 @@ function SurfaceMenuItem(props: {
  */
 export function RightPanelEmptyState(props: {
   active?: boolean;
-  autoFocus?: boolean;
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -355,7 +354,6 @@ export function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
 }) {
   const active = props.active ?? true;
-  const autoFocus = props.autoFocus ?? true;
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
@@ -494,9 +492,9 @@ export function RightPanelEmptyState(props: {
   // an inline arrow would re-attach and re-focus on every render.
   const focusOnMount = useCallback(
     (node: HTMLDivElement | null) => {
-      if (active && autoFocus) node?.focus();
+      if (active) node?.focus();
     },
-    [active, autoFocus],
+    [active],
   );
 
   const isHighlighted = (action: SurfaceAction) =>

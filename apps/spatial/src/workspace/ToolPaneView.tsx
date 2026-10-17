@@ -401,7 +401,6 @@ export function ToolPaneView({
               {...data.availability}
               browserProfiles={data.browserProfiles}
               active={active}
-              autoFocus={active}
               onAddBrowser={() => void browser()}
               onAddBrowserInProfile={(profileId) => void browser(profileId)}
               onAddTerminal={() => void terminal()}
