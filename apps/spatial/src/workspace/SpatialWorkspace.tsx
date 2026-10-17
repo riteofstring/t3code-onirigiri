@@ -78,6 +78,29 @@ const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 function whileEditing(key: string) {
   return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
 }
+/** Option alone, usable from text fields: the key never edits text there. */
+function optionWhileEditing(key: string) {
+  return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: false, whileEditing: true };
+}
+/** Shift+Option+arrow navigates from the composer and terminals, where Option+arrow edits text. */
+function shiftOptionWhileEditing(key: string) {
+  return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: true, whileEditing: true };
+}
+// New panes use T3's chooser; navigation and rearrangement use the engine.
+const NAVIGATION = new Set([
+  "focusDown",
+  "focusFirstColumn",
+  "focusLastColumn",
+  "focusLeft",
+  "focusRight",
+  "focusUp",
+  "movePaneDown",
+  "movePaneLeft",
+  "movePaneRight",
+  "movePaneUp",
+  "returnHome",
+  "toggleOverview",
+]);
 // New panes use T3's chooser; navigation and rearrangement use the engine.
 const NAVIGATION = new Set([
   "focusDown",
@@ -101,15 +124,15 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
       .filter((action) => !NAVIGATION.has(action))
       .map((action) => [action, []]),
   ),
-  focusDown: defaultOnirigiriShortcuts.focusDown,
+  focusDown: [...defaultOnirigiriShortcuts.focusDown, shiftOptionWhileEditing("ArrowDown")],
   movePaneDown: editingArrows(defaultOnirigiriShortcuts.movePaneDown),
-  focusLeft: defaultOnirigiriShortcuts.focusLeft,
+  focusLeft: [...defaultOnirigiriShortcuts.focusLeft, shiftOptionWhileEditing("ArrowLeft")],
   movePaneLeft: editingArrows(defaultOnirigiriShortcuts.movePaneLeft),
-  focusRight: defaultOnirigiriShortcuts.focusRight,
+  focusRight: [...defaultOnirigiriShortcuts.focusRight, shiftOptionWhileEditing("ArrowRight")],
   movePaneRight: editingArrows(defaultOnirigiriShortcuts.movePaneRight),
-  focusUp: defaultOnirigiriShortcuts.focusUp,
+  focusUp: [...defaultOnirigiriShortcuts.focusUp, shiftOptionWhileEditing("ArrowUp")],
   movePaneUp: editingArrows(defaultOnirigiriShortcuts.movePaneUp),
-  toggleOverview: [...defaultOnirigiriShortcuts.toggleOverview, whileEditing("o")],
+  toggleOverview: [optionWhileEditing("o"), whileEditing("o")],
 };
 const BROWSER_SHORTCUTS = (
   Object.keys(defaultOnirigiriShortcuts) as OnirigiriShortcutAction[]
