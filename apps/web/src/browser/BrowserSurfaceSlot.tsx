@@ -39,7 +39,7 @@ export function BrowserSurfaceSlot(props: {
     let lease = acquireBrowserSurface(tabId, fitSourceContent);
     let disposed = false;
     let mutationQueued = false;
-    let observed: readonly HTMLElement[] = [];
+    let projectionNodes: readonly HTMLElement[] = [];
     let lastBounds: BrowserSurfaceRect | null = null;
     let lastProjection: ReturnType<typeof measureBrowserSurfaceProjection>["projection"] | null =
       null;
@@ -69,25 +69,20 @@ export function BrowserSurfaceSlot(props: {
     const update = (source: "geometry" | "mutation" | "presentation" = "geometry") => {
       const presentation = presentationRef.current;
       const ancestors = projectionPolicy ? browserSurfaceAncestors(element) : [];
-      const panel = element.closest<HTMLElement>('[data-preview-panel-mode="inline"]');
       const nextObserved = projectionPolicy
         ? [...ancestors, ...projectionPolicy.occluders(element)]
-        : [
-            element,
-            ...(panel ? [panel] : []),
-            ...document.querySelectorAll<HTMLElement>('[data-slot="sidebar-gap"]'),
-          ];
+        : projectionNodes;
       if (
-        nextObserved.length !== observed.length ||
-        nextObserved.some((node, i) => node !== observed[i])
+        nextObserved.length !== projectionNodes.length ||
+        nextObserved.some((node, i) => node !== projectionNodes[i])
       ) {
         stopObserving();
         transforms?.disconnect();
         for (const node of nextObserved) {
           transforms?.observe(node, { attributes: true, childList: true });
         }
-        observed = nextObserved;
-        stopObserving = observeResize(observed, () => update());
+        projectionNodes = nextObserved;
+        stopObserving = observeResize(projectionNodes, () => update());
       }
       if (
         source === "mutation" &&
@@ -150,6 +145,16 @@ export function BrowserSurfaceSlot(props: {
     updateRef.current = present;
     update();
     const measure = () => update();
+    const observed: Element[] = [element];
+    // Inline panels animate their outer width while keeping the content at
+    // full width. The slot moves without resizing, so measure on shell resizes too.
+    const panel = element.closest('[data-preview-panel-mode="inline"]');
+    if (panel) observed.push(panel);
+    // A sidebar opening or closing shifts the whole column, so a slot that keeps
+    // its size and its offset inside the column (the mini player on the left)
+    // still moves on screen. The gap element carries the sidebar's width.
+    observed.push(...document.querySelectorAll('[data-slot="sidebar-gap"]'));
+    if (!projectionPolicy) stopObserving = observeResize(observed, measure);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => {
