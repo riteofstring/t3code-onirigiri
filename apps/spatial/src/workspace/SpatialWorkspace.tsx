@@ -128,6 +128,13 @@ const BROWSER_SHORTCUTS = (
 /** Quiet time after a focus change before the app route follows it. */
 const ROUTE_SETTLE_MS = 450;
 
+function withoutPane(paneIds: ReadonlySet<string>, paneId: string) {
+  if (!paneIds.has(paneId)) return paneIds;
+  const next = new Set(paneIds);
+  next.delete(paneId);
+  return next;
+}
+
 export function SpatialWorkspace({
   target,
   active,
@@ -169,16 +176,13 @@ function SpatialWorkspaceView({
     (paneId: string) => closingToolPanesRef.current.has(paneId),
     [],
   );
-  const toolPanesRef = useRef(toolPanes);
-  useEffect(() => {
-    toolPanesRef.current = toolPanes;
-  }, [toolPanes]);
   const [dismissedPaneIds, setDismissedPaneIds] = useState<ReadonlySet<string>>(() => new Set());
   const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const [preferences, updatePreferences] = useWorkspacePreferences();
   const paneDefaults = useMemo(() => ({ height: preferences.rowHeight }), [preferences.rowHeight]);
+  const gridAxes = layoutMode === "strip" ? "horizontal" : "spatial";
   const [savedLayout] = useState(() => readPaneLayout(layoutMode));
   const initialLayout = useMemo(() => {
     if (!initialPanes) return null;
@@ -186,11 +190,11 @@ function SpatialWorkspaceView({
       id: WORKSPACE_ID,
       panes: initialPanes,
       paneDefaults,
-      gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
+      gridAxes,
     });
     const layout = serializeWorkspaceLayout(fresh.scene, fresh.cursor);
     return savedLayout ? reconcilePaneLayout(layout, savedLayout) : layout;
-  }, [initialPanes, layoutMode, paneDefaults, savedLayout]);
+  }, [gridAxes, initialPanes, paneDefaults, savedLayout]);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const overviewCardWidth = overviewZoomChoices.find(
@@ -339,7 +343,7 @@ function SpatialWorkspaceView({
     const previousById = new Map(previous.map((pane) => [pane.paneId, pane]));
     if (panes.length !== previous.length || panes.some((pane) => !previousById.has(pane.paneId))) {
       const { scene } = createWorkspaceScene({
-        gridAxes: layoutMode === "strip" ? "horizontal" : "spatial",
+        gridAxes,
         id: WORKSPACE_ID,
         paneDefaults,
         panes,
@@ -390,7 +394,7 @@ function SpatialWorkspaceView({
         workspace.renamePane(pane.paneId, pane.title);
       }
     }
-  }, [layoutMode, paneDefaults, panes]);
+  }, [gridAxes, paneDefaults, panes]);
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useLayoutEffect(() => {
@@ -459,7 +463,7 @@ function SpatialWorkspaceView({
         return;
       }
       // A terminal or diff pane acts for its thread, which the route follows.
-      const tool = toolPanesRef.current.find((pane) => pane.paneId === paneId);
+      const tool = getPanes().find((pane) => pane.paneId === paneId);
       const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
       if (pendingNavigationPaneRef.current !== routeTarget) pendingNavigationPaneRef.current = null;
       const data = paneData.get(routeTarget);
@@ -485,7 +489,7 @@ function SpatialWorkspaceView({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [syncMaximized, lifecycle, paneData, router, setCaptureActivity],
+    [getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
   );
 
   // Anything but moving on through the workspace, such as opening the command
@@ -531,12 +535,7 @@ function SpatialWorkspaceView({
   const pendingRoutePaneRef = useRef<string | null>(null);
   const focusRoutePane = useEffectEvent((paneId: string) => {
     if (requestedRoutesRef.current.delete(paneId)) return;
-    setDismissedPaneIds((current) => {
-      if (!current.has(paneId)) return current;
-      const next = new Set(current);
-      next.delete(paneId);
-      return next;
-    });
+    setDismissedPaneIds((current) => withoutPane(current, paneId));
     if (!panes?.some((pane) => pane.paneId === paneId)) {
       pendingRoutePaneRef.current = paneId;
       return;
@@ -729,12 +728,7 @@ function SpatialWorkspaceView({
   const focusSurfacePane = useCallback((paneId: string) => {
     if (workspaceRef.current?.focusPane(paneId, { exitOverview: true })) return;
     pendingFocusPaneIdRef.current = paneId;
-    setDismissedPaneIds((current) => {
-      if (!current.has(paneId)) return current;
-      const next = new Set(current);
-      next.delete(paneId);
-      return next;
-    });
+    setDismissedPaneIds((current) => withoutPane(current, paneId));
   }, []);
   useEffect(() => {
     if (!active || !initialPanes || !lifecycle || !workspaceRef.current) return;
@@ -751,17 +745,19 @@ function SpatialWorkspaceView({
           </div>
         );
       }
-      if (pane.surfaceKind !== "thread") {
-        const tool =
-          toolPanes.find((candidate) => candidate.paneId === pane.paneId) ??
-          (pane.data as ToolPane);
-        return (
-          <SpatialSurfaceHost
-            controller={toolController}
-            paneId={pane.paneId}
-            focusPane={focusSurfacePane}
-            isPaneClosing={isPaneClosing}
-          >
+      const tool =
+        pane.surfaceKind === "thread"
+          ? null
+          : (toolPanes.find((candidate) => candidate.paneId === pane.paneId) ??
+            (pane.data as ToolPane));
+      return (
+        <SpatialSurfaceHost
+          controller={toolController}
+          paneId={pane.paneId}
+          focusPane={focusSurfacePane}
+          isPaneClosing={isPaneClosing}
+        >
+          {tool ? (
             <div className="h-full min-h-0" inert={closingToolPanes.has(pane.paneId)}>
               <ToolPaneView
                 pane={tool}
@@ -781,27 +777,19 @@ function SpatialWorkspaceView({
                 }
               />
             </div>
-          </SpatialSurfaceHost>
-        );
-      }
-      return (
-        <SpatialSurfaceHost
-          controller={toolController}
-          paneId={pane.paneId}
-          focusPane={focusSurfacePane}
-          isPaneClosing={isPaneClosing}
-        >
-          <ThreadPane
-            thread={pane.data as ThreadPaneData}
-            focused={state.focused}
-            visible={state.visible}
-            paneId={pane.paneId}
-            onNavigateAway={navigateAway}
-            maximized={state.maximized}
-            onAddPane={addPaneBeside}
-            onClosePane={closeChatPane}
-            onToggleMaximized={togglePaneMaximized}
-          />
+          ) : (
+            <ThreadPane
+              thread={pane.data as ThreadPaneData}
+              focused={state.focused}
+              visible={state.visible}
+              paneId={pane.paneId}
+              onNavigateAway={navigateAway}
+              maximized={state.maximized}
+              onAddPane={addPaneBeside}
+              onClosePane={closeChatPane}
+              onToggleMaximized={togglePaneMaximized}
+            />
+          )}
         </SpatialSurfaceHost>
       );
     },
@@ -885,7 +873,7 @@ function SpatialWorkspaceView({
                     {...(stageViewport.compact ? { focusHighlight: false } : {})}
                     getPanePicture={getPanePicture}
                     getPanePresentation={getPanePresentation}
-                    gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
+                    gridAxes={gridAxes}
                     initialPanes={initialPanes}
                     initialLayout={initialLayout}
                     liveContent
