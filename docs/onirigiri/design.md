@@ -71,8 +71,8 @@ that span files and are easy to break without noticing.
 ## Keyboard
 
 - The engine keeps only navigation and rearrangement shortcuts; new panes use T3's chooser (Alt+N).
-- Chords that must work inside text fields are marked `whileEditing`. Overview uses Option+O, which
-  never edits text there (Ctrl+Option+O also works). Focus moves add Shift+Option+arrows because
+- Chords that must work inside text fields are marked `whileEditing`: Option+O (and Ctrl+Option+O)
+  toggles overview from anywhere. Focus moves add Shift+Option+arrows because
   Option+arrows edit text in the composer and terminals; terminal tool panes still reserve plain
   Option+arrows for navigation, before the terminal consumes them.
 - Escape in the composer blurs it so arrow navigation works again, unless its suggestion list is open.
@@ -98,9 +98,9 @@ that span files and are easy to break without noticing.
 - Leaving overview releases excess views one commit at a time during idle input, instead of
   unmounting them all on the last frame.
 - Panes without a picture share one extra mount slot to be pictured: untried panes first, visited
-  ones before untouched ones, then the oldest attempt. A reservation interrupted by input, motion or covering keeps its place without
-  counting as a failure; a real failure waits minutes before a retry; a deliberate revisit takes the
-  pane over.
+  ones before untouched ones, then the oldest attempt. A reservation interrupted by input, motion or
+  covering keeps its place without counting as a failure; a real failure waits minutes before a
+  retry; a deliberate revisit takes the pane over.
 - Mount changes reach panes as transitions (`usePaneMounted`), so mounting a ChatView does not block
   input.
 - The lifecycle and the snapshot queue track input separately: the queue only timestamps it, while
