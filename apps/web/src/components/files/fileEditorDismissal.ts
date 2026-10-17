@@ -1,6 +1,8 @@
 interface FileEditorDismissalOptions {
   root: HTMLElement;
-  editor: { setSelections: (selections: []) => void };
+  editor: {
+    setSelections: (selections: []) => void;
+  };
   isBlocked: () => boolean;
   onDismiss: () => void;
 }

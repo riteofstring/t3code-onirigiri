@@ -176,8 +176,6 @@ export function useThreadSurfaceContext(
     linkedPullRequest,
     visiblePullRequestCount: visibleThreadPullRequests(thread?.pullRequests ?? []).length,
     browserProfiles,
-    project,
-    thread,
     cwd,
     worktreePath,
     runtimeEnv,

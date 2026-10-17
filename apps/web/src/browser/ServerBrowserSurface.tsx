@@ -688,44 +688,35 @@ export function ServerBrowserSurface(props: {
       keyboard &&
       !surface.closest("[inert]") &&
       projectionPolicy.canPresent(surface) &&
-      projectionPolicy.interactive(surface) &&
-      matchesPreviewHostShortcut(
-        {
-          key: event.key,
-          code: event.code,
-          altKey: event.altKey,
-          ctrlKey: event.ctrlKey,
-          metaKey: event.metaKey,
-          shiftKey: event.shiftKey,
-          repeat: event.repeat,
-          isComposing: event.nativeEvent.isComposing,
-          keyCode: event.keyCode,
-          altGraph: event.getModifierState("AltGraph"),
-          // The proxy textarea cannot identify the remote page's editing target.
-          editing: true,
-        },
-        keyboard.shortcuts,
-        navigator.platform,
-      )
+      projectionPolicy.interactive(surface)
     ) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (action === "down")
-        keyboard.keyDown(
-          surface,
-          new globalThis.KeyboardEvent("keydown", {
-            key: event.key,
-            code: event.code,
-            altKey: event.altKey,
-            ctrlKey: event.ctrlKey,
-            metaKey: event.metaKey,
-            shiftKey: event.shiftKey,
-            repeat: event.repeat,
-            bubbles: true,
-            cancelable: true,
-          }),
-        );
-      return;
+      const key = {
+        key: event.key,
+        code: event.code,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        repeat: event.repeat,
+      };
+      const input = {
+        ...key,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.keyCode,
+        altGraph: event.getModifierState("AltGraph"),
+        // The proxy textarea cannot identify the remote page's editing target.
+        editing: true,
+      };
+      if (matchesPreviewHostShortcut(input, keyboard.shortcuts, navigator.platform)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (action === "down")
+          keyboard.keyDown(
+            surface,
+            new globalThis.KeyboardEvent("keydown", { ...key, bubbles: true, cancelable: true }),
+          );
+        return;
+      }
     }
     if (controlRef.current?.controller !== "you") return;
     keySentRef.current = false;

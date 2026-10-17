@@ -113,7 +113,6 @@ export function HostedBrowserWebview(props: {
         content: current?.content ?? null,
         fitSourceContent: current?.fitSourceContent ?? false,
         fittedSourceContent: current?.fittedSourceContent ?? null,
-        hasRect: rect !== null,
         projected: projection !== null,
         interactive: projection?.interactive ?? false,
         keyboard: projection?.keyboard,
@@ -286,7 +285,7 @@ export function HostedBrowserWebview(props: {
     aspectRatio: lockedAspectRatio,
   });
   const fittedSourceViewport =
-    presentation.fitSourceContent && presentation.hasRect
+    presentation.fitSourceContent && logicalSize
       ? resolveFittedBrowserViewport(
           viewport,
           presentation.fittedSourceContent,
