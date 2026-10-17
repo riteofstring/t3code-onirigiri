@@ -104,6 +104,8 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     await import("@t3tools/web/src/components/chatViewContentReady");
   const { useActiveChatViewEffect } = await import("@t3tools/web/src/components/chatViewActivity");
   function ChatContent() {
+    // Reads mutable test state on every render; compiler memoization would serve stale values.
+    "use no memo";
     useActiveChatViewEffect(() => {
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "x") state.activeKeys += 1;
