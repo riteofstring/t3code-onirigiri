@@ -3,12 +3,13 @@ import type { OnirigiriPaneDefinition } from "@riteofstring/onirigiri";
 import type { DesktopPreviewHostKey, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { matchesPreviewHostShortcut } from "../../../../packages/shared/src/previewHostKeyboard";
 import type { BrowserSurfaceProjectionPolicy } from "@t3tools/web/src/browser/browserSurfaceProjection";
-import { act, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { SpatialWorkspace } from "./SpatialWorkspace";
 import { readPaneLayout, threadLayoutPositions } from "./workspaceLayout";
+import { bindWorkspace, pictureLayoutChanged, stubWorkspaceFrames } from "./workspaceTestMocks";
 
 type RouteLocation = { environmentId: string; threadId: string };
 type NavigationEvent = { toLocation: RouteLocation };
@@ -16,10 +17,8 @@ type NavigationEvent = { toLocation: RouteLocation };
 const fixture = vi.hoisted(() => ({
   panes: [] as OnirigiriPaneDefinition[],
   loaded: true,
-  bindWorkspace: vi.fn<(target: { focusPane: (id: string) => void } | null) => void>(),
   routeListeners: new Set<(event: NavigationEvent) => void>(),
   navigate: vi.fn<(input: { params: RouteLocation }) => Promise<void>>(),
-  pictureLayoutChanged: vi.fn(),
   browserProjection: null as BrowserSurfaceProjectionPolicy | null,
   addEmpty: vi.fn(),
   threadRenders: [] as string[],
@@ -54,42 +53,10 @@ vi.mock("./useToolPanes", () => {
   };
   return { useToolPanes: () => tools };
 });
-vi.mock("./SpatialSurfaceProvider", async () => {
-  const { useToolPanes } = await import("./useToolPanes");
-  return {
-    useSpatialController: () => ({
-      controller: useToolPanes(),
-      bindWorkspace: fixture.bindWorkspace,
-    }),
-  };
-});
-vi.mock("./useSavedPanePictures", async () => {
-  const { createContext } = await import("react");
-  const pictures = {
-    getPanePicture: () => null,
-    getPanePresentation: () => "dom",
-    onLayoutChange: fixture.pictureLayoutChanged,
-    onPanePictureCaptured: vi.fn(),
-    pictureFor: () => null,
-    preparedPictureUrl: () => null,
-    pictureUrl: () => "",
-    hasFreshPicture: () => false,
-    canBackgroundPicture: () => false,
-    runningPanes: new Set(),
-    retainedPaneIds: new Set(),
-    picturesLoaded: true,
-    paneSnapshots: {},
-    setCaptureActivity: vi.fn(),
-    stageRef: vi.fn(),
-    stageViewport: { width: 1200, height: 900, compact: false },
-  };
-  return { PaneSnapshotContext: createContext(null), useSavedPanePictures: () => pictures };
-});
+vi.mock("./SpatialSurfaceProvider", async () => (await import("./workspaceTestMocks")).controller);
+vi.mock("./useSavedPanePictures", async () => (await import("./workspaceTestMocks")).savedPictures);
 vi.mock("./WorkspaceToolbar", () => ({ WorkspaceToolbar: () => null }));
-vi.mock("./WorkspaceTooltips", () => ({
-  WorkspaceTooltips: ({ children }: { children: ReactNode }) => children,
-  WorkspaceControlButton: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
-}));
+vi.mock("./WorkspaceTooltips", async () => (await import("./workspaceTestMocks")).tooltips);
 vi.mock("./ToolPaneView", () => ({ ToolPaneView: () => null }));
 vi.mock("./SpatialSurfaceHost", () => ({
   SpatialSurfaceHost: ({ children }: { children: ReactNode }) => children,
@@ -204,8 +171,7 @@ async function explicitRoute(threadId: string) {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubWorkspaceFrames();
   vi.stubGlobal("PointerEvent", MouseEvent);
   vi.stubGlobal(
     "ResizeObserver",
@@ -215,12 +181,6 @@ beforeEach(() => {
       unobserve() {}
     },
   );
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
-    window.setTimeout(() => callback(performance.now()), 16),
-  );
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => window.setTimeout(callback, 0));
-  vi.stubGlobal("cancelIdleCallback", (id: number) => window.clearTimeout(id));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     width: 1200,
     height: 900,
@@ -234,10 +194,10 @@ beforeEach(() => {
   });
   fixture.panes = [pane("origin", 0, 0), pane("right", 0, 2), pane("lower", 2, 0)];
   fixture.loaded = true;
-  fixture.bindWorkspace.mockReset();
+  bindWorkspace.mockReset();
   fixture.navigate.mockReset();
   fixture.navigate.mockResolvedValue(undefined);
-  fixture.pictureLayoutChanged.mockClear();
+  pictureLayoutChanged.mockClear();
   fixture.browserProjection = null;
   fixture.addEmpty.mockReset();
   fixture.threadRenders = [];
@@ -259,9 +219,9 @@ afterEach(async () => {
 
 it("delivers global surface focus only after the initial workspace and route are ready", async () => {
   fixture.loaded = false;
-  fixture.bindWorkspace.mockImplementation((target) => target?.focusPane("thread:e:right"));
+  bindWorkspace.mockImplementation((target) => target?.focusPane("thread:e:right"));
   await render();
-  expect(fixture.bindWorkspace).not.toHaveBeenCalled();
+  expect(bindWorkspace).not.toHaveBeenCalled();
   fixture.loaded = true;
   await render();
   await act(() => vi.advanceTimersByTime(120));
@@ -460,7 +420,7 @@ it("returns to the owning chat when a focused tool closes through its content", 
 
 it("visits empty cells within and beyond the pane bounds without invalidating pane pictures", async () => {
   await render();
-  const pictureUpdates = fixture.pictureLayoutChanged.mock.calls.length;
+  const pictureUpdates = pictureLayoutChanged.mock.calls.length;
   expect((await key("ArrowRight")).defaultPrevented).toBe(true);
   expect(status()).toContain("Grid cell (1, 0), split 1: Empty cell.");
   await key("ArrowDown");
@@ -471,7 +431,7 @@ it("visits empty cells within and beyond the pane bounds without invalidating pa
   await act(() => vi.advanceTimersByTime(1000));
   expect(readPaneLayout("rows")?.cursor).toEqual({ column: 1, row: 3, split: 0 });
   expect(fixture.navigate).not.toHaveBeenCalled();
-  expect(fixture.pictureLayoutChanged).toHaveBeenCalledTimes(pictureUpdates);
+  expect(pictureLayoutChanged).toHaveBeenCalledTimes(pictureUpdates);
 
   fixture.panes = [...fixture.panes, pane("new-project", 4, 0)];
   await render();
@@ -522,7 +482,7 @@ it("visits gaps and positions beyond either end of the strip without leaving its
   window.history.replaceState(null, "", "/?layout=strip");
   fixture.panes = [pane("origin", 0, 0), pane("right", 0, 2)];
   await render();
-  const pictureUpdates = fixture.pictureLayoutChanged.mock.calls.length;
+  const pictureUpdates = pictureLayoutChanged.mock.calls.length;
   await key("ArrowRight");
   expect(status()).toContain("Grid cell (1, 0), split 1: Empty cell.");
   await act(() => vi.advanceTimersByTime(1000));
@@ -544,7 +504,7 @@ it("visits gaps and positions beyond either end of the strip without leaving its
   expect(status()).toContain("Grid cell (-1, 0), split 1: Empty cell.");
   await act(() => window.dispatchEvent(new Event("pagehide")));
   expect(readPaneLayout("strip")?.cursor).toEqual({ column: -1, row: 0, split: 0 });
-  expect(fixture.pictureLayoutChanged).toHaveBeenCalledTimes(pictureUpdates);
+  expect(pictureLayoutChanged).toHaveBeenCalledTimes(pictureUpdates);
   await explicitRoute("right");
   expect(status()).toContain("right");
   expect(status()).not.toContain("Empty cell");

@@ -6,13 +6,14 @@ import type {
   WorkspacePane,
 } from "@riteofstring/onirigiri";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { act, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { terminalSurface } from "@t3tools/web/src/rightPanelStore";
 import { SpatialWorkspace } from "./SpatialWorkspace";
 import { createSpatialSurfaceNavigation, type ToolPaneController } from "./SpatialSurfaceHost";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
+import { stubWorkspaceFrames } from "./workspaceTestMocks";
 
 const fixture = vi.hoisted(() => ({
   panes: [] as OnirigiriPaneDefinition[],
@@ -20,8 +21,6 @@ const fixture = vi.hoisted(() => ({
   isPaneClosing: (_id: string): boolean => false,
   closeTerminal: vi.fn(),
   confirm: vi.fn(),
-  pictureLayoutChanged: vi.fn(),
-  bindWorkspace: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -36,15 +35,7 @@ vi.mock("@t3tools/web/src/state/use-atom-command", () => ({
 vi.mock("@t3tools/web/src/lib/terminalCloseConfirm", () => ({
   confirmTerminalClose: fixture.confirm,
 }));
-vi.mock("./SpatialSurfaceProvider", async () => {
-  const { useToolPanes } = await import("./useToolPanes");
-  return {
-    useSpatialController: () => ({
-      controller: useToolPanes(),
-      bindWorkspace: fixture.bindWorkspace,
-    }),
-  };
-});
+vi.mock("./SpatialSurfaceProvider", async () => (await import("./workspaceTestMocks")).controller);
 vi.mock("./useWorkspacePanes", async () => {
   const { useMemo } = await import("react");
   return {
@@ -121,33 +112,9 @@ vi.mock("@riteofstring/onirigiri", async (importOriginal) => {
     },
   };
 });
-vi.mock("./useSavedPanePictures", async () => {
-  const { createContext } = await import("react");
-  const pictures = {
-    getPanePicture: () => null,
-    getPanePresentation: () => "dom",
-    onLayoutChange: fixture.pictureLayoutChanged,
-    onPanePictureCaptured: vi.fn(),
-    pictureFor: () => null,
-    preparedPictureUrl: () => null,
-    pictureUrl: () => "",
-    hasFreshPicture: () => false,
-    canBackgroundPicture: () => false,
-    runningPanes: new Set(),
-    retainedPaneIds: new Set(),
-    picturesLoaded: true,
-    paneSnapshots: {},
-    setCaptureActivity: vi.fn(),
-    stageRef: vi.fn(),
-    stageViewport: { width: 1200, height: 900, compact: false },
-  };
-  return { PaneSnapshotContext: createContext(null), useSavedPanePictures: () => pictures };
-});
+vi.mock("./useSavedPanePictures", async () => (await import("./workspaceTestMocks")).savedPictures);
 vi.mock("./WorkspaceToolbar", () => ({ WorkspaceToolbar: () => null }));
-vi.mock("./WorkspaceTooltips", () => ({
-  WorkspaceTooltips: ({ children }: { children: ReactNode }) => children,
-  WorkspaceControlButton: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
-}));
+vi.mock("./WorkspaceTooltips", async () => (await import("./workspaceTestMocks")).tooltips);
 vi.mock("./ToolPaneView", () => ({
   ToolPaneView: ({
     pane,
@@ -245,18 +212,10 @@ function group() {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
-    window.setTimeout(() => callback(performance.now()), 16),
-  );
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => window.setTimeout(callback, 0));
-  vi.stubGlobal("cancelIdleCallback", (id: number) => window.clearTimeout(id));
+  stubWorkspaceFrames();
   fixture.controller = null;
   fixture.closeTerminal.mockReset().mockResolvedValue({ _tag: "Success" });
   fixture.confirm.mockReset().mockResolvedValue(true);
-  fixture.pictureLayoutChanged.mockClear();
   localStorage.clear();
   localStorage.setItem(
     storageKey,
