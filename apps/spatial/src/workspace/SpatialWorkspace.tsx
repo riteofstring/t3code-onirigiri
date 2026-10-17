@@ -849,6 +849,7 @@ export function SpatialWorkspace({
                     chromeComponents={WORKSPACE_CHROME}
                     desktopControlsContainer={controlsContainer}
                     focusAnchor={focusAnchor}
+                    {...(stageViewport.compact ? { focusHighlight: false } : {})}
                     getPanePicture={getPanePicture}
                     getPanePresentation={getPanePresentation}
                     gridAxes={layoutMode === "strip" ? "horizontal" : "spatial"}
