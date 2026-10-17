@@ -254,15 +254,19 @@ export function createPaneLifecycleStore(
       !panes.has(paneId) ||
       performance.now() - since >= PICTURE_TIMEOUT_MS;
     if (!done) return true;
+    releasePicture(paneId, picturing.interrupted && !picturing.failed);
+    return false;
+  };
+
+  // A retry keeps its place behind other missing panes without charging a missed capture as failure.
+  const releasePicture = (paneId: string, retry: boolean) => {
+    picturing = null;
     if (hasPicture(paneId)) pictureAttempted.delete(paneId);
-    else if (picturing.interrupted && !picturing.failed) {
-      // Keep its place behind other missing panes without charging a missed capture as failure.
+    else if (retry) {
       const attempted = pictureAttempted.get(paneId);
       if (attempted) attempted.retryAt = performance.now();
     }
     if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
-    picturing = null;
-    return false;
   };
 
   const visibleQueued = () => queue.some((paneId) => visible.has(paneId) && !mounted.has(paneId));
@@ -587,16 +591,7 @@ export function createPaneLifecycleStore(
     /** Whether panes without a picture are mounted in the background to picture them. */
     setBackgroundPictures: (enabled: boolean) => {
       backgroundPictures = enabled;
-      if (!enabled && picturing) {
-        const { paneId, failed } = picturing;
-        picturing = null;
-        if (hasPicture(paneId)) pictureAttempted.delete(paneId);
-        else if (!failed) {
-          const attempted = pictureAttempted.get(paneId);
-          if (attempted) attempted.retryAt = performance.now();
-        }
-        if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
-      }
+      if (!enabled && picturing) releasePicture(picturing.paneId, !picturing.failed);
       requestSettle();
     },
     setRunning: (next: ReadonlySet<string>) => {
