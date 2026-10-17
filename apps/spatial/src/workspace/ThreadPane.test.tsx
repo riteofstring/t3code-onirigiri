@@ -202,6 +202,11 @@ let workspaceActive: boolean;
 let thread: ScopedThreadRef;
 let onNavigateAway: ReturnType<typeof vi.fn<(href: string) => void>>;
 
+function live(updatedAt = "2026-10-15T12:00:00.000Z") {
+  state.projection = { updatedAt };
+  state.status = "live";
+}
+
 async function render(focused = false, paintFrames = true, visible = focused) {
   await act(async () => {
     for (const listener of state.listeners) listener();
@@ -310,8 +315,7 @@ it.each([
   async (id) => {
     thread = { ...thread, threadId: id as ThreadId };
     paneId = `thread:${thread.environmentId}:${thread.threadId}`;
-    state.projection = { updatedAt: state.shellUpdatedAt };
-    state.status = "live";
+    live(state.shellUpdatedAt);
     await render(true);
     expect(container.querySelector('[aria-label="Routed thread"]')?.textContent).toBe(id);
     const editor = container.querySelector("textarea")!;
@@ -337,8 +341,7 @@ it("prepares a background view after its projection arrives and retains its draf
   await render();
   expect(container.querySelector("textarea")).toBeNull();
 
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render();
   await act(() => vi.advanceTimersByTimeAsync(32));
   const editor = container.querySelector("textarea")!;
@@ -369,8 +372,7 @@ it("keeps the focused view available while its first projection loads", async ()
   const editor = container.querySelector("textarea")!;
   expect(editor).not.toBeNull();
   editor.value = "Draft while connecting";
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   expect(container.querySelector("textarea")).toBe(editor);
   expect(editor.value).toBe("Draft while connecting");
@@ -379,8 +381,7 @@ it("keeps the focused view available while its first projection loads", async ()
 it.each(["checkoutReady", "timelineReady"] as const)(
   "keeps the cover and postpones capture until %s settles",
   async (readiness) => {
-    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-    state.status = "live";
+    live();
     state[readiness] = false;
     await render(true);
     const editor = container.querySelector("textarea")!;
@@ -408,8 +409,7 @@ it("waits for the displayed sync row to clear before revealing or capturing the 
   await render(true, false);
   await act(() => vi.advanceTimersByTimeAsync(450));
   expect(container.querySelector('[role="status"]')).not.toBeNull();
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true, false);
   await act(() => vi.advanceTimersByTimeAsync(349));
   expect(container.querySelector('[role="status"]')).not.toBeNull();
@@ -425,8 +425,7 @@ it("waits for the displayed sync row to clear before revealing or capturing the 
 });
 
 it("retains the editor while a reconnect delays readiness and cancels the pending reveal", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const editor = container.querySelector("textarea")!;
   editor.value = "Keep through reconnect";
@@ -461,8 +460,7 @@ it("releases deleted content without waiting for a ChatView readiness report", a
 
 it("keeps a live editor presented while suspended content postpones new pictures", async () => {
   const { markPaneSynced } = await import("./useSavedPanePictures");
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const editor = container.querySelector("textarea")!;
   editor.value = "Keep this draft while highlighting";
@@ -513,8 +511,7 @@ it("keeps a live editor presented while suspended content postpones new pictures
 });
 
 it("reuses an unchanged picture through repeated focus changes without replacing the editor", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   state.interactive = true;
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -535,8 +532,7 @@ it("reuses an unchanged picture through repeated focus changes without replacing
 });
 
 it("requests replacement pixels after a resize without remounting live content", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   state.interactive = true;
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -552,8 +548,7 @@ it("requests replacement pixels after a resize without remounting live content",
 it.each(["wheel", "scroll"])(
   "defers a picture refresh after %s input until departure and reuses an unchanged visit",
   async (event) => {
-    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-    state.status = "live";
+    live();
     state.interactive = true;
     await render(true);
     const editor = container.querySelector("textarea")!;
@@ -578,8 +573,7 @@ it.each(["wheel", "scroll"])(
 );
 
 it("preserves a prepared picture when a workspace navigation key changes no content", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   state.interactive = true;
   await render(true);
   const button = container.querySelector("button")!;
@@ -608,8 +602,7 @@ it("preserves a prepared picture when a workspace navigation key changes no cont
 });
 
 it("reuses pictures through composer navigation and refreshes changed styles", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   state.interactive = true;
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -643,8 +636,7 @@ it("reuses pictures through composer navigation and refreshes changed styles", a
 });
 
 it("refreshes a scrolled descendant on departure without predicting its keydown", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   state.interactive = true;
   await render(true);
   const panel = container.querySelector("aside")!;
@@ -682,8 +674,7 @@ it("refreshes a scrolled descendant on departure without predicting its keydown"
 });
 
 it("ignores repeated and temporary attribute writes but refreshes a changed presentation", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   await render(false);
   const panel = container.querySelector("aside")!;
@@ -711,8 +702,7 @@ it("ignores repeated and temporary attribute writes but refreshes a changed pres
 });
 
 it("refreshes a picture when background content changes without a new message revision", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   await render(false);
   expect(state.engineReady).toBe(true);
@@ -729,8 +719,7 @@ it("refreshes a picture when background content changes without a new message re
 });
 
 it("refreshes a picture after a same-source image finishes loading in the background", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   await render(false);
   expect(state.engineReady).toBe(true);
@@ -744,8 +733,7 @@ it("refreshes a picture after a same-source image finishes loading in the backgr
 });
 
 it("keeps a closing panel present when the app route follows another pane", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const editor = container.querySelector("textarea")!;
   editor.value = "Keep this draft";
@@ -768,8 +756,7 @@ it("keeps a closing panel present when the app route follows another pane", asyn
 });
 
 it("suppresses panel motion until the pane's own initial paint, including after remount", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true, false);
   await act(() => container.querySelector("button")!.click());
   expect(container.querySelector("aside")).toBeNull();
@@ -826,8 +813,7 @@ it("starts the next queued preparation only after the deferred view commits", as
   expect(container.querySelector("textarea")).toBeNull();
   expect(lifecycle.isMounted("p2")).toBe(false);
 
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(false, true, true);
   expect(container.querySelector("textarea")).not.toBeNull();
   await act(() => vi.advanceTimersByTimeAsync(32));
@@ -853,8 +839,7 @@ it.each(["route", "timeline", "suspended content"])(
     lifecycle.setVisible("p2", true);
     vi.advanceTimersByTime(250);
     paneId = "p1";
-    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-    state.status = "live";
+    live();
     state.hasChatView = pending !== "route";
     state.timelineReady = pending !== "timeline";
     state.suspended = pending === "suspended content";
@@ -881,8 +866,7 @@ it("holds a visible prepared view through motion and renders at rest without wai
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
   lifecycle.setMoving(true);
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   vi.stubGlobal("requestIdleCallback", () => 99);
   await render(false, false, true);
   expect(container.querySelector("textarea")).toBeNull();
@@ -894,8 +878,7 @@ it("cancels an offscreen content mount if motion starts before its idle callback
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 100));
   await render(false, false);
   await act(() => lifecycle!.setMoving(true));
@@ -1033,8 +1016,7 @@ it("returns from a covered eviction before a replacement composer is available",
 });
 
 it("publishes a pending scroll revision after its content is remounted", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   state.interactive = true;
   await render(true);
   const before = state.engineRevision;
@@ -1052,8 +1034,7 @@ it("publishes a pending scroll revision after its content is remounted", async (
 });
 
 it("reuses the picture revision when unchanged content is released and remounted", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const before = state.engineRevision;
   const revisions = [...state.engineRevisions];
@@ -1073,8 +1054,7 @@ it("reuses the picture revision when unchanged content is released and remounted
 });
 
 it("invalidates the picture revision when the shell changes while content is released", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const before = state.engineRevision;
   state.mounted = false;
@@ -1090,8 +1070,7 @@ it("invalidates the picture revision when the shell changes while content is rel
 });
 
 it("invalidates the picture revision when mounted projection changes", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const before = state.engineRevision;
   const editor = container.querySelector("textarea");
@@ -1106,8 +1085,7 @@ it("invalidates the picture revision when mounted projection changes", async () 
 });
 
 it("invalidates the picture revision when remounted projection has changed", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const before = state.engineRevision;
   const revisions = [...state.engineRevisions];
@@ -1125,8 +1103,7 @@ it("invalidates the picture revision when remounted projection has changed", asy
 });
 
 it("invalidates the picture revision when subscribed projection is deleted", async () => {
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const before = state.engineRevision;
   requestSnapshot.mockClear();
@@ -1144,8 +1121,7 @@ it("invalidates the picture revision when subscribed projection is deleted", asy
 it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
   "defers shell and projection picture revisions while the runtime is %s",
   async (status) => {
-    state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-    state.status = "live";
+    live();
     await render(true);
     const before = state.engineRevision;
     requestSnapshot.mockClear();
@@ -1167,8 +1143,7 @@ it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
 
 it("retains the presented editor while earlier history loads and waits for its final layout", async () => {
   const { markPaneSynced } = await import("./useSavedPanePictures");
-  state.projection = { updatedAt: "2026-10-15T12:00:00.000Z" };
-  state.status = "live";
+  live();
   await render(true);
   const editor = container.querySelector("textarea")!;
   editor.value = "Keep this draft during paging";
