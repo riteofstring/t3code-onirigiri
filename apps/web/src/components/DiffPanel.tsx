@@ -1,7 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
-import { useParams } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -48,7 +47,6 @@ import { areAllDiffFilesCollapsed, toggleAllDiffFiles } from "../lib/diffCollaps
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefresh";
 import { useProject, useThreadProjection, useThreadShell } from "../state/entities";
-import { resolveThreadRouteRef } from "../threadRoutes";
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffFilePathCopyButton } from "./DiffFilePathCopyButton";
@@ -190,33 +188,17 @@ function DiffFileHeaderSuffix({
 
 interface DiffPanelProps {
   mode?: DiffPanelMode;
-  threadRef?: ScopedThreadRef;
+  threadRef: ScopedThreadRef;
   composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceMutationId: string | null;
 }
 
-export default function DiffPanel(props: DiffPanelProps) {
-  return props.threadRef ? (
-    <ThreadDiffPanel {...props} threadRef={props.threadRef} />
-  ) : (
-    <RouteDiffPanel {...props} />
-  );
-}
-
-function RouteDiffPanel(props: DiffPanelProps) {
-  const threadRef = useParams({
-    strict: false,
-    select: (params) => resolveThreadRouteRef(params),
-  });
-  return <ThreadDiffPanel {...props} threadRef={threadRef} />;
-}
-
-function ThreadDiffPanel({
+export default function DiffPanel({
   mode = "inline",
   threadRef,
   composerDraftTarget,
   workspaceMutationId,
-}: Omit<DiffPanelProps, "threadRef"> & { threadRef: ScopedThreadRef | null }) {
+}: DiffPanelProps) {
   const surfaceNavigation = useSurfaceNavigation();
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
