@@ -67,21 +67,15 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
   });
-  const launchCwd = launchContext?.cwd;
-  const launchWorktreePath = launchContext?.worktreePath;
   const threadWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const activeSummary =
     knownTerminalSessions?.find((session) => session.target.terminalId === surface.activeTerminalId)
       ?.state.summary ?? null;
   const worktreePath =
-    launchWorktreePath !== undefined
-      ? launchWorktreePath
-      : activeSummary !== null
-        ? activeSummary.worktreePath
-        : threadWorktreePath;
+    launchContext?.worktreePath ?? activeSummary?.worktreePath ?? threadWorktreePath;
   const cwd = useMemo(
     () =>
-      launchCwd ??
+      launchContext?.cwd ??
       activeSummary?.cwd ??
       (project
         ? projectScriptCwd({
@@ -89,7 +83,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
             worktreePath,
           })
         : null),
-    [activeSummary?.cwd, launchCwd, project, worktreePath],
+    [activeSummary?.cwd, launchContext?.cwd, project, worktreePath],
   );
   const runtimeEnv = useMemo(
     () =>
@@ -125,13 +119,9 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
         knownTerminalSessions?.find((session) => session.target.terminalId === terminalId)?.state
           .summary ?? null;
       const terminalWorktreePath =
-        launchWorktreePath !== undefined
-          ? launchWorktreePath
-          : summary !== null
-            ? summary.worktreePath
-            : threadWorktreePath;
+        launchContext?.worktreePath ?? summary?.worktreePath ?? threadWorktreePath;
       const terminalCwd =
-        launchCwd ??
+        launchContext?.cwd ??
         summary?.cwd ??
         (project
           ? projectScriptCwd({
@@ -152,8 +142,8 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     return locations;
   }, [
     knownTerminalSessions,
-    launchCwd,
-    launchWorktreePath,
+    launchContext?.cwd,
+    launchContext?.worktreePath,
     project,
     surface.terminalIds,
     threadWorktreePath,
