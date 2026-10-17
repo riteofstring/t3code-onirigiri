@@ -10,7 +10,6 @@ import {
   serializeWorkspaceLayout,
   type OnirigiriPaneRenderState,
   type OnirigiriWorkspaceHandle,
-  type PaneSizingMode,
   type WorkspaceFocusedPaneFrame,
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
@@ -52,7 +51,6 @@ import { overviewZoomChoices, useWorkspacePreferences } from "./useWorkspacePref
 import {
   readPaneLayout,
   createPaneLayoutPersistence,
-  panesFillViewport,
   reconcilePaneLayout,
   threadLayoutPositions,
 } from "./workspaceLayout";
@@ -101,21 +99,6 @@ const NAVIGATION = new Set([
   "returnHome",
   "toggleOverview",
 ]);
-// New panes use T3's chooser; navigation and rearrangement use the engine.
-const NAVIGATION = new Set([
-  "focusDown",
-  "focusFirstColumn",
-  "focusLastColumn",
-  "focusLeft",
-  "focusRight",
-  "focusUp",
-  "movePaneDown",
-  "movePaneLeft",
-  "movePaneRight",
-  "movePaneUp",
-  "returnHome",
-  "toggleOverview",
-]);
 const editingArrows = (bindings: readonly OnirigiriShortcutBinding[]) =>
   bindings.map((binding) => ({ ...binding, whileEditing: binding.key.startsWith("Arrow") }));
 const SHORTCUTS: OnirigiriShortcutBindings = {
@@ -141,16 +124,20 @@ const BROWSER_SHORTCUTS = (
 const ROUTE_SETTLE_MS = 450;
 
 function readWorkspaceOptions() {
-  const requested = new URLSearchParams(window.location.search).get("layout");
-  let layout: WorkspaceLayoutMode = "rows";
-  if (requested === "strip" || requested === "rows") layout = requested;
-  else {
-    try {
-      if (localStorage.getItem(LAYOUT_MODE_KEY) === "strip") layout = "strip";
-    } catch {
-      // The explicit URL remains usable without browser storage.
-    }
+  // A mode the user chose in the toolbar outlives the URL that first opened the workspace.
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(LAYOUT_MODE_KEY);
+  } catch {
+    // The explicit URL remains usable without browser storage.
   }
+  const requested = new URLSearchParams(window.location.search).get("layout");
+  const layout: WorkspaceLayoutMode =
+    stored === "strip" || stored === "rows"
+      ? stored
+      : requested === "strip" || requested === "rows"
+        ? requested
+        : "rows";
   return { layout };
 }
 
@@ -162,8 +149,7 @@ export function SpatialWorkspace({
   /** False while a draft or another route covers the workspace. */
   active: boolean;
 }) {
-  const router = useRouter();
-  const [{ layout: layoutMode }] = useState(readWorkspaceOptions);
+  const [layoutMode, setLayoutMode] = useState(() => readWorkspaceOptions().layout);
   useEffect(() => {
     try {
       localStorage.setItem(LAYOUT_MODE_KEY, layoutMode);
@@ -171,6 +157,30 @@ export function SpatialWorkspace({
       // Arrangement mode remains usable for this session.
     }
   }, [layoutMode]);
+  // Each mode keeps its own saved layout; switching rebuilds the workspace from it.
+  return (
+    <SpatialWorkspaceView
+      key={layoutMode}
+      target={target}
+      active={active}
+      layoutMode={layoutMode}
+      onLayoutModeChange={setLayoutMode}
+    />
+  );
+}
+
+function SpatialWorkspaceView({
+  target,
+  active,
+  layoutMode,
+  onLayoutModeChange,
+}: {
+  target: ThreadRouteTarget | null;
+  active: boolean;
+  layoutMode: WorkspaceLayoutMode;
+  onLayoutModeChange: (mode: WorkspaceLayoutMode) => void;
+}) {
+  const router = useRouter();
   const { controller: toolController, bindWorkspace } = useSpatialController();
   const { toolPanes, addEmpty, getPanes, remove } = toolController;
   const closingToolPanesRef = useRef(new Set<string>());
@@ -206,10 +216,10 @@ export function SpatialWorkspace({
   const overviewCardWidth = overviewZoomChoices.find(
     (choice) => choice.value === preferences.overviewZoom,
   )?.width;
-  const [panesMaximized, setPanesMaximized] = useState(false);
   const [workspacePadding, setWorkspacePadding] = useState(0);
-  const resizePanes = useCallback((mode: PaneSizingMode) => {
-    workspaceRef.current?.resizePanes(mode);
+  const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
+  const syncMaximized = useCallback(() => {
+    setMaximizedPaneId(workspaceRef.current?.getSnapshot().maximizedPaneId ?? null);
   }, []);
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
@@ -245,16 +255,6 @@ export function SpatialWorkspace({
       height: Math.max(0, stageViewport.height - workspacePadding * 2),
     };
   }, [stageViewport, workspacePadding]);
-  const updatePaneSizing = useCallback(
-    (layout: ReturnType<OnirigiriWorkspaceHandle["getLayout"]>) => {
-      setPanesMaximized(paneViewport !== null && panesFillViewport(layout, paneViewport));
-    },
-    [paneViewport],
-  );
-  useEffect(() => {
-    const layout = workspaceRef.current?.getLayout();
-    if (layout) updatePaneSizing(layout);
-  }, [updatePaneSizing]);
   const lastLayoutRevisionRef = useRef<number | null>(null);
   const layoutPersistence = useMemo(() => createPaneLayoutPersistence(layoutMode), [layoutMode]);
   useEffect(() => {
@@ -270,11 +270,11 @@ export function SpatialWorkspace({
       if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
       lastLayoutRevisionRef.current = metadata.layoutRevision;
       setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
-      updatePaneSizing(layout);
+      syncMaximized();
       onPictureLayoutChange(layout);
       lifecycle?.setPanes(threadLayoutPositions(layout));
     },
-    [layoutPersistence, lifecycle, onPictureLayoutChange, updatePaneSizing],
+    [layoutPersistence, lifecycle, onPictureLayoutChange, syncMaximized],
   );
 
   // Focus is kept out of React state so moving between panes does not
@@ -452,6 +452,7 @@ export function SpatialWorkspace({
 
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
+      syncMaximized();
       setCaptureActivity(activeRef.current, moving);
       lifecycle?.setMoving(activeRef.current && moving);
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
@@ -485,7 +486,7 @@ export function SpatialWorkspace({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [lifecycle, paneData, router, setCaptureActivity],
+    [syncMaximized, lifecycle, paneData, router, setCaptureActivity],
   );
 
   // Anything but moving on through the workspace, such as opening the command
@@ -719,9 +720,13 @@ export function SpatialWorkspace({
   const closeChatPane = useCallback((paneId: string) => {
     void workspaceRef.current?.closePane(paneId);
   }, []);
-  const togglePaneMaximized = useCallback((paneId: string) => {
-    workspaceRef.current?.togglePaneMaximized(paneId);
-  }, []);
+  const togglePaneMaximized = useCallback(
+    (paneId: string) => {
+      workspaceRef.current?.togglePaneMaximized(paneId);
+      syncMaximized();
+    },
+    [syncMaximized],
+  );
   const focusSurfacePane = useCallback((paneId: string) => {
     if (workspaceRef.current?.focusPane(paneId, { exitOverview: true })) return;
     pendingFocusPaneIdRef.current = paneId;
@@ -846,6 +851,7 @@ export function SpatialWorkspace({
         inert={!active}
         className="spatial-workspace relative flex h-full w-full flex-col"
         data-spatial-navigation-bar={String(preferences.navigationBar)}
+        data-spatial-maximized={String(maximizedPaneId !== null)}
       >
         <WorkspaceToolbar
           focusAnchor={focusAnchor}
@@ -856,8 +862,8 @@ export function SpatialWorkspace({
             stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
           }
           onPreferencesChange={updatePreferences}
-          onResizePanes={resizePanes}
-          panesMaximized={panesMaximized}
+          layoutMode={layoutMode}
+          onLayoutModeChange={onLayoutModeChange}
           controlsRef={setControlsContainer}
           shortcuts={SHORTCUTS}
         />
@@ -870,6 +876,9 @@ export function SpatialWorkspace({
                     ref={workspaceRef}
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
+                    {...(preferences.maximizeAll
+                      ? { compactBreakpoint: Number.POSITIVE_INFINITY }
+                      : {})}
                     chromeComponents={WORKSPACE_CHROME}
                     desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}

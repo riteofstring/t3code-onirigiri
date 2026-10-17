@@ -14,7 +14,7 @@ let root: Root;
 function Workspace() {
   const [preferences, update] = useWorkspacePreferences();
   const [maximum, setMaximum] = useState(880);
-  const [maximized, setMaximized] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<"strip" | "rows">("rows");
   const [controls, setControls] = useState<HTMLDivElement | null>(null);
   return (
     <WorkspaceTooltips>
@@ -27,11 +27,12 @@ function Workspace() {
         preferences={preferences}
         maxRowHeight={maximum}
         onPreferencesChange={update}
-        onResizePanes={(mode) => setMaximized(mode === "full")}
-        panesMaximized={maximized}
+        layoutMode={layoutMode}
+        onLayoutModeChange={setLayoutMode}
       />
       {controls && createPortal(<button>Overview</button>, controls)}
       <output>{JSON.stringify(preferences)}</output>
+      <span data-layout-mode={layoutMode} />
       <button>Outside</button>
       <button onClick={() => setMaximum(640)}>Shorter view</button>
       <button onClick={() => setMaximum(1000)}>Taller view</button>
@@ -108,7 +109,7 @@ afterEach(async () => {
 });
 
 it("remembers overview and row defaults across reloads, with a way back to viewport height", async () => {
-  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport", navigationBar: false });
+  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport", navigationBar: false, maximizeAll: false });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await act(() => {
@@ -123,16 +124,16 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     option.click();
   });
   await typeHeight("384");
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, navigationBar: false });
+  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, navigationBar: false, maximizeAll: false });
 
   await act(() => root.unmount());
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, navigationBar: false });
+  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, navigationBar: false, maximizeAll: false });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await typeHeight("880");
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: "viewport", navigationBar: false });
+  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: "viewport", navigationBar: false, maximizeAll: false });
 });
 
 it("keeps drag previews local and applies only the final pane height", async () => {
@@ -269,7 +270,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
   );
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport", navigationBar: false });
+  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport", navigationBar: false, maximizeAll: false });
 });
 
 it("toggles the navigation bar preference from the hover bar", async () => {
@@ -284,4 +285,24 @@ it("toggles the navigation bar preference from the hover bar", async () => {
   await click("Hide navigation bar");
   expect(settings().navigationBar).toBe(false);
   expect(button("Show navigation bar").getAttribute("aria-pressed")).toBe("false");
+});
+
+it("maximizes all panes edge to edge through the preference", async () => {
+  await click("Workspace controls");
+  await click("Maximize all panes");
+  expect(settings().maximizeAll).toBe(true);
+  expect(button("Restore all panes").getAttribute("aria-pressed")).toBe("true");
+  await click("Restore all panes");
+  expect(settings().maximizeAll).toBe(false);
+  expect(button("Maximize all panes").getAttribute("aria-pressed")).toBe("false");
+});
+
+it("switches between the strip and 2D layouts", async () => {
+  const mode = () => host.querySelector("[data-layout-mode]")!.getAttribute("data-layout-mode");
+  expect(mode()).toBe("rows");
+  await click("Workspace controls");
+  await click("Switch to strip layout");
+  expect(mode()).toBe("strip");
+  await click("Switch to 2D layout");
+  expect(mode()).toBe("rows");
 });

@@ -88,9 +88,26 @@
   --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Whenever the bottom bar is shown, the Onirigiri control sits inside it, at its right end. */
 .spatial-workspace[data-spatial-compact="true"] > .spatial-workspace-controls,
 .spatial-workspace[data-spatial-navigation-bar="true"] > .spatial-workspace-controls {
-  inset-block-end: calc(var(--spatial-compact-toolbar-height) + env(safe-area-inset-bottom) + 8px);
+  inset-block-end: calc(
+    env(safe-area-inset-bottom) + (var(--spatial-compact-toolbar-height) - 40px) / 2
+  );
+}
+
+/* A maximized pane in the compact layout is full screen: no bar and no floating controls. */
+.spatial-workspace[data-spatial-compact="true"][data-spatial-maximized="true"]
+  > .spatial-workspace-controls,
+.spatial-workspace[data-spatial-compact="true"][data-spatial-maximized="true"]
+  .onirigiri-workspace
+  > .onirigiri-workspace__toolbar {
+  display: none;
+}
+
+.spatial-workspace[data-spatial-compact="true"][data-spatial-maximized="true"]
+  .onirigiri-workspace {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* Desktop navigation bar: the engine's own toolbar, placed along the bottom like its compact layout. */

@@ -13,12 +13,14 @@ export interface WorkspacePreferences {
   overviewZoom: (typeof overviewZoomChoices)[number]["value"];
   rowHeight: number | "viewport";
   navigationBar: boolean;
+  maximizeAll: boolean;
 }
 
 const defaults: WorkspacePreferences = {
   overviewZoom: "medium",
   rowHeight: "viewport",
   navigationBar: false,
+  maximizeAll: false,
 };
 
 function readPreferences(): WorkspacePreferences {
@@ -28,6 +30,7 @@ function readPreferences(): WorkspacePreferences {
     const zoom = "overviewZoom" in value ? value.overviewZoom : null;
     const height = "rowHeight" in value ? value.rowHeight : null;
     const navigationBar = "navigationBar" in value ? value.navigationBar : null;
+    const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
     return {
       overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
@@ -35,6 +38,7 @@ function readPreferences(): WorkspacePreferences {
           ? height
           : "viewport",
       navigationBar: navigationBar === true,
+      maximizeAll: maximizeAll === true,
     };
   } catch {
     return defaults;

@@ -2,7 +2,6 @@ import {
   formatOnirigiriShortcut,
   getOnirigiriShortcutBindings,
   type OnirigiriShortcutBindings,
-  type PaneSizingMode,
   type WorkspaceFocusAnchor,
 } from "@riteofstring/onirigiri";
 import {
@@ -35,8 +34,8 @@ export function WorkspaceToolbar({
   preferences,
   maxRowHeight,
   onPreferencesChange,
-  onResizePanes,
-  panesMaximized,
+  layoutMode,
+  onLayoutModeChange,
 }: {
   focusAnchor: WorkspaceFocusAnchor;
   onAdd: () => void;
@@ -46,8 +45,8 @@ export function WorkspaceToolbar({
   preferences: WorkspacePreferences;
   maxRowHeight: number | null;
   onPreferencesChange: (change: Partial<WorkspacePreferences>) => void;
-  onResizePanes: (mode: PaneSizingMode) => void;
-  panesMaximized: boolean;
+  layoutMode: "strip" | "rows";
+  onLayoutModeChange: (mode: "strip" | "rows") => void;
 }) {
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -273,9 +272,14 @@ export function WorkspaceToolbar({
             <Button
               variant="ghost-muted"
               size="icon-xs"
-              aria-label={panesMaximized ? "Restore all panes" : "Maximize all panes"}
-              tooltip={panesMaximized ? "Restore all panes to default sizes" : "Maximize all panes"}
-              onClick={() => onResizePanes(panesMaximized ? "default" : "full")}
+              aria-label={preferences.maximizeAll ? "Restore all panes" : "Maximize all panes"}
+              aria-pressed={preferences.maximizeAll}
+              tooltip={
+                preferences.maximizeAll
+                  ? "Restore pane spacing"
+                  : "Maximize all panes edge to edge, like the mobile layout"
+              }
+              onClick={() => onPreferencesChange({ maximizeAll: !preferences.maximizeAll })}
             >
               <svg
                 aria-hidden="true"
@@ -284,7 +288,7 @@ export function WorkspaceToolbar({
                 stroke="currentColor"
                 strokeWidth="1.5"
               >
-                {panesMaximized ? (
+                {preferences.maximizeAll ? (
                   <>
                     <rect x="2" y="5" width="9" height="9" rx="1" />
                     <path d="M5 2h8a1 1 0 0 1 1 1v8" />
@@ -318,6 +322,40 @@ export function WorkspaceToolbar({
               >
                 <rect x="2" y="2" width="12" height="12" rx="1.5" />
                 <path d="M2 10.5h12M6 12.5h4" />
+              </svg>
+            </Button>
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={layoutMode === "strip" ? "Switch to 2D layout" : "Switch to strip layout"}
+              tooltip={
+                layoutMode === "strip"
+                  ? "Switch to the 2D layout: one row per project"
+                  : "Switch to the strip layout: every thread in one row"
+              }
+              onClick={() => onLayoutModeChange(layoutMode === "strip" ? "rows" : "strip")}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                {layoutMode === "strip" ? (
+                  <>
+                    <rect x="2" y="2" width="5" height="5" rx="1" />
+                    <rect x="9" y="2" width="5" height="5" rx="1" />
+                    <rect x="2" y="9" width="5" height="5" rx="1" />
+                    <rect x="9" y="9" width="5" height="5" rx="1" />
+                  </>
+                ) : (
+                  <>
+                    <rect x="1" y="5" width="4" height="6" rx="1" />
+                    <rect x="6" y="5" width="4" height="6" rx="1" />
+                    <rect x="11" y="5" width="4" height="6" rx="1" />
+                  </>
+                )}
               </svg>
             </Button>
             <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
