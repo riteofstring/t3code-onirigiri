@@ -1,6 +1,7 @@
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
+import { T3Wordmark } from "@t3tools/web/src/components/T3Wordmark";
 import { useProject, useThreadShell } from "@t3tools/web/src/state/entities";
 
 const RUN_STATUS_LABEL: Record<ThreadRuntimeSummary["status"], string> = {
@@ -37,10 +38,15 @@ export function ThreadCard({
           ? RUN_STATUS_LABEL[runStatus]
           : null;
   return (
-    <div className="flex h-full w-full flex-col gap-3 bg-background p-6 text-foreground">
-      <div className="text-xs text-muted-foreground">{project?.title ?? ""}</div>
-      <div className="text-lg font-medium leading-snug">{thread.title}</div>
-      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-background p-8 text-center text-foreground">
+      <T3Wordmark aria-hidden className="h-12! w-auto! shrink-0 text-muted-foreground/50" />
+      <div className="flex max-w-sm flex-col items-center gap-1.5">
+        {project ? <div className="text-xs text-muted-foreground">{project.title}</div> : null}
+        <div className="line-clamp-3 text-lg font-medium leading-snug text-balance">
+          {thread.title}
+        </div>
+      </div>
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {statusLabel ? <span>{statusLabel}</span> : null}
         {thread.branch ? <span>{thread.branch}</span> : null}
         <span>Updated {new Date(thread.updatedAt).toLocaleString()}</span>

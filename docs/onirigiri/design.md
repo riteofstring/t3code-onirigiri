@@ -195,3 +195,6 @@ app keeps one routed thread.
   40 px; touch keeps 52 px.
 - The full-screen toggle sets `data-spatial-full-screen-transition` for 320 ms, which outlasts the
   220 ms pane transition it enables.
+- The dark workspace grey leaves box-shadows about 20 color levels, which band. A noise texture
+  above the stage (`dither.png`, alpha 3/255, one texel per device pixel) dithers them; light mode
+  has enough range and skips the extra layer. Overview keeps the engine's edge-only pane shadow.
