@@ -178,22 +178,15 @@ export function createSpatialSurfaceNavigation(
   };
 }
 
-export function SpatialSurfaceHost({
-  controller,
-  paneId,
-  focusPane,
-  isPaneClosing = isNeverClosing,
-  children,
-}: {
-  controller: ToolPaneController;
-  paneId: string;
-  focusPane: (paneId: string) => void;
-  isPaneClosing?: (paneId: string) => boolean;
-  children: ReactNode;
-}) {
+export function useSpatialSurfaceNavigation(
+  controller: ToolPaneController,
+  sourcePaneId: string,
+  focusPane: (paneId: string) => void,
+  isPaneClosing: (paneId: string) => boolean = isNeverClosing,
+) {
   const { getPanes, openSurface, updateSurface, remove, getUserActionRevision, recordUserAction } =
     controller;
-  const navigation = useMemo(
+  return useMemo(
     () =>
       createSpatialSurfaceNavigation(
         {
@@ -204,7 +197,7 @@ export function SpatialSurfaceHost({
           getUserActionRevision,
           recordUserAction,
         },
-        paneId,
+        sourcePaneId,
         focusPane,
         isPaneClosing,
       ),
@@ -214,11 +207,27 @@ export function SpatialSurfaceHost({
       getPanes,
       getUserActionRevision,
       openSurface,
-      paneId,
+      sourcePaneId,
       recordUserAction,
       remove,
       updateSurface,
     ],
   );
+}
+
+export function SpatialSurfaceHost({
+  controller,
+  paneId,
+  focusPane,
+  isPaneClosing,
+  children,
+}: {
+  controller: ToolPaneController;
+  paneId: string;
+  focusPane: (paneId: string) => void;
+  isPaneClosing?: (paneId: string) => boolean;
+  children: ReactNode;
+}) {
+  const navigation = useSpatialSurfaceNavigation(controller, paneId, focusPane, isPaneClosing);
   return <SurfaceNavigationContext value={navigation}>{children}</SurfaceNavigationContext>;
 }

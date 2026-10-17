@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from "react";
 import type { AppRouter } from "@t3tools/web/src/router";
 import { SurfaceNavigationContext } from "@t3tools/web/src/surfaceNavigation";
-import { createSpatialSurfaceNavigation, type ToolPaneController } from "./SpatialSurfaceHost";
+import { useSpatialSurfaceNavigation, type ToolPaneController } from "./SpatialSurfaceHost";
 import { useToolPanes } from "./useToolPanes";
 
 type WorkspaceNavigationTarget = {
@@ -37,8 +37,7 @@ export function SpatialSurfaceProvider({
       pendingFocus.current = null;
     }
   }, []);
-  const { getPanes, openSurface, updateSurface, remove, getUserActionRevision, recordUserAction } =
-    controller;
+  const { getPanes } = controller;
   const focusPane = useCallback(
     (paneId: string) => {
       const pane = getPanes().find((candidate) => candidate.paneId === paneId);
@@ -60,31 +59,11 @@ export function SpatialSurfaceProvider({
     },
     [getPanes, router],
   );
-  const navigation = useMemo(
-    () =>
-      createSpatialSurfaceNavigation(
-        {
-          getPanes,
-          openSurface,
-          updateSurface,
-          remove,
-          getUserActionRevision,
-          recordUserAction,
-        },
-        "",
-        focusPane,
-        (id) => workspace.current?.isPaneClosing(id) ?? false,
-      ),
-    [
-      getPanes,
-      openSurface,
-      updateSurface,
-      remove,
-      getUserActionRevision,
-      recordUserAction,
-      focusPane,
-    ],
+  const isPaneClosing = useCallback(
+    (paneId: string) => workspace.current?.isPaneClosing(paneId) ?? false,
+    [],
   );
+  const navigation = useSpatialSurfaceNavigation(controller, "", focusPane, isPaneClosing);
   const value = useMemo(() => ({ controller, bindWorkspace }), [controller, bindWorkspace]);
   return (
     <SpatialControllerContext value={value}>
