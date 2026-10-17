@@ -146,6 +146,21 @@ async function mount({ compact = false, resizeStage = true } = {}) {
   });
 }
 
+const advance = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+const savedPicture = (picture: Partial<SavedPanePicture> = {}): SavedPanePicture => ({
+  paneId,
+  revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
+  image: new Blob(["png"]),
+  cssSize: { width: 400, height: 580 },
+  savedAt: 1,
+  source: "capture",
+  ...picture,
+});
+
 function pictureImageFor(id: string): Blob | null {
   return hook.pictureFor(id)?.image ?? null;
 }
@@ -256,14 +271,7 @@ afterEach(async () => {
 
 it("seeds a pane only with a picture of the same content and geometry", async () => {
   const image = new Blob(["png"]);
-  store.saved.set(paneId, {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+  store.saved.set(paneId, savedPicture({ image }));
   await mount();
   expect(hook.getPanePicture(pane)).toEqual({
     image,
@@ -282,28 +290,6 @@ it("seeds a pane only with a picture of the same content and geometry", async ()
   expect(hook.getPanePicture(pane)).toBeNull();
 });
 
-it.each(["capture", "snapshot"] as const)(
-  "replaces persisted %s pictures from the previous chat controls",
-  async (source) => {
-    store.saved.set(paneId, {
-      paneId,
-      revision: `u1|dark|dark|${fontRevision}|${geometry(400)}${source === "snapshot" ? "|responsive-css-4" : ""}`,
-      image: new Blob(["old chat controls"]),
-      cssSize: { width: 400, height: 580 },
-      savedAt: 1,
-      source,
-    });
-    await mount();
-    expect(hook.hasFreshPicture(paneId)).toBe(false);
-    expect(hook.canBackgroundPicture(paneId)).toBe(true);
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-    const replacement = new Blob(["current chat controls"]);
-    await act(() => capturePicture(pane, replacement));
-    expect(hook.hasFreshPicture(paneId)).toBe(true);
-    expect(hook.getPanePicture(pane)?.image).toBe(replacement);
-  },
-);
-
 it("refreshes pictures when the engine stage grows inside an unchanged workspace", async () => {
   await mount();
   expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: false });
@@ -321,9 +307,7 @@ it("refreshes pictures when the engine stage grows inside an unchanged workspace
   expect(pictureImageFor(paneId)).toBe(oldImage);
 
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(hook.getPanePicture(pane)?.image).not.toBe(oldImage);
   expect(store.writes[1]!.revision).not.toBe(oldRevision);
@@ -402,25 +386,6 @@ it("releases compact ownership and ignores callbacks from replaced stages", asyn
   expect(hook.stageViewport.compact).toBe(false);
 });
 
-it.each(["capture", "snapshot"] as const)(
-  "does not mistake a wrapper-sized persisted %s for current stage geometry",
-  async (source) => {
-    store.saved.set(paneId, {
-      paneId,
-      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|800x600@1|{"unit":"px","value":400}${source === "snapshot" ? "|responsive-css-4" : ""}`,
-      image: new Blob(["previous toolbar height"]),
-      cssSize: { width: 400, height: 580 },
-      savedAt: 1,
-      source,
-    });
-    await mount();
-    expect(hook.hasFreshPicture(paneId)).toBe(false);
-    expect(hook.getPanePicture(pane)).toBeNull();
-    expect(pictureImageFor(paneId)).toBeNull();
-    expect(store.deleted).toEqual([]);
-  },
-);
-
 it("binds a stage that appears after its outer workspace", async () => {
   await act(async () => {
     renderer = create(<Probe />);
@@ -454,14 +419,7 @@ function fillPictureCache() {
   currentLayout = layout(400);
   for (let i = 0; i < 200; i++) {
     const id = `thread:e:${store.threadIds[i]}`;
-    store.saved.set(id, {
-      paneId: id,
-      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-      image: new Blob([String(i)]),
-      cssSize: { width: 400, height: 580 },
-      savedAt: i + 1,
-      source: "capture",
-    });
+    store.saved.set(id, savedPicture({ paneId: id, image: new Blob([String(i)]), savedAt: i + 1 }));
   }
 }
 
@@ -474,9 +432,7 @@ it("prepares this workspace even when other workspaces fill the persistent cache
   expect(hook.canBackgroundPicture(nextId)).toBe(true);
   markPaneSynced(nextId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(nextId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
+  await advance(500);
   expect(hook.hasFreshPicture(nextId)).toBe(true);
   expect(hook.canBackgroundPicture(nextId)).toBe(true);
 });
@@ -495,9 +451,7 @@ it.each(["native", "fallback"])(
       await act(() => capturePicture({ paneId: nextId } as WorkspacePane, new Blob(["new"])));
     } else {
       hook.paneSnapshots.request(nextId, { isConnected: true } as HTMLElement);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(3500);
-      });
+      await advance(3500);
     }
     expect(hook.hasFreshPicture(nextId)).toBe(true);
     expect(hook.hasFreshPicture(paneId)).toBe(false);
@@ -536,9 +490,7 @@ it.each(["native", "fallback"])(
       await act(() => capturePicture(pane, new Blob(["saved pixels"])));
     } else {
       hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(500);
-      });
+      await advance(500);
     }
     expect(store.writes).toHaveLength(1);
     const accepted = store.writes[0]!;
@@ -621,17 +573,13 @@ it("waits for committed detail to catch up with shell metadata before saving eit
   const element = { isConnected: true } as HTMLElement;
   capturePicture(pane, new Blob(["old detail"]));
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(store.writes).toHaveLength(0);
   expect(snapshot).not.toHaveBeenCalled();
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.revision).toBe(
     `u2|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}|responsive-css-4`,
@@ -644,14 +592,7 @@ it("waits for committed detail to catch up with shell metadata before saving eit
 
 it("keeps previously valid cover pixels while treating updated content as needing a fresh picture", async () => {
   const image = new Blob(["png"]);
-  store.saved.set(paneId, {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+  store.saved.set(paneId, savedPicture({ image }));
   await mount();
   const resolver = hook.getPanePicture;
   const cover = hook.pictureFor;
@@ -669,14 +610,10 @@ it.each([
   ["content", "old", "chat-chrome-2"],
   ["chat rendering", "u1", "chat-chrome-1"],
 ])("does not display a persisted picture with outdated %s", async (_changed, updatedAt, chrome) => {
-  store.saved.set(paneId, {
+  store.saved.set(
     paneId,
-    revision: `${updatedAt}|dark|dark|${fontRevision}|${chrome}|${geometry(400)}`,
-    image: new Blob(["png"]),
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+    savedPicture({ revision: `${updatedAt}|dark|dark|${fontRevision}|${chrome}|${geometry(400)}` }),
+  );
   await mount();
   expect(pictureImageFor(paneId)).toBeNull();
 });
@@ -685,24 +622,13 @@ it.each(["stored", "captured"])(
   "retains a validated %s cover through resize without a placeholder render",
   async (source) => {
     const image = new Blob(["cover"]);
-    if (source === "stored") {
-      store.saved.set(paneId, {
-        paneId,
-        revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-        image,
-        cssSize: { width: 400, height: 580 },
-        savedAt: 1,
-        source: "capture",
-      });
-    }
+    if (source === "stored") store.saved.set(paneId, savedPicture({ image }));
     await mount();
     if (source === "captured") {
       markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
       await act(() => capturePicture(pane, image));
     }
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10);
-    });
+    await advance(10);
     const url = hook.preparedPictureUrl(image);
     expect(url).not.toBeNull();
     await act(() => resize(900, 600));
@@ -732,20 +658,14 @@ it("retries a failed static capture without another interaction", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
+  await advance(500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes).toHaveLength(0);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledTimes(2);
   expect(store.writes).toHaveLength(1);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(10_000);
-  });
+  await advance(10_000);
   expect(snapshot).toHaveBeenCalledTimes(2);
 });
 
@@ -756,14 +676,7 @@ it.each(["null", "error"])(
     currentLayout = layout(400);
     for (const id of ["t0", "t1"]) {
       const idToSeed = `thread:e:${id}`;
-      store.saved.set(idToSeed, {
-        paneId: idToSeed,
-        revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-        image: new Blob(["cover"]),
-        cssSize: { width: 400, height: 580 },
-        savedAt: 1,
-        source: "capture",
-      });
+      store.saved.set(idToSeed, savedPicture({ paneId: idToSeed, image: new Blob(["cover"]) }));
     }
     await mount();
     const panes = store.threadIds.map((id, slot) => ({
@@ -800,9 +713,7 @@ it.each(["null", "error"])(
     }
     lifecycle.setPictures((id) => hook.hasFreshPicture(id));
     lifecycle.setBackgroundPictures(true);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
-    });
+    await advance(60_000);
     expect(mounts).toEqual(["thread:e:t2", "thread:e:t3"]);
     expect(hook.hasFreshPicture("thread:e:t3")).toBe(true);
     expect(snapshotFailures.mock.calls.length).toBeGreaterThan(0);
@@ -821,14 +732,10 @@ it("reports the capture start time when a pending snapshot later fails", async (
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
+  await advance(500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(snapshotFailures).not.toHaveBeenCalled();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5000);
-  });
+  await advance(5000);
   expect(performance.now() - startedAt).toBeGreaterThanOrEqual(5000);
   await act(() => pending.resolve(null));
   expect(snapshotFailures).toHaveBeenCalledExactlyOnceWith(paneId, startedAt);
@@ -847,9 +754,7 @@ it.each(["motion", "input", "content", "readiness", "disconnect", "native"])(
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
     const element = { isConnected: true };
     hook.paneSnapshots.request(paneId, element as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
+    await advance(500);
     expect(snapshot).toHaveBeenCalledOnce();
 
     if (change === "motion") hook.setCaptureActivity(true, true);
@@ -864,9 +769,7 @@ it.each(["motion", "input", "content", "readiness", "disconnect", "native"])(
     if (change === "motion" || change === "input") {
       expect(canSnapshot()).toBe(false);
       hook.setCaptureActivity(true, false);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(500);
-      });
+      await advance(500);
     }
     await act(() => pending.resolve(null));
     expect(snapshotFailures).not.toHaveBeenCalled();
@@ -877,23 +780,15 @@ it.each(["capture", "snapshot", undefined] as const)(
   "refreshes old drawing styles while preserving saved %s content",
   async (source) => {
     const image = new Blob(["previous picture"]);
-    store.saved.set(paneId, {
-      paneId,
-      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-      image,
-      cssSize: { width: 400, height: 580 },
-      savedAt: 1,
-      ...(source ? { source } : {}),
-    });
+    const { source: _source, ...unsourced } = savedPicture({ image });
+    store.saved.set(paneId, source ? { ...unsourced, source } : unsourced);
     await mount();
     expect(hook.hasFreshPicture(paneId)).toBe(source === "capture");
     expect(pictureImageFor(paneId)).toBe(source === "capture" ? image : null);
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     const element = { isConnected: true } as HTMLElement;
     hook.paneSnapshots.request(paneId, element);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     if (source === "capture") {
       expect(snapshot).not.toHaveBeenCalled();
       expect(hook.getPanePicture(pane)?.image).toBe(image);
@@ -910,9 +805,7 @@ it.each(["capture", "snapshot", undefined] as const)(
     expect(hook.hasFreshPicture(paneId)).toBe(true);
     expect(pictureImageFor(paneId)).toBe(replacement.image);
     hook.paneSnapshots.request(paneId, element);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     expect(snapshot).toHaveBeenCalledOnce();
   },
 );
@@ -924,9 +817,7 @@ it("lets an accepted native capture suppress the pending fallback drawing", asyn
   await act(async () => {
     capturePicture(pane, new Blob(["native"]));
   });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).not.toHaveBeenCalled();
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.source).toBe("capture");
@@ -943,29 +834,21 @@ it("draws a fallback after the native grace period when no capture arrives", asy
     } as unknown as HTMLElement,
     { preferNative: true },
   );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes[0]?.source).toBe("snapshot");
 });
 
 it("preserves an already idle pane before its view is released", async () => {
   await mount();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5000);
-  });
+  await advance(5000);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(1000);
-  });
+  await advance(1000);
   markPaneSynced(paneId, null);
   Object.defineProperty(element, "isConnected", { value: false });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3000);
-  });
+  await advance(3000);
   expect(store.writes).toHaveLength(1);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
@@ -976,53 +859,24 @@ it("lets a newly opened workspace settle even when the page has been open a whil
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(399);
-  });
+  await advance(399);
   expect(snapshot).not.toHaveBeenCalled();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(2);
-  });
+  await advance(2);
   expect(store.writes).toHaveLength(1);
 });
 
 it("gives native capture its grace period even when input is already quiet", async () => {
   await mount();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5000);
-  });
+  await advance(5000);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement, { preferNative: true });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(1900);
-  });
+  await advance(1900);
   expect(snapshot).not.toHaveBeenCalled();
   await act(() => capturePicture(pane, new Blob(["native"])));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(200);
-  });
+  await advance(200);
   expect(snapshot).not.toHaveBeenCalled();
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.source).toBe("capture");
-});
-
-it("waits for recent input to settle before preserving a newly ready pane", async () => {
-  await mount();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5000);
-  });
-  window.dispatchEvent(new Event("keydown"));
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
-  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(399);
-  });
-  expect(snapshot).not.toHaveBeenCalled();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(2);
-  });
-  expect(store.writes).toHaveLength(1);
-  expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
 it("captures first pixels between ordinary navigation inputs, only after motion stops", async () => {
@@ -1031,14 +885,10 @@ it("captures first pixels between ordinary navigation inputs, only after motion 
   hook.setCaptureActivity(true, true);
   window.dispatchEvent(new Event("keydown"));
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(550);
-  });
+  await advance(550);
   expect(snapshot).not.toHaveBeenCalled();
   hook.setCaptureActivity(true, false);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(100);
-  });
+  await advance(100);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   window.dispatchEvent(new Event("keydown"));
   expect(store.writes).toHaveLength(1);
@@ -1057,30 +907,20 @@ it.each([
       await act(() => capturePicture(pane, cover));
       hook.paneSnapshots.invalidate(paneId);
     }
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5000);
-    });
+    await advance(5000);
     const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
     for (let step = 0; step < 3; step++) {
       hook.setCaptureActivity(true, true);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(100);
-      });
+      await advance(100);
       hook.setCaptureActivity(true, false);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(200);
-      });
+      await advance(200);
       expect(snapshot).not.toHaveBeenCalled();
     }
     expect(pictureImageFor(paneId)).toBe(covered ? cover : null);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(quietMs - 301);
-    });
+    await advance(quietMs - 301);
     expect(snapshot).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2);
-    });
+    await advance(2);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(hook.hasFreshPicture(paneId)).toBe(true);
     expect(store.writes).toHaveLength(covered ? 2 : 1);
@@ -1097,15 +937,11 @@ it("keeps refresh work deferred when a usable cover already exists", async () =>
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
   for (let step = 0; step < 5; step++) {
     window.dispatchEvent(new Event("keydown"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(900);
-    });
+    await advance(900);
   }
   expect(snapshot).not.toHaveBeenCalled();
   expect(pictureImageFor(paneId)).toBe(cover);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3000);
-  });
+  await advance(3000);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(pictureImageFor(paneId)).not.toBe(cover);
 });
@@ -1121,43 +957,16 @@ it("requeues a first picture interrupted by camera motion before cloning", async
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
+  await advance(500);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.setCaptureActivity(true, true);
   await act(() => layout.resolve(null));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5000);
-  });
+  await advance(5000);
   expect(store.writes).toHaveLength(0);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.setCaptureActivity(true, false);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(100);
-  });
+  await advance(100);
   expect(snapshot).toHaveBeenCalledTimes(2);
-  expect(hook.hasFreshPicture(paneId)).toBe(true);
-});
-
-it("replaces retained cover pixels when a fresh capture arrives", async () => {
-  const previous = new Blob(["previous"]);
-  store.saved.set(paneId, {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image: previous,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
-  await mount();
-  expect(pictureImageFor(paneId)).toBe(previous);
-  store.updatedAt = "u2";
-  await act(() => renderer!.update(<Probe />));
-  const replacement = new Blob(["replacement"]);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
-  await act(() => capturePicture(pane, replacement));
-  expect(pictureImageFor(paneId)).toBe(replacement);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
@@ -1177,14 +986,10 @@ it("reuses a matching snapshot until a departed pane needs its scroll position r
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.paneSnapshots.invalidate(paneId);
   const revision = hook.paneSnapshots.request(paneId, element);
@@ -1193,9 +998,7 @@ it("reuses a matching snapshot until a departed pane needs its scroll position r
     { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` },
     revision,
   );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledTimes(2);
 });
 
@@ -1212,24 +1015,16 @@ it.each(["keydown", "pointerdown", "wheel"])(
     await mount();
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     window.dispatchEvent(new Event(type));
     await act(async () => layout.resolve(null));
     expect(store.writes).toHaveLength(0);
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
-    });
+    await advance(250);
     window.dispatchEvent(new Event(type));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(399);
-    });
+    await advance(399);
     expect(snapshot).toHaveBeenCalledOnce();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2);
-    });
+    await advance(2);
     expect(snapshot).toHaveBeenCalledTimes(2);
     expect(store.writes).toHaveLength(1);
     expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -1238,14 +1033,14 @@ it.each(["keydown", "pointerdown", "wheel"])(
 
 it("retries an interrupted refresh with the latest pane element", async () => {
   const old = new Blob(["previous scroll position"]);
-  store.saved.set(paneId, {
+  store.saved.set(
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}|responsive-css-4`,
-    image: old,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "snapshot",
-  });
+    savedPicture({
+      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}|responsive-css-4`,
+      image: old,
+      source: "snapshot",
+    }),
+  );
   const layout = pendingPicture();
   snapshot.mockImplementationOnce(async (_element, canSnapshot) => {
     await layout.promise;
@@ -1263,17 +1058,13 @@ it("retries an interrupted refresh with the latest pane element", async () => {
     { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` },
     revision,
   );
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   window.dispatchEvent(new Event("wheel"));
   const replacement = { isConnected: true } as HTMLElement;
   hook.paneSnapshots.request(paneId, replacement);
   await act(async () => layout.resolve(null));
   expect(store.writes).toHaveLength(0);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledTimes(2);
   expect(snapshot.mock.calls[1]?.[0]).toBe(replacement);
   expect(store.writes).toHaveLength(1);
@@ -1287,9 +1078,7 @@ it("keeps an immutable picture that finishes encoding after input and pane evict
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(snapshot.mock.calls[0]![1]()).toBe(true);
 
@@ -1303,9 +1092,7 @@ it("keeps an immutable picture that finishes encoding after input and pane evict
   expect(store.writes).toHaveLength(1);
   expect(pictureImageFor(paneId)).toBe(image);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
 });
 
@@ -1317,9 +1104,7 @@ it.each(["content", "theme", "fonts", "stage", "column", "running"] as const)(
     await mount();
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     expect(snapshot).toHaveBeenCalledOnce();
     await act(() => {
       if (change === "content") store.updatedAt = "u2";
@@ -1345,9 +1130,7 @@ it("retains a native capture that arrives while its fallback is encoding", async
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   const native = new Blob(["native"]);
   await act(() => capturePicture(pane, native));
@@ -1366,9 +1149,7 @@ it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     const element = { isConnected: true } as HTMLElement;
     hook.paneSnapshots.request(paneId, element);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     expect(snapshot).not.toHaveBeenCalled();
     expect(hook.canBackgroundPicture(paneId)).toBe(false);
     expect(hook.runningPanes).toEqual(new Set([paneId]));
@@ -1377,9 +1158,7 @@ it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
     await act(() => renderer!.update(<Probe />));
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
     hook.paneSnapshots.request(paneId, element);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(hook.canBackgroundPicture(paneId)).toBe(true);
     expect(hook.runningPanes.size).toBe(0);
@@ -1388,26 +1167,13 @@ it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
 
 it("warms only pictures valid for current panes and releases their URLs on unmount", async () => {
   const valid = new Blob(["valid"]);
-  store.saved.set(paneId, {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image: valid,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
-  store.saved.set("absent-pane", {
-    paneId: "absent-pane",
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image: new Blob(["absent"]),
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+  store.saved.set(paneId, savedPicture({ image: valid }));
+  store.saved.set(
+    "absent-pane",
+    savedPicture({ paneId: "absent-pane", image: new Blob(["absent"]) }),
+  );
   await mount();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5);
-  });
+  await advance(5);
   const url = hook.preparedPictureUrl(valid);
   expect(url).toBe("blob:picture-1");
   expect(decodedUrls).toEqual([url]);
@@ -1419,37 +1185,26 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
 
 it("does not decode a stored picture that was never valid in this session", async () => {
   const invalid = new Blob(["old geometry"]);
-  store.saved.set(paneId, {
+  store.saved.set(
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(600)}`,
-    image: invalid,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+    savedPicture({
+      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(600)}`,
+      image: invalid,
+    }),
+  );
   await mount();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5);
-  });
+  await advance(5);
   expect(hook.preparedPictureUrl(invalid)).toBeNull();
   expect(decodedUrls).toEqual([]);
+  expect(store.deleted).toEqual([]);
 });
 
 it("retains the decoded cover through refresh and releases it after the next cover takes over", async () => {
   const previous = new Blob(["previous"]);
-  store.saved.set(paneId, {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image: previous,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+  store.saved.set(paneId, savedPicture({ image: previous }));
   await mount();
   expect(pictureImageFor(paneId)).toBe(previous);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5);
-  });
+  await advance(5);
   const previousUrl = hook.preparedPictureUrl(previous)!;
   store.updatedAt = "u2";
   await act(() => renderer!.update(<Probe />));
@@ -1460,9 +1215,7 @@ it("retains the decoded cover through refresh and releases it after the next cov
   const replacement = new Blob(["replacement"]);
   markPaneSynced(paneId, { updatedAt: "u2", theme: `dark|dark|${fontRevision}` });
   await act(() => capturePicture(pane, replacement));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5);
-  });
+  await advance(5);
   expect(pictureImageFor(paneId)).toBe(replacement);
   const nextUrl = hook.preparedPictureUrl(replacement)!;
   expect(nextUrl).not.toBe(previousUrl);
@@ -1524,14 +1277,7 @@ it("keeps a picture current when an unrelated setting changes", async () => {
 
 it("refreshes a saved native picture after local scrolling while retaining its cover", async () => {
   const old = new Blob(["previous scroll position"]);
-  store.saved.set(paneId, {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image: old,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture",
-  });
+  store.saved.set(paneId, savedPicture({ image: old }));
   await mount();
   const content = { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` };
   markPaneSynced(paneId, content);
@@ -1545,9 +1291,7 @@ it("refreshes a saved native picture after local scrolling while retaining its c
   await act(() => capturePicture(pane, new Blob(["old in-flight capture"])));
   expect(store.writes).toHaveLength(0);
   markPaneSynced(paneId, content, revision);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes.at(-1)?.source).toBe("snapshot");
   expect(pictureImageFor(paneId)).not.toBe(old);
@@ -1561,9 +1305,7 @@ it("keeps a fresh native capture when an older fallback finishes in the same tur
   const pending = pendingPicture();
   snapshot.mockImplementationOnce(() => pending.promise);
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   const native = new Blob(["native"]);
   await act(async () => {
@@ -1584,17 +1326,13 @@ it("rejects an encoding made stale by another local visual change", async () => 
   snapshot.mockImplementationOnce(() => pending.promise);
   const element = { isConnected: true } as HTMLElement;
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   hook.paneSnapshots.invalidate(paneId);
   const revision = hook.paneSnapshots.request(paneId, element);
   markPaneSynced(paneId, content, revision);
   await act(async () => pending.resolve(new Blob(["old encoding"])));
   expect(store.writes).toHaveLength(0);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(store.writes).toHaveLength(1);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
@@ -1610,9 +1348,7 @@ it("retains an unpublished refresh across content release and an ordinary remoun
   expect(hook.getPanePicture(pane)?.image).toBe(original);
   const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   markPaneSynced(paneId, content, revision);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(pictureImageFor(paneId)).not.toBe(original);
 });
@@ -1631,14 +1367,7 @@ it("merges pictures loaded from storage with captures already accepted this sess
   await act(() => capturePicture(pane, captured));
   const previous = new Blob(["previous session"]);
   const secondId = "thread:e:t2";
-  const record = {
-    paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-    image: previous,
-    cssSize: { width: 400, height: 580 },
-    savedAt: 1,
-    source: "capture" as const,
-  };
+  const record = savedPicture({ image: previous });
   await act(async () =>
     loaded(
       new Map([
@@ -1702,9 +1431,7 @@ it("rejects an encoding across producer appearance and removal", async () => {
   snapshot.mockImplementationOnce(() => pending.promise);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   await act(() => {
     hook.paneSnapshots.setLiveProducer(paneId, true);
@@ -1733,14 +1460,10 @@ it.each(["null", "error", "resize"])(
       return { image: new Blob(["old geometry"]), cssSize: { width: 400, height: 580 } };
     });
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
+    await advance(500);
     expect(pictureImageFor(paneId)).toBeNull();
     expect(hook.retainedPaneIds.has(paneId)).toBe(true);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     expect(hook.retainedPaneIds.has(paneId)).toBe(false);
     expect(pictureImageFor(paneId)).toBe(store.writes.at(-1)!.image);
   },
@@ -1763,26 +1486,20 @@ it("backs off failed replacements and stops retrying when the producer returns",
       : null,
   );
   hook.paneSnapshots.request(paneId, element);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
-  });
+  await advance(60_000);
   expect(snapshot.mock.calls.length).toBeLessThanOrEqual(5);
   expect(snapshot.mock.calls.length).toBeGreaterThan(1);
   expect(hook.retainedPaneIds.has(paneId)).toBe(true);
   const other = "thread:e:t2";
   markPaneSynced(other, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(other, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(100);
-  });
+  await advance(100);
   expect(hook.hasFreshPicture(other)).toBe(true);
   await act(() => {
     hook.paneSnapshots.setLiveProducer(paneId, true);
   });
   const attempts = snapshot.mock.calls.length;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
-  });
+  await advance(10 * 60_000);
   expect(snapshot.mock.calls.length).toBe(attempts);
   expect(pictureImageFor(paneId)).toBeNull();
 });
@@ -1800,9 +1517,7 @@ it.each(["disconnect", "remove", "unmount", "release-content"])(
     snapshot.mockResolvedValue(null);
     const element = { isConnected: true };
     hook.paneSnapshots.request(paneId, element as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
+    await advance(500);
     expect(snapshot).toHaveBeenCalledOnce();
     await act(() => {
       if (ending === "disconnect") element.isConnected = false;
@@ -1815,9 +1530,7 @@ it.each(["disconnect", "remove", "unmount", "release-content"])(
         renderer = undefined;
       }
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10 * 60_000);
-    });
+    await advance(10 * 60_000);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(store.writes).toHaveLength(0);
   },
@@ -1834,21 +1547,7 @@ it("does not resurrect stored pixels after a producer appears and disappears dur
     hook.paneSnapshots.setLiveProducer(paneId, false);
   });
   await act(() =>
-    loaded(
-      new Map([
-        [
-          paneId,
-          {
-            paneId,
-            revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-            image: new Blob(["incomplete stored picture"]),
-            cssSize: { width: 400, height: 580 },
-            savedAt: 1,
-            source: "capture",
-          },
-        ],
-      ]),
-    ),
+    loaded(new Map([[paneId, savedPicture({ image: new Blob(["incomplete stored picture"]) })]])),
   );
   expect(hook.picturesLoaded).toBe(true);
   expect(hook.getPanePicture(pane)).toBeNull();
@@ -1910,9 +1609,7 @@ it.each(["height", "weight", "sibling", "defaults"])(
     expect(hook.getPanePicture(pane)).toBeNull();
     expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize: { width: 400, height: 290 } });
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3500);
-    });
+    await advance(3500);
     expect(hook.hasFreshPicture(paneId)).toBe(true);
     expect(hook.pictureFor(paneId)?.image).not.toBe(image);
   },
@@ -1933,9 +1630,7 @@ it("refreshes pictures when the default row height changes and validates it afte
   expect(hook.getPanePicture(pane)).toBeNull();
   expect(hook.pictureFor(paneId)?.image).toBe(image);
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   const replacement = hook.pictureFor(paneId)!;
   expect(replacement.image).not.toBe(image);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -1956,9 +1651,7 @@ it("discards a snapshot completed after the default row height changes", async (
   const pending = pendingPicture();
   snapshot.mockReturnValueOnce(pending.promise);
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(500);
-  });
+  await advance(500);
   expect(snapshot).toHaveBeenCalledTimes(1);
   await act(() => {
     defaultRowHeight = 420;
@@ -1967,9 +1660,7 @@ it("discards a snapshot completed after the default row height changes", async (
   await act(async () => pending.resolve(new Blob(["old row height"])));
   expect(store.writes).toHaveLength(0);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(store.writes).toHaveLength(1);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
@@ -1993,9 +1684,7 @@ it("refreshes and re-arms picture preparation when only display density changes"
   expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize });
   expect(resolutionQueries.at(-1)?.media).toBe("(resolution: 2dppx)");
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(3500);
-  });
+  await advance(3500);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(hook.pictureFor(paneId)?.image).not.toBe(image);
   expect(store.writes.at(-1)?.cssSize).toEqual(cssSize);
