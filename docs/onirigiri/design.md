@@ -157,6 +157,33 @@ variables. Only same-document styles and system fonts reach the image, which is 
 - The desktop app rasterizes through `desktopBridge.rasterizePanePicture`; a failure falls back to
   decoding in the page.
 
+## T3 web seams
+
+The fork adds a few seams to `apps/web` so a host can show several threads at once while the stock
+app keeps one routed thread.
+
+- `chatSurface.ts` lets a host replace how the chat route presents threads; without a provider the
+  route renders one `ThreadRouteView`, as upstream does.
+- `chatViewActivity.ts`: a passive ChatView still renders and updates, but ignores window-level
+  shortcuts, typing, paste and focus requests, never takes focus and does not mark its thread
+  visited. Activity is read through a stable object, not a context value, so switching it does not
+  re-render the ChatView. `autofocusComposer` is off when arrow keys navigate between views; typing
+  still reaches the composer through type-to-focus.
+- `workspaceFocusedThreadStore.ts` lets the sidebar highlight the focused thread at once while the
+  route follows only after navigation pauses; null leaves the highlight to the route.
+- Terminals whose id carries the `terminalOwnership.ts` prefix belong to a host pane; the thread's
+  terminal drawer leaves them alone, so one session is never shown by two viewports.
+- `chatViewContentReady.tsx` keeps a host's cover until layout, synchronization and suspended
+  content settle; a committed Suspense fallback is never pictured as complete, and later checkout
+  changes stay ordinary live updates.
+- Pane contents may be uniformly scaled while their CSS uses layout pixels, so composer and list
+  geometry read layout sizes (`layoutGeometry.ts`).
+- Browser surface projection reads lifecycle metadata only and must not force layout. A preview
+  address can be submitted before the host commits its first guest, so navigation shares the
+  guest's creation lease and saved defaults apply first.
+- Pierre keeps its old render range after hidden code is replaced by a placeholder, so the file
+  viewport re-measures when a file pane is shown again.
+
 ## Styling
 
 - Live DOM panes request compositor layers only while moving or in overview, without changing the

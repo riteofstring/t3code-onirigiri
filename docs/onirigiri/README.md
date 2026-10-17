@@ -83,3 +83,5 @@ panes require the desktop client. The upstream installation instructions in the
 [root README](../../README.md) install standard T3 Code. See
 [development setup](../operations/development.md) for authentication and data
 directory details.
+
+Design constraints that span files are recorded in [design.md](design.md).
