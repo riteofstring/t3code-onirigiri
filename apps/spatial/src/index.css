@@ -90,6 +90,11 @@
   --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* A plain surface: the engine's dotted world grid is not drawn in T3. */
+.spatial-workspace .onirigiri-workspace__world-grid {
+  display: none;
+}
+
 /* Whenever the bottom bar is shown, the Onirigiri control sits inside it, at its right end. */
 .spatial-workspace[data-spatial-compact="true"] > .spatial-workspace-controls,
 .spatial-workspace[data-spatial-navigation-bar="true"] > .spatial-workspace-controls {
