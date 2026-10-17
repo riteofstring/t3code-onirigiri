@@ -74,6 +74,8 @@
   --onirigiri-toolbar-shadow: none;
   --onirigiri-toolbar-padding: 0px;
   --onirigiri-compact-toolbar-min-height: var(--spatial-compact-toolbar-height);
+  /* Below the hover controls (z-index 40) so the Onirigiri control stays visible inside the bar. */
+  --onirigiri-z-toolbar: 35;
   --onirigiri-minimap-background: var(--card);
 }
 
