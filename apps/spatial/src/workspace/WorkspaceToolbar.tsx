@@ -292,6 +292,29 @@ export function WorkspaceToolbar({
                 )}
               </svg>
             </Button>
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"}
+              aria-pressed={preferences.navigationBar}
+              tooltip={
+                preferences.navigationBar
+                  ? "Hide the navigation bar"
+                  : "Show the navigation bar along the bottom"
+              }
+              onClick={() => onPreferencesChange({ navigationBar: !preferences.navigationBar })}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                <path d="M2 10.5h12M6 12.5h4" />
+              </svg>
+            </Button>
             <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
             <div ref={controlsRef} />
           </div>

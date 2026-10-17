@@ -88,8 +88,46 @@
   --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.spatial-workspace[data-spatial-compact="true"] > .spatial-workspace-controls {
+.spatial-workspace[data-spatial-compact="true"] > .spatial-workspace-controls,
+.spatial-workspace[data-spatial-navigation-bar="true"] > .spatial-workspace-controls {
   inset-block-end: calc(var(--spatial-compact-toolbar-height) + env(safe-area-inset-bottom) + 8px);
+}
+
+/* Desktop navigation bar: the engine's own toolbar, placed along the bottom like its compact layout. */
+.spatial-workspace[data-spatial-navigation-bar="true"] .onirigiri-workspace[data-compact-layout="false"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.spatial-workspace[data-spatial-navigation-bar="true"]
+  .onirigiri-workspace[data-compact-layout="false"]
+  > .onirigiri-workspace__stage {
+  grid-row: 1;
+}
+
+.spatial-workspace[data-spatial-navigation-bar="true"]
+  .onirigiri-workspace[data-compact-layout="false"]
+  > .onirigiri-workspace__toolbar {
+  display: flex;
+  grid-row: 2;
+  justify-content: center;
+  justify-self: stretch;
+  gap: var(--onirigiri-compact-toolbar-gap);
+  margin: 0;
+  min-height: calc(var(--spatial-compact-toolbar-height) + env(safe-area-inset-bottom));
+  padding-block: var(--onirigiri-compact-toolbar-padding-block)
+    calc(var(--onirigiri-compact-toolbar-padding-block) + env(safe-area-inset-bottom));
+  padding-inline: var(--onirigiri-compact-toolbar-padding-inline);
+  border-radius: 0;
+  background: var(--card);
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.spatial-workspace[data-spatial-navigation-bar="true"]
+  .onirigiri-workspace[data-compact-layout="false"]
+  > .onirigiri-workspace__toolbar
+  .onirigiri-workspace__control {
+  height: var(--onirigiri-compact-control-size);
+  width: var(--onirigiri-compact-control-size);
 }
 
 .spatial-workspace-controls__surface {

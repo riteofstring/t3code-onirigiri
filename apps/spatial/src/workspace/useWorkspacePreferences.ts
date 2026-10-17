@@ -12,9 +12,14 @@ export const overviewZoomChoices = [
 export interface WorkspacePreferences {
   overviewZoom: (typeof overviewZoomChoices)[number]["value"];
   rowHeight: number | "viewport";
+  navigationBar: boolean;
 }
 
-const defaults: WorkspacePreferences = { overviewZoom: "medium", rowHeight: "viewport" };
+const defaults: WorkspacePreferences = {
+  overviewZoom: "medium",
+  rowHeight: "viewport",
+  navigationBar: false,
+};
 
 function readPreferences(): WorkspacePreferences {
   try {
@@ -22,12 +27,14 @@ function readPreferences(): WorkspacePreferences {
     if (typeof value !== "object" || value === null) return defaults;
     const zoom = "overviewZoom" in value ? value.overviewZoom : null;
     const height = "rowHeight" in value ? value.rowHeight : null;
+    const navigationBar = "navigationBar" in value ? value.navigationBar : null;
     return {
       overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
         typeof height === "number" && Number.isSafeInteger(height) && height >= 96
           ? height
           : "viewport",
+      navigationBar: navigationBar === true,
     };
   } catch {
     return defaults;

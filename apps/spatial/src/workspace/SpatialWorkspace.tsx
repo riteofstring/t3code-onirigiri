@@ -822,6 +822,7 @@ export function SpatialWorkspace({
         ref={stageRef}
         inert={!active}
         className="spatial-workspace relative flex h-full w-full flex-col"
+        data-spatial-navigation-bar={String(preferences.navigationBar)}
       >
         <WorkspaceToolbar
           focusAnchor={focusAnchor}
@@ -847,7 +848,7 @@ export function SpatialWorkspace({
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
                     chromeComponents={WORKSPACE_CHROME}
-                    desktopControlsContainer={controlsContainer}
+                    desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}
                     {...(stageViewport.compact ? { focusHighlight: false } : {})}
                     getPanePicture={getPanePicture}
