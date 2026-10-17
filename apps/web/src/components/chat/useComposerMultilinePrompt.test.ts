@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -120,7 +121,7 @@ describe("composer prompt line observation", () => {
       return null;
     }
     await act(() => {
-      renderer = create(<Probe />);
+      renderer = create(createElement(Probe));
     });
     expect(observed.has(staticEditor)).toBe(true);
 
