@@ -26,6 +26,8 @@ import {
 } from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useWorkspaceFocusedThreadStore } from "@t3tools/web/src/workspaceFocusedThreadStore";
 import { closeTerminalSurface } from "@t3tools/web/src/rightPanelStore";
 import { previewEnvironment } from "@t3tools/web/src/state/preview";
 import { readThreadPreviewState } from "@t3tools/web/src/previewStateStore";
@@ -459,6 +461,11 @@ function SpatialWorkspaceView({
     },
     [],
   );
+  // A covered or unmounted workspace hands the sidebar highlight back to the route.
+  useEffect(() => {
+    if (!active) useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
+    return () => useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
+  }, [active]);
 
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
@@ -470,6 +477,7 @@ function SpatialWorkspaceView({
       focusedPaneIdRef.current = paneId;
       if (paneId === null) {
         lifecycle?.setFocus(null);
+        useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
         return;
       }
       // A terminal or diff pane acts for its thread, which the route follows.
@@ -478,6 +486,9 @@ function SpatialWorkspaceView({
       if (pendingNavigationPaneRef.current !== routeTarget) pendingNavigationPaneRef.current = null;
       const data = paneData.get(routeTarget);
       if (!data) return;
+      useWorkspaceFocusedThreadStore
+        .getState()
+        .setFocusedThreadKey(scopedThreadKey(scopeThreadRef(data.environmentId, data.threadId)));
       if (!tool) lifecycle?.setFocus(paneId);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       const follow = () => {

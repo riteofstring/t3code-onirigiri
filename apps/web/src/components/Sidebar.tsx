@@ -140,6 +140,7 @@ import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
 } from "../threadSelectionStore";
+import { useWorkspaceFocusedThreadStore } from "../workspaceFocusedThreadStore";
 import { useAcknowledgeThreadWoke, useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
@@ -1247,6 +1248,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [thread.environmentId, thread.id],
   );
   const threadKey = scopedThreadKey(threadRef);
+  // The highlight follows workspace focus immediately; behaviour stays with the route.
+  const isCurrent = useWorkspaceFocusedThreadStore((state) =>
+    state.focusedThreadKey === null ? props.isActive : state.focusedThreadKey === threadKey,
+  );
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   useEffect(() => {
     if (!canOperateThread && isRenaming) onCancelRename();
@@ -1328,7 +1333,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     status,
     isUnread,
     isWoke,
-    isActive: props.isActive,
+    isActive: isCurrent,
     isSelected,
   });
   // Status hues follow the system-wide convention set by sidebar v1 and the
@@ -1626,7 +1631,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const rowSurfaceClassName = cn(
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" && "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
-    props.isActive
+    isCurrent
       ? "bg-sidebar-row-active text-sidebar-foreground"
       : isSelected || props.sweepAction !== null
         ? "bg-sidebar-row-selected text-sidebar-foreground"
@@ -1688,7 +1693,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     title: thread.title,
     statusLabel: topStatus?.label ?? null,
     projectDisplayName: props.projectDisplayName,
-    isActive: props.isActive,
+    isActive: isCurrent,
   });
 
   const title =
@@ -1726,7 +1731,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
                 shouldRecede
                   ? "text-secondary-label/70"
-                  : props.isActive || isWoke || status === "input"
+                  : isCurrent || isWoke || status === "input"
                     ? "text-foreground"
                     : isUnread
                       ? "text-muted-foreground"
@@ -1863,7 +1868,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <span
               className={cn(
                 "flex shrink-0 items-center transition-opacity",
-                (!props.isActive || variantAction === "unsettle") &&
+                (!isCurrent || variantAction === "unsettle") &&
                   "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
