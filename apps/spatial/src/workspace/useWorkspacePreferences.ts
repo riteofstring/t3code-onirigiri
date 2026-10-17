@@ -14,7 +14,7 @@ export interface WorkspacePreferences {
   rowHeight: number | "viewport";
 }
 
-const defaults: WorkspacePreferences = { overviewZoom: "auto", rowHeight: "viewport" };
+const defaults: WorkspacePreferences = { overviewZoom: "medium", rowHeight: "viewport" };
 
 function readPreferences(): WorkspacePreferences {
   try {
@@ -23,7 +23,7 @@ function readPreferences(): WorkspacePreferences {
     const zoom = "overviewZoom" in value ? value.overviewZoom : null;
     const height = "rowHeight" in value ? value.rowHeight : null;
     return {
-      overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "auto",
+      overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
         typeof height === "number" && Number.isSafeInteger(height) && height >= 96
           ? height

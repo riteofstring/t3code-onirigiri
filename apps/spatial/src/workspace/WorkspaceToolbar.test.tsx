@@ -108,7 +108,7 @@ afterEach(async () => {
 });
 
 it("remembers overview and row defaults across reloads, with a way back to viewport height", async () => {
-  expect(settings()).toEqual({ overviewZoom: "auto", rowHeight: "viewport" });
+  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport" });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await act(() => {
@@ -269,5 +269,5 @@ it("uses safe defaults for malformed saved preferences", async () => {
   );
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "auto", rowHeight: "viewport" });
+  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport" });
 });
