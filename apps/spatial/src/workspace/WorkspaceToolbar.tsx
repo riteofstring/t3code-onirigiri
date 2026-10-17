@@ -322,7 +322,7 @@ export function WorkspaceToolbar({
         <Button
           ref={triggerRef}
           variant="ghost-muted"
-          size="icon-xs"
+          size="icon"
           aria-label="Workspace controls"
           aria-controls={panelId}
           aria-expanded={open}
@@ -350,6 +350,7 @@ function OnirigiriMark() {
   return (
     <svg
       aria-hidden="true"
+      className="size-4"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
