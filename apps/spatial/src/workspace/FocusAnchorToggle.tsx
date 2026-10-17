@@ -1,34 +1,6 @@
 import type { WorkspaceFocusAnchor } from "@riteofstring/onirigiri";
-import { useCallback, useState } from "react";
 
 import { WorkspaceTooltipButton } from "./WorkspaceTooltips";
-
-const STORAGE_KEY = "onirigiri-t3:focus-anchor";
-
-function readFocusAnchor(): WorkspaceFocusAnchor {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) === "start" ? "start" : "center";
-  } catch {
-    return "center";
-  }
-}
-
-/** Where the focused pane rests: centered, or at the workspace's left edge. Remembered. */
-export function useFocusAnchorPreference() {
-  const [focusAnchor, setFocusAnchor] = useState(readFocusAnchor);
-  const toggle = useCallback(() => {
-    setFocusAnchor((current) => {
-      const next = current === "center" ? "start" : "center";
-      try {
-        window.localStorage.setItem(STORAGE_KEY, next);
-      } catch {
-        // Unavailable storage only loses the preference across reloads.
-      }
-      return next;
-    });
-  }, []);
-  return [focusAnchor, toggle] as const;
-}
 
 export function FocusAnchorToggle({
   focusAnchor,

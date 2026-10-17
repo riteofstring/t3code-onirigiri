@@ -1,6 +1,27 @@
-import { useCallback, useState } from "react";
+import type { WorkspaceFocusAnchor } from "@riteofstring/onirigiri";
+import { useCallback, useEffect, useState } from "react";
+
+import type { WorkspaceLayoutMode } from "./useWorkspacePanes";
 
 const STORAGE_KEY = "onirigiri-t3:workspace-preferences";
+const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
+const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
+
+function readItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeItem(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Unavailable storage only loses the preference across reloads.
+  }
+}
 
 export const overviewZoomChoices = [
   { value: "auto", label: "Auto", width: undefined },
@@ -25,7 +46,7 @@ const defaults: WorkspacePreferences = {
 
 function readPreferences(): WorkspacePreferences {
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");
+    const value: unknown = JSON.parse(readItem(STORAGE_KEY) ?? "null");
     if (typeof value !== "object" || value === null) return defaults;
     const zoom = "overviewZoom" in value ? value.overviewZoom : null;
     const height = "rowHeight" in value ? value.rowHeight : null;
@@ -50,13 +71,39 @@ export function useWorkspacePreferences() {
   const update = useCallback((change: Partial<WorkspacePreferences>) => {
     setPreferences((current) => {
       const next = { ...current, ...change };
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // Storage can be unavailable; settings still apply to this workspace.
-      }
+      writeItem(STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   }, []);
   return [preferences, update] as const;
+}
+
+/** Where the focused pane rests: centered, or at the workspace's left edge. Remembered. */
+export function useFocusAnchorPreference() {
+  const [focusAnchor, setFocusAnchor] = useState<WorkspaceFocusAnchor>(() =>
+    readItem(FOCUS_ANCHOR_KEY) === "start" ? "start" : "center",
+  );
+  const toggle = useCallback(() => {
+    setFocusAnchor((current) => {
+      const next = current === "center" ? "start" : "center";
+      writeItem(FOCUS_ANCHOR_KEY, next);
+      return next;
+    });
+  }, []);
+  return [focusAnchor, toggle] as const;
+}
+
+export function useLayoutModePreference() {
+  // A mode the user chose in the toolbar outlives the URL that first opened the workspace.
+  const [layoutMode, setLayoutMode] = useState((): WorkspaceLayoutMode => {
+    const stored = readItem(LAYOUT_MODE_KEY);
+    const requested = new URLSearchParams(window.location.search).get("layout");
+    return stored === "strip" || stored === "rows"
+      ? stored
+      : requested === "strip" || requested === "rows"
+        ? requested
+        : "rows";
+  });
+  useEffect(() => writeItem(LAYOUT_MODE_KEY, layoutMode), [layoutMode]);
+  return [layoutMode, setLayoutMode] as const;
 }

@@ -46,10 +46,14 @@ import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import { ToolPaneView } from "./ToolPaneView";
 import { SpatialSurfaceHost } from "./SpatialSurfaceHost";
 import { useSpatialController } from "./SpatialSurfaceProvider";
-import { useFocusAnchorPreference } from "./FocusAnchorToggle";
 import { WorkspaceTooltips, WorkspaceControlButton } from "./WorkspaceTooltips";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
-import { overviewZoomChoices, useWorkspacePreferences } from "./useWorkspacePreferences";
+import {
+  overviewZoomChoices,
+  useFocusAnchorPreference,
+  useLayoutModePreference,
+  useWorkspacePreferences,
+} from "./useWorkspacePreferences";
 import {
   readPaneLayout,
   createPaneLayoutPersistence,
@@ -72,7 +76,6 @@ import {
 
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
-const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 
 // Explicit arrow chords remain available while a pane owns keyboard focus.
 function whileEditing(key: string) {
@@ -125,24 +128,6 @@ const BROWSER_SHORTCUTS = (
 /** Quiet time after a focus change before the app route follows it. */
 const ROUTE_SETTLE_MS = 450;
 
-function readWorkspaceOptions() {
-  // A mode the user chose in the toolbar outlives the URL that first opened the workspace.
-  let stored: string | null = null;
-  try {
-    stored = localStorage.getItem(LAYOUT_MODE_KEY);
-  } catch {
-    // The explicit URL remains usable without browser storage.
-  }
-  const requested = new URLSearchParams(window.location.search).get("layout");
-  const layout: WorkspaceLayoutMode =
-    stored === "strip" || stored === "rows"
-      ? stored
-      : requested === "strip" || requested === "rows"
-        ? requested
-        : "rows";
-  return { layout };
-}
-
 export function SpatialWorkspace({
   target,
   active,
@@ -151,14 +136,7 @@ export function SpatialWorkspace({
   /** False while a draft or another route covers the workspace. */
   active: boolean;
 }) {
-  const [layoutMode, setLayoutMode] = useState(() => readWorkspaceOptions().layout);
-  useEffect(() => {
-    try {
-      localStorage.setItem(LAYOUT_MODE_KEY, layoutMode);
-    } catch {
-      // Arrangement mode remains usable for this session.
-    }
-  }, [layoutMode]);
+  const [layoutMode, setLayoutMode] = useLayoutModePreference();
   // Each mode keeps its own saved layout; switching rebuilds the workspace from it.
   return (
     <SpatialWorkspaceView
