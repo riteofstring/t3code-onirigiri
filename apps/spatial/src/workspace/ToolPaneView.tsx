@@ -37,7 +37,7 @@ import { useSurfaceNavigation } from "@t3tools/web/src/surfaceNavigation";
 import { requestThreadSurfaceCommand } from "@t3tools/web/src/threadSurfaceCommands";
 import { PANE_TERMINAL_ID_PREFIX } from "@t3tools/web/src/terminalOwnership";
 import { MAX_TERMINALS_PER_GROUP } from "@t3tools/web/src/types";
-import { createPaneActivity } from "./ThreadPane";
+import { usePaneActivity } from "./paneActivity";
 import { newToolResourceId, toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { useToolPaneContext } from "./useToolPaneContext";
 
@@ -101,20 +101,8 @@ export function ToolPaneView({
     [selectedFilePath],
   );
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
-  const [activity] = useState(() => createPaneActivity(active));
   const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    activity.set(active);
-    const element = document.activeElement;
-    if (!active && element instanceof HTMLElement) {
-      const ownsGuest =
-        element.tagName === "WEBVIEW" &&
-        [
-          ...(rootRef.current?.querySelectorAll<HTMLElement>("[data-browser-surface-slot]") ?? []),
-        ].some((slot) => slot.dataset.browserSurfaceSlot === element.dataset.previewTab);
-      if (ownsGuest || rootRef.current?.contains(element)) element.blur();
-    }
-  }, [active, activity]);
+  const activity = usePaneActivity(active, rootRef);
   useEffect(() => {
     if (
       surface?.kind !== "preview" ||

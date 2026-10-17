@@ -98,23 +98,6 @@ vi.mock("./useToolPaneContext", () => ({
     runtimeEnv: {},
   }),
 }));
-vi.mock("./ThreadPane", () => ({
-  createPaneActivity: (initial: boolean) => {
-    let active = initial;
-    const listeners = new Set<() => void>();
-    return {
-      isActive: () => active,
-      subscribe: (listener: () => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      },
-      set: (next: boolean) => {
-        active = next;
-        for (const listener of listeners) listener();
-      },
-    };
-  },
-}));
 vi.mock("~/terminal/ghostty/surface", () => ({
   GhosttyTerminalSurface: {
     create: (mount: HTMLElement) =>

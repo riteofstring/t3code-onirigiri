@@ -23,10 +23,7 @@ import {
   useState,
 } from "react";
 
-import {
-  ChatViewActivityContext,
-  type ChatViewActivity,
-} from "@t3tools/web/src/components/chatViewActivity";
+import { ChatViewActivityContext } from "@t3tools/web/src/components/chatViewActivity";
 import { ChatViewContentReadyProvider } from "@t3tools/web/src/components/chatViewContentReady";
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
 import {
@@ -48,6 +45,7 @@ import {
   usePanelNavigationSuppression,
 } from "@t3tools/web/src/panelAnimations";
 
+import { usePaneActivity } from "./paneActivity";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { canCapturePanes, hasLivePaneProducer } from "./panePictureSnapshot";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
@@ -75,25 +73,6 @@ const paneRouteTree = paneRootRoute.addChildren([
     component: PaneThreadRoute,
   }),
 ]);
-
-export function createPaneActivity(initial: boolean) {
-  let active = initial;
-  const listeners = new Set<() => void>();
-  const activity: ChatViewActivity & { set: (next: boolean) => void } = {
-    autofocusComposer: false,
-    isActive: () => active,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    set: (next) => {
-      if (next === active) return;
-      active = next;
-      for (const listener of listeners) listener();
-    },
-  };
-  return activity;
-}
 
 const PaneRouter = memo(function PaneRouter({
   router,
@@ -283,7 +262,6 @@ export const ThreadPane = memo(function ThreadPane({
   const active = workspaceActive && focused && interactive;
   const threadPath = `/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
   const [router] = useState(() => createPaneRouter(threadPath));
-  const [activity] = useState(() => createPaneActivity(active));
   const [visualRevision, setVisualRevision] = useState(0);
   const { mounted, preparing, picturable, onContentReadyChange } = usePaneContent(
     paneId,
@@ -295,22 +273,8 @@ export const ThreadPane = memo(function ThreadPane({
 
   const paneComposerRef = usePaneComposerHandle(active);
 
-  // A pane that stops being active gives up keyboard focus, so typing and
-  // workspace navigation reach the active pane rather than this one.
   const contentRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    activity.set(active);
-    const focused = document.activeElement;
-    if (!active && focused instanceof HTMLElement) {
-      const ownsGuest =
-        focused.tagName === "WEBVIEW" &&
-        [
-          ...(contentRef.current?.querySelectorAll<HTMLElement>("[data-browser-surface-slot]") ??
-            []),
-        ].some((slot) => slot.dataset.browserSurfaceSlot === focused.dataset.previewTab);
-      if (ownsGuest || contentRef.current?.contains(focused)) focused.blur();
-    }
-  }, [active, activity]);
+  const activity = usePaneActivity(active, contentRef);
 
   // Reuse pictures across focus changes. Observe actual content changes and
   // input that can change scroll position without forcing hidden content layout.

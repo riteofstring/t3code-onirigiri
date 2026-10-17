@@ -111,18 +111,6 @@ vi.mock("./useToolPaneContext", () => ({
     runtimeEnv: {},
   }),
 }));
-vi.mock("./ThreadPane", () => ({
-  createPaneActivity: (initial: boolean) => {
-    let active = initial;
-    return {
-      isActive: () => active,
-      subscribe: () => () => {},
-      set: (next: boolean) => {
-        active = next;
-      },
-    };
-  },
-}));
 vi.mock("@t3tools/web/src/components/ThreadSurfaceContent", async () => {
   const { useEffect, useRef } = await import("react");
   return {
