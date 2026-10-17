@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
-import { getSharedHighlighter } from "@pierre/diffs";
-import type { Editor, EditorFactory } from "@pierre/diffs/edit";
-import type { EditProviderProps } from "@pierre/diffs/react";
+import { getSharedHighlighter } from "@t3tools/web/node_modules/@pierre/diffs/dist/index.js";
+import type {
+  Editor,
+  EditorFactory,
+} from "@t3tools/web/node_modules/@pierre/diffs/dist/edit/index.js";
+import type { EditProviderProps } from "@t3tools/web/node_modules/@pierre/diffs/dist/react/index.js";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { compileResolvedKeybindingsConfig } from "../../../../../packages/shared/src/keybindings";
+import { compileResolvedKeybindingsConfig } from "../../../../packages/shared/src/keybindings";
 import { fileSurface } from "~/rightPanelStore";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import { ToolPaneView } from "../../../../spatial/src/workspace/ToolPaneView";
-import type { ToolPane } from "../../../../spatial/src/workspace/useToolPanes";
+import { ToolPaneView } from "./ToolPaneView";
+import type { ToolPane } from "./useToolPanes";
 
 const state = vi.hoisted(() => ({
   command: vi.fn(),
@@ -25,17 +28,7 @@ const state = vi.hoisted(() => ({
   contents: "Keep this editable.\n",
 }));
 
-const enginePath = await vi.hoisted(async () => {
-  const NodeModule = await import("node:module");
-  const spatialPackage = NodeModule.createRequire(import.meta.url).resolve(
-    "../../../../spatial/package.json",
-  );
-  const spatialRequire = NodeModule.createRequire(spatialPackage);
-  const enginePackage = spatialRequire.resolve("@riteofstring/onirigiri/package.json");
-  const { main } = spatialRequire(enginePackage) as { main: string };
-  return NodeModule.createRequire(enginePackage).resolve(main);
-});
-vi.mock(enginePath, () => ({ useOnirigiriPaneInteractive: () => true }));
+vi.mock("@riteofstring/onirigiri", () => ({ useOnirigiriPaneInteractive: () => true }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("~/components/RightPanelTabs", () => ({ RightPanelEmptyState: () => null }));
 vi.mock("~/components/chat/ThreadRelationshipsControl", () => ({
@@ -44,9 +37,13 @@ vi.mock("~/components/chat/ThreadRelationshipsControl", () => ({
 vi.mock("~/components/pullRequest/PullRequestDetailPanel", () => ({
   PullRequestDetailPanel: () => null,
 }));
-vi.mock("~/components/ThreadPullRequestsPanel", () => ({ ThreadPullRequestsPanel: () => null }));
+vi.mock("~/components/ThreadPullRequestsPanel", () => ({
+  ThreadPullRequestsPanel: () => null,
+}));
 vi.mock("~/components/files/FileBrowserPanel", () => ({ default: () => null }));
-vi.mock("~/components/files/FileBreadcrumbs", () => ({ FileBreadcrumbs: () => null }));
+vi.mock("~/components/files/FileBreadcrumbs", () => ({
+  FileBreadcrumbs: () => null,
+}));
 vi.mock("~/components/chat/OpenInPicker", () => ({ OpenInPicker: () => null }));
 vi.mock("~/components/ui/scroll-area", () => ({
   ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -54,8 +51,11 @@ vi.mock("~/components/ui/scroll-area", () => ({
 vi.mock("~/components/DiffWorkerPoolProvider", () => ({
   DiffWorkerPoolProvider: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("@pierre/diffs/react", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@pierre/diffs/react")>();
+vi.mock("@t3tools/web/node_modules/@pierre/diffs/dist/react/index.js", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("@t3tools/web/node_modules/@pierre/diffs/dist/react/index.js")
+    >();
   return {
     ...original,
     EditProvider: (props: EditProviderProps<unknown, unknown> & { children: ReactNode }) => {
@@ -78,20 +78,28 @@ vi.mock("@pierre/diffs/react", async (importOriginal) => {
   };
 });
 vi.mock("~/components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
-vi.mock("~/localApi", () => ({ readLocalApi: () => ({ dialogs: { confirm: async () => true } }) }));
+vi.mock("~/localApi", () => ({
+  readLocalApi: () => ({ dialogs: { confirm: async () => true } }),
+}));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
     select(DEFAULT_CLIENT_SETTINGS),
   useUpdateClientSettings: () => state.command,
 }));
 vi.mock("~/hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
-vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: () => {} }));
-vi.mock("~/remoteOpen", () => ({ useRemoteOpenState: () => ({ mode: "local-exec" }) }));
+vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({
+  useWorkspaceMutationRefresh: () => {},
+}));
+vi.mock("~/remoteOpen", () => ({
+  useRemoteOpenState: () => ({ mode: "local-exec" }),
+}));
 vi.mock("~/state/environments", () => ({
   usePrimaryEnvironmentId: () => "environment",
   useEnvironmentHttpBaseUrl: () => null,
 }));
-vi.mock("~/editorPreferences", () => ({ useOpenInPreferredEditor: () => () => undefined }));
+vi.mock("~/editorPreferences", () => ({
+  useOpenInPreferredEditor: () => () => undefined,
+}));
 vi.mock("~/composerDraftStore", () => ({
   useComposerDraftStore: (select: (store: typeof state) => unknown) => select(state),
 }));
@@ -112,13 +120,19 @@ vi.mock("~/state/session", () => ({
 }));
 vi.mock("~/browser/previewRuntime", () => ({ usePreviewAvailable: () => false }));
 vi.mock("~/state/terminalSessions", () => ({ useKnownTerminalSessions: () => [] }));
-vi.mock("~/state/projects", () => ({ projectEnvironment: { writeFile: { write: true } } }));
+vi.mock("~/state/projects", () => ({
+  projectEnvironment: { writeFile: { write: true } },
+}));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command?: { write?: boolean }) =>
     command?.write ? state.writeFile : state.command,
 }));
-vi.mock("~/state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => state.command }));
-vi.mock("~/state/server", () => ({ serverEnvironment: { configValueAtom: () => null } }));
+vi.mock("~/state/use-atom-query-runner", () => ({
+  useAtomQueryRunner: () => state.command,
+}));
+vi.mock("~/state/server", () => ({
+  serverEnvironment: { configValueAtom: () => null },
+}));
 vi.mock("~/state/assets", () => ({ assetEnvironment: { createUrl: {} } }));
 vi.mock("~/state/preview", () => ({ previewEnvironment: {} }));
 vi.mock("~/state/terminal", () => ({ terminalEnvironment: {} }));
@@ -145,7 +159,7 @@ vi.mock("~/components/files/projectFilesQueryState", () => ({
   getUnsavedProjectFileQueryData: () => null,
   getProjectFileContents: () => state.contents,
 }));
-vi.mock("../../../../spatial/src/workspace/useToolPaneContext", () => ({
+vi.mock("./useToolPaneContext", () => ({
   useToolPaneContext: (threadRef: unknown) => ({
     context: {
       files: { project: { title: "Project" }, workspaceRoot: "/repo", availableEditors: [] },
@@ -158,18 +172,6 @@ vi.mock("../../../../spatial/src/workspace/useToolPaneContext", () => ({
     cwd: "/repo",
     runtimeEnv: {},
   }),
-}));
-vi.mock("../../../../spatial/src/workspace/ThreadPane", () => ({
-  createPaneActivity: (initial: boolean) => {
-    let active = initial;
-    return {
-      isActive: () => active,
-      subscribe: () => () => {},
-      set: (next: boolean) => {
-        active = next;
-      },
-    };
-  },
 }));
 
 const filePane: ToolPane = {
@@ -199,13 +201,13 @@ function render(focused = true, visible = true) {
 }
 
 beforeAll(async () => {
-  await import("./FilePreviewPanel");
+  await import("~/components/files/FilePreviewPanel");
   await getSharedHighlighter({
     themes: ["pierre-dark"],
     langs: ["text"],
     preferredHighlighter: "shiki-wasm",
   });
-});
+}, 15_000);
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
