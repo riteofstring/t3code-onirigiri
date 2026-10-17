@@ -195,6 +195,16 @@ app keeps one routed thread.
   40 px; touch keeps 52 px.
 - The full-screen toggle sets `data-spatial-full-screen-transition` for 320 ms, which outlasts the
   220 ms pane transition it enables.
-- The dark workspace grey leaves box-shadows about 20 color levels, which band. A noise texture
-  above the stage (`dither.png`, alpha 3/255, one texel per device pixel) dithers them; light mode
-  has enough range and skips the extra layer. Overview keeps the engine's edge-only pane shadow.
+- A sidebar drag writes an inline width to the sidebar gap only while it runs. The spatial app holds
+  the gap at the committed `--sidebar-width` instead, so the workspace resizes once on release rather
+  than on every frame; the sidebar container still follows the pointer and overlays the workspace.
+- Pane shadows pair a tight darker layer with a wide faint one, so the pane edge stays distinct
+  from its shadow. Each pane is its own compositor layer, and Chrome blends that layer's shadow
+  onto the dark workspace grey without dithering, so the faint layer steps one color level at a
+  time. Noise above or below the pane layer cannot help: it lands after the steps are fixed. Dark
+  mode instead paints a faint noise ring in the pane's own layer, as an SVG `border-image` outside
+  the pane that fades out by 64px, and the noise dithers the shadow before compositing. Black
+  specks alone only darken, which leaves a flat band where the ring fades; grey specks
+  (0.3) brighten about as much as black darkens after 8-bit rounding, so the average stays put. Light
+  mode has enough range and skips the ring. Overview keeps the engine's edge-only pane shadow and
+  drops the ring.

@@ -1,7 +1,7 @@
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
-import { T3Wordmark } from "@t3tools/web/src/components/T3Wordmark";
+import { ProjectFavicon } from "@t3tools/web/src/components/ProjectFavicon";
 import { useProject, useThreadShell } from "@t3tools/web/src/state/entities";
 
 const RUN_STATUS_LABEL: Record<ThreadRuntimeSummary["status"], string> = {
@@ -39,7 +39,9 @@ export function ThreadCard({
           : null;
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-background p-8 text-center text-foreground">
-      <T3Wordmark aria-hidden className="h-12! w-auto! shrink-0 text-muted-foreground/50" />
+      {project ? (
+        <ProjectFavicon project={project} className="size-12! [&_svg]:size-full!" />
+      ) : null}
       <div className="flex max-w-sm flex-col items-center gap-1.5">
         {project ? <div className="text-xs text-muted-foreground">{project.title}</div> : null}
         <div className="line-clamp-3 text-lg font-medium leading-snug text-balance">
