@@ -12,6 +12,7 @@ import {
 import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
+  use,
   useCallback,
   useEffect,
   useMemo,
@@ -20,6 +21,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { ChatPaneControlsContext } from "../chatPaneControls";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -87,6 +89,7 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
 }: ChatHeaderProps) {
+  const paneControls = use(ChatPaneControlsContext);
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
@@ -302,7 +305,7 @@ export const ChatHeader = memo(function ChatHeader({
       ref={breadcrumbContainerRef}
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        rightPanelOpen ? "pr-10" : "pr-24",
+        rightPanelOpen ? "pr-10" : paneControls ? "pr-49 sm:pr-44" : "pr-24",
       )}
       onContextMenu={handleHeaderContextMenu}
     >
