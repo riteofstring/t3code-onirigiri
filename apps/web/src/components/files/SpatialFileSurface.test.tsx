@@ -159,19 +159,6 @@ vi.mock("../../../../spatial/src/workspace/useToolPaneContext", () => ({
     runtimeEnv: {},
   }),
 }));
-vi.mock("../../../../spatial/src/workspace/ThreadPane", () => ({
-  createPaneActivity: (initial: boolean) => {
-    let active = initial;
-    return {
-      isActive: () => active,
-      subscribe: () => () => {},
-      set: (next: boolean) => {
-        active = next;
-      },
-    };
-  },
-}));
-
 const filePane: ToolPane = {
   paneId: "file",
   kind: "surface",
