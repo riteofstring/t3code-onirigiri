@@ -181,6 +181,41 @@ async function render(focused = true, pane: ToolPane = terminalPane) {
   });
 }
 
+async function chooseFromEmptyPane(kind: "browser" | "terminal") {
+  let resolveOpening!: (result: object) => void;
+  const open = kind === "browser" ? state.openPreview : state.openTerminal;
+  open.mockReturnValueOnce(
+    new Promise<object>((resolve) => {
+      resolveOpening = resolve;
+    }),
+  );
+  await render(true, { ...terminalPane, kind: "empty" });
+  await act(async () => {
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === `Add ${kind}`)!
+      .click();
+  });
+  return {
+    open,
+    close: kind === "browser" ? state.closePreview : state.closeTerminal,
+    present: kind === "browser" ? state.navigation.openBrowser : state.navigation.openTerminal,
+    complete: () =>
+      act(async () =>
+        resolveOpening({
+          _tag: "Success",
+          value: {
+            threadId: threadRef.threadId,
+            tabId: "new-browser",
+            navStatus: { _tag: "Idle" },
+            canGoBack: false,
+            canGoForward: false,
+            updatedAt: "2026-10-13T00:00:00.000Z",
+          },
+        }),
+      ),
+  };
+}
+
 function terminal() {
   return host.querySelector<HTMLTextAreaElement>('[aria-label="Terminal input"]')!;
 }
@@ -480,36 +515,10 @@ it("reconciles an externally closed browser only after its server snapshot, pres
 it.each(["browser", "terminal"] as const)(
   "cleans a new %s when its chooser unmounts before the open completes",
   async (kind) => {
-    let resolveOpening!: (result: object) => void;
-    const opening = new Promise<object>((resolve) => {
-      resolveOpening = resolve;
-    });
-    const open = kind === "browser" ? state.openPreview : state.openTerminal;
-    const close = kind === "browser" ? state.closePreview : state.closeTerminal;
-    const present =
-      kind === "browser" ? state.navigation.openBrowser : state.navigation.openTerminal;
-    open.mockReturnValueOnce(opening);
-    await render(true, { ...terminalPane, kind: "empty" });
-    await act(async () => {
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === `Add ${kind}`)!
-        .click();
-    });
+    const { open, close, present, complete } = await chooseFromEmptyPane(kind);
     expect(open).toHaveBeenCalledOnce();
     await act(async () => root.render(null));
-    await act(async () =>
-      resolveOpening({
-        _tag: "Success",
-        value: {
-          threadId: threadRef.threadId,
-          tabId: "new-browser",
-          navStatus: { _tag: "Idle" },
-          canGoBack: false,
-          canGoForward: false,
-          updatedAt: "2026-10-13T00:00:00.000Z",
-        },
-      }),
-    );
+    await complete();
     const input =
       kind === "browser"
         ? { tabId: "new-browser" }
@@ -530,36 +539,10 @@ it.each(["browser", "terminal"] as const)(
 it.each(["browser", "terminal"] as const)(
   "reveals the new %s and reports failure when its closing chooser cannot clean it up",
   async (kind) => {
-    let resolveOpening!: (result: object) => void;
-    const opening = new Promise<object>((resolve) => {
-      resolveOpening = resolve;
-    });
-    const open = kind === "browser" ? state.openPreview : state.openTerminal;
-    const close = kind === "browser" ? state.closePreview : state.closeTerminal;
-    const present =
-      kind === "browser" ? state.navigation.openBrowser : state.navigation.openTerminal;
-    open.mockReturnValueOnce(opening);
+    const { open, close, present, complete } = await chooseFromEmptyPane(kind);
     close.mockResolvedValueOnce({ _tag: "Failure", cause: "Disconnected" });
-    await render(true, { ...terminalPane, kind: "empty" });
-    await act(async () => {
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === `Add ${kind}`)!
-        .click();
-    });
     state.isPresent.mockReturnValue(false);
-    await act(async () =>
-      resolveOpening({
-        _tag: "Success",
-        value: {
-          threadId: threadRef.threadId,
-          tabId: "new-browser",
-          navStatus: { _tag: "Idle" },
-          canGoBack: false,
-          canGoForward: false,
-          updatedAt: "2026-10-13T00:00:00.000Z",
-        },
-      }),
-    );
+    await complete();
     const id = kind === "browser" ? "new-browser" : open.mock.calls[0]![0].input.terminalId;
     expect(close).toHaveBeenCalledOnce();
     expect(present).toHaveBeenCalledExactlyOnceWith(threadRef, id);
@@ -573,35 +556,9 @@ it.each(["browser", "terminal"] as const)(
 it.each(["browser", "terminal"] as const)(
   "presents the requested %s when its chooser still owns the completed open",
   async (kind) => {
-    let resolveOpening!: (result: object) => void;
-    const opening = new Promise<object>((resolve) => {
-      resolveOpening = resolve;
-    });
-    const open = kind === "browser" ? state.openPreview : state.openTerminal;
-    const close = kind === "browser" ? state.closePreview : state.closeTerminal;
-    const present =
-      kind === "browser" ? state.navigation.openBrowser : state.navigation.openTerminal;
-    open.mockReturnValueOnce(opening);
-    await render(true, { ...terminalPane, kind: "empty" });
-    await act(async () => {
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === `Add ${kind}`)!
-        .click();
-    });
+    const { open, close, present, complete } = await chooseFromEmptyPane(kind);
     expect(present).not.toHaveBeenCalled();
-    await act(async () =>
-      resolveOpening({
-        _tag: "Success",
-        value: {
-          threadId: threadRef.threadId,
-          tabId: "new-browser",
-          navStatus: { _tag: "Idle" },
-          canGoBack: false,
-          canGoForward: false,
-          updatedAt: "2026-10-13T00:00:00.000Z",
-        },
-      }),
-    );
+    await complete();
     const id = kind === "browser" ? "new-browser" : open.mock.calls[0]![0].input.terminalId;
     expect(present).toHaveBeenCalledExactlyOnceWith(threadRef, id);
     expect(close).not.toHaveBeenCalled();
