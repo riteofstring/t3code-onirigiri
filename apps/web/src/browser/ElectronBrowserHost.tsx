@@ -15,7 +15,7 @@ import { usePreviewSession } from "~/components/preview/usePreviewSession";
 import { isElectron } from "~/env";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
-import { useActivePreviewSessions, type ThreadPreviewState } from "~/previewStateStore";
+import { useActivePreviewSessions } from "~/previewStateStore";
 import { previewEnvironment } from "~/state/preview";
 import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -33,13 +33,44 @@ export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
   const surfaceNavigation = useSurfaceNavigation();
   const previewByThreadKey = useActivePreviewSessions();
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   const threads = useMemo(
+    () =>
+      Object.keys(previewByThreadKey).flatMap((threadKey) => {
+        const threadRef = parseScopedThreadKey(threadKey);
+        return threadRef ? [{ threadKey, threadRef }] : [];
+      }),
+    [previewByThreadKey],
+  );
+  const sessions = useMemo(
     () =>
       Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
         const threadRef = parseScopedThreadKey(threadKey);
-        return threadRef ? [{ threadKey, threadRef, previewState }] : [];
+        // Server tabs of other environments stream; this desktop's own server tabs render here.
+        // Opening a tab returns its snapshot before the first list/event can identify
+        // the server. Creating a guest under that temporary identity would replace it.
+        return threadRef && previewState.serverEpoch !== null
+          ? Object.values(previewState.sessions)
+              .filter(
+                (snapshot) =>
+                  snapshot.runtime !== "server" ||
+                  rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot),
+              )
+              .map((snapshot) => ({
+                threadRef,
+                snapshot,
+                runtimeTabId: previewRuntimeTabId(
+                  threadRef,
+                  previewState.serverEpoch,
+                  snapshot.tabId,
+                ),
+                pictureInPicture:
+                  previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
+                zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
+              }))
+          : [];
       }),
-    [previewByThreadKey],
+    [previewByThreadKey, primaryEnvironmentId],
   );
 
   useEffect(() => {
@@ -86,30 +117,12 @@ export function ElectronBrowserHost() {
   // A `target="_blank"` link inside a hosted page opens as another tab of the
   // same thread, so the page that held the link stays where it is.
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
-  const sessionByRuntimeTabId = useRef(
-    new Map<
-      string,
-      {
-        threadRef: ScopedThreadRef;
-        snapshot: ThreadPreviewState["sessions"][string];
-      }
-    >(),
-  );
+  const sessionByRuntimeTabId = useRef(new Map<string, (typeof sessions)[number]>());
   useEffect(() => {
     sessionByRuntimeTabId.current = new Map(
-      threads.flatMap(({ threadRef, previewState }) =>
-        previewState.serverEpoch === null
-          ? []
-          : Object.values(previewState.sessions).map(
-              (snapshot) =>
-                [
-                  previewRuntimeTabId(threadRef, previewState.serverEpoch, snapshot.tabId),
-                  { threadRef, snapshot },
-                ] as const,
-            ),
-      ),
+      sessions.map((session) => [session.runtimeTabId, session]),
     );
-  }, [threads]);
+  }, [sessions]);
   useEffect(() => {
     const preview = window.desktopBridge?.preview;
     if (!preview) return;
@@ -131,67 +144,41 @@ export function ElectronBrowserHost() {
   if (!isElectron) return null;
   return (
     <div className="contents" data-electron-browser-host>
-      {threads.map(({ threadKey, threadRef, previewState }) => (
-        <ThreadBrowserHost key={threadKey} threadRef={threadRef} previewState={previewState} />
+      {threads.map(({ threadKey, threadRef }) => (
+        <ThreadPreviewSession key={threadKey} threadRef={threadRef} />
       ))}
+      {sessions.map(({ threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor }) => {
+        const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
+        return (
+          <AuthorizedBrowserWebview
+            key={runtimeTabId}
+            threadRef={threadRef}
+            tabId={snapshot.tabId}
+            runtimeTabId={runtimeTabId}
+            initialUrl={url}
+            viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
+            pictureInPicture={pictureInPicture}
+            profileId={snapshot.profileId}
+            zoomFactor={zoomFactor}
+            serverDriven={snapshot.runtime === "server"}
+            {...(snapshot.runtime === "server"
+              ? {
+                  serverRendering: {
+                    colorScheme: snapshot.colorScheme ?? "system",
+                    zoomFactor: snapshot.zoomFactor ?? 1,
+                  },
+                }
+              : {})}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function ThreadBrowserHost({
-  threadRef,
-  previewState,
-}: {
-  readonly threadRef: ScopedThreadRef;
-  readonly previewState: ThreadPreviewState;
-}) {
+function ThreadPreviewSession({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
   usePreviewSession(threadRef);
-  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
-  // Opening a tab returns its snapshot before the first list/event can identify
-  // the server. Creating a guest under that temporary identity would replace it.
-  if (previewState.serverEpoch === null) return null;
-
-  return (
-    <>
-      {Object.values(previewState.sessions)
-        .filter(
-          (snapshot) =>
-            snapshot.runtime !== "server" ||
-            rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot),
-        )
-        .map((snapshot) => {
-          const runtimeTabId = previewRuntimeTabId(
-            threadRef,
-            previewState.serverEpoch,
-            snapshot.tabId,
-          );
-          const overlay = previewState.desktopByTabId[snapshot.tabId];
-          const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
-          return (
-            <AuthorizedBrowserWebview
-              key={runtimeTabId}
-              threadRef={threadRef}
-              tabId={snapshot.tabId}
-              runtimeTabId={runtimeTabId}
-              initialUrl={url}
-              viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
-              pictureInPicture={overlay?.pictureInPicture ?? false}
-              profileId={snapshot.profileId}
-              zoomFactor={overlay?.zoomFactor ?? 1}
-              serverDriven={snapshot.runtime === "server"}
-              {...(snapshot.runtime === "server"
-                ? {
-                    serverRendering: {
-                      colorScheme: snapshot.colorScheme ?? "system",
-                      zoomFactor: snapshot.zoomFactor ?? 1,
-                    },
-                  }
-                : {})}
-            />
-          );
-        })}
-    </>
-  );
+  return null;
 }
 
 function AuthorizedBrowserWebview(props: ComponentProps<typeof HostedBrowserWebview>) {
