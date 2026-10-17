@@ -62,7 +62,6 @@
 /* The workspace takes T3's colours, so it follows the app's theme. */
 .spatial-workspace :is(.onirigiri-workspace, .onirigiri-workspace__desktop-controls) {
   --onirigiri-background: color-mix(in oklch, var(--background) 94%, var(--foreground));
-  --onirigiri-grid: color-mix(in oklch, var(--foreground) 9%, transparent);
   --onirigiri-pane: var(--background);
   --onirigiri-pane-raised: var(--card);
   --onirigiri-titlebar: var(--background);
@@ -113,9 +112,9 @@
 /* Toggling full-screen panes lets each pane expand to the edges, or back, instead of snapping. */
 .spatial-workspace[data-spatial-full-screen-transition="true"] [data-onirigiri-slot="pane"] {
   transition:
-    transform 220ms var(--workspace-reveal-ease, ease-out),
-    width 220ms var(--workspace-reveal-ease, ease-out),
-    height 220ms var(--workspace-reveal-ease, ease-out),
+    transform 220ms ease-out,
+    width 220ms ease-out,
+    height 220ms ease-out,
     border-radius 220ms ease-out;
 }
 
@@ -202,10 +201,6 @@
   transform: translateX(0);
   visibility: visible;
   transition-delay: 0s;
-}
-
-.spatial-workspace-controls__surface > .spatial-workspace-controls__reveal {
-  overflow-x: clip;
 }
 
 .spatial-workspace-controls__actions {
