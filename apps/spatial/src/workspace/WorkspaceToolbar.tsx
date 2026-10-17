@@ -205,8 +205,6 @@ export function WorkspaceToolbar({
           <div className="spatial-workspace-controls__actions">
             <Button
               ref={advancedRef}
-              variant="ghost-muted"
-              size="icon-xs"
               aria-label="Advanced workspace controls"
               aria-controls={advancedId}
               aria-expanded={advanced}
@@ -270,8 +268,6 @@ export function WorkspaceToolbar({
             </div>
             <AddPaneButton onAdd={onAdd} />
             <Button
-              variant="ghost-muted"
-              size="icon-xs"
               aria-label="Full screen panes"
               aria-pressed={preferences.maximizeAll}
               tooltip="Full screen panes"
@@ -298,8 +294,6 @@ export function WorkspaceToolbar({
               </svg>
             </Button>
             <Button
-              variant="ghost-muted"
-              size="icon-xs"
               aria-label={preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"}
               aria-pressed={preferences.navigationBar}
               tooltip={
@@ -321,8 +315,6 @@ export function WorkspaceToolbar({
               </svg>
             </Button>
             <Button
-              variant="ghost-muted"
-              size="icon-xs"
               aria-label={layoutMode === "strip" ? "Switch to 2D layout" : "Switch to strip layout"}
               tooltip={
                 layoutMode === "strip"
@@ -360,7 +352,6 @@ export function WorkspaceToolbar({
         </div>
         <Button
           ref={triggerRef}
-          variant="ghost-muted"
           size="icon"
           aria-label="Workspace controls"
           aria-controls={panelId}
