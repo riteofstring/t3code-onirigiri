@@ -337,6 +337,14 @@ export function useSavedPanePictures(
     },
     [getLayout],
   );
+  const expectedRevision = useCallback(
+    (paneId: string, contents: ReadonlyMap<string, PaneContentRevision>) => {
+      const content = contents.get(paneId);
+      const geometry = geometryRevision(paneId);
+      return content && geometry ? `${contentKey(content)}|${geometry}` : null;
+    },
+    [geometryRevision],
+  );
 
   const contentRevisions = useMemo(
     () =>
@@ -380,17 +388,11 @@ export function useSavedPanePictures(
       if (retainedRef.current.has(paneId)) return null;
       const picture = saved?.get(paneId);
       if (!picture) return null;
-      const content = contentRevisions.get(paneId);
-      const geometry = geometryRevision(paneId);
-      if (
-        !content ||
-        !geometry ||
-        picture.revision !== pictureRevision(`${contentKey(content)}|${geometry}`, picture.source)
-      )
-        return null;
+      const revision = expectedRevision(paneId, contentRevisions);
+      if (!revision || picture.revision !== pictureRevision(revision, picture.source)) return null;
       return picture;
     },
-    [contentRevisions, geometryRevision, saved],
+    [contentRevisions, expectedRevision, saved],
   );
 
   const lastValidPictures = useRef(new Map<string, SavedPanePicture>());
@@ -406,17 +408,12 @@ export function useSavedPanePictures(
         return null;
       }
       const picture = saved.get(paneId)!;
-      const content = contentRevisionsRef.current.get(paneId);
-      const geometry = geometryRevision(paneId);
+      const revision = expectedRevision(paneId, contentRevisionsRef.current);
       const fresh =
-        content &&
-        geometry &&
-        picture.revision === pictureRevision(`${contentKey(content)}|${geometry}`, picture.source)
-          ? picture
-          : null;
+        revision && picture.revision === pictureRevision(revision, picture.source) ? picture : null;
       return fresh ?? lastValidPictures.current.get(paneId) ?? null;
     },
-    [geometryRevision, saved],
+    [expectedRevision, saved],
   );
   useLayoutEffect(() => {
     for (const paneId of lastValidPictures.current.keys()) {
@@ -521,11 +518,7 @@ export function useSavedPanePictures(
       waitToDraw: () => Promise<boolean>,
     ) => {
       const startedAt = performance.now();
-      const revision = () => {
-        const content = contentRevisionsRef.current.get(paneId);
-        const geometry = geometryRevision(paneId);
-        return content && geometry ? `${contentKey(content)}|${geometry}` : null;
-      };
+      const revision = () => expectedRevision(paneId, contentRevisionsRef.current);
       const before = revision();
       const beforeVisualRevision = visualRevision(paneId);
       if (before === null) return;
@@ -587,7 +580,7 @@ export function useSavedPanePictures(
       await keepPicture(picture, beforeVisualRevision);
     },
     [
-      geometryRevision,
+      expectedRevision,
       keepPicture,
       onSnapshotFailure,
       pictureMatchesVisualRevision,
@@ -604,11 +597,9 @@ export function useSavedPanePictures(
       snapshots.setDraw(
         (...args) => drawSnapshotRef.current(...args),
         (paneId) => {
-          const content = contentRevisionsRef.current.get(paneId);
-          const geometry = geometryRevision(paneId);
+          const revision = expectedRevision(paneId, contentRevisionsRef.current);
           if (
-            !content ||
-            !geometry ||
+            !revision ||
             retainedRef.current.get(paneId) === "live" ||
             runningPanesRef.current.has(paneId) ||
             !syncedPanes.has(paneId)
@@ -617,14 +608,13 @@ export function useSavedPanePictures(
           const previous = savedRef.current?.get(paneId);
           return (
             !previous ||
-            previous.revision !==
-              pictureRevision(`${contentKey(content)}|${geometry}`, previous.source) ||
+            previous.revision !== pictureRevision(revision, previous.source) ||
             !pictureMatchesVisualRevision(paneId, previous.image)
           );
         },
         (paneId) => lastValidPictures.current.has(paneId),
       ),
-    [geometryRevision, pictureMatchesVisualRevision, snapshots],
+    [expectedRevision, pictureMatchesVisualRevision, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
