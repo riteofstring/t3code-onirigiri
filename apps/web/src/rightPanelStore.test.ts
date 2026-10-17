@@ -87,23 +87,6 @@ describe("rightPanelStore", () => {
     ]);
   });
 
-  it("distinguishes server browser reveals from a user's pane choice", () => {
-    const store = useRightPanelStore.getState();
-    store.open(refA, "files");
-    const revision = store.getUserActionRevision(refA);
-
-    store.openBrowser(refA, "server-tab", true);
-
-    expect(store.getUserActionRevision(refA)).toBe(revision);
-    expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
-    ).toContainEqual(expect.objectContaining({ id: "browser:server-tab" }));
-
-    store.openBrowser(refA, "user-tab");
-
-    expect(store.getUserActionRevision(refA)).toBe(revision + 1);
-  });
-
   it("keeps a dismissed device hidden after another file opens", () => {
     const store = useRightPanelStore.getState();
     const device = {

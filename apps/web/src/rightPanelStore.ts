@@ -153,7 +153,7 @@ interface RightPanelStoreState {
   ) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
-  openBrowser: (ref: ScopedThreadRef, tabId: string | null, automatic?: boolean) => void;
+  openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   openAttachment: (ref: ScopedThreadRef, attachment: ChatFileAttachment) => void;
   openPullRequest: (
@@ -577,7 +577,8 @@ const updateThread = (
 };
 
 // Every store action is a user choice unless it goes through `automaticUpdate`.
-// Resource reconciliation and explicit automatic reveals preserve the revision.
+// Only `openProactive` and resource reconciliation are automatic, so a new
+// action counts as a user choice by default.
 const automaticUpdate = (
   state: RightPanelStoreState,
   threadKey: string,
@@ -884,9 +885,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           })),
         ),
-      openBrowser: (ref, tabId, automatic = false) =>
+      openBrowser: (ref, tabId) =>
         set((state) =>
-          (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
+          userAction(state, scopedThreadKey(ref), (current) => {
             const surface = browserSurface(tabId);
             const withoutPlaceholder = tabId
               ? current.surfaces.filter((entry) => entry.id !== "browser:new")

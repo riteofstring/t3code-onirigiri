@@ -6,7 +6,6 @@ import { selectThreadRightPanelState, useRightPanelStore } from "./rightPanelSto
 export type SurfaceNavigation = Pick<
   ReturnType<typeof useRightPanelStore.getState>,
   | "open"
-  | "openBrowser"
   | "openFile"
   | "openAttachment"
   | "openPullRequest"
@@ -22,6 +21,7 @@ export type SurfaceNavigation = Pick<
   | "closeTerminal"
   | "reconcileBrowserSurfaces"
 > & {
+  openBrowser: (ref: ScopedThreadRef, tabId: string | null, automatic?: boolean) => void;
   hasSurface: (ref: ScopedThreadRef, surfaceId: string) => boolean;
 };
 
