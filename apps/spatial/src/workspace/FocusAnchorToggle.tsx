@@ -30,7 +30,6 @@ export function FocusAnchorToggle({
   );
 }
 
-/** A workspace control that opens a new, empty pane beside the focused one. */
 export function AddPaneButton({ onAdd }: { onAdd: () => void }) {
   return (
     <WorkspaceTooltipButton

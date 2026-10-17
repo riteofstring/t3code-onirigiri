@@ -41,7 +41,6 @@ function scopedKey(environmentId: string, id: string) {
   return `${environmentId}:${id}`;
 }
 
-/** The sidebar's project groups, in the order the sidebar shows them. */
 function useSidebarProjectGroups() {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -72,14 +71,6 @@ function useSidebarProjectGroups() {
   }, [groupingSettings, primaryEnvironmentId, projectOrder, projects, sortOrder, threads]);
 }
 
-/**
- * The workspace's thread panes. Rows follow the sidebar's project groups;
- * the strip puts every thread on one plane in the same order. Each thread
- * update reconciles the previous arrangement, so panes keep their places,
- * threads new since then lead their project's row and archived ones leave.
- * Surface ids follow pane ids, so rebuilding the arrangement keeps the
- * pictures panes already have.
- */
 export function useWorkspacePanes(
   layoutMode: WorkspaceLayoutMode,
   toolPanes: readonly ToolPane[],
@@ -88,7 +79,6 @@ export function useWorkspacePanes(
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const catalogReady = useAtomValue(environmentCatalog.catalogValueAtom).isReady;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  // Changing this mode restarts the desktop app.
   const [localEnvironmentDisabled] = useState(isLocalEnvironmentDisabled);
   const catalogRegistered =
     catalogReady &&
@@ -124,7 +114,6 @@ export function useWorkspacePanes(
     };
   }, [bootstrapped, catalogRegistered, groups, threads]);
 
-  // Compared by content: the sidebar inputs are rebuilt on unrelated renders.
   const liveKey = useMemo(() => (live ? JSON.stringify(live) : null), [live]);
   const [arrangement, setArrangement] = useState<{
     liveKey: string | null;
@@ -139,7 +128,6 @@ export function useWorkspacePanes(
 
   return useMemo(() => {
     if (!arrangement.layout) return null;
-    // Rows keep their panes' places but follow the sidebar's project order.
     const groupOrder = new Map(groups.map((group, index) => [group.projectKey, index]));
     const layout = {
       rows: arrangement.layout.rows.toSorted(

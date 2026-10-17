@@ -20,8 +20,6 @@ function createPaneActivity(initial: boolean) {
   return activity;
 }
 
-// A pane that stops being active gives up keyboard focus, so typing and
-// workspace navigation reach the active pane rather than this one.
 export function usePaneActivity(active: boolean, root: RefObject<HTMLElement | null>) {
   const [activity] = useState(() => createPaneActivity(active));
   useEffect(() => {

@@ -128,8 +128,6 @@ export function WorkspaceToolbar({
     }
   }, [open]);
 
-  // Engine controls arrive through a portal. Listen on their physical parent
-  // so hover, Escape and tabbing out behave like the neighboring T3 buttons.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;

@@ -15,10 +15,6 @@ const TOOL_PANE_PREFIX = "tool-";
 
 export type ToolPaneKind = "empty" | "terminal" | "diff" | "surface";
 
-/**
- * A pane the user added beside a thread: empty until they pick what it shows,
- * or one of the thread's terminals or its diff. It follows its thread's pane.
- */
 export interface ToolPane {
   readonly paneId: string;
   readonly kind: ToolPaneKind;
@@ -47,7 +43,6 @@ function isToolPane(value: unknown): value is ToolPane {
   );
 }
 
-// Stored records that are malformed or repeat a pane are dropped.
 function readToolPanes(): ToolPane[] {
   try {
     const stored: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
@@ -78,16 +73,13 @@ function readToolPanes(): ToolPane[] {
 function writeToolPanes(panes: readonly ToolPane[]) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(panes));
-  } catch {
-    // Unavailable storage only loses the added panes across reloads.
-  }
+  } catch {}
 }
 
 export function newToolResourceId(prefix: string) {
   return `${prefix}${Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(36)).join("-")}`;
 }
 
-/** The panes the user added, in order, remembered across reloads. */
 export function useToolPanes() {
   const [toolPanes, setToolPanes] = useState(readToolPanes);
   const currentRef = useRef(toolPanes);
@@ -112,10 +104,6 @@ export function useToolPanes() {
   }, []);
   const getPanes = useCallback(() => currentRef.current, []);
 
-  /**
-   * Adds an empty pane for `thread`: right after `afterPaneId` when that is
-   * one of its added panes, otherwise right after the thread's own pane.
-   */
   const addEmpty = useCallback(
     (thread: { environmentId: EnvironmentId; threadId: ThreadId }, afterPaneId: string | null) => {
       const pane: ToolPane = {

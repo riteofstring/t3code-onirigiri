@@ -6,7 +6,6 @@
   --spatial-compact-toolbar-height: 52px;
 }
 
-/* With a mouse or trackpad the bottom bar matches the sidebar's 40px footer band; touch keeps 52px. */
 @media (pointer: fine) {
   .spatial-workspace {
     --spatial-compact-toolbar-height: 40px;
@@ -30,8 +29,6 @@
 }
 
 @layer onirigiri {
-  /* Dense T3 panes request layers through overview without changing the
-     library's default text rendering. */
   .spatial-workspace
     .onirigiri-pane[data-onirigiri-presentation-live="true"][data-onirigiri-renderer="dom"]:is(
       [data-moving="true"],
@@ -43,8 +40,6 @@
     will-change: transform;
   }
 
-  /* Recording must keep the timeline's custom scrollbar gutters so its virtual
-     rows do not reflow. Code blocks keep their standard thin scrollbar styling. */
   .spatial-workspace
     [data-onirigiri-recording]
     .spatial-thread-pane
@@ -59,7 +54,6 @@
   }
 }
 
-/* The workspace takes T3's colours, so it follows the app's theme. */
 .spatial-workspace :is(.onirigiri-workspace, .onirigiri-workspace__desktop-controls) {
   --onirigiri-background: color-mix(in oklch, var(--background) 94%, var(--foreground));
   --onirigiri-pane: var(--background);
@@ -80,7 +74,6 @@
   --onirigiri-toolbar-shadow: none;
   --onirigiri-toolbar-padding: 0px;
   --onirigiri-compact-toolbar-min-height: var(--spatial-compact-toolbar-height);
-  /* Below the hover controls (z-index 40) so the Onirigiri control stays visible inside the bar. */
   --onirigiri-z-toolbar: 35;
   --onirigiri-minimap-background: var(--card);
 }
@@ -96,12 +89,10 @@
   --workspace-reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* A plain surface: the engine's dotted world grid is not drawn in T3. */
 .spatial-workspace .onirigiri-workspace__world-grid {
   display: none;
 }
 
-/* Whenever the bottom bar is shown, the Onirigiri control sits inside it, at its right end. */
 .spatial-workspace[data-spatial-compact="true"] > .spatial-workspace-controls,
 .spatial-workspace[data-spatial-navigation-bar="true"] > .spatial-workspace-controls {
   inset-block-end: calc(
@@ -109,7 +100,6 @@
   );
 }
 
-/* Toggling full-screen panes lets each pane expand to the edges, or back, instead of snapping. */
 .spatial-workspace[data-spatial-full-screen-transition="true"] [data-onirigiri-slot="pane"] {
   transition:
     transform 220ms ease-out,
@@ -118,7 +108,6 @@
     border-radius 220ms ease-out;
 }
 
-/* A maximized pane in the compact layout is full screen: no bar and no floating controls. */
 .spatial-workspace[data-spatial-compact="true"][data-spatial-maximized="true"]
   > .spatial-workspace-controls,
 .spatial-workspace[data-spatial-compact="true"][data-spatial-maximized="true"]
@@ -132,8 +121,8 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* Desktop navigation bar: the engine's own toolbar, placed along the bottom like its compact layout. */
-.spatial-workspace[data-spatial-navigation-bar="true"] .onirigiri-workspace[data-compact-layout="false"] {
+.spatial-workspace[data-spatial-navigation-bar="true"]
+  .onirigiri-workspace[data-compact-layout="false"] {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
@@ -263,7 +252,6 @@
   --onirigiri-focus-outline-offset: 1px;
 }
 
-/* Overview chrome overlays the thread's own header without resizing its content. */
 .spatial-workspace [data-onirigiri-surface-kind="thread"] > .onirigiri-pane__titlebar {
   position: absolute;
   inset-block-start: 0;

@@ -43,7 +43,6 @@ function row(count: number, plane = 0): PanePosition[] {
   }));
 }
 
-// Lets every queued speculative mount happen, reporting each commit at once.
 function drain(store: PaneLifecycleStore, panes: PanePosition[]) {
   for (let step = 0; step < 40; step++) {
     vi.advanceTimersByTime(1000);
@@ -838,13 +837,11 @@ it("mounts panes without a picture one at a time to picture them, then lets them
     }
   };
   step(5000);
-  // The nearest unpictured pane is mounted and waits for its picture.
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2"]);
   pictured.add("p0-2");
   store.setPictures((paneId) => pictured.has(paneId));
   step(1000);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
-  // A pane that never gets a picture is let go after a while and not retried.
   step(12_000);
   expect(store.isMounted("p0-3")).toBe(false);
   step(60_000);

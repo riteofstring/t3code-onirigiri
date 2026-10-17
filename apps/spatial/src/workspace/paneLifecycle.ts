@@ -1,22 +1,14 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
-/** Neighbours of the focused pane prepared ahead of use. */
 const NEIGHBORS = 4;
-/** Warm target; visible views, retained producers and one capture may exceed it. */
 const MAX_MOUNTED = 8;
-/** Quiet time after focus or visibility changes before mounting follows them. */
 const SETTLE_MS = 200;
-/** Quiet time after a focus change before its neighbours are prepared. */
 const NEIGHBOR_SETTLE_MS = 600;
-/** Speculative mounts wait for this long without keyboard or pointer input. */
 const INPUT_QUIET_MS = 400;
 const COMMIT_TIMEOUT_MS = 2000;
 const STORED_PICTURES_WAIT_MS = 2000;
-/** How long a pane mounted only to be pictured may take before it is let go. */
 const PICTURE_TIMEOUT_MS = 10_000;
-/** Background pictures wait this long after input. */
 const PICTURE_INPUT_QUIET_MS = 3000;
-/** A pane that could not be pictured is tried again after this. */
 const PICTURE_RETRY_MS = 5 * 60_000;
 
 export interface PanePosition {
@@ -27,23 +19,6 @@ export interface PanePosition {
 
 type Direction = "left" | "right" | "up" | "down";
 
-/**
- * Decides which thread panes mount a live ChatView.
- *
- * Once focus and visibility have been quiet for a moment the focused pane
- * mounts ahead of any other work. A saved picture bridges camera motion before
- * mounting; a destination without one still prepares early. The focused pane's
- * visible peers mount next, one at a time after initial content is ready, regardless of
- * saved pictures. Visible views are never evicted to meet the retention target.
- * Neighbours, the next one in the direction of travel first, are prepared in
- * spare slots only while the page is idle and input has been quiet.
- * When nothing else is wanted, untried visits precede untouched panes;
- * interrupted reservations take turns afterward until they are pictured.
- * Navigation cancels speculative work that has
- * not started yet.
- * Viewed running conversations retain their live view until their turn ends.
- * Unviewed running conversations use spare slots after likely destinations.
- */
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
   focusedPaneId: string | null,
@@ -56,7 +31,6 @@ export function createPaneLifecycleStore(
   let retained: ReadonlySet<string> = new Set();
   const visible = new Set<string>();
   const mounted = new Set<string>(focused ? [focused] : []);
-  // Only an owner presented to the user needs lifetime retention.
   const viewed = new Set(mounted);
   const lastWanted = new Map<string, number>();
   const listeners = new Map<string, Set<() => void>>();
@@ -82,7 +56,6 @@ export function createPaneLifecycleStore(
   let picturesReady = true;
   let storedPicturesTimer: ReturnType<typeof setTimeout> | null = null;
   let storedPicturesWaited = false;
-  // A pane mounted only so it can be pictured, and the panes already tried.
   let picturing: { paneId: string; since: number; interrupted: boolean; failed: boolean } | null =
     null;
   const pictureAttempted = new Map<string, { since: number; retryAt: number }>();
@@ -210,7 +183,6 @@ export function createPaneLifecycleStore(
     pictureTimer = null;
   };
 
-  // Untried panes go first, then the oldest attempt; visits break ties before distance.
   const nextToPicture = (): string | null => {
     if (!backgroundPictures || !picturesReady) return null;
     const center = focused ? panes.get(focused) : undefined;
@@ -243,8 +215,6 @@ export function createPaneLifecycleStore(
     return best;
   };
 
-  // Lets go of the pane being pictured once it has a picture or took too long;
-  // true while it is still being pictured.
   const picturingPending = () => {
     if (!picturing) return false;
     const { paneId, since } = picturing;
@@ -258,7 +228,6 @@ export function createPaneLifecycleStore(
     return false;
   };
 
-  // A retry keeps its place behind other missing panes without charging a missed capture as failure.
   const releasePicture = (paneId: string, retry: boolean) => {
     picturing = null;
     if (hasPicture(paneId)) pictureAttempted.delete(paneId);
@@ -344,8 +313,6 @@ export function createPaneLifecycleStore(
       mountPrepared(paneId);
       return;
     }
-    // Leaving overview releases excess offscreen views one commit at a time,
-    // only during idle input, instead of unmounting them all on the last frame.
     const retiring = evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
     if (retiring !== null) {
       if (retainForPicture(retiring)) schedule();
@@ -357,7 +324,6 @@ export function createPaneLifecycleStore(
       }
       return;
     }
-    // With nothing likely to be needed soon, missing pictures share one mount slot.
     const waitForPicture = (ms: number) => {
       pictureTimer = setTimeout(() => {
         pictureTimer = null;
@@ -408,7 +374,6 @@ export function createPaneLifecycleStore(
     return best;
   };
 
-  // The nearest offscreen panes, the next one in the direction of travel first.
   const neighbors = (): string[] => {
     const center = focused ? panes.get(focused) : undefined;
     if (!center) return [];
@@ -507,7 +472,6 @@ export function createPaneLifecycleStore(
         paneListeners.delete(listener);
       };
     },
-    /** Acknowledges initial content readiness or a completed unmount. */
     committed: (paneId: string, isMounted: boolean) => {
       if (waitingFor !== paneId || isMounted !== mounted.has(paneId)) return;
       clearCommitWait();
@@ -516,7 +480,6 @@ export function createPaneLifecycleStore(
     pictureFailed: (paneId: string, startedAt: number) => {
       if (picturing?.paneId === paneId && startedAt >= picturing.since) picturing.failed = true;
     },
-    /** Saved pictures bridge camera motion before expensive view mounts resume. */
     setMoving: (next: boolean) => {
       if (moving === next) return;
       moving = next;
@@ -548,7 +511,6 @@ export function createPaneLifecycleStore(
       focused = paneId;
       if (paneId !== null && mounted.has(paneId)) viewed.add(paneId);
       if (paneId !== null && picturing?.paneId === paneId) {
-        // A deliberate revisit takes ownership and can replace the failed content.
         picturing = null;
         pictureAttempted.delete(paneId);
       }
@@ -559,7 +521,6 @@ export function createPaneLifecycleStore(
       settleDue = false;
       requestSettle();
     },
-    /** Follows the workspace's panes as threads come and go. */
     setPanes: (nextPanes: readonly PanePosition[]) => {
       if (
         panes.size === nextPanes.length &&
@@ -588,7 +549,6 @@ export function createPaneLifecycleStore(
       }
       requestSettle();
     },
-    /** Whether panes without a picture are mounted in the background to picture them. */
     setBackgroundPictures: (enabled: boolean) => {
       backgroundPictures = enabled;
       if (!enabled && picturing) releasePicture(picturing.paneId, !picturing.failed);
@@ -604,7 +564,6 @@ export function createPaneLifecycleStore(
       retained = next;
       requestSettle();
     },
-    /** Tells which panes a picture shows faithfully while they are not mounted. */
     setPictures: (
       pictured: (paneId: string) => boolean,
       loaded = true,
@@ -667,10 +626,6 @@ export type PaneLifecycleStore = ReturnType<typeof createPaneLifecycleStore>;
 
 export const PaneLifecycleContext = createContext<PaneLifecycleStore | null>(null);
 
-/**
- * Whether the pane's thread view is mounted. Changes reach the pane as a
- * transition, so mounting or unmounting a ChatView does not block input.
- */
 export function usePaneMounted(paneId: string, visible: boolean): boolean {
   const store = use(PaneLifecycleContext);
   const [mounted, setMounted] = useState(() => store?.isMounted(paneId) ?? true);

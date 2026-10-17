@@ -10,9 +10,6 @@ const webSource = new URL("../web/src/", import.meta.url).pathname;
 const isRouterPlugin = (plugin: PluginOption) =>
   !!plugin && "name" in plugin && /^tanstack[-:]router/.test(plugin.name);
 
-// Inherits the web app's toolchain (React Compiler, Tailwind, defines, dev
-// proxy) so T3 components compile exactly as they do upstream. The app runs
-// T3's own route tree, so the router plugin is pointed at the web app's routes.
 export default defineConfig(async (env) => {
   const { test: _test, ...web } = await webConfig(env);
   const plugins = (web.plugins ?? []).flat(Infinity as 1);

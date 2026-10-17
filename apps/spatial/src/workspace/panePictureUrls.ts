@@ -3,7 +3,6 @@ type PictureUrl = {
   state: "queued" | "decoding" | "ready" | "failed";
 };
 
-/** Stable URLs warm the browser's discardable image cache before a pane is shown. */
 export function createPanePictureUrls() {
   const entries = new Map<Blob, PictureUrl>();
   let queue: Blob[] = [];

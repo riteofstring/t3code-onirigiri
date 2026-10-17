@@ -11,13 +11,6 @@ import {
 import { SpatialWorkspace } from "./SpatialWorkspace";
 import { useCarriedThread } from "./useCarriedThread";
 
-/**
- * The chat area of T3's shell. The workspace shows every chat route except a
- * draft, a thread its draft view still carries, and the pull-requests page,
- * which cover it while it stays mounted. The app's index shows the workspace,
- * whose focus then sets the route, rather than T3's landing draft; with no
- * threads at all it shows T3's own landing, which starts one.
- */
 function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
   const onOtherPage = useLocation({
     select: (location) => location.pathname.startsWith("/pull-requests"),

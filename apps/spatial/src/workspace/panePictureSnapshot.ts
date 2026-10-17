@@ -1,12 +1,3 @@
-/**
- * Pictures of a thread pane drawn from its DOM, for browsers that cannot
- * capture pane content. The pane's markup is cloned into an SVG
- * `foreignObject` with the page's styles and theme variables, rendered as an
- * image and encoded as PNG. Only same-document styles and system fonts are
- * available to the image, which is what T3 uses.
- */
-
-/** Whether the browser lets the workspace capture panes itself (HTML-in-Canvas). */
 export function canCapturePanes(): boolean {
   return (
     typeof (CanvasRenderingContext2D.prototype as { drawElementImage?: unknown })
@@ -14,7 +5,6 @@ export function canCapturePanes(): boolean {
   );
 }
 
-/** These surfaces cannot be reconstructed by the static-chat fallback. */
 export function hasLivePaneProducer(element: Element): boolean {
   const visit = (node: Element) =>
     node.matches("canvas, video, iframe, object, embed, webview, [data-browser-surface-slot]") ||
@@ -30,8 +20,6 @@ export function hasLivePaneProducer(element: Element): boolean {
   return false;
 }
 
-// SVG images can round mixed-font line boxes differently from live text.
-// Adjust only when the same fonts reproduce both native height and width.
 const TEXT_SAMPLE_ROWS = 10;
 const TEXT_PIXEL_TOLERANCE = 1.25;
 
@@ -200,8 +188,6 @@ let pageStyles: {
   encoded: string;
 } | null = null;
 
-// Media conditions belong to the live window, not the smaller SVG viewport.
-// Cache their resolved styles until the sheets or matching conditions change.
 function encodedPageStyles(): string {
   const sheets = Array.from(document.styleSheets, (sheet) => ({
     sheet,
@@ -240,9 +226,7 @@ function encodedPageStyles(): string {
       for (const rule of sheet.cssRules) {
         if (!(rule instanceof CSSImportRule)) rules.push(rule.cssText);
       }
-    } catch {
-      // Cross-origin sheets cannot be read; T3 serves its own.
-    }
+    } catch {}
   }
   const copy = new CSSStyleSheet();
   copy.replaceSync(rules.join("\n"));
@@ -268,7 +252,6 @@ function encodedPageStyles(): string {
   return pageStyles.encoded;
 }
 
-// Theme variables and inherited type styles live outside the cloned pane.
 function inheritedStyles(element: HTMLElement): string {
   const style = getComputedStyle(element.parentElement ?? element);
   const declarations: string[] = [];
@@ -289,7 +272,6 @@ function inheritedStyles(element: HTMLElement): string {
   return declarations.join(";");
 }
 
-// A clone loses scroll offsets; shift the content of scrolled elements instead.
 function copyScrollOffsets(source: Element, clone: Element) {
   const sources = [source, ...source.querySelectorAll("*")];
   const clones = [clone, ...clone.querySelectorAll("*")];
@@ -307,7 +289,6 @@ function copyScrollOffsets(source: Element, clone: Element) {
   });
 }
 
-// An image cannot load other resources, so loaded images are inlined.
 function inlineImages(source: Element, clone: Element) {
   const sources = source.querySelectorAll("img");
   const clones = clone.querySelectorAll("img");
@@ -321,13 +302,10 @@ function inlineImages(source: Element, clone: Element) {
       canvas.getContext("2d")?.drawImage(image, 0, 0);
       copy.setAttribute("src", canvas.toDataURL());
       copy.removeAttribute("srcset");
-    } catch {
-      // Cross-origin images stay out of the picture.
-    }
+    } catch {}
   });
 }
 
-// Shared icon symbols live outside the pane, but image references must be local.
 function copySvgReferences(source: Element, clone: Element): SVGDefsElement {
   const references = [...clone.querySelectorAll("use")];
   const visited = new Set<string>();
@@ -359,7 +337,6 @@ function escapeAttribute(value: string): string {
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    // Either handler can retain the encoded SVG after the image source is cleared.
     const onLoad = () => {
       image.removeEventListener("error", onError);
       resolve(image);
@@ -379,7 +356,6 @@ export interface PanePictureSnapshot {
   readonly cssSize: { readonly width: number; readonly height: number };
 }
 
-/** A PNG and its captured CSS size, or null when the pane is no longer valid or has no size. */
 export async function snapshotPanePicture(
   element: HTMLElement,
   canSnapshot: () => boolean,
@@ -388,13 +364,10 @@ export async function snapshotPanePicture(
   const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
   if (host) host.dataset.spatialSnapshot = "";
   try {
-    // Let hidden content and its resize observers settle before reading its
-    // dimensions and scroll offsets. Only this queued capture needs layout.
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
     if (!element.isConnected || !canSnapshot() || hasLivePaneProducer(element)) return null;
-    // Drawing clones the live DOM synchronously; encoding no longer needs its layout.
     return drawPanePicture(element, canSnapshot, waitToDraw);
   } finally {
     if (host) delete host.dataset.spatialSnapshot;
@@ -415,7 +388,6 @@ async function drawPanePicture(
   const definitions = copySvgReferences(element, clone);
   for (const root of [clone, definitions]) {
     for (const node of root.querySelectorAll("script, iframe, video, canvas")) node.remove();
-    // Unsent drafts stay out of saved pictures.
     for (const editor of root.querySelectorAll('[data-testid="composer-editor"]')) {
       editor.replaceChildren(document.createElement("p"));
     }
@@ -428,7 +400,6 @@ async function drawPanePicture(
   await matchTextLayout(element, clone, canSnapshot);
   if (!element.isConnected || !canSnapshot()) return null;
   const markup = new XMLSerializer().serializeToString(wrapper);
-  // Rem units use the image document's root, independently of the inner content's font size.
   const open =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
     `style="font-size:${escapeAttribute(rootFontSize)}">` +
@@ -453,9 +424,7 @@ async function drawPanePicture(
           cssSize: { width, height },
         };
       }
-    } catch {
-      // A failed desktop raster leaves the serialized picture available locally.
-    }
+    } catch {}
   }
   const image = await loadImage(
     `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${styles}` +

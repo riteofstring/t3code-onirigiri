@@ -104,7 +104,6 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     await import("@t3tools/web/src/components/chatViewContentReady");
   const { useActiveChatViewEffect } = await import("@t3tools/web/src/components/chatViewActivity");
   function ChatContent() {
-    // Reads mutable test state on every render; compiler memoization would serve stale values.
     "use no memo";
     useActiveChatViewEffect(() => {
       const onKeyDown = (event: KeyboardEvent) => {
@@ -806,7 +805,6 @@ it("starts the next queued preparation only after the deferred view commits", as
   expect(lifecycle.isMounted("p1")).toBe(true);
   lifecycle.setPictures(() => false);
   lifecycle.setVisible("p2", true);
-  // Rebuild the wanted queue while the first view is still waiting for projection.
   vi.advanceTimersByTime(250);
   paneId = "p1";
   await render(false, true, true);

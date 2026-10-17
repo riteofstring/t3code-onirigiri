@@ -17,11 +17,6 @@ const RUN_STATUS_LABEL: Record<ThreadRuntimeSummary["status"], string> = {
   rolled_back: "Rolled back",
 };
 
-/**
- * Stands in for a thread pane whose view is not mounted and has no picture of
- * its current content. Everything it shows comes from the thread's shell, so
- * it is never stale.
- */
 export function ThreadCard({
   environmentId,
   threadId,

@@ -18,9 +18,7 @@ function readItem(key: string): string | null {
 function writeItem(key: string, value: string) {
   try {
     window.localStorage.setItem(key, value);
-  } catch {
-    // Unavailable storage only loses the preference across reloads.
-  }
+  } catch {}
 }
 
 export const overviewZoomChoices = [
@@ -78,7 +76,6 @@ export function useWorkspacePreferences() {
   return [preferences, update] as const;
 }
 
-/** Where the focused pane rests: centered, or at the workspace's left edge. Remembered. */
 export function useFocusAnchorPreference() {
   const [focusAnchor, setFocusAnchor] = useState<WorkspaceFocusAnchor>(() =>
     readItem(FOCUS_ANCHOR_KEY) === "start" ? "start" : "center",
@@ -94,7 +91,6 @@ export function useFocusAnchorPreference() {
 }
 
 export function useLayoutModePreference() {
-  // A mode the user chose in the toolbar outlives the URL that first opened the workspace.
   const [layoutMode, setLayoutMode] = useState((): WorkspaceLayoutMode => {
     const stored = readItem(LAYOUT_MODE_KEY);
     const requested = new URLSearchParams(window.location.search).get("layout");

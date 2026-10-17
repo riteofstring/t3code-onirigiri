@@ -14,7 +14,6 @@ import { SpatialSurfaceProvider } from "./workspace/SpatialSurfaceProvider";
 
 prepareProviderAuthDelivery();
 
-// T3's own router and app shell; only the chat area is replaced.
 const router = getRouter(createBrowserHistory());
 
 export const startup = router.load().then(() => {

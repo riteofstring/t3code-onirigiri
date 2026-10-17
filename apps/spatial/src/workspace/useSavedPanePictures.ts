@@ -59,7 +59,6 @@ function paneHasCommittedContent(
   );
 }
 
-/** Queues an idle picture and returns the visual revision to commit to native readiness. */
 export type RequestPaneSnapshot = (
   paneId: string,
   element: HTMLElement,
@@ -91,7 +90,6 @@ export function usePanePictureTheme(): string {
   return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}`;
 }
 
-/** Records the synchronized detail and theme committed by a mounted pane. */
 export function markPaneSynced(
   paneId: string,
   content: PaneContentRevision | null,
@@ -120,15 +118,6 @@ function paneGeometry(layout: OnirigiriLayout): Map<string, string> {
   );
 }
 
-/**
- * Thread pictures saved from earlier sessions. A saved picture seeds its pane
- * while it still shows what the thread would: same last update and theme, and
- * the same pane geometry (stage size, device pixel ratio, column width and
- * cell sizing). Captures of synchronized threads are saved for the next load.
- * Where the browser cannot capture panes, mounted panes are drawn from their
- * DOM when the page is idle; those pictures seed their panes at once and are
- * saved too. A seed never replaces a capture.
- */
 export function useSavedPanePictures(
   getLayout: () => OnirigiriLayout | null,
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
@@ -138,12 +127,10 @@ export function useSavedPanePictures(
   getPanePresentation: PanePresentationResolver;
   onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
   onLayoutChange: (layout: OnirigiriLayout) => void;
-  /** A picture validated in this session, retained as cover while its thread refreshes. */
   pictureFor: (paneId: string) => SavedPanePicture | null;
   preparedPictureUrl: (image: Blob) => string | null;
   pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
-  /** Passive preparation fills free slots; an unpictured visit may replace an older entry. */
   canBackgroundPicture: (paneId: string, visited?: boolean) => boolean;
   runningPanes: ReadonlySet<string>;
   retainedPaneIds: ReadonlySet<string>;
@@ -157,7 +144,6 @@ export function useSavedPanePictures(
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const savedRef = useRef(saved);
-  // A removed producer still needs its live view until current static pixels exist.
   type Retention = "live" | "awaiting-picture";
   const [retained, setRetained] = useState<ReadonlyMap<string, Retention>>(new Map());
   const retainedRef = useRef(retained);
@@ -184,8 +170,6 @@ export function useSavedPanePictures(
     savedRef.current = next;
     setSaved(next);
   }, []);
-  // Session-local visual changes invalidate capture work, but keep the usable
-  // cover and persisted data revision until replacement pixels are accepted.
   const visualRevisions = useRef(new Map<string, number>());
   const pictureVisualRevisions = useRef(new WeakMap<Blob, number>());
   const visualRevision = useCallback(
@@ -330,7 +314,6 @@ export function useSavedPanePictures(
       }
       const sizing = paneGeometryRef.current.get(paneId);
       const height = defaultRowHeightRef.current;
-      // Older records measured the outer workspace, including its toolbar.
       return sizing
         ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${sizing}${height === "viewport" ? "" : `|row:${height}`}`
         : null;
@@ -542,7 +525,6 @@ export function useSavedPanePictures(
         pictureMatchesVisualRevision(paneId, previous.image)
       )
         return;
-      // A capture of the same content is more faithful than a drawing.
       const captured = () => {
         const kept = savedRef.current?.get(paneId);
         return (
@@ -552,7 +534,6 @@ export function useSavedPanePictures(
         );
       };
       if (captured()) return;
-      // The clone no longer depends on a mounted pane while its pixels are encoded.
       const current = () =>
         retainedRef.current.get(paneId) !== "live" &&
         !runningPanesRef.current.has(paneId) &&
@@ -666,8 +647,6 @@ export function useSavedPanePictures(
   };
 }
 
-// Draws one requested snapshot at a time while the page is idle; a newer
-// request for a pane replaces one still waiting.
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const FIRST_PICTURE_INPUT_QUIET_MS = 400;
 const NATIVE_CAPTURE_GRACE_MS = 2000;

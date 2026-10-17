@@ -1,4 +1,3 @@
-/** Saved pictures are kept within both limits; the least recently saved go first. */
 export const MAX_SAVED = 200;
 const MAX_SAVED_BYTES = 128 * 1024 * 1024;
 const DATABASE = "onirigiri-t3-pane-pictures";
@@ -7,18 +6,15 @@ const BY_SAVED_AT = "savedAt";
 
 export interface SavedPanePicture {
   readonly paneId: string;
-  /** What the picture shows: the thread's revision, theme and pane geometry. */
   readonly revision: string;
   readonly image: Blob;
   readonly cssSize: { readonly width: number; readonly height: number };
   readonly savedAt: number;
-  /** A capture by the workspace, or a picture drawn from the pane's DOM. */
   readonly source?: "capture" | "snapshot";
 }
 
 let database: Promise<IDBDatabase> | null = null;
 
-// A failed or closed connection is opened again on next use.
 function openDatabase(): Promise<IDBDatabase> {
   database ??= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE, 1);
@@ -55,7 +51,6 @@ function completed(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-/** Every saved picture, by pane. */
 export async function loadPanePictures(): Promise<Map<string, SavedPanePicture>> {
   const db = await openDatabase();
   const transaction = db.transaction(STORE, "readonly");
@@ -76,7 +71,6 @@ export async function loadPanePictures(): Promise<Map<string, SavedPanePicture>>
   );
 }
 
-/** Saves a pane's picture, then drops the oldest pictures beyond the limits. */
 export async function savePanePicture(
   picture: SavedPanePicture,
   canSave: () => boolean,

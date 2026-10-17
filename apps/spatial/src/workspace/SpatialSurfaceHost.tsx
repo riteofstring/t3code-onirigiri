@@ -109,7 +109,6 @@ export function createSpatialSurfaceNavigation(
     getUserActionRevision: controller.getUserActionRevision,
     openProactive(ref, surface, expectedRevision) {
       if (controller.getUserActionRevision(ref) !== expectedRevision) return false;
-      // Automatic additions keep the focused pane, including a PR the user is reading.
       open(ref, surface, true);
       return true;
     },

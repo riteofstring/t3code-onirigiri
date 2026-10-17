@@ -81,7 +81,6 @@ const PaneRouter = memo(function PaneRouter({
   router: ReturnType<typeof createPaneRouter>;
   threadPath: string;
 }) {
-  // The app route follows workspace focus; this retained thread has not navigated.
   const suppressed = usePanelNavigationSuppression(threadPath);
   return (
     <PanelAnimationSuppressionProvider value={suppressed}>
@@ -90,11 +89,6 @@ const PaneRouter = memo(function PaneRouter({
   );
 });
 
-/**
- * Background panes fetch their projection before creating their router shell. Readiness follows synchronization
- * and the composer's initial presentation, then two layout frames. The thread's
- * update and theme form the content revision.
- */
 function usePaneContent(
   paneId: string,
   thread: ThreadPaneThread,
@@ -175,7 +169,6 @@ function usePaneContent(
     return () => markPaneSynced(paneId, null);
   }, [projectionUpdatedAt, paneId, pictureTheme, prepared, visualRevision]);
 
-  // Later async work can delay a new picture without covering a live editor.
   useOnirigiriPaneContentReady(
     renderContent && presented,
     `${revision}|${presented && !prepared}|${visualRevision}`,
@@ -216,14 +209,6 @@ function createPaneRouter(threadPath: string) {
   });
 }
 
-/**
- * One thread rendered by its own live ChatView while the workspace keeps it
- * mounted. The pane owns a memory-history
- * router so every route read inside ChatView resolves to this thread; any
- * navigation away from it is handed to the app router instead. Only the
- * focused pane's ChatView is active while its content accepts input; switching
- * activity does not re-render it.
- */
 export const ThreadPane = memo(function ThreadPane({
   thread,
   paneId,
@@ -276,9 +261,6 @@ export const ThreadPane = memo(function ThreadPane({
   const contentRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, contentRef);
 
-  // Reuse pictures across focus changes. Observe actual content changes and
-  // input that can change scroll position without forcing hidden content layout.
-  // Native capture gets the first opportunity; drawing remains its fallback.
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
   const producerInspected = useRef(false);
@@ -325,11 +307,8 @@ export const ThreadPane = memo(function ThreadPane({
         if (!seen) attributes.set(target, (seen = new Set()));
         if (seen.has(attributeName)) return false;
         seen.add(attributeName);
-        // React can temporarily clear an input's name while updating its type.
-        // Compare the batch's initial value with its final value.
         const currentValue = target.getAttribute(attributeName);
         if (attributeName === "class" && target.matches('[data-testid="composer-editor"]')) {
-          // Focus changes selection inside draft content, which pictures omit.
           const pictureClasses = (value: string | null) =>
             (value ?? "")
               .split(/\s+/)
@@ -357,7 +336,6 @@ export const ThreadPane = memo(function ThreadPane({
       element.addEventListener(event, invalidate, { capture: true, passive: true });
     return () => {
       const pending = observer.takeRecords();
-      // Releasing the router removes its DOM; that does not change its saved pixels.
       if (element.childElementCount > 0) {
         if (pending.some(producerChanged)) inspectProducer();
         if (snapshotPrepared.current && contentChanged(pending)) snapshots?.invalidate(paneId);
@@ -409,7 +387,6 @@ export const ThreadPane = memo(function ThreadPane({
   );
 });
 
-// Shared commands see the real handle or null, including composer replacements.
 function usePaneComposerHandle(active: boolean): ComposerHandleRef {
   const appComposerRef = useComposerHandleContext();
   const [pane] = useState(() => {
@@ -441,8 +418,6 @@ function usePaneComposerHandle(active: boolean): ComposerHandleRef {
   return pane.ref;
 }
 
-// Escape in the composer leaves it, so the workspace's arrow-key navigation
-// works again, unless its suggestion list is open for Escape to close.
 function leaveComposerOnEscape(event: React.KeyboardEvent<HTMLDivElement>) {
   if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
   const target = event.target;

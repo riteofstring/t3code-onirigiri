@@ -21,9 +21,7 @@ export function readPaneLayout(mode: WorkspaceLayoutMode): OnirigiriLayout | nul
 export function writePaneLayout(mode: WorkspaceLayoutMode, layout: OnirigiriLayout) {
   try {
     localStorage.setItem(`onirigiri-t3:layout:${mode}`, JSON.stringify(layout));
-  } catch {
-    // Arrangement still works when browser storage is unavailable.
-  }
+  } catch {}
 }
 
 export function createPaneLayoutPersistence(mode: WorkspaceLayoutMode) {
@@ -47,7 +45,6 @@ export function createPaneLayoutPersistence(mode: WorkspaceLayoutMode) {
 
 const slot = (column: WorkspaceColumn) => column.slotIndex ?? column.index;
 
-/** Keeps the engine's arrangement while reconciling live pane identities and metadata. */
 export function reconcilePaneLayout(
   fresh: OnirigiriLayout,
   current: OnirigiriLayout,

@@ -1,16 +1,5 @@
 import type { Plugin } from "vite";
 
-/**
- * Tailwind writes ancestor variants such as `group-has-*`,
- * `group-focus-visible:*` and `has-*:**` as
- * `X:is(A *)`: the element matches X and has an ancestor matching A. When A
- * contains `:has()` or `:focus-visible`, Chromium cannot scope the invalidation
- * of that nested selector, so DOM changes or workspace focus can restyle
- * unrelated panes. The equivalent `A X` has the same matches and specificity,
- * and Chromium scopes it to the subtrees of elements matching A. Only `:is()`
- * holding one complex selector ending in a universal selector after a
- * combinator, in the first compound of a flat selector, is rewritten.
- */
 export function rewriteAncestorIsSelectors(css: string): string {
   let out = "";
   let index = 0;
@@ -33,7 +22,6 @@ export function rewriteAncestorIsSelectors(css: string): string {
       continue;
     }
     const rest = css.slice(compoundStart, start);
-    // A compound left with nothing but pseudo-elements, or nothing, keeps `*`.
     const subject =
       rest === "" && !/^[.#[\w-]|^:(?!:)/.test(css.slice(end + 1, end + 3)) ? "*" : "";
     out += css.slice(index, compoundStart) + ancestor + rest + subject;
@@ -62,7 +50,6 @@ function matchingParen(text: string, open: number): number {
   return -1;
 }
 
-// Remove only the final universal selector, preserving its combinator.
 function ancestorOf(argument: string): string | null {
   let depth = 0;
   let quote = "";
@@ -79,17 +66,12 @@ function ancestorOf(argument: string): string | null {
   return /^(.*(?:\s|[>+~]))\*$/s.exec(argument)?.[1] ?? null;
 }
 
-// Whether the compound at `start` is the first of its complex selector: only
-// then does `X:is(A *)` equal `A X`. After a combinator, as in `.p > X`, A would
-// land between the combinator and X and change the matches.
 function opensSelector(css: string, start: number): boolean {
   let i = start - 1;
   while (i >= 0 && /\s/.test(css[i]!)) i--;
   return i < 0 || css[i] === "," || css[i] === "{" || css[i] === "}";
 }
 
-// Start of the top-level compound selector that contains position `at`, or
-// -1 when `at` sits inside another function such as `:not()`.
 function compoundStartBefore(css: string, at: number): number {
   let depth = 0;
   let quote = "";

@@ -77,19 +77,15 @@ import {
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
 
-// Explicit arrow chords remain available while a pane owns keyboard focus.
 function whileEditing(key: string) {
   return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
 }
-/** Option alone, usable from text fields: the key never edits text there. */
 function optionWhileEditing(key: string) {
   return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: false, whileEditing: true };
 }
-/** Shift+Option+arrow navigates from the composer and terminals, where Option+arrow edits text. */
 function shiftOptionWhileEditing(key: string) {
   return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: true, whileEditing: true };
 }
-// New panes use T3's chooser; navigation and rearrangement use the engine.
 const NAVIGATION = new Set([
   "focusDown",
   "focusFirstColumn",
@@ -125,7 +121,6 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
 const BROWSER_SHORTCUTS = (
   Object.keys(defaultOnirigiriShortcuts) as OnirigiriShortcutAction[]
 ).flatMap((action) => getOnirigiriShortcutBindings(action, SHORTCUTS));
-/** Quiet time after a focus change before the app route follows it. */
 const ROUTE_SETTLE_MS = 450;
 
 function withoutPane(paneIds: ReadonlySet<string>, paneId: string) {
@@ -140,11 +135,9 @@ export function SpatialWorkspace({
   active,
 }: {
   target: ThreadRouteTarget | null;
-  /** False while a draft or another route covers the workspace. */
   active: boolean;
 }) {
   const [layoutMode, setLayoutMode] = useLayoutModePreference();
-  // Each mode keeps its own saved layout; switching rebuilds the workspace from it.
   return (
     <SpatialWorkspaceView
       key={layoutMode}
@@ -202,7 +195,6 @@ function SpatialWorkspaceView({
   )?.width;
   const [workspacePadding, setWorkspacePadding] = useState(0);
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
-  // Full-screen panes expand to the edges (and back) instead of snapping.
   const [fullScreenTransition, setFullScreenTransition] = useState(false);
   const fullScreenRef = useRef(preferences.maximizeAll);
   useEffect(() => {
@@ -271,10 +263,7 @@ function SpatialWorkspaceView({
     [layoutPersistence, lifecycle, onPictureLayoutChange, syncMaximized],
   );
 
-  // Focus is kept out of React state so moving between panes does not
-  // re-render the workspace.
   const focusedPaneIdRef = useRef<string | null>(null);
-  // A pane just added, focused once the arrangement includes it.
   const pendingFocusPaneIdRef = useRef<string | null>(null);
 
   const paneData = useMemo(() => {
@@ -297,7 +286,6 @@ function SpatialWorkspaceView({
       interactive: (slot) =>
         !slot.closest('[data-onirigiri-shielded="true"], [data-runtime-state="frozen"]'),
       focus: (slot) => {
-        // Use the same focus-without-camera-movement path as native pane content.
         slot.dispatchEvent(
           new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
         );
@@ -314,7 +302,6 @@ function SpatialWorkspaceView({
             document.querySelector("dialog[open], [role='dialog'][aria-modal='true']")
           )
             return;
-          // The engine transfers focused pane chrome to the destination after navigation.
           pane.focus({ preventScroll: true });
           slot.dispatchEvent(event);
         },
@@ -332,8 +319,6 @@ function SpatialWorkspaceView({
     setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
   }
 
-  // Panes appearing, leaving or moving rebuild the arrangement around the
-  // focused pane; renames and an empty pane's choice change panes in place.
   useEffect(() => {
     const workspace = workspaceRef.current;
     if (!panes || !workspace) return;
@@ -375,7 +360,6 @@ function SpatialWorkspaceView({
       workspace.restoreLayout(reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId), {
         keepPresentation: true,
       });
-      // A pane just added is for using now: leave overview to show it.
       if (added && workspace.getSnapshot().presentationMode === "overview") {
         workspace.focusPane(added, { exitOverview: true });
       }
@@ -383,7 +367,6 @@ function SpatialWorkspaceView({
     }
     for (const pane of panes) {
       const before = previousById.get(pane.paneId);
-      // An empty pane the user turned into a terminal or diff changes in place.
       if (before && before.surfaceKind !== pane.surfaceKind) {
         workspace.configurePane(pane.paneId, {
           data: pane.data,
@@ -406,24 +389,16 @@ function SpatialWorkspaceView({
   useEffect(() => {
     lifecycle?.setRunning(active ? runningPanes : new Set());
   }, [active, lifecycle, runningPanes]);
-  // Preparation and snapshot drawing explicitly lay out offscreen content.
-  // Covered workspaces have no measurable viewport and must not start captures.
   useEffect(() => {
     lifecycle?.setBackgroundPictures(active);
     setCaptureActivity(active, lifecycle?.isMoving() ?? false);
   }, [active, lifecycle, setCaptureActivity]);
 
-  // The app route follows the focused thread once the camera rests, so T3's
-  // global surfaces act on it. Routes this workspace requested are remembered
-  // so they are not mistaken for a navigation elsewhere in the app, which
-  // instead moves focus to its pane.
   const requestedRoutesRef = useRef(new Set<string>());
   const pendingNavigationPaneRef = useRef<string | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRouteRef = useRef<(() => void) | null>(null);
   const routePaneIdRef = useRef(routePaneId);
-  // A route change made elsewhere, or covering the workspace, supersedes a
-  // pending follow of the camera; one this workspace asked for earlier does not.
   useEffect(() => {
     const coveredChanged = activeRef.current !== active;
     routePaneIdRef.current = routePaneId;
@@ -443,7 +418,6 @@ function SpatialWorkspaceView({
     },
     [],
   );
-  // A covered or unmounted workspace hands the sidebar highlight back to the route.
   useEffect(() => {
     if (!active) useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
     return () => useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
@@ -462,7 +436,6 @@ function SpatialWorkspaceView({
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
         return;
       }
-      // A terminal or diff pane acts for its thread, which the route follows.
       const tool = getPanes().find((pane) => pane.paneId === paneId);
       const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
       if (pendingNavigationPaneRef.current !== routeTarget) pendingNavigationPaneRef.current = null;
@@ -492,9 +465,6 @@ function SpatialWorkspaceView({
     [getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
   );
 
-  // Anything but moving on through the workspace, such as opening the command
-  // palette or clicking, may act on the focused thread, so a route still
-  // waiting for the camera follows it at once.
   useEffect(() => {
     const followNow = (event: Event) => {
       const follow = pendingRouteRef.current;
@@ -514,8 +484,6 @@ function SpatialWorkspaceView({
     };
   }, []);
 
-  // Focus moved while the workspace was covered, as when a route it did not
-  // request focused a pane, reaches the lifecycle once it shows again.
   useEffect(() => {
     if (!lifecycle) return;
     if (!active) {
@@ -529,9 +497,6 @@ function SpatialWorkspaceView({
     }
   }, [active, lifecycle, paneData]);
 
-  // A route the workspace did not request (the sidebar, a notification, a new
-  // thread) moves focus to its pane, leaving overview. A thread whose pane is
-  // not in the workspace yet is focused once reconciliation adds it.
   const pendingRoutePaneRef = useRef<string | null>(null);
   const focusRoutePane = useEffectEvent((paneId: string) => {
     if (requestedRoutesRef.current.delete(paneId)) return;
@@ -548,8 +513,6 @@ function SpatialWorkspaceView({
     if (routePaneId) focusRoutePane(routePaneId);
   }, [routePaneId]);
 
-  // Explicit navigation starts camera motion before the route finishes loading.
-  // Routes requested by pane navigation retain their follow-up guard.
   useEffect(
     () =>
       router.subscribe("onBeforeNavigate", (event) => {
@@ -605,7 +568,6 @@ function SpatialWorkspaceView({
     [router],
   );
 
-  // Resolve ownership on activation so live thread updates do not change pane renderers.
   const addPaneBeside = useCallback(
     (paneId: string | null) => {
       if (!paneId) return;
@@ -697,8 +659,6 @@ function SpatialWorkspaceView({
           });
           if (closed._tag !== "Success") return false;
         }
-        // The rebuilt arrangement drops the pane, so the workspace does not
-        // close it itself; focus returns to its thread.
         pendingFocusPaneIdRef.current = threadPaneId(tool.environmentId, tool.threadId);
         remove(tool.paneId);
         return false;
@@ -808,7 +768,6 @@ function SpatialWorkspaceView({
     ],
   );
 
-  // A valid picture remains a visual cover while the same thread refreshes.
   const renderPanePlaceholder = useCallback(
     (pane: WorkspacePane) => {
       if (pane.surfaceKind !== "thread") return null;

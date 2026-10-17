@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-/** A thread picture at its captured CSS size, with its summary for assistive technology. */
 export function SavedPanePicture({
   image,
   cssSize,
@@ -24,7 +23,6 @@ export function SavedPanePicture({
     if (!element) return;
     const url = preparedUrl ?? pictureUrl(image);
     if (shown?.url === url && shown.width === width && shown.height === height) return;
-    // Previously warmed pixels may have been discarded; keep the current cover until decoding.
     const next = element.ownerDocument.createElement("img");
     let cancelled = false;
     next.src = url;
