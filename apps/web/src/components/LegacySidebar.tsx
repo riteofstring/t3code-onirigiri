@@ -97,7 +97,6 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
-import { useSurfaceNavigation } from "../surfaceNavigation";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   ORCHESTRATION_OPERATE_DENIED_MESSAGE,
@@ -406,7 +405,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const canOperatePreview = useEnvironmentScope(thread.environmentId, AuthPreviewOperateScope);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const surfaceNavigation = useSurfaceNavigation();
   const threadKey = scopedThreadKey(threadRef);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const fileDropHandlers = useMemo(
@@ -468,12 +466,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       event.stopPropagation();
       navigateToThread(threadRef);
       void (async () => {
-        const result = await openDiscoveredPort({
-          threadRef,
-          port,
-          openPreview,
-          openBrowser: surfaceNavigation.openBrowser,
-        });
+        const result = await openDiscoveredPort({ threadRef, port, openPreview });
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
@@ -488,14 +481,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         );
       })();
     },
-    [
-      canOperatePreview,
-      discoveredPorts,
-      navigateToThread,
-      openPreview,
-      surfaceNavigation,
-      threadRef,
-    ],
+    [canOperatePreview, discoveredPorts, navigateToThread, openPreview, threadRef],
   );
   const isThreadRunning = !threadRuntimeCanArchive(thread.runtime);
   const threadStatus = resolveThreadStatusPill({

@@ -18,7 +18,6 @@ import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelSto
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
 import { addBrowserSurface } from "./addBrowserSurface";
-import { openDiscoveredPort } from "./openDiscoveredPort";
 
 const threadRef = {
   environmentId: "local" as ScopedThreadRef["environmentId"],
@@ -112,29 +111,5 @@ describe("addBrowserSurface", () => {
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef)).toBe(
       nativePanel,
     );
-  });
-
-  it("opens a discovered server through its selected presentation", async () => {
-    const openBrowser = vi.fn();
-    const port = {
-      host: "localhost",
-      port: 4321,
-      url: "http://localhost:4321/",
-      processName: null,
-      pid: null,
-      terminal: null,
-    };
-    const result = await openDiscoveredPort({
-      threadRef,
-      port,
-      openPreview: async () => AsyncResult.success(snapshot("discovered")),
-      openBrowser,
-    });
-    expect(result._tag).toBe("Success");
-    expect(openBrowser).toHaveBeenCalledExactlyOnceWith(threadRef, "discovered");
-    expect(readThreadPreviewState(threadRef).sessions.discovered).toBeDefined();
-    expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef).surfaces,
-    ).toEqual([]);
   });
 });

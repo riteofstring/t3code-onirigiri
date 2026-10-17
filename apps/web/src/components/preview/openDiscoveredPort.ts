@@ -8,7 +8,6 @@ import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import type { BrowserSettingsReadError, OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { useRightPanelStore } from "~/rightPanelStore";
-import type { SurfaceNavigation } from "~/surfaceNavigation";
 import { openPreviewSession } from "./openPreviewSession";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
 
@@ -16,7 +15,6 @@ export async function openDiscoveredPort<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly port: DiscoveredLocalServer;
   readonly openPreview: OpenPreviewMutation<E>;
-  readonly openBrowser?: SurfaceNavigation["openBrowser"];
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   // A server tab runs on the environment, where loopback is already right.
   const resolvedUrl =
@@ -30,9 +28,6 @@ export async function openDiscoveredPort<E>(input: {
   });
   return mapAtomCommandResult(result, (snapshot) => {
     recordVisitForThread(input.threadRef, input.port.url);
-    (input.openBrowser ?? useRightPanelStore.getState().openBrowser)(
-      input.threadRef,
-      snapshot.tabId,
-    );
+    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
   });
 }
