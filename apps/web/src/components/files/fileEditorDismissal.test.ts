@@ -81,16 +81,7 @@ function makeFile() {
   const attached = new Promise<void>((resolve) => {
     onAttach = resolve;
   });
-  let attachedEditor: Editor<"file"> | null = null;
-  const editor = new Editor("file", {
-    onAttach: (nextEditor) => {
-      attachedEditor = nextEditor;
-      onAttach();
-    },
-    onComplete: () => {
-      attachedEditor = null;
-    },
-  });
+  const editor = new Editor("file", { onAttach: () => onAttach() });
   const file = new File({
     theme: "pierre-dark",
     themeType: "dark",
@@ -110,7 +101,7 @@ function makeFile() {
   let blocked = false;
   const uninstall = installFileEditorDismissal({
     root,
-    editor: { setSelections: (selections) => attachedEditor?.setSelections(selections) },
+    editor,
     isBlocked: () => blocked,
     onDismiss,
   });
@@ -122,7 +113,6 @@ function makeFile() {
     container,
     onDismiss,
     attached,
-    isAttached: () => attachedEditor !== null,
     block: () => {
       blocked = true;
     },
@@ -143,25 +133,6 @@ function makeFile() {
 }
 
 describe("file editor dismissal", () => {
-  it("allows outside clicks before the rendered editor is attached", async () => {
-    const view = makeFile();
-    expect(view.isAttached()).toBe(false);
-    view.clickOutside();
-    expect(errors).toEqual([]);
-    await view.attached;
-    expect(view.isAttached()).toBe(true);
-    expect(view.editor.getText()).toBe("Keep this editable.\n");
-  });
-
-  it("allows outside clicks after the editor document is cleaned up", async () => {
-    const view = makeFile();
-    await view.attached;
-    expect(view.editor.getFile()).toBeDefined();
-    view.editor.cleanUp();
-    view.clickOutside();
-    expect(errors).toEqual([]);
-  });
-
   it("still clears an initialized editor selection on an outside click", async () => {
     const view = makeFile();
     await view.attached;

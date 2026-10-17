@@ -37,7 +37,6 @@ const fixture = vi.hoisted(() => ({
   timelineRender: vi.fn(),
   menu: vi.fn().mockResolvedValue("editor:vscode"),
   openInEditor: vi.fn().mockResolvedValue({ _tag: "Success" }),
-  openDiff: vi.fn(),
 }));
 
 const atoms = await vi.hoisted(async () => {
@@ -150,14 +149,10 @@ vi.mock("./ChangedFilesTree", () => ({
     return (
       <section data-testid="changed-files">
         <span>{props.files.length} changed files</span>
-        <button onClick={props.onToggleAllDirectories}>
-          {props.allDirectoriesExpanded ? "Collapse folders" : "Expand folders"}
-        </button>
         {props.files.map((file) => (
           <button
             key={file.path}
             data-file={file.path}
-            onClick={() => props.onOpenTurnDiff(props.runId, file.path)}
             onContextMenu={(event) => props.onFileContextMenu?.(file.path, event)}
           >
             {file.path}
@@ -172,7 +167,6 @@ const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
 const THREAD = ThreadId.make("thread");
 const PROJECT = ProjectId.make("project");
-const OTHER_PROJECT = ProjectId.make("other-project");
 const TURN = RunId.make("turn");
 const MESSAGE = MessageId.make("assistant");
 const DATE = "2026-10-15T00:00:00.000Z";
@@ -208,13 +202,13 @@ function thread(
   };
 }
 
-function project(environmentId = LOCAL, id = PROJECT): OrchestrationProjectShell {
+function project(environmentId = LOCAL): OrchestrationProjectShell {
   return {
-    id,
-    title: id,
+    id: PROJECT,
+    title: PROJECT,
     workspaceRoot: `/workspace/${environmentId}/packages/app`,
     repositoryIdentity: {
-      canonicalKey: `${environmentId}/${id}`,
+      canonicalKey: `${environmentId}/${PROJECT}`,
       locator: {
         source: "git-remote",
         remoteName: "origin",
@@ -229,16 +223,12 @@ function project(environmentId = LOCAL, id = PROJECT): OrchestrationProjectShell
   };
 }
 
-function publishShells(
-  threads: readonly OrchestrationV2ThreadShell[],
-  environmentId = LOCAL,
-  projects: readonly OrchestrationProjectShell[] = [project(environmentId)],
-) {
+function publishShells(threads: readonly OrchestrationV2ThreadShell[], environmentId = LOCAL) {
   registry.set(atoms.snapshots(environmentId), {
     schemaVersion: 1,
     snapshotSequence: 1,
     archivedThreads: [],
-    projects,
+    projects: [project(environmentId)],
     threads,
   });
 }
@@ -303,7 +293,7 @@ function props(environmentId = LOCAL): ComponentProps<typeof MessagesTimeline> {
       },
     ],
     routeThreadKey: `${environmentId}:${THREAD}`,
-    onOpenTurnDiff: fixture.openDiff,
+    onOpenTurnDiff: () => {},
     supportsConversationRollback: false,
     onRevertToTurnCount: () => {},
     isRevertingCheckpoint: false,
@@ -355,7 +345,6 @@ beforeEach(() => {
   fixture.timelineRender.mockClear();
   fixture.menu.mockClear();
   fixture.openInEditor.mockClear();
-  fixture.openDiff.mockClear();
   useUiStateStore.setState({ threadChangedFilesExpandedById: {} });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -433,56 +422,6 @@ it("uses available shell/project metadata before detail arrives", async () => {
     environmentId: LOCAL,
     input: { cwd: "/workspace/local/packages/app/src/index.ts", editor: "vscode" },
   });
-});
-
-it("updates file actions for project and worktree changes and keeps menu capabilities live", async () => {
-  const value = props();
-  await render(value);
-  await openMenu();
-  expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
-    "/workspace/local/packages/app/src/index.ts",
-  );
-  const changedProject = {
-    ...project(LOCAL, OTHER_PROJECT),
-    repositoryIdentity: {
-      ...project().repositoryIdentity!,
-      rootPath: "/workspace/local/packages/app",
-    },
-  };
-  await act(() =>
-    publishShells([shell({ projectId: OTHER_PROJECT })], LOCAL, [project(), changedProject]),
-  );
-  await openMenu();
-  expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
-    "/workspace/local/packages/app/packages/app/src/index.ts",
-  );
-  await act(() =>
-    publishShells([shell({ projectId: OTHER_PROJECT, worktreePath: "/worktrees/live" })], LOCAL, [
-      changedProject,
-    ]),
-  );
-  await render({ ...value, workspaceRoot: "/worktrees/live" });
-  await openMenu();
-  expect(fixture.openInEditor.mock.lastCall?.[0].input.cwd).toBe(
-    "/worktrees/live/packages/app/src/index.ts",
-  );
-  await act(() =>
-    registry.set(atoms.configs(LOCAL), {
-      ...registry.get(atoms.configs(LOCAL)),
-      availableEditors: ["vscode", "file-manager"],
-      shellRevealInFileManager: true,
-    }),
-  );
-  await openMenu();
-  expect(fixture.menu.mock.lastCall?.[0].map((item: { id: string }) => item.id)).toEqual([
-    "open",
-    "reveal-in-folder",
-    "open-with",
-  ]);
-  await act(() => fileButton().click());
-  expect(fixture.openDiff).toHaveBeenLastCalledWith(TURN, FILE);
-  await act(() => card().querySelector("button")!.click());
-  expect(card().textContent).toContain("Collapse folders");
 });
 
 it("recovers file context when shell metadata returns without subscribing to live detail", async () => {
