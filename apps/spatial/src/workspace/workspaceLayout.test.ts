@@ -9,7 +9,6 @@ import {
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
 import {
-  panesFillViewport,
   createPaneLayoutPersistence,
   reconcilePaneLayout,
   threadLayoutPositions,
@@ -207,25 +206,6 @@ it("preserves separate strip and rows arrangements across reload and excludes st
   expect(readPaneLayout("rows")).toBeNull();
   storage.set("onirigiri-t3:layout:rows", JSON.stringify({ ...rows, id: "another-app" }));
   expect(readPaneLayout("rows")).toBeNull();
-});
-
-it("identifies full sizes after reload, and stops offering Restore after a resize or new pane", () => {
-  const full = layoutFor([
-    { ...pane("one", 0, 0), columnWidth: { unit: "px", value: 900 }, heightPx: 700 },
-    { ...pane("two", 0, 1), columnWidth: { unit: "px", value: 900 }, heightPx: 700 },
-  ]);
-  expect(panesFillViewport(JSON.parse(JSON.stringify(full)), { width: 900, height: 700 })).toBe(
-    true,
-  );
-  const shorter = structuredClone(full);
-  shorter.columns[0]!.cells[0]!.heightPx = 450;
-  expect(panesFillViewport(shorter, { width: 900, height: 700 })).toBe(false);
-  const added = reconcilePaneLayout(
-    layoutFor([pane("one", 0, 0), pane("two", 0, 1), pane("new", 0, 2)]),
-    full,
-  );
-  expect(panesFillViewport(added, { width: 900, height: 700 })).toBe(false);
-  expect(panesFillViewport(full, { width: 1100, height: 700 })).toBe(false);
 });
 
 it("gives a newly encountered project its own row without moving a user-arranged row", () => {

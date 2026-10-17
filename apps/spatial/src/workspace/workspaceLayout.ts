@@ -140,19 +140,3 @@ export function threadLayoutPositions(layout: OnirigiriLayout) {
     ),
   );
 }
-
-export function panesFillViewport(
-  layout: OnirigiriLayout,
-  viewport: { width: number; height: number },
-) {
-  const occupied = layout.columns.filter((column) => column.cells.some((cell) => cell.paneId));
-  return (
-    occupied.length > 0 &&
-    occupied.every(
-      (column) =>
-        column.widthSpec.unit === "px" &&
-        column.widthSpec.value >= viewport.width - 1 &&
-        column.cells.every((cell) => !cell.paneId || (cell.heightPx ?? 0) >= viewport.height - 1),
-    )
-  );
-}
