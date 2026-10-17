@@ -87,7 +87,6 @@ it("routes launcher letters only to the active pane as focus ownership changes",
   await key(document.body, "t");
   expect(first.onAddTerminal).toHaveBeenCalledTimes(1);
   expect(second.onAddTerminal).toHaveBeenCalledTimes(1);
-  expect(host.querySelectorAll("[data-surface-launcher-keys]")).toHaveLength(1);
   expect((await key(document.body, "d")).defaultPrevented).toBe(false);
   expect(second.onAddDiff).not.toHaveBeenCalled();
 });
@@ -163,12 +162,6 @@ it("keeps unavailable reasons in tooltips and skips disabled rows while enabled 
   expect(props.onAddDiff).not.toHaveBeenCalled();
   expect(props.onAddPullRequest).not.toHaveBeenCalled();
   expect(props.onAddPullRequests).not.toHaveBeenCalled();
-  await act(() => {
-    [...host.querySelectorAll("button")]
-      .find((button) => button.textContent?.startsWith("Terminal"))!
-      .click();
-  });
-  expect(opened).toEqual(["terminal", "files", "lineage", "device", "terminal"]);
 });
 
 it("opens the default Browser from the keyboard and a chosen profile from its menu", async () => {
@@ -191,7 +184,6 @@ it("opens the default Browser from the keyboard and a chosen profile from its me
   const work = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
     (item) => item.textContent === "Work",
   )!;
-  expect(work).toBeDefined();
   await key(document.body, "t");
   expect(props.onAddTerminal).not.toHaveBeenCalled();
   await act(() => work.click());

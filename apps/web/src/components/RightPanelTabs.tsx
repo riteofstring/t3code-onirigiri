@@ -94,7 +94,6 @@ import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { useChatViewActivity } from "./chatViewActivity";
 import { observeResize } from "~/lib/observeResize";
 
 interface RightPanelTabsProps {
@@ -442,7 +441,6 @@ export function RightPanelEmptyState(props: {
   // is focused; focus moves around too easily (stray clicks) to carry them.
   // Capture phase so app-level key handlers cannot swallow the event first;
   // typing contexts and already-handled events are left alone.
-  const chatViewActivity = useChatViewActivity();
   const shortcutActionsRef = useRef(availableActions);
   useEffect(() => {
     shortcutActionsRef.current = availableActions;
@@ -450,7 +448,6 @@ export function RightPanelEmptyState(props: {
   useEffect(() => {
     if (!active) return;
     const handler = (event: KeyboardEvent) => {
-      if (!chatViewActivity.isActive()) return;
       const action = surfaceShortcutActionForKey(shortcutActionsRef.current, event);
       if (!action) return;
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
@@ -463,7 +460,7 @@ export function RightPanelEmptyState(props: {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [active, chatViewActivity, shortcutActionsRef]);
+  }, [active]);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!active) return;
@@ -493,6 +490,8 @@ export function RightPanelEmptyState(props: {
     }
   };
 
+  // Stable identity so React only reruns this callback ref when activation changes;
+  // an inline arrow would re-attach and re-focus on every render.
   const focusOnMount = useCallback(
     (node: HTMLDivElement | null) => {
       if (active && autoFocus) node?.focus();
@@ -518,9 +517,7 @@ export function RightPanelEmptyState(props: {
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="Open a surface"
-      data-surface-launcher-keys={
-        active ? availableActions.map((action) => action.shortcut).join("") : undefined
-      }
+      data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
         "scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
         // The panel topbar sits above this container; matching bottom padding
