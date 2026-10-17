@@ -340,16 +340,16 @@ export function WorkspaceToolbar({
               >
                 {layoutMode === "strip" ? (
                   <>
-                    <rect x="2" y="2" width="5" height="5" rx="1" />
-                    <rect x="9" y="2" width="5" height="5" rx="1" />
-                    <rect x="2" y="9" width="5" height="5" rx="1" />
-                    <rect x="9" y="9" width="5" height="5" rx="1" />
+                    <rect x="1.5" y="2" width="7" height="4.5" rx="1" />
+                    <rect x="11" y="2" width="3.5" height="4.5" rx="1" />
+                    <rect x="1.5" y="9.5" width="3.5" height="4.5" rx="1" />
+                    <rect x="7.5" y="9.5" width="7" height="4.5" rx="1" />
                   </>
                 ) : (
                   <>
-                    <rect x="1" y="5" width="4" height="6" rx="1" />
-                    <rect x="6" y="5" width="4" height="6" rx="1" />
-                    <rect x="11" y="5" width="4" height="6" rx="1" />
+                    <rect x="1" y="4.5" width="3" height="7" rx="1" />
+                    <rect x="6.5" y="4.5" width="3" height="7" rx="1" />
+                    <rect x="12" y="4.5" width="3" height="7" rx="1" />
                   </>
                 )}
               </svg>
