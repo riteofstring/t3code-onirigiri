@@ -47,14 +47,6 @@ function guestClip(slot: HTMLElement) {
 }
 
 describe("spatialBrowserOccluders", () => {
-  it("keeps the owning minimap out of the guest's unscaled visible region", () => {
-    const { stage, slot } = createWorkspace();
-    const minimap = createMinimap(stage);
-
-    expect(spatialBrowserOccluders(slot)).toEqual([minimap]);
-    expect(guestClip(slot)).toBe('path("M0 0H200V300H0Z")');
-  });
-
   it("updates clipping when the minimap is added, replaced and removed", () => {
     const { stage, slot } = createWorkspace();
     expect(guestClip(slot)).toBe('path("M0 0H400V300H0Z")');

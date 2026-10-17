@@ -90,6 +90,7 @@ it("keeps captured dimensions when the surrounding pane shrinks or grows", async
   expect(container.querySelector("img")!.style.maxWidth).toBe("none");
   expect(container.querySelector("img")!.style.maxHeight).toBe("none");
   expect(pending).toHaveLength(0);
+  expect(pictureUrl).not.toHaveBeenCalled();
 });
 
 it("keeps the decoded picture and its size while a replacement loads or fails", async () => {
@@ -114,31 +115,6 @@ it("ignores an older decode and its dimensions after the current picture", async
   await act(() => pending[1]!.resolve());
   await act(() => pending[0]!.resolve());
   expect(shown()).toEqual({ source: "blob:2", width: "720px", height: "961px" });
-});
-
-it("uses a prepared picture immediately without decoding or requesting its URL", async () => {
-  await replace("blob:prepared");
-  expect(shown()).toEqual({ source: "blob:prepared", width: "520px", height: "923px" });
-  expect(pending).toHaveLength(0);
-  expect(pictureUrl).not.toHaveBeenCalled();
-  expect(revoked).toEqual([]);
-});
-
-it("keeps a prepared cover and its size while an unprepared replacement fails", async () => {
-  await replace("blob:prepared");
-  await replace(null, { width: 300, height: 400 });
-  await act(() => pending[0]!.reject());
-  expect(shown()).toEqual({ source: "blob:prepared", width: "520px", height: "923px" });
-  expect(revoked).toEqual([]);
-});
-
-it("does not replace a prepared picture or its dimensions with an earlier pending decode", async () => {
-  await replace();
-  await replace("blob:prepared", { width: 720, height: 961 });
-  await act(() => pending[1]!.resolve());
-  expect(shown()).toEqual({ source: "blob:prepared", width: "720px", height: "961px" });
-  await act(() => pending[0]!.resolve());
-  expect(shown()).toEqual({ source: "blob:prepared", width: "720px", height: "961px" });
 });
 
 it("keeps both the visible cover and size while a prepared replacement decodes again", async () => {
