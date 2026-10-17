@@ -86,6 +86,9 @@ command:
 T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial dev
 ```
 
+For a step-by-step trial on a fresh Mac, written for a setup agent, see
+[the macOS beta trial](docs/onirigiri/beta-trial-macos.md).
+
 The existing `dev`, `dev:web`, and desktop commands retain their upstream entry
 points unless the explicit spatial URL above is supplied. Embedded Browser
 panes require the desktop client. The upstream installation instructions below
