@@ -22,6 +22,7 @@ export function useDraftHeroLayoutTransition(
   const attachComposerAnchorRef = (element: HTMLDivElement | null) => {
     composerAnchorRef.current = element;
   };
+
   const captureComposerRect = () => {
     previousComposerRectRef.current = composerAnchorRef.current?.getBoundingClientRect() ?? null;
   };
@@ -38,7 +39,6 @@ export function useDraftHeroLayoutTransition(
 
     animationRef.current?.cancel();
     animationRef.current = null;
-
     const previousComposerRect = previousComposerRectRef.current;
     if (
       stateChanged &&
@@ -69,17 +69,17 @@ export function useDraftHeroLayoutTransition(
         void animation.finished
           .catch(() => undefined)
           .then(() => {
-            if (animationRef.current !== animation) {
-              return;
-            }
-            animationRef.current = null;
+            if (animationRef.current === animation) animationRef.current = null;
           });
       }
     }
-
     previousStateRef.current = isDraftHeroState;
     previousComposerRectRef.current = nextComposerRect;
   }, [animationDurationMs, animationsActive, isDraftHeroState]);
 
-  return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
+  return {
+    transitionGroupRef: attachTransitionGroupRef,
+    composerAnchorRef: attachComposerAnchorRef,
+    captureComposerRect,
+  } as const;
 }

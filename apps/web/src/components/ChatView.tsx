@@ -3930,9 +3930,12 @@ export default function ChatView(props: ChatViewProps) {
     backgroundSubmissionPending,
     hasWorktreeSetupCard: worktreeSetup !== null,
   });
-  const [draftHeroGroupRef, draftHeroAnchorRef, captureDraftHeroRect] =
-    useDraftHeroLayoutTransition(isDraftHeroState, panelAnimationsActive, panelAnimationDurationMs);
-  const captureDraftHeroComposerRect = captureDraftHeroRect;
+  const draftHeroTransition = useDraftHeroLayoutTransition(
+    isDraftHeroState,
+    panelAnimationsActive,
+    panelAnimationDurationMs,
+  );
+  const captureDraftHeroComposerRect = draftHeroTransition.captureComposerRect;
   const { turnDiffSummaries } = useTurnDiffSummaries(serverProjection);
 
   const workspaceMutationId = useMemo(
@@ -11160,7 +11163,10 @@ export default function ChatView(props: ChatViewProps) {
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
-              <div ref={draftHeroGroupRef} className="chat-composer-lane w-full">
+              <div
+                ref={draftHeroTransition.transitionGroupRef}
+                className="chat-composer-lane w-full"
+              >
                 <div
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
@@ -11184,7 +11190,7 @@ export default function ChatView(props: ChatViewProps) {
                     </div>
                   ) : null}
                   <div
-                    ref={draftHeroAnchorRef}
+                    ref={draftHeroTransition.composerAnchorRef}
                     className="relative z-10"
                     style={
                       forceExpandedMobileComposer

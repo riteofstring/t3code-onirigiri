@@ -43,13 +43,14 @@ const anchor = { getBoundingClientRect: measure };
 const group = { animate };
 
 function Probe({ hero, active }: { hero: boolean; active: boolean }) {
-  const [attachGroup, attachAnchor, captureRect] = useDraftHeroLayoutTransition(hero, active, 240);
+  const { transitionGroupRef, composerAnchorRef, captureComposerRect } =
+    useDraftHeroLayoutTransition(hero, active, 240);
   useLayoutEffect(() => {
-    capture = captureRect;
+    capture = captureComposerRect;
   });
   return (
-    <div ref={attachGroup} data-kind="group">
-      <div ref={attachAnchor} data-kind="anchor" />
+    <div ref={transitionGroupRef} data-kind="group">
+      <div ref={composerAnchorRef} data-kind="anchor" />
     </div>
   );
 }
