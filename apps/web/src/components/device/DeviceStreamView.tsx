@@ -163,7 +163,6 @@ function DeviceStreamSession(props: DeviceStreamViewProps) {
     clientRef.current = client;
     setPhoneUnavailable(false);
     setMjpegUrl(null);
-    setInputState({ connected: false });
     client.start();
     onHandle?.({ pressButton: client.pressButton, rotate: client.rotate, inputConnected: false });
     return () => {
@@ -481,7 +480,6 @@ function DeviceStreamSession(props: DeviceStreamViewProps) {
         </div>
         {showPhone && isDuo && model ? (
           <DeviceDuoViewport
-            key={`${model.id}\0${model.url}`}
             active={props.visible}
             stream={duoClient}
             onFrameListener={onFrameListener}
