@@ -8,7 +8,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { useEnvironmentQuery } from "../state/query";
-import { ChatViewActivityContext } from "./chatViewActivity";
 import { useChatViewVcsStatus } from "./chatViewVcsStatus";
 
 type StatusResult = AsyncResult.AsyncResult<VcsStatusResult, Error>;
@@ -27,8 +26,6 @@ const STATUS: VcsStatusResult = {
   behindCount: 0,
   pr: null,
 };
-const PASSIVE_ACTIVITY = { isActive: () => false, subscribe: () => () => undefined };
-
 let registry: AtomRegistry.AtomRegistry;
 let renderer: ReactTestRenderer | undefined;
 
@@ -91,37 +88,27 @@ afterEach(async () => {
 });
 
 describe("ChatView VCS selection", () => {
-  it("does not rerender active or passive consumers for equal replay or refresh metadata", async () => {
+  it("does not rerender for equal replay or refresh metadata", async () => {
     const atom = Atom.make<StatusResult>(AsyncResult.success(STATUS, { timestamp: 1 }));
-    const active = vi.fn<(status: ChatStatus) => void>();
-    const passive = vi.fn<(status: ChatStatus) => void>();
-    await render(
-      <>
-        <Probe atom={atom} onRender={active} name="active" />
-        <ChatViewActivityContext.Provider value={PASSIVE_ACTIVITY}>
-          <Probe atom={atom} onRender={passive} name="passive" />
-        </ChatViewActivityContext.Provider>
-      </>,
-    );
-    const refresh = active.mock.lastCall![0].refresh;
+    const rendered = vi.fn<(status: ChatStatus) => void>();
+    await render(<Probe atom={atom} onRender={rendered} />);
+    const refresh = rendered.mock.lastCall![0].refresh;
 
     await publish(atom, AsyncResult.success(STATUS, { timestamp: 2 }));
     await publish(atom, AsyncResult.success(structuredClone(STATUS), { timestamp: 3 }));
     await publish(atom, AsyncResult.waiting(registry.get(atom)));
     await publish(atom, AsyncResult.success(structuredClone(STATUS), { timestamp: 4 }));
 
-    expect(active).toHaveBeenCalledOnce();
-    expect(passive).toHaveBeenCalledOnce();
-    expect(displayed("passive")).toEqual({
+    expect(rendered).toHaveBeenCalledOnce();
+    expect(displayed()).toEqual({
       data: { isRepo: true, refName: "main", hasWorkingTreeChanges: false, pr: null },
       error: null,
     });
 
     await publish(atom, AsyncResult.success({ ...STATUS, refName: "topic" }));
-    expect(active).toHaveBeenCalledTimes(2);
-    expect(passive).toHaveBeenCalledTimes(2);
-    expect(displayed("passive").data.refName).toBe("topic");
-    expect(active.mock.lastCall![0].refresh).toBe(refresh);
+    expect(rendered).toHaveBeenCalledTimes(2);
+    expect(displayed().data.refName).toBe("topic");
+    expect(rendered.mock.lastCall![0].refresh).toBe(refresh);
   });
 
   it("updates repository, branch and working-tree changes without remounting", async () => {

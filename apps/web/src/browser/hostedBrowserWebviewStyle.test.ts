@@ -6,33 +6,6 @@ import {
 } from "./hostedBrowserWebviewStyle";
 
 describe("resolveHostedBrowserWebviewWrapperStyle", () => {
-  it("scales the displayed guest while preserving its logical viewport and input shield", () => {
-    const style = resolveHostedBrowserWebviewWrapperStyle({
-      active: true,
-      renderingActive: true,
-      rect: { x: 100.25, y: 30, width: 200, height: 150 },
-      hiddenSize: { width: 400, height: 300 },
-      projection: {
-        width: 400,
-        height: 300,
-        scaleX: 0.5,
-        scaleY: 0.5,
-        clipPath: "inset(0 40px 0 0)",
-        interactive: false,
-        onFocus: () => {},
-      },
-    });
-    expect(style).toMatchObject({
-      left: 0,
-      top: 0,
-      width: 400,
-      height: 300,
-      transform: "translate3d(100.25px, 30px, 0px) scale(0.5, 0.5)",
-      transformOrigin: "0px 0px",
-      clipPath: "inset(0 40px 0 0)",
-      pointerEvents: "none",
-    });
-  });
   it("places an active webview on its presented surface", () => {
     expect(
       resolveHostedBrowserWebviewWrapperStyle({

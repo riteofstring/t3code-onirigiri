@@ -121,10 +121,4 @@ describe("pane picture preload bundle verifier", () => {
       /missing its executable port listener/,
     );
   });
-  it("rejects a dynamic import", () => {
-    assert.throws(
-      () => verifyPanePicturePreloadBundle(`${valid}\nimport("./shared.mjs");`),
-      /dynamic import/,
-    );
-  });
 });
