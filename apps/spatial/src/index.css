@@ -6,6 +6,13 @@
   --spatial-compact-toolbar-height: 52px;
 }
 
+/* With a mouse or trackpad the bottom bar matches the sidebar's 40px footer band; touch keeps 52px. */
+@media (pointer: fine) {
+  .spatial-workspace {
+    --spatial-compact-toolbar-height: 40px;
+  }
+}
+
 .spatial-thread-pane [data-slot="sidebar-inset"] {
   height: 100%;
 }
@@ -153,14 +160,6 @@
   border-radius: 0;
   background: var(--card);
   box-shadow: inset 0 1px 0 var(--border);
-}
-
-.spatial-workspace[data-spatial-navigation-bar="true"]
-  .onirigiri-workspace[data-compact-layout="false"]
-  > .onirigiri-workspace__toolbar
-  .onirigiri-workspace__control {
-  height: var(--onirigiri-compact-control-size);
-  width: var(--onirigiri-compact-control-size);
 }
 
 .spatial-workspace-controls__surface {
