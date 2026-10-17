@@ -289,12 +289,12 @@ it("toggles the navigation bar preference from the hover bar", async () => {
 
 it("maximizes all panes edge to edge through the preference", async () => {
   await click("Workspace controls");
-  await click("Maximize all panes");
+  await click("Full screen panes");
   expect(settings().maximizeAll).toBe(true);
-  expect(button("Restore all panes").getAttribute("aria-pressed")).toBe("true");
-  await click("Restore all panes");
+  expect(button("Full screen panes").getAttribute("aria-pressed")).toBe("true");
+  await click("Full screen panes");
   expect(settings().maximizeAll).toBe(false);
-  expect(button("Maximize all panes").getAttribute("aria-pressed")).toBe("false");
+  expect(button("Full screen panes").getAttribute("aria-pressed")).toBe("false");
 });
 
 it("switches between the strip and 2D layouts", async () => {

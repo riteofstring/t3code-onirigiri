@@ -218,6 +218,16 @@ function SpatialWorkspaceView({
   )?.width;
   const [workspacePadding, setWorkspacePadding] = useState(0);
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
+  // Full-screen panes expand to the edges (and back) instead of snapping.
+  const [fullScreenTransition, setFullScreenTransition] = useState(false);
+  const fullScreenRef = useRef(preferences.maximizeAll);
+  useEffect(() => {
+    if (fullScreenRef.current === preferences.maximizeAll) return;
+    fullScreenRef.current = preferences.maximizeAll;
+    setFullScreenTransition(true);
+    const timer = window.setTimeout(() => setFullScreenTransition(false), 320);
+    return () => window.clearTimeout(timer);
+  }, [preferences.maximizeAll]);
   const syncMaximized = useCallback(() => {
     setMaximizedPaneId(workspaceRef.current?.getSnapshot().maximizedPaneId ?? null);
   }, []);
@@ -852,6 +862,7 @@ function SpatialWorkspaceView({
         className="spatial-workspace relative flex h-full w-full flex-col"
         data-spatial-navigation-bar={String(preferences.navigationBar)}
         data-spatial-maximized={String(maximizedPaneId !== null)}
+        data-spatial-full-screen-transition={String(fullScreenTransition)}
       >
         <WorkspaceToolbar
           focusAnchor={focusAnchor}

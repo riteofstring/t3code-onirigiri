@@ -63,7 +63,7 @@
   --onirigiri-muted: var(--muted-foreground);
   --onirigiri-edge: var(--border);
   --onirigiri-divider: var(--border);
-  --onirigiri-focus: var(--muted-foreground);
+  --onirigiri-focus: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
   --onirigiri-focus-ring-size: 0px;
   --onirigiri-control: transparent;
   --onirigiri-control-hover: var(--accent);
@@ -96,6 +96,15 @@
   inset-block-end: calc(
     env(safe-area-inset-bottom) + (var(--spatial-compact-toolbar-height) - 40px) / 2
   );
+}
+
+/* Toggling full-screen panes lets each pane expand to the edges, or back, instead of snapping. */
+.spatial-workspace[data-spatial-full-screen-transition="true"] [data-onirigiri-slot="pane"] {
+  transition:
+    transform 220ms var(--workspace-reveal-ease, ease-out),
+    width 220ms var(--workspace-reveal-ease, ease-out),
+    height 220ms var(--workspace-reveal-ease, ease-out),
+    border-radius 220ms ease-out;
 }
 
 /* A maximized pane in the compact layout is full screen: no bar and no floating controls. */

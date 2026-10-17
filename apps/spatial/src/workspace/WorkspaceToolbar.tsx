@@ -272,13 +272,9 @@ export function WorkspaceToolbar({
             <Button
               variant="ghost-muted"
               size="icon-xs"
-              aria-label={preferences.maximizeAll ? "Restore all panes" : "Maximize all panes"}
+              aria-label="Full screen panes"
               aria-pressed={preferences.maximizeAll}
-              tooltip={
-                preferences.maximizeAll
-                  ? "Restore pane spacing"
-                  : "Maximize all panes edge to edge, like the mobile layout"
-              }
+              tooltip="Full screen panes"
               onClick={() => onPreferencesChange({ maximizeAll: !preferences.maximizeAll })}
             >
               <svg
