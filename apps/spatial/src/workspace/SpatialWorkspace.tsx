@@ -777,6 +777,7 @@ function SpatialWorkspaceView({
       const picture = pictureFor(pane.paneId);
       return picture ? (
         <SavedPanePicture
+          key={picture.paneId}
           image={picture.image}
           cssSize={picture.cssSize}
           preparedUrl={preparedPictureUrl(picture.image)}

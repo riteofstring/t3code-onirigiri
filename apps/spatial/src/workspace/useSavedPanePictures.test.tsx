@@ -103,7 +103,7 @@ const layout = (width: number) =>
     })),
   }) as unknown as OnirigiriLayout;
 const geometry = (width: number) =>
-  `stage:800x600@1|[{"unit":"px","value":${width}},[[null,1,null]]]|0`;
+  `stage:800x600@1|[{"unit":"px","value":${width}},[[null,1,null]]]|0|tiled`;
 
 type ResizeEntry = { contentRect: { width: number; height: number } };
 const resizeObservers = new Map<Element, (entries: ResizeEntry[]) => void>();
@@ -330,18 +330,21 @@ it("follows committed compact layout after a same-size resize without resizing a
   const engine = stage.parentElement!;
   const geometryVersion = hook.paneSnapshots.geometryVersion;
   await act(() => resize(800, 600));
+  expect(hook.paneSnapshots.geometryVersion).toBe(geometryVersion);
   await act(async () => {
     engine.dataset.compactLayout = "true";
   });
   expect(workspace.dataset.spatialCompact).toBe("true");
   expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: true });
   await act(() => resize(0, 0));
+  const compactVersion = hook.paneSnapshots.geometryVersion;
+  expect(compactVersion).not.toBe(geometryVersion);
   await act(async () => {
     engine.dataset.compactLayout = "false";
   });
   expect(workspace.dataset.spatialCompact).toBe("false");
   expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: false });
-  expect(hook.paneSnapshots.geometryVersion).toBe(geometryVersion);
+  expect(hook.paneSnapshots.geometryVersion).not.toBe(compactVersion);
 });
 
 it("initializes compact controls before any positive stage measurement", async () => {
@@ -1408,6 +1411,101 @@ it("keeps a shown cover through a resize away and back until a replacement arriv
   const replacement = new Blob(["replacement"]);
   await act(() => capturePicture(pane, replacement));
   expect(shownPicture).toBe(replacement);
+});
+
+const setCompact = (compact: boolean) =>
+  act(async () => {
+    stage.parentElement!.dataset.compactLayout = String(compact);
+  });
+
+it("keeps a pane's tiled and compact pictures apart through a layout round trip", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const tiled = new Blob(["tiled"]);
+  await act(() => capturePicture(pane, tiled));
+  await act(() => capturePicture(pane, new Blob(["stage sized"]), { width: 800, height: 600 }));
+  expect(shownPicture).toBe(tiled);
+
+  await setCompact(true);
+  expect(shownPicture).toBeNull();
+  expect(hook.getPanePicture(pane)).toBeNull();
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
+  const compact = store.writes.at(-1)!.image;
+  expect(compact).not.toBe(tiled);
+  expect(shownPicture).toBe(compact);
+
+  await setCompact(false);
+  expect(shownPicture).toBe(tiled);
+  expect(store.writes.map((picture) => picture.paneId)).toEqual([paneId, `compact:${paneId}`]);
+
+  await act(() => {
+    hook.paneSnapshots.setLiveProducer(paneId, true);
+  });
+  expect(store.deleted).toEqual([paneId, `compact:${paneId}`]);
+  await setCompact(true);
+  expect(shownPicture).toBeNull();
+});
+
+it("keeps pictures deleted by a live producer out of a load that finishes later", async () => {
+  let loaded!: (value: Map<string, SavedPanePicture>) => void;
+  store.loading = new Promise((resolve) => {
+    loaded = resolve;
+  });
+  await mount();
+  let revision = 0;
+  await act(() => {
+    revision = hook.paneSnapshots.setLiveProducer(paneId, true);
+  });
+  await act(() => {
+    revision = hook.paneSnapshots.setLiveProducer(paneId, false);
+  });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
+  const replacement = new Blob(["replacement"]);
+  await act(() => capturePicture(pane, replacement));
+  const compactId = `compact:${paneId}`;
+  await act(async () =>
+    loaded(
+      new Map([
+        [paneId, savedPicture()],
+        [
+          compactId,
+          savedPicture({
+            paneId: compactId,
+            revision: savedPicture().revision.replace(/\|tiled$/, "|compact"),
+          }),
+        ],
+      ]),
+    ),
+  );
+  expect(shownPicture).toBe(replacement);
+  await setCompact(true);
+  expect(shownPicture).toBeNull();
+});
+
+it("restores a stored compact picture only in compact layout", async () => {
+  const image = new Blob(["compact"]);
+  store.saved.set(
+    `compact:${paneId}`,
+    savedPicture({
+      paneId: `compact:${paneId}`,
+      image,
+      revision: savedPicture().revision.replace(/\|tiled$/, "|compact"),
+    }),
+  );
+  await mount({ compact: true });
+  expect(shownPicture).toBe(image);
+  await setCompact(false);
+  expect(shownPicture).toBeNull();
+});
+
+it("does not display a picture saved without its layout mode", async () => {
+  store.saved.set(
+    paneId,
+    savedPicture({ revision: savedPicture().revision.replace(/\|tiled$/, "") }),
+  );
+  await mount();
+  expect(shownPicture).toBeNull();
 });
 
 it("merges pictures loaded from storage with captures already accepted this session", async () => {

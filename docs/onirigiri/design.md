@@ -116,6 +116,10 @@ the thread shell, which is never stale.
   The revision includes `chat-chrome-2`, and drawn pictures add `responsive-css-4`; bump them when chat
   chrome or the drawing changes so old pictures stop matching. Geometry starts with `stage:` because
   older records measured the outer workspace, including its toolbar.
+- Geometry ends with the layout mode, `tiled` or `compact`. Compact layout, including full screen, draws
+  every pane at the stage size while the layout keeps its column widths, so the two modes keep separate
+  records (`compact:<paneId>` for compact). A mode switch drops the other mode's covers and never shows
+  them; a live producer deletes both records.
 - Pictures come only from panes whose committed detail has caught up with the thread shell
   (`markPaneSynced`), never during a running turn, and only at the current device pixel ratio.
   Native capture (HTML-in-Canvas) goes first; a drawn fallback follows when no capture arrives within

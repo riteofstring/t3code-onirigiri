@@ -41,6 +41,12 @@ function contentKey(content: PaneContentRevision): string {
   return `${content.updatedAt}|${content.theme}|chat-chrome-2`;
 }
 
+const COMPACT_RECORD = "compact:";
+
+function paneOfRecord(recordId: string): string {
+  return recordId.startsWith(COMPACT_RECORD) ? recordId.slice(COMPACT_RECORD.length) : recordId;
+}
+
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
   return source === "capture" ? revision : `${revision}|responsive-css-4`;
 }
@@ -183,6 +189,12 @@ export function useSavedPanePictures(
   );
   const paneGeometryRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
+  const compactRef = useRef(false);
+  const recordId = useCallback(
+    (paneId: string) => (compactRef.current ? `${COMPACT_RECORD}${paneId}` : paneId),
+    [],
+  );
+  const lastValidPictures = useRef(new Map<string, SavedPanePicture>());
   const [stageViewport, setStageViewport] = useState({ width: 0, height: 0, compact: false });
   const [geometryVersion, setGeometryVersion] = useState(0);
   const defaultRowHeightRef = useRef(defaultRowHeight);
@@ -192,18 +204,21 @@ export function useSavedPanePictures(
     setGeometryVersion((version) => version + 1);
   }, [defaultRowHeight]);
 
+  const deletedWhileLoading = useRef<Set<string> | null>(new Set());
   useEffect(() => {
     let current = true;
     loadPanePictures()
       .catch(() => new Map<string, SavedPanePicture>())
       .then((pictures) => {
-        if (current)
-          updateSaved(
-            new Map([
-              ...[...pictures].filter(([paneId]) => !retainedRef.current.has(paneId)),
-              ...(savedRef.current ?? []),
-            ]),
-          );
+        if (!current) return;
+        const deleted = deletedWhileLoading.current;
+        deletedWhileLoading.current = null;
+        updateSaved(
+          new Map([
+            ...[...pictures].filter(([id]) => !deleted?.has(paneOfRecord(id))),
+            ...(savedRef.current ?? []),
+          ]),
+        );
       });
     return () => {
       current = false;
@@ -232,6 +247,11 @@ export function useSavedPanePictures(
       const compact = engine.dataset.compactLayout === "true";
       if (workspace.dataset.spatialCompact !== String(compact))
         workspace.dataset.spatialCompact = String(compact);
+      if (compactRef.current !== compact) {
+        compactRef.current = compact;
+        lastValidPictures.current.clear();
+        setGeometryVersion((version) => version + 1);
+      }
       setStageViewport((previous) =>
         previous.compact === compact ? previous : { ...previous, compact },
       );
@@ -315,7 +335,7 @@ export function useSavedPanePictures(
       const sizing = paneGeometryRef.current.get(paneId);
       const height = defaultRowHeightRef.current;
       return sizing
-        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${sizing}${height === "viewport" ? "" : `|row:${height}`}`
+        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${sizing}${height === "viewport" ? "" : `|row:${height}`}|${compactRef.current ? "compact" : "tiled"}`
         : null;
     },
     [getLayout],
@@ -350,15 +370,15 @@ export function useSavedPanePictures(
     [threads],
   );
   const savedHere = useMemo(
-    () => [...(saved?.keys() ?? [])].filter((id) => contentRevisions.has(id)).length,
+    () => [...(saved?.keys() ?? [])].filter((id) => contentRevisions.has(paneOfRecord(id))).length,
     [contentRevisions, saved],
   );
   const canBackgroundPicture = useCallback(
     (paneId: string, visited = false) =>
       retained.get(paneId) !== "live" &&
       !runningPanes.has(paneId) &&
-      (visited || saved === null || saved.has(paneId) || savedHere < MAX_SAVED),
-    [retained, runningPanes, saved, savedHere],
+      (visited || saved === null || saved.has(recordId(paneId)) || savedHere < MAX_SAVED),
+    [recordId, retained, runningPanes, saved, savedHere],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
@@ -369,40 +389,44 @@ export function useSavedPanePictures(
   const freshPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       if (retainedRef.current.has(paneId)) return null;
-      const picture = saved?.get(paneId);
+      const picture = saved?.get(recordId(paneId));
       if (!picture) return null;
       const revision = expectedRevision(paneId, contentRevisions);
       if (!revision || picture.revision !== pictureRevision(revision, picture.source)) return null;
       return picture;
     },
-    [contentRevisions, expectedRevision, saved],
+    [contentRevisions, expectedRevision, recordId, saved],
   );
 
-  const lastValidPictures = useRef(new Map<string, SavedPanePicture>());
   const [coverVersion, setCoverVersion] = useState(0);
   const [pictureUrls] = useState(createPanePictureUrls);
+  const { compact } = stageViewport;
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       if (
         retainedRef.current.has(paneId) ||
-        !saved?.has(paneId) ||
+        !saved?.has(recordId(paneId)) ||
         !contentRevisionsRef.current.has(paneId)
       ) {
         lastValidPictures.current.delete(paneId);
         return null;
       }
-      const picture = saved.get(paneId)!;
+      const picture = saved.get(recordId(paneId))!;
       const revision = expectedRevision(paneId, contentRevisionsRef.current);
       const fresh =
         revision && picture.revision === pictureRevision(revision, picture.source) ? picture : null;
       return fresh ?? lastValidPictures.current.get(paneId) ?? null;
     },
     // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again; a replaced cover already changes `saved`.
-    [coverVersion, expectedRevision, saved],
+    [compact, coverVersion, expectedRevision, recordId, saved],
   );
   useLayoutEffect(() => {
     for (const paneId of lastValidPictures.current.keys()) {
-      if (retainedRef.current.has(paneId) || !saved?.has(paneId) || !contentRevisions.has(paneId)) {
+      if (
+        retainedRef.current.has(paneId) ||
+        !saved?.has(recordId(paneId)) ||
+        !contentRevisions.has(paneId)
+      ) {
         lastValidPictures.current.delete(paneId);
       }
     }
@@ -421,7 +445,7 @@ export function useSavedPanePictures(
     // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
     if (coverAppeared) setCoverVersion((version) => version + 1);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
-  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, retained, saved]);
+  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, recordId, retained, saved]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
     (paneId: string) => {
@@ -450,19 +474,20 @@ export function useSavedPanePictures(
 
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
+      const paneId = paneOfRecord(picture.paneId);
       pictureVisualRevisions.current.set(picture.image, revision);
-      lastValidPictures.current.set(picture.paneId, picture);
-      if (retainedRef.current.get(picture.paneId) === "awaiting-picture") {
+      lastValidPictures.current.set(paneId, picture);
+      if (retainedRef.current.get(paneId) === "awaiting-picture") {
         const next = new Map(retainedRef.current);
-        next.delete(picture.paneId);
+        next.delete(paneId);
         updateRetained(next);
       }
       updateSaved(new Map(savedRef.current ?? []).set(picture.paneId, picture));
       return savePanePicture(
         picture,
         () =>
-          retainedRef.current.get(picture.paneId) !== "live" &&
-          visualRevision(picture.paneId) === revision &&
+          retainedRef.current.get(paneId) !== "live" &&
+          visualRevision(paneId) === revision &&
           savedRef.current?.get(picture.paneId)?.image === picture.image,
       );
     },
@@ -471,7 +496,11 @@ export function useSavedPanePictures(
 
   const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
     (pane, image, receipt) => {
+      const stageSized =
+        `${Math.round(receipt.bounds.width)}x${Math.round(receipt.bounds.height)}` ===
+        stageSizeRef.current;
       if (
+        stageSized !== compactRef.current ||
         receipt.devicePixelRatio !== window.devicePixelRatio ||
         retainedRef.current.get(pane.paneId) === "live" ||
         runningPanesRef.current.has(pane.paneId)
@@ -487,7 +516,7 @@ export function useSavedPanePictures(
       )
         return;
       const picture = {
-        paneId: pane.paneId,
+        paneId: recordId(pane.paneId),
         revision: `${contentKey(content)}|${geometry}`,
         image,
         cssSize: { width: receipt.bounds.width, height: receipt.bounds.height },
@@ -496,7 +525,7 @@ export function useSavedPanePictures(
       };
       void keepPicture(picture, currentVisualRevision).catch(() => {});
     },
-    [geometryRevision, keepPicture, visualRevision],
+    [geometryRevision, keepPicture, recordId, visualRevision],
   );
 
   const drawSnapshot = useCallback(
@@ -509,6 +538,7 @@ export function useSavedPanePictures(
       const startedAt = performance.now();
       const revision = () => expectedRevision(paneId, contentRevisionsRef.current);
       const before = revision();
+      const record = recordId(paneId);
       const beforeVisualRevision = visualRevision(paneId);
       if (before === null) return;
       const canSnapshot = () => {
@@ -525,14 +555,14 @@ export function useSavedPanePictures(
         );
       };
       if (!canSnapshot()) return;
-      const previous = savedRef.current?.get(paneId);
+      const previous = savedRef.current?.get(record);
       if (
         previous?.revision === pictureRevision(before, previous?.source) &&
         pictureMatchesVisualRevision(paneId, previous.image)
       )
         return;
       const captured = () => {
-        const kept = savedRef.current?.get(paneId);
+        const kept = savedRef.current?.get(record);
         return (
           kept?.source === "capture" &&
           kept.revision === before &&
@@ -557,7 +587,7 @@ export function useSavedPanePictures(
       }
       if (!current()) return;
       const picture = {
-        paneId,
+        paneId: record,
         revision: pictureRevision(before, "snapshot"),
         image: snapshot.image,
         cssSize: snapshot.cssSize,
@@ -571,6 +601,7 @@ export function useSavedPanePictures(
       keepPicture,
       onSnapshotFailure,
       pictureMatchesVisualRevision,
+      recordId,
       visualRevision,
     ],
   );
@@ -592,7 +623,7 @@ export function useSavedPanePictures(
             !syncedPanes.has(paneId)
           )
             return false;
-          const previous = savedRef.current?.get(paneId);
+          const previous = savedRef.current?.get(recordId(paneId));
           return (
             !previous ||
             previous.revision !== pictureRevision(revision, previous.source) ||
@@ -601,7 +632,7 @@ export function useSavedPanePictures(
         },
         (paneId) => lastValidPictures.current.has(paneId),
       ),
-    [expectedRevision, pictureMatchesVisualRevision, snapshots],
+    [expectedRevision, pictureMatchesVisualRevision, recordId, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
@@ -617,12 +648,16 @@ export function useSavedPanePictures(
         updateRetained(next);
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
         lastValidPictures.current.delete(paneId);
-        if (savedRef.current?.has(paneId)) {
+        const records = [paneId, `${COMPACT_RECORD}${paneId}`];
+        if (records.some((id) => savedRef.current?.has(id))) {
           const pictures = new Map(savedRef.current);
-          pictures.delete(paneId);
+          for (const id of records) pictures.delete(id);
           updateSaved(pictures);
         }
-        if (present) void deletePanePicture(paneId).catch(() => {});
+        if (present) {
+          deletedWhileLoading.current?.add(paneId);
+          for (const id of records) void deletePanePicture(id).catch(() => {});
+        }
         return visualRevision(paneId);
       },
       request: (paneId, element, options) => {
