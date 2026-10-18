@@ -379,6 +379,7 @@ export function useSavedPanePictures(
   );
 
   const lastValidPictures = useRef(new Map<string, SavedPanePicture>());
+  const [coverVersion, setCoverVersion] = useState(0);
   const [pictureUrls] = useState(createPanePictureUrls);
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
@@ -396,7 +397,8 @@ export function useSavedPanePictures(
         revision && picture.revision === pictureRevision(revision, picture.source) ? picture : null;
       return fresh ?? lastValidPictures.current.get(paneId) ?? null;
     },
-    [expectedRevision, saved],
+    // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again; a replaced cover already changes `saved`.
+    [coverVersion, expectedRevision, saved],
   );
   useLayoutEffect(() => {
     for (const paneId of lastValidPictures.current.keys()) {
@@ -404,16 +406,20 @@ export function useSavedPanePictures(
         lastValidPictures.current.delete(paneId);
       }
     }
+    let coverAppeared = false;
     pictureUrls.retain(
       new Set([
         ...[...contentRevisions.keys()].flatMap((paneId) => {
           const picture = freshPictureFor(paneId);
+          if (picture && !lastValidPictures.current.has(paneId)) coverAppeared = true;
           if (picture) lastValidPictures.current.set(paneId, picture);
           return picture ? [picture.image] : [];
         }),
         ...[...lastValidPictures.current.values()].map((picture) => picture.image),
       ]),
     );
+    // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
+    if (coverAppeared) setCoverVersion((version) => version + 1);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
   }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, retained, saved]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);

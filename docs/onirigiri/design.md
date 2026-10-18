@@ -124,6 +124,9 @@ the thread shell, which is never stale.
   in-flight captures and drawings but keeps the current cover and the persisted picture until
   replacement pixels are accepted. A picture validated this session stays the cover while its thread
   refreshes.
+- Stored pictures usually load before the stage is measured and the thread shells arrive, so
+  placeholders render again whenever a pane's first valid cover appears. Shell refreshes and resizes
+  keep the existing cover without re-rendering placeholders.
 - `ThreadPane` invalidates on content mutations and scroll or input events without forcing layout of
   hidden content. Attribute changes compare a batch's first old value with the final value, because
   React can briefly clear an input's name while changing its type. Composer focus classes are

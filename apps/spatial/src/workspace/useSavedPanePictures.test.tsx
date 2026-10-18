@@ -2,7 +2,7 @@
 
 import type { OnirigiriLayout, WorkspacePane } from "@riteofstring/onirigiri";
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -71,14 +71,22 @@ vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: typeof defaultFontSettings) => unknown) =>
     select(store.fontSettings),
 }));
+let shells: { key: string; value: unknown[] } | null = null;
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThreadShells: () =>
-    store.threadIds.map((id) => ({
-      environmentId: "e",
-      id,
-      updatedAt: store.updatedAt,
-      runtime: store.runtimeStatus ? { status: store.runtimeStatus } : null,
-    })),
+  useThreadShells: () => {
+    const key = JSON.stringify([store.threadIds, store.updatedAt, store.runtimeStatus]);
+    if (shells?.key !== key)
+      shells = {
+        key,
+        value: store.threadIds.map((id) => ({
+          environmentId: "e",
+          id,
+          updatedAt: store.updatedAt,
+          runtime: store.runtimeStatus ? { status: store.runtimeStatus } : null,
+        })),
+      };
+    return shells.value;
+  },
 }));
 vi.mock("./useWorkspacePanes", () => ({
   threadPaneId: (environmentId: string, threadId: string) => `thread:${environmentId}:${threadId}`,
@@ -110,6 +118,7 @@ const resize = (width: number, height: number) => {
 };
 let hook: ReturnType<typeof useSavedPanePictures>;
 let appearance: string;
+let shownPicture: Blob | null = null;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 let defaultRowHeight: number | "viewport" = "viewport";
@@ -119,9 +128,12 @@ const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
   const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight);
+  const { pictureFor } = value;
+  const shown = useMemo(() => pictureFor(paneId)?.image ?? null, [pictureFor]);
   useEffect(() => {
     hook = value;
     appearance = pictureAppearance;
+    shownPicture = shown;
   });
   return null;
 }
@@ -1351,6 +1363,51 @@ it("retains an unpublished refresh across content release and an ordinary remoun
   await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(pictureImageFor(paneId)).not.toBe(original);
+});
+
+it.each([
+  ["threads", "stage"],
+  ["stage", "threads"],
+])("shows a stored picture that loaded before the %s and the %s", async (first, second) => {
+  const image = new Blob(["stored"]);
+  store.saved.set(paneId, savedPicture({ image }));
+  store.threadIds = [];
+  await mount({ resizeStage: false });
+  expect(hook.picturesLoaded).toBe(true);
+  expect(shownPicture).toBeNull();
+  const arrive = (prerequisite: string) =>
+    act(() => {
+      if (prerequisite === "stage") resize(800, 600);
+      else {
+        store.threadIds = ["t1"];
+        renderer!.update(<Probe />);
+      }
+    });
+  await arrive(first);
+  expect(shownPicture).toBeNull();
+  await arrive(second);
+  expect(shownPicture).toBe(image);
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(store.writes).toHaveLength(0);
+});
+
+it("keeps a shown cover through a resize away and back until a replacement arrives", async () => {
+  const image = new Blob(["stored"]);
+  store.saved.set(paneId, savedPicture({ image }));
+  await mount();
+  await advance(10);
+  expect(shownPicture).toBe(image);
+  const url = hook.preparedPictureUrl(image);
+  expect(url).not.toBeNull();
+  await act(() => resize(900, 600));
+  expect(shownPicture).toBe(image);
+  await act(() => resize(800, 600));
+  expect(shownPicture).toBe(image);
+  expect(hook.preparedPictureUrl(image)).toBe(url);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const replacement = new Blob(["replacement"]);
+  await act(() => capturePicture(pane, replacement));
+  expect(shownPicture).toBe(replacement);
 });
 
 it("merges pictures loaded from storage with captures already accepted this session", async () => {
