@@ -66,6 +66,7 @@ import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
+import { FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
 import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
@@ -78,6 +79,7 @@ import {
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
 const COMPACT_STAGE_WIDTH = 640;
+const SNAP_CAMERA = { navigation: { durationMs: 0 } };
 
 function whileEditing(key: string) {
   return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
@@ -227,10 +229,12 @@ function SpatialWorkspaceView({
     stageRef,
     stageViewport,
   } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
-  const { fullScreen, phase: fullScreenPhase } = useFullScreenTransition(
-    preferences.maximizeAll,
-    stageViewport.width > COMPACT_STAGE_WIDTH,
-  );
+  const {
+    requested: fullScreenRequested,
+    fullScreen,
+    phase: fullScreenPhase,
+  } = useFullScreenTransition(preferences.maximizeAll, stageViewport.width > COMPACT_STAGE_WIDTH);
+  const fullScreenBorderRef = useFullScreenBorder(fullScreenPhase, fullScreen, fullScreenRequested);
   const paneViewport = useMemo(() => {
     if (stageViewport.height <= 0) return null;
     return {
@@ -821,6 +825,7 @@ function SpatialWorkspaceView({
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
                     compactBreakpoint={fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH}
+                    {...(fullScreenPhase === "swap" ? { cameraMotion: SNAP_CAMERA } : {})}
                     chromeComponents={WORKSPACE_CHROME}
                     desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}
@@ -854,6 +859,7 @@ function SpatialWorkspaceView({
             </PaneLifecycleContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
+        <FullScreenBorder ref={fullScreenBorderRef} />
       </div>
     </WorkspaceTooltips>
   );

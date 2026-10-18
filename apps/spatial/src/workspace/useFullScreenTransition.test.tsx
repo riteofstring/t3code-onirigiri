@@ -3,19 +3,18 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import {
-  FULL_SCREEN_FADE_IN_MS,
   FULL_SCREEN_FADE_OUT_MS,
-  FULL_SCREEN_RESIZE_MS,
+  FULL_SCREEN_SETTLE_MS,
   useFullScreenTransition,
 } from "./useFullScreenTransition";
 
 let renderer: ReactTestRenderer | undefined;
 let reducedMotion = false;
-let seen: ReturnType<typeof useFullScreenTransition> | null = null;
+let seen: { fullScreen: boolean; phase: string | null } | null = null;
 function Probe({ requested, animate }: { requested: boolean; animate: boolean }) {
-  const value = useFullScreenTransition(requested, animate);
+  const { fullScreen, phase } = useFullScreenTransition(requested, animate);
   useEffect(() => {
-    seen = value;
+    seen = { fullScreen, phase };
   });
   return null;
 }
@@ -49,7 +48,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("fades content out before resizing panes, then fades it back in", async () => {
+it("fades the workspace out, swaps the layout unseen, then fades it back in", async () => {
   await show(false);
   expect(seen).toEqual({ fullScreen: false, phase: null });
 
@@ -57,15 +56,12 @@ it("fades content out before resizing panes, then fades it back in", async () =>
   expect(seen).toEqual({ fullScreen: false, phase: "out" });
 
   await advance(FULL_SCREEN_FADE_OUT_MS);
-  expect(seen).toEqual({ fullScreen: true, phase: "resize" });
-
-  await advance(FULL_SCREEN_RESIZE_MS);
-  expect(seen).toEqual({ fullScreen: true, phase: "reveal" });
+  expect(seen).toEqual({ fullScreen: true, phase: "swap" });
 
   await advance(32);
   expect(seen).toEqual({ fullScreen: true, phase: "in" });
 
-  await advance(FULL_SCREEN_FADE_IN_MS);
+  await advance(FULL_SCREEN_SETTLE_MS);
   expect(seen).toEqual({ fullScreen: true, phase: null });
 });
 
@@ -74,12 +70,9 @@ it("keeps the layout when the toggle is undone during the fade-out", async () =>
   await show(true);
   await advance(FULL_SCREEN_FADE_OUT_MS / 2);
   await show(false);
-  expect(seen).toEqual({ fullScreen: false, phase: "reveal" });
-
-  await advance(32);
   expect(seen).toEqual({ fullScreen: false, phase: "in" });
 
-  await advance(FULL_SCREEN_FADE_IN_MS);
+  await advance(FULL_SCREEN_SETTLE_MS);
   expect(seen).toEqual({ fullScreen: false, phase: null });
 });
 

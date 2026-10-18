@@ -200,12 +200,16 @@ app keeps one routed thread.
   so the bar's top line shows where a 40 px bar and the control share an edge.
 - The full-screen toggle never animates live content. Animating pane width and height made every
   warm chat lay out on each frame, which stalled frames for 300 to 500 ms on a 2560 px stage.
-  `useFullScreenTransition` instead fades pane content out, applies the layout, animates the empty
-  pane frames with `content-visibility: hidden` on their content, then lays the content out once at
-  its final size while it is still transparent and fades it in. Panes that end off screen stay
-  skipped until the fade-in ends, so only visible content delays it. Narrow stages are compact
-  either way and reduced motion skips the sequence, so both switch at once. Browser guests cannot
-  fade, so they hide for the whole sequence.
+  `useFullScreenTransition` fades the whole engine workspace out, swaps the layout while it is
+  invisible with the navigation camera snapped instead of gliding, then fades it back in. A copy of
+  the focus border bridges the two states: entering full screen it grows from the focused pane past
+  the workspace edges and fades; leaving, it fades in at the edges and shrinks onto the focused pane
+  while the workspace fades in. The copy is eight pieces (four corners that only move and four
+  edges that also stretch along their length), so its line width never scales and every piece
+  animates on the compositor through the main-thread layout of the swap. The engine's own cursor
+  stays hidden until the copy lands. Panes that end off screen keep their content skipped until the
+  transition ends. Narrow stages are compact either way and reduced motion skips the sequence, so
+  both switch at once. Browser guests cannot fade, so they hide for the whole sequence.
 - A sidebar drag writes an inline width to the sidebar gap only while it runs. The spatial app holds
   the gap at the committed `--sidebar-width` instead, so the workspace resizes once on release rather
   than on every frame; the sidebar container still follows the pointer and overlays the workspace.
