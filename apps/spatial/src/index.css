@@ -123,12 +123,38 @@
   );
 }
 
-.spatial-workspace[data-spatial-full-screen-transition="true"] [data-onirigiri-slot="pane"] {
-  transition:
-    transform 220ms ease-out,
-    width 220ms ease-out,
-    height 220ms ease-out,
-    border-radius 220ms ease-out;
+.spatial-workspace[data-spatial-full-screen-transition] .onirigiri-pane__content {
+  transition: opacity 160ms ease-in-out;
+}
+
+.spatial-workspace:is(
+    [data-spatial-full-screen-transition="out"],
+    [data-spatial-full-screen-transition="resize"],
+    [data-spatial-full-screen-transition="reveal"]
+  )
+  .onirigiri-pane__content {
+  opacity: 0;
+  transition-duration: 120ms;
+}
+
+.spatial-workspace[data-spatial-full-screen-transition="resize"] .onirigiri-pane__content,
+.spatial-workspace:is(
+    [data-spatial-full-screen-transition="reveal"],
+    [data-spatial-full-screen-transition="in"]
+  )
+  [data-onirigiri-slot="pane"][data-visible="false"]
+  .onirigiri-pane__content {
+  content-visibility: hidden;
+}
+
+.spatial-workspace:is(
+    [data-spatial-full-screen-transition="out"],
+    [data-spatial-full-screen-transition="resize"]
+  )
+  [data-onirigiri-slot="pane"] {
+  transition-property: transform, width, height, border-radius;
+  transition-duration: 300ms;
+  transition-timing-function: ease-in-out;
 }
 
 .spatial-workspace[data-spatial-compact="true"][data-spatial-maximized="true"]

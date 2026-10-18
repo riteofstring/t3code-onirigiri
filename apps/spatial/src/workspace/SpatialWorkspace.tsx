@@ -66,6 +66,7 @@ import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
+import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
   threadPaneId,
@@ -76,6 +77,7 @@ import {
 
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
+const COMPACT_STAGE_WIDTH = 640;
 
 function whileEditing(key: string) {
   return { altKey: true, ctrlKey: true, key, metaKey: false, shiftKey: false, whileEditing: true };
@@ -195,15 +197,6 @@ function SpatialWorkspaceView({
   )?.width;
   const [workspacePadding, setWorkspacePadding] = useState(0);
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
-  const [fullScreenTransition, setFullScreenTransition] = useState(false);
-  const fullScreenRef = useRef(preferences.maximizeAll);
-  useEffect(() => {
-    if (fullScreenRef.current === preferences.maximizeAll) return;
-    fullScreenRef.current = preferences.maximizeAll;
-    setFullScreenTransition(true);
-    const timer = window.setTimeout(() => setFullScreenTransition(false), 320);
-    return () => window.clearTimeout(timer);
-  }, [preferences.maximizeAll]);
   const syncMaximized = useCallback(() => {
     setMaximizedPaneId(workspaceRef.current?.getSnapshot().maximizedPaneId ?? null);
   }, []);
@@ -234,6 +227,10 @@ function SpatialWorkspaceView({
     stageRef,
     stageViewport,
   } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
+  const { fullScreen, phase: fullScreenPhase } = useFullScreenTransition(
+    preferences.maximizeAll,
+    stageViewport.width > COMPACT_STAGE_WIDTH,
+  );
   const paneViewport = useMemo(() => {
     if (stageViewport.height <= 0) return null;
     return {
@@ -280,7 +277,7 @@ function SpatialWorkspaceView({
     () => ({
       canPresent: (slot) =>
         !slot.closest(
-          '[data-onirigiri-slot="pane"][data-visible="false"], [data-onirigiri-slot="pane-content"][data-runtime-state="hidden"]',
+          '[data-onirigiri-slot="pane"][data-visible="false"], [data-onirigiri-slot="pane-content"][data-runtime-state="hidden"], [data-spatial-full-screen-transition]',
         ),
       occluders: spatialBrowserOccluders,
       interactive: (slot) =>
@@ -798,7 +795,7 @@ function SpatialWorkspaceView({
         className="spatial-workspace relative flex h-full w-full flex-col"
         data-spatial-navigation-bar={String(preferences.navigationBar)}
         data-spatial-maximized={String(maximizedPaneId !== null)}
-        data-spatial-full-screen-transition={String(fullScreenTransition)}
+        data-spatial-full-screen-transition={fullScreenPhase ?? undefined}
       >
         <WorkspaceToolbar
           focusAnchor={focusAnchor}
@@ -823,9 +820,7 @@ function SpatialWorkspaceView({
                     ref={workspaceRef}
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
-                    {...(preferences.maximizeAll
-                      ? { compactBreakpoint: Number.POSITIVE_INFINITY }
-                      : {})}
+                    compactBreakpoint={fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH}
                     chromeComponents={WORKSPACE_CHROME}
                     desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}

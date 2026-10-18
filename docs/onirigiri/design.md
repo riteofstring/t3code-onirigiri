@@ -198,8 +198,14 @@ app keeps one routed thread.
   then read as part of the bar, while it still covers the bar controls it slides over when the
   advanced settings are open or the screen is narrow. Its transparent 1 px border stays unpainted,
   so the bar's top line shows where a 40 px bar and the control share an edge.
-- The full-screen toggle sets `data-spatial-full-screen-transition` for 320 ms, which outlasts the
-  220 ms pane transition it enables.
+- The full-screen toggle never animates live content. Animating pane width and height made every
+  warm chat lay out on each frame, which stalled frames for 300 to 500 ms on a 2560 px stage.
+  `useFullScreenTransition` instead fades pane content out, applies the layout, animates the empty
+  pane frames with `content-visibility: hidden` on their content, then lays the content out once at
+  its final size while it is still transparent and fades it in. Panes that end off screen stay
+  skipped until the fade-in ends, so only visible content delays it. Narrow stages are compact
+  either way and reduced motion skips the sequence, so both switch at once. Browser guests cannot
+  fade, so they hide for the whole sequence.
 - A sidebar drag writes an inline width to the sidebar gap only while it runs. The spatial app holds
   the gap at the committed `--sidebar-width` instead, so the workspace resizes once on release rather
   than on every frame; the sidebar container still follows the pointer and overlays the workspace.
