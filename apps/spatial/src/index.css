@@ -4,6 +4,7 @@
 
 .spatial-workspace {
   --spatial-compact-toolbar-height: 52px;
+  --spatial-stage: color-mix(in oklch, var(--background) 94%, var(--foreground));
 }
 
 @media (pointer: fine) {
@@ -55,7 +56,7 @@
 }
 
 .spatial-workspace :is(.onirigiri-workspace, .onirigiri-workspace__desktop-controls) {
-  --onirigiri-background: color-mix(in oklch, var(--background) 94%, var(--foreground));
+  --onirigiri-background: var(--spatial-stage);
   --onirigiri-pane: var(--background);
   --onirigiri-pane-raised: var(--card);
   --onirigiri-titlebar: var(--background);
@@ -189,6 +190,20 @@
   background: var(--card);
   border-color: var(--border);
   box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+}
+
+.spatial-workspace[data-spatial-navigation-bar="true"]
+  .spatial-workspace-controls__surface[data-expanded="true"],
+.spatial-workspace[data-spatial-compact="true"]
+  .spatial-workspace-controls__surface[data-expanded="true"] {
+  border-color: transparent;
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+.spatial-workspace[data-spatial-compact="true"]
+  .spatial-workspace-controls__surface[data-expanded="true"] {
+  background: var(--spatial-stage);
 }
 
 .spatial-workspace-controls__reveal {

@@ -193,6 +193,11 @@ app keeps one routed thread.
 - The engine toolbar (z-index 35) stays below the floating controls (40) so the Onirigiri control
   remains visible inside the bar. With a fine pointer the bottom bar matches the sidebar footer's
   40 px; touch keeps 52 px.
+- Over a bottom bar, the open Onirigiri control drops its border and shadow and takes the bar's
+  color: the card on the desktop navigation bar, the workspace grey on the compact bar. Its buttons
+  then read as part of the bar, while it still covers the bar controls it slides over when the
+  advanced settings are open or the screen is narrow. Its transparent 1 px border stays unpainted,
+  so the bar's top line shows where a 40 px bar and the control share an edge.
 - The full-screen toggle sets `data-spatial-full-screen-transition` for 320 ms, which outlasts the
   220 ms pane transition it enables.
 - A sidebar drag writes an inline width to the sidebar gap only while it runs. The spatial app holds
