@@ -351,6 +351,8 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+const MAX_DRAWN_PIXELS = 3_000_000;
+
 export interface PanePictureSnapshot {
   readonly image: Blob;
   readonly cssSize: { readonly width: number; readonly height: number };
@@ -430,7 +432,10 @@ async function drawPanePicture(
     `data:image/svg+xml;charset=utf-8,${encodeURIComponent(open)}${styles}` +
       `${encodeURIComponent(markup + close)}`,
   );
-  const scale = window.devicePixelRatio || 1;
+  const scale = Math.min(
+    window.devicePixelRatio || 1,
+    Math.sqrt(MAX_DRAWN_PIXELS / (width * height)),
+  );
   const canvas = document.createElement("canvas");
   try {
     if (!(await waitToDraw())) return null;

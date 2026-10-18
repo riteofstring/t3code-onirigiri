@@ -140,10 +140,16 @@ the thread shell, which is never stale.
   cannot be drawn. While present the pane renders live and its stored picture is deleted; after
   removal it keeps its live view until current static pixels exist.
 - Pictures are drawn one at a time while idle, after 400 ms without input for a first picture and
-  3 s for a refresh behind an existing cover; failures back off up to five minutes.
+  3 s for a refresh behind an existing cover; failures back off up to five minutes. Camera motion
+  and full-screen transitions count as input when they start and when they end, and nothing is
+  drawn or prepared during a full-screen transition.
+- Drawing rasterizes the cloned pane on the main thread, about in proportion to its pixels, so a
+  drawn picture holds at most 3 megapixels: tiled panes keep the device pixel ratio, while
+  stage-sized compact pictures drop to roughly 1x.
 - Picture URLs are decoded during idle time to warm the browser's discardable image cache.
   `SavedPanePicture` keeps the current cover until a replacement decodes, since warmed pixels may
-  have been discarded.
+  have been discarded, and shows the thread card until its first picture decodes rather than an
+  empty frame.
 - Saved pictures are capped at 200 records and 128 MiB; the least recently saved go first.
 
 ### Drawn fallback
@@ -222,11 +228,7 @@ app keeps one routed thread.
   than on every frame; the sidebar container still follows the pointer and overlays the workspace.
 - Pane shadows pair a tight darker layer with a wide faint one, so the pane edge stays distinct
   from its shadow. Each pane is its own compositor layer, and Chrome blends that layer's shadow
-  onto the dark workspace grey without dithering, so the faint layer steps one color level at a
-  time. Noise above or below the pane layer cannot help: it lands after the steps are fixed. Dark
-  mode instead paints a faint noise ring in the pane's own layer, as an SVG `border-image` outside
-  the pane that fades out by 64px, and the noise dithers the shadow before compositing. Black
-  specks alone only darken, which leaves a flat band where the ring fades; grey specks
-  (0.3) brighten about as much as black darkens after 8-bit rounding, so the average stays put. Light
-  mode has enough range and skips the ring. Overview keeps the engine's edge-only pane shadow and
-  drops the ring.
+  onto the dark workspace grey without dithering, so the faint layer can step one color level at a
+  time. Noise above or below the pane layer cannot help: it lands after the steps are fixed, and
+  noise inside every pane layer (a filtered SVG `border-image`) made motion visibly slower on a 4K
+  display, so the shadows are not dithered. Overview keeps the engine's edge-only pane shadow.

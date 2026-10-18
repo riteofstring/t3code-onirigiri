@@ -390,10 +390,13 @@ function SpatialWorkspaceView({
   useEffect(() => {
     lifecycle?.setRunning(active ? runningPanes : new Set());
   }, [active, lifecycle, runningPanes]);
+  const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
-    lifecycle?.setBackgroundPictures(active);
-    setCaptureActivity(active, lifecycle?.isMoving() ?? false);
-  }, [active, lifecycle, setCaptureActivity]);
+    fullScreenPhaseRef.current = fullScreenPhase;
+    const pictures = active && fullScreenPhase === null;
+    lifecycle?.setBackgroundPictures(pictures);
+    setCaptureActivity(pictures, lifecycle?.isMoving() ?? false);
+  }, [active, fullScreenPhase, lifecycle, setCaptureActivity]);
 
   const requestedRoutesRef = useRef(new Set<string>());
   const pendingNavigationPaneRef = useRef<string | null>(null);
@@ -427,7 +430,7 @@ function SpatialWorkspaceView({
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
       syncMaximized();
-      setCaptureActivity(activeRef.current, moving);
+      setCaptureActivity(activeRef.current && fullScreenPhaseRef.current === null, moving);
       lifecycle?.setMoving(activeRef.current && moving);
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
       if (paneId === focusedPaneIdRef.current || !activeRef.current) return;

@@ -839,7 +839,7 @@ export function createSnapshotQueue() {
   };
   const setActivity = (nextEnabled: boolean, nextMoving: boolean) => {
     if (enabled === nextEnabled && moving === nextMoving) return;
-    if (nextMoving && !moving) noteInput();
+    noteInput();
     enabled = nextEnabled;
     moving = nextMoving;
     cancelScheduled();

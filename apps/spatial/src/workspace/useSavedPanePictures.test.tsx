@@ -894,7 +894,7 @@ it("gives native capture its grace period even when input is already quiet", asy
   expect(store.writes[0]?.source).toBe("capture");
 });
 
-it("captures first pixels between ordinary navigation inputs, only after motion stops", async () => {
+it("captures first pixels between ordinary navigation inputs, once motion has stayed stopped", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.setCaptureActivity(true, true);
@@ -903,7 +903,9 @@ it("captures first pixels between ordinary navigation inputs, only after motion 
   await advance(550);
   expect(snapshot).not.toHaveBeenCalled();
   hook.setCaptureActivity(true, false);
-  await advance(100);
+  await advance(390);
+  expect(snapshot).not.toHaveBeenCalled();
+  await advance(20);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   window.dispatchEvent(new Event("keydown"));
   expect(store.writes).toHaveLength(1);
@@ -933,7 +935,7 @@ it.each([
       expect(snapshot).not.toHaveBeenCalled();
     }
     expect(pictureImageFor(paneId)).toBe(covered ? cover : null);
-    await advance(quietMs - 301);
+    await advance(quietMs - 201);
     expect(snapshot).not.toHaveBeenCalled();
     await advance(2);
     expect(snapshot).toHaveBeenCalledOnce();
@@ -980,7 +982,9 @@ it("requeues a first picture interrupted by camera motion before cloning", async
   expect(store.writes).toHaveLength(0);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.setCaptureActivity(true, false);
-  await advance(100);
+  await advance(390);
+  expect(snapshot).toHaveBeenCalledOnce();
+  await advance(20);
   expect(snapshot).toHaveBeenCalledTimes(2);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });

@@ -52,7 +52,7 @@ export function SavedPanePicture({
           maxHeight: "none",
         }}
       />
-      <div className="sr-only">{summary}</div>
+      <div className={shown ? "sr-only" : "contents"}>{summary}</div>
     </>
   );
 }

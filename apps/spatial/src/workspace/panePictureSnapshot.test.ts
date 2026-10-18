@@ -111,7 +111,7 @@ it.each([false, true])(
 
     idleBudget = 0;
     f.queue.setActivity(true, false);
-    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(450);
     expect(drawImage).not.toHaveBeenCalled();
     idleBudget = 50;
     await vi.advanceTimersByTimeAsync(1);
@@ -321,5 +321,33 @@ it.each([false, true])(
     expect(canvas.width).toBe(0);
     expect(canvas.height).toBe(0);
     expect(images[0]!.hasAttribute("src")).toBe(false);
+  },
+);
+
+it.each([
+  { width: 400, height: 600, drawnScale: 2 },
+  { width: 2000, height: 1500, drawnScale: 1 },
+])(
+  "draws a $width x $height pane at scale $drawnScale on a 2x display",
+  async ({ width, height, drawnScale }) => {
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    try {
+      const element = createPane();
+      Object.defineProperties(element, {
+        offsetWidth: { value: width },
+        offsetHeight: { value: height },
+      });
+      const result = snapshotPanePicture(
+        element,
+        () => true,
+        async () => true,
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      images[0]!.dispatchEvent(new Event("load"));
+      expect(await result).toEqual({ image: picture, cssSize: { width, height } });
+      expect(scale).toHaveBeenCalledWith(drawnScale, drawnScale);
+    } finally {
+      delete (window as { devicePixelRatio?: number }).devicePixelRatio;
+    }
   },
 );
