@@ -325,29 +325,26 @@ it.each([false, true])(
 );
 
 it.each([
-  { width: 400, height: 600, drawnScale: 2 },
-  { width: 2000, height: 1500, drawnScale: 1 },
-])(
-  "draws a $width x $height pane at scale $drawnScale on a 2x display",
-  async ({ width, height, drawnScale }) => {
-    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
-    try {
-      const element = createPane();
-      Object.defineProperties(element, {
-        offsetWidth: { value: width },
-        offsetHeight: { value: height },
-      });
-      const result = snapshotPanePicture(
-        element,
-        () => true,
-        async () => true,
-      );
-      await vi.advanceTimersByTimeAsync(100);
-      images[0]!.dispatchEvent(new Event("load"));
-      expect(await result).toEqual({ image: picture, cssSize: { width, height } });
-      expect(scale).toHaveBeenCalledWith(drawnScale, drawnScale);
-    } finally {
-      delete (window as { devicePixelRatio?: number }).devicePixelRatio;
-    }
-  },
-);
+  { width: 400, height: 600 },
+  { width: 2000, height: 1500 },
+])("draws a $width x $height pane at the device pixel ratio", async ({ width, height }) => {
+  Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+  try {
+    const element = createPane();
+    Object.defineProperties(element, {
+      offsetWidth: { value: width },
+      offsetHeight: { value: height },
+    });
+    const result = snapshotPanePicture(
+      element,
+      () => true,
+      async () => true,
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    images[0]!.dispatchEvent(new Event("load"));
+    expect(await result).toEqual({ image: picture, cssSize: { width, height } });
+    expect(scale).toHaveBeenCalledWith(2, 2);
+  } finally {
+    delete (window as { devicePixelRatio?: number }).devicePixelRatio;
+  }
+});

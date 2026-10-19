@@ -157,9 +157,10 @@ the thread shell, which is never stale.
   of that kind interrupted midway yields to a waiting first picture. Failures back off up to five
   minutes. Camera motion and full-screen transitions count as input when they start and when they
   end, and nothing is drawn or prepared during a full-screen transition.
-- Drawing rasterizes the cloned pane on the main thread, about in proportion to its pixels, so a
-  drawn picture holds at most 3 megapixels: tiled panes keep the device pixel ratio, while
-  stage-sized compact pictures drop to roughly 1x.
+- Drawing rasterizes the cloned pane on the main thread at the device pixel ratio, about in
+  proportion to its pixels (a stage-sized 2x picture takes about 670 ms). The idle gates above keep
+  that cost out of input and motion; a smaller picture would read blurred on the display it was
+  drawn for.
 - Picture URLs are decoded during idle time to warm the browser's discardable image cache.
   `SavedPanePicture` keeps the current cover until a replacement decodes, since warmed pixels may
   have been discarded, and shows the thread card until its first picture decodes rather than an
