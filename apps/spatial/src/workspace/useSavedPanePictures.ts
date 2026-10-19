@@ -21,11 +21,14 @@ import { useThreadShells } from "@t3tools/web/src/state/entities";
 
 import {
   MAX_SAVED,
+  MAX_SAVED_BYTES,
   loadPanePictures,
-  deletePanePicture,
+  deletePanePictures,
+  pictureRecordKey,
   savePanePicture,
   type SavedPanePicture,
 } from "./panePictureStore";
+import type { PictureMount } from "./paneLifecycle";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
 import { threadPaneId } from "./useWorkspacePanes";
@@ -39,12 +42,6 @@ const syncedPanes = new Map<string, PaneContentRevision & { visualRevision: numb
 
 function contentKey(content: PaneContentRevision): string {
   return `${content.updatedAt}|${content.theme}|chat-chrome-2`;
-}
-
-const COMPACT_RECORD = "compact:";
-
-function paneOfRecord(recordId: string): string {
-  return recordId.startsWith(COMPACT_RECORD) ? recordId.slice(COMPACT_RECORD.length) : recordId;
 }
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
@@ -128,6 +125,7 @@ export function useSavedPanePictures(
   getLayout: () => OnirigiriLayout | null,
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
   defaultRowHeight: number | "viewport" = "viewport",
+  pictureMount: (paneId: string) => PictureMount = () => "ordinary",
 ): {
   getPanePicture: OnirigiriPanePictureResolver;
   getPanePresentation: PanePresentationResolver;
@@ -146,6 +144,7 @@ export function useSavedPanePictures(
   stageRef: (element: HTMLElement | null) => void;
   stageViewport: { width: number; height: number; compact: boolean };
 } {
+  "use no memo";
   const threads = useThreadShells();
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
@@ -164,15 +163,19 @@ export function useSavedPanePictures(
     [retained],
   );
   const updateSaved = useCallback((pictures: Map<string, SavedPanePicture>) => {
+    let count = 0;
+    let bytes = 0;
+    const kept = [...pictures.values()]
+      .toSorted((a, b) => b.savedAt - a.savedAt)
+      .filter((picture) => {
+        count += 1;
+        bytes += picture.image.size;
+        return count <= MAX_SAVED && bytes <= MAX_SAVED_BYTES;
+      });
     const next =
-      pictures.size <= MAX_SAVED
+      kept.length === pictures.size
         ? pictures
-        : new Map(
-            [...pictures.values()]
-              .toSorted((a, b) => b.savedAt - a.savedAt)
-              .slice(0, MAX_SAVED)
-              .map((picture) => [picture.paneId, picture]),
-          );
+        : new Map(kept.map((picture) => [picture.recordKey, picture]));
     savedRef.current = next;
     setSaved(next);
   }, []);
@@ -190,10 +193,10 @@ export function useSavedPanePictures(
   const paneGeometryRef = useRef<Map<string, string> | null>(null);
   const stageSizeRef = useRef("");
   const compactRef = useRef(false);
-  const recordId = useCallback(
-    (paneId: string) => (compactRef.current ? `${COMPACT_RECORD}${paneId}` : paneId),
-    [],
-  );
+  const pictureMountRef = useRef(pictureMount);
+  useLayoutEffect(() => {
+    pictureMountRef.current = pictureMount;
+  }, [pictureMount]);
   const lastValidPictures = useRef(new Map<string, SavedPanePicture>());
   const [stageViewport, setStageViewport] = useState({ width: 0, height: 0, compact: false });
   const [geometryVersion, setGeometryVersion] = useState(0);
@@ -215,7 +218,7 @@ export function useSavedPanePictures(
         deletedWhileLoading.current = null;
         updateSaved(
           new Map([
-            ...[...pictures].filter(([id]) => !deleted?.has(paneOfRecord(id))),
+            ...[...pictures].filter(([, picture]) => !deleted?.has(picture.paneId)),
             ...(savedRef.current ?? []),
           ]),
         );
@@ -249,7 +252,6 @@ export function useSavedPanePictures(
         workspace.dataset.spatialCompact = String(compact);
       if (compactRef.current !== compact) {
         compactRef.current = compact;
-        lastValidPictures.current.clear();
         setGeometryVersion((version) => version + 1);
       }
       setStageViewport((previous) =>
@@ -348,6 +350,13 @@ export function useSavedPanePictures(
     },
     [geometryRevision],
   );
+  const recordKey = useCallback(
+    (paneId: string) => {
+      const geometry = geometryRevision(paneId);
+      return geometry ? pictureRecordKey(paneId, geometry) : null;
+    },
+    [geometryRevision],
+  );
 
   const contentRevisions = useMemo(
     () =>
@@ -369,16 +378,26 @@ export function useSavedPanePictures(
       ),
     [threads],
   );
-  const savedHere = useMemo(
-    () => [...(saved?.keys() ?? [])].filter((id) => contentRevisions.has(paneOfRecord(id))).length,
-    [contentRevisions, saved],
-  );
+  const savedHere = useMemo(() => {
+    let count = 0;
+    let bytes = 0;
+    let largest = 0;
+    for (const picture of saved?.values() ?? []) {
+      if (!contentRevisions.has(picture.paneId)) continue;
+      count += 1;
+      bytes += picture.image.size;
+      largest = Math.max(largest, picture.image.size);
+    }
+    return { count, bytes, largest };
+  }, [contentRevisions, saved]);
   const canBackgroundPicture = useCallback(
-    (paneId: string, visited = false) =>
-      retained.get(paneId) !== "live" &&
-      !runningPanes.has(paneId) &&
-      (visited || saved === null || saved.has(recordId(paneId)) || savedHere < MAX_SAVED),
-    [recordId, retained, runningPanes, saved, savedHere],
+    (paneId: string, visited = false) => {
+      const key = recordKey(paneId);
+      if (key === null || retained.get(paneId) === "live" || runningPanes.has(paneId)) return false;
+      if (visited || saved === null || saved.has(key)) return true;
+      return savedHere.count < MAX_SAVED && savedHere.bytes + savedHere.largest <= MAX_SAVED_BYTES;
+    },
+    [recordKey, retained, runningPanes, saved, savedHere],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
@@ -389,45 +408,40 @@ export function useSavedPanePictures(
   const freshPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       if (retainedRef.current.has(paneId)) return null;
-      const picture = saved?.get(recordId(paneId));
-      if (!picture) return null;
-      const revision = expectedRevision(paneId, contentRevisions);
-      if (!revision || picture.revision !== pictureRevision(revision, picture.source)) return null;
+      const key = recordKey(paneId);
+      const content = contentRevisions.get(paneId);
+      const picture = key === null ? undefined : saved?.get(key);
+      if (!picture || !content) return null;
+      if (picture.revision !== pictureRevision(contentKey(content), picture.source)) return null;
       return picture;
     },
-    [contentRevisions, expectedRevision, recordId, saved],
+    [contentRevisions, recordKey, saved],
   );
 
   const [coverVersion, setCoverVersion] = useState(0);
   const [pictureUrls] = useState(createPanePictureUrls);
-  const { compact } = stageViewport;
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
-      if (
-        retainedRef.current.has(paneId) ||
-        !saved?.has(recordId(paneId)) ||
-        !contentRevisionsRef.current.has(paneId)
-      ) {
-        lastValidPictures.current.delete(paneId);
-        return null;
-      }
-      const picture = saved.get(recordId(paneId))!;
-      const revision = expectedRevision(paneId, contentRevisionsRef.current);
+      const key = recordKey(paneId);
+      const content = contentRevisionsRef.current.get(paneId);
+      const picture = key === null ? undefined : saved?.get(key);
+      if (retainedRef.current.has(paneId) || !picture || !content) return null;
       const fresh =
-        revision && picture.revision === pictureRevision(revision, picture.source) ? picture : null;
-      return fresh ?? lastValidPictures.current.get(paneId) ?? null;
+        picture.revision === pictureRevision(contentKey(content), picture.source) ? picture : null;
+      return fresh ?? lastValidPictures.current.get(picture.recordKey) ?? null;
     },
-    // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again; a replaced cover already changes `saved`.
-    [compact, coverVersion, expectedRevision, recordId, saved],
+    // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again, and observer geometry selects another record; a replaced cover already changes `saved`.
+    [coverVersion, geometryVersion, recordKey, saved],
   );
   useLayoutEffect(() => {
-    for (const paneId of lastValidPictures.current.keys()) {
+    for (const [key, picture] of lastValidPictures.current) {
       if (
-        retainedRef.current.has(paneId) ||
-        !saved?.has(recordId(paneId)) ||
-        !contentRevisions.has(paneId)
+        retainedRef.current.has(picture.paneId) ||
+        !saved?.has(key) ||
+        !contentRevisions.has(picture.paneId) ||
+        recordKey(picture.paneId) !== key
       ) {
-        lastValidPictures.current.delete(paneId);
+        lastValidPictures.current.delete(key);
       }
     }
     let coverAppeared = false;
@@ -435,8 +449,8 @@ export function useSavedPanePictures(
       new Set([
         ...[...contentRevisions.keys()].flatMap((paneId) => {
           const picture = freshPictureFor(paneId);
-          if (picture && !lastValidPictures.current.has(paneId)) coverAppeared = true;
-          if (picture) lastValidPictures.current.set(paneId, picture);
+          if (picture && !lastValidPictures.current.has(picture.recordKey)) coverAppeared = true;
+          if (picture) lastValidPictures.current.set(picture.recordKey, picture);
           return picture ? [picture.image] : [];
         }),
         ...[...lastValidPictures.current.values()].map((picture) => picture.image),
@@ -445,7 +459,7 @@ export function useSavedPanePictures(
     // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
     if (coverAppeared) setCoverVersion((version) => version + 1);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
-  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, recordId, retained, saved]);
+  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, recordKey, retained, saved]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
     (paneId: string) => {
@@ -474,21 +488,21 @@ export function useSavedPanePictures(
 
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
-      const paneId = paneOfRecord(picture.paneId);
+      const { paneId } = picture;
       pictureVisualRevisions.current.set(picture.image, revision);
-      lastValidPictures.current.set(paneId, picture);
+      lastValidPictures.current.set(picture.recordKey, picture);
       if (retainedRef.current.get(paneId) === "awaiting-picture") {
         const next = new Map(retainedRef.current);
         next.delete(paneId);
         updateRetained(next);
       }
-      updateSaved(new Map(savedRef.current ?? []).set(picture.paneId, picture));
+      updateSaved(new Map(savedRef.current ?? []).set(picture.recordKey, picture));
       return savePanePicture(
         picture,
         () =>
           retainedRef.current.get(paneId) !== "live" &&
           visualRevision(paneId) === revision &&
-          savedRef.current?.get(picture.paneId)?.image === picture.image,
+          savedRef.current?.get(picture.recordKey)?.image === picture.image,
       );
     },
     [updateRetained, updateSaved, visualRevision],
@@ -516,8 +530,10 @@ export function useSavedPanePictures(
       )
         return;
       const picture = {
-        paneId: recordId(pane.paneId),
-        revision: `${contentKey(content)}|${geometry}`,
+        recordKey: pictureRecordKey(pane.paneId, geometry),
+        paneId: pane.paneId,
+        geometryRevision: geometry,
+        revision: contentKey(content),
         image,
         cssSize: { width: receipt.bounds.width, height: receipt.bounds.height },
         savedAt: Date.now(),
@@ -525,7 +541,7 @@ export function useSavedPanePictures(
       };
       void keepPicture(picture, currentVisualRevision).catch(() => {});
     },
-    [geometryRevision, keepPicture, recordId, visualRevision],
+    [geometryRevision, keepPicture, visualRevision],
   );
 
   const drawSnapshot = useCallback(
@@ -538,9 +554,12 @@ export function useSavedPanePictures(
       const startedAt = performance.now();
       const revision = () => expectedRevision(paneId, contentRevisionsRef.current);
       const before = revision();
-      const record = recordId(paneId);
+      const geometry = geometryRevision(paneId);
+      const beforeContent = contentRevisionsRef.current.get(paneId);
       const beforeVisualRevision = visualRevision(paneId);
-      if (before === null) return;
+      if (before === null || geometry === null || !beforeContent) return;
+      const record = pictureRecordKey(paneId, geometry);
+      const contentBefore = contentKey(beforeContent);
       const canSnapshot = () => {
         const content = contentRevisionsRef.current.get(paneId);
         return (
@@ -557,7 +576,8 @@ export function useSavedPanePictures(
       if (!canSnapshot()) return;
       const previous = savedRef.current?.get(record);
       if (
-        previous?.revision === pictureRevision(before, previous?.source) &&
+        previous &&
+        previous.revision === pictureRevision(contentBefore, previous.source) &&
         pictureMatchesVisualRevision(paneId, previous.image)
       )
         return;
@@ -565,7 +585,7 @@ export function useSavedPanePictures(
         const kept = savedRef.current?.get(record);
         return (
           kept?.source === "capture" &&
-          kept.revision === before &&
+          kept.revision === contentBefore &&
           pictureMatchesVisualRevision(paneId, kept.image)
         );
       };
@@ -579,7 +599,7 @@ export function useSavedPanePictures(
       const snapshot = await snapshotPanePicture(
         element,
         canSnapshot,
-        async () => (await waitToDraw()) && current(),
+        async () => (await waitToDraw()) && canSnapshot() && !captured(),
       ).catch(() => null);
       if (!snapshot) {
         if (current() && canSnapshot()) onSnapshotFailure(paneId, startedAt);
@@ -587,8 +607,10 @@ export function useSavedPanePictures(
       }
       if (!current()) return;
       const picture = {
-        paneId: record,
-        revision: pictureRevision(before, "snapshot"),
+        recordKey: record,
+        paneId,
+        geometryRevision: geometry,
+        revision: pictureRevision(contentBefore, "snapshot"),
         image: snapshot.image,
         cssSize: snapshot.cssSize,
         savedAt: Date.now(),
@@ -598,10 +620,10 @@ export function useSavedPanePictures(
     },
     [
       expectedRevision,
+      geometryRevision,
       keepPicture,
       onSnapshotFailure,
       pictureMatchesVisualRevision,
-      recordId,
       visualRevision,
     ],
   );
@@ -615,24 +637,30 @@ export function useSavedPanePictures(
       snapshots.setDraw(
         (...args) => drawSnapshotRef.current(...args),
         (paneId) => {
-          const revision = expectedRevision(paneId, contentRevisionsRef.current);
+          const key = recordKey(paneId);
+          const content = contentRevisionsRef.current.get(paneId);
           if (
-            !revision ||
+            key === null ||
+            !content ||
             retainedRef.current.get(paneId) === "live" ||
             runningPanesRef.current.has(paneId) ||
             !syncedPanes.has(paneId)
           )
             return false;
-          const previous = savedRef.current?.get(recordId(paneId));
+          const previous = savedRef.current?.get(key);
           return (
             !previous ||
-            previous.revision !== pictureRevision(revision, previous.source) ||
+            previous.revision !== pictureRevision(contentKey(content), previous.source) ||
             !pictureMatchesVisualRevision(paneId, previous.image)
           );
         },
-        (paneId) => lastValidPictures.current.has(paneId),
+        (paneId) => {
+          const key = recordKey(paneId);
+          return key !== null && lastValidPictures.current.has(key);
+        },
+        (paneId) => pictureMountRef.current(paneId),
       ),
-    [expectedRevision, pictureMatchesVisualRevision, recordId, snapshots],
+    [pictureMatchesVisualRevision, recordKey, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
@@ -647,16 +675,17 @@ export function useSavedPanePictures(
         next.set(paneId, present ? "live" : "awaiting-picture");
         updateRetained(next);
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
-        lastValidPictures.current.delete(paneId);
-        const records = [paneId, `${COMPACT_RECORD}${paneId}`];
-        if (records.some((id) => savedRef.current?.has(id))) {
-          const pictures = new Map(savedRef.current);
-          for (const id of records) pictures.delete(id);
-          updateSaved(pictures);
+        for (const [key, picture] of lastValidPictures.current) {
+          if (picture.paneId === paneId) lastValidPictures.current.delete(key);
         }
+        const pictures = new Map(savedRef.current);
+        for (const [key, picture] of pictures) {
+          if (picture.paneId === paneId) pictures.delete(key);
+        }
+        if (pictures.size !== (savedRef.current?.size ?? 0)) updateSaved(pictures);
         if (present) {
           deletedWhileLoading.current?.add(paneId);
-          for (const id of records) void deletePanePicture(id).catch(() => {});
+          void deletePanePictures(paneId).catch(() => {});
         }
         return visualRevision(paneId);
       },
@@ -690,6 +719,7 @@ export function useSavedPanePictures(
 
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const FIRST_PICTURE_INPUT_QUIET_MS = 400;
+const BACKGROUND_PICTURE_QUIET_MS = 10_000;
 const NATIVE_CAPTURE_GRACE_MS = 2000;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
@@ -700,14 +730,24 @@ export function createSnapshotQueue() {
     canStart: () => boolean,
     waitToDraw: () => Promise<boolean>,
   ) => Promise<void>;
-  const pending = new Map<string, { element: HTMLElement; after: number; retryAfter: number }>();
+  const pending = new Map<
+    string,
+    { element: HTMLElement; after: number; retryAfter: number; background: boolean }
+  >();
   let draw: Draw | null = null;
   let needsPicture: (paneId: string) => boolean = () => false;
   let hasCover: (paneId: string) => boolean = () => false;
+  let mountOf: (paneId: string) => PictureMount = () => "ordinary";
   let enabled = true;
   let moving = false;
   let drawing = false;
-  let continuation: { paneId: string; resolve: (admitted: boolean) => void } | null = null;
+  let continuation: {
+    paneId: string;
+    background: boolean;
+    resolve: (admitted: boolean) => void;
+    cancel: () => void;
+    drop: () => void;
+  } | null = null;
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
@@ -715,8 +755,12 @@ export function createSnapshotQueue() {
     lastInput = performance.now();
   };
   const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
-  const quietTime = (paneId: string) =>
-    hasCover(paneId) ? SNAPSHOT_INPUT_QUIET_MS : FIRST_PICTURE_INPUT_QUIET_MS;
+  const quietTime = (paneId: string, background: boolean) =>
+    background
+      ? BACKGROUND_PICTURE_QUIET_MS
+      : hasCover(paneId)
+        ? SNAPSHOT_INPUT_QUIET_MS
+        : FIRST_PICTURE_INPUT_QUIET_MS;
   const cancelScheduled = () => {
     if (idle !== null) cancelIdleCallback(idle);
     if (timer !== null) clearTimeout(timer);
@@ -744,14 +788,36 @@ export function createSnapshotQueue() {
           return;
         }
         const now = performance.now();
-        const due = ([paneId, request]: [string, { after: number }]) =>
-          Math.max(lastInput + quietTime(paneId), request.after);
-        const [paneId, request] = continuation
-          ? ([continuation.paneId, null] as const)
-          : [...pending].reduce((first, candidate) =>
-              due(candidate) < due(first) ? candidate : first,
-            );
-        const wait = due([paneId, request ?? { after: 0 }]) - now;
+        const due = ([paneId, request]: [string, { after: number; background: boolean }]) =>
+          Math.max(lastInput + quietTime(paneId, request.background), request.after);
+        if (continuation) {
+          const resumeAt = lastInput + quietTime(continuation.paneId, continuation.background);
+          if (
+            continuation.background &&
+            [...pending].some((candidate) => !candidate[1].background && due(candidate) < resumeAt)
+          ) {
+            const yielding = continuation;
+            continuation = null;
+            yielding.cancel();
+            return;
+          }
+          if (resumeAt > now) {
+            timer = setTimeout(() => {
+              timer = null;
+              next();
+            }, resumeAt - now);
+            return;
+          }
+          const resume = continuation;
+          continuation = null;
+          if (mountOf(resume.paneId) === null) resume.drop();
+          else resume.resolve(true);
+          return;
+        }
+        const [paneId, request] = [...pending].reduce((first, candidate) =>
+          due(candidate) < due(first) ? candidate : first,
+        );
+        const wait = due([paneId, request]) - now;
         if (wait > 0) {
           timer = setTimeout(() => {
             timer = null;
@@ -759,24 +825,42 @@ export function createSnapshotQueue() {
           }, wait);
           return;
         }
-        if (!request) {
-          const resume = continuation!;
-          continuation = null;
-          resume.resolve(true);
+        pending.delete(paneId);
+        const owner = mountOf(paneId);
+        if (owner === null) {
+          next();
           return;
         }
-        pending.delete(paneId);
         drawing = true;
+        const background = request.background && owner === "background";
         let deferred = false;
+        let dropped = false;
         const canStart = () => {
-          if (!enabled || moving || performance.now() - lastInput < quietTime(paneId))
+          if (mountOf(paneId) === null) dropped = true;
+          else if (
+            !enabled ||
+            moving ||
+            performance.now() - lastInput < quietTime(paneId, background)
+          )
             deferred = true;
-          return !deferred && draw === current;
+          return !deferred && !dropped && draw === current;
         };
         const waitToDraw = () => {
           if (draw !== current) return Promise.resolve(false);
           return new Promise<boolean>((resolve) => {
-            continuation = { paneId, resolve };
+            continuation = {
+              paneId,
+              background,
+              resolve,
+              cancel: () => {
+                deferred = true;
+                resolve(false);
+              },
+              drop: () => {
+                dropped = true;
+                resolve(false);
+              },
+            };
             next();
           });
         };
@@ -784,7 +868,7 @@ export function createSnapshotQueue() {
           .catch(() => {})
           .finally(() => {
             drawing = false;
-            if (draw === current && !pending.has(paneId)) {
+            if (draw === current && !pending.has(paneId) && !dropped) {
               if (deferred) pending.set(paneId, request);
               else if (request.element.isConnected && needsPicture(paneId)) {
                 pending.set(paneId, {
@@ -801,6 +885,7 @@ export function createSnapshotQueue() {
     );
   };
   const request = (paneId: string, element: HTMLElement, preferNative: boolean) => {
+    if (mountOf(paneId) === null) return;
     pending.set(paneId, {
       element,
       after: Math.min(
@@ -808,6 +893,7 @@ export function createSnapshotQueue() {
         performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
       ),
       retryAfter: SNAPSHOT_INPUT_QUIET_MS,
+      background: mountOf(paneId) === "background",
     });
     if (timer !== null) clearTimeout(timer);
     timer = null;
@@ -817,10 +903,12 @@ export function createSnapshotQueue() {
     nextDraw: Draw,
     nextNeedsPicture: (paneId: string) => boolean,
     nextHasCover: (paneId: string) => boolean,
+    nextMountOf: (paneId: string) => PictureMount = () => "ordinary",
   ) => {
     draw = nextDraw;
     needsPicture = nextNeedsPicture;
     hasCover = nextHasCover;
+    mountOf = nextMountOf;
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });
     }

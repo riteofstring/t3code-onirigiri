@@ -1,26 +1,37 @@
 export const MAX_SAVED = 200;
-const MAX_SAVED_BYTES = 128 * 1024 * 1024;
+export const MAX_SAVED_BYTES = 128 * 1024 * 1024;
 const DATABASE = "onirigiri-t3-pane-pictures";
+const VERSION = 2;
 const STORE = "pictures";
 const BY_SAVED_AT = "savedAt";
+const BY_PANE = "paneId";
 
 export interface SavedPanePicture {
+  readonly recordKey: string;
   readonly paneId: string;
+  readonly geometryRevision: string;
   readonly revision: string;
   readonly image: Blob;
   readonly cssSize: { readonly width: number; readonly height: number };
   readonly savedAt: number;
-  readonly source?: "capture" | "snapshot";
+  readonly source: "capture" | "snapshot";
+}
+
+export function pictureRecordKey(paneId: string, geometryRevision: string): string {
+  return JSON.stringify([paneId, geometryRevision]);
 }
 
 let database: Promise<IDBDatabase> | null = null;
 
 function openDatabase(): Promise<IDBDatabase> {
   database ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, 1);
+    const request = indexedDB.open(DATABASE, VERSION);
     request.addEventListener("upgradeneeded", () => {
-      const store = request.result.createObjectStore(STORE, { keyPath: "paneId" });
+      const db = request.result;
+      if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
+      const store = db.createObjectStore(STORE, { keyPath: "recordKey" });
       store.createIndex(BY_SAVED_AT, "savedAt");
+      store.createIndex(BY_PANE, "paneId");
     });
     request.addEventListener("success", () => {
       const db = request.result;
@@ -67,7 +78,7 @@ export async function loadPanePictures(): Promise<Map<string, SavedPanePicture>>
           Number.isFinite(cssSize.height) &&
           cssSize.height > 0,
       )
-      .map((picture) => [picture.paneId, picture]),
+      .map((picture) => [picture.recordKey, picture]),
   );
 }
 
@@ -95,9 +106,15 @@ export async function savePanePicture(
   await completed(transaction);
 }
 
-export async function deletePanePicture(paneId: string): Promise<void> {
+export async function deletePanePictures(paneId: string): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction(STORE, "readwrite");
-  transaction.objectStore(STORE).delete(paneId);
+  const cursor = transaction.objectStore(STORE).index(BY_PANE).openCursor(IDBKeyRange.only(paneId));
+  cursor.addEventListener("success", () => {
+    const current = cursor.result;
+    if (!current) return;
+    current.delete();
+    current.continue();
+  });
   await completed(transaction);
 }

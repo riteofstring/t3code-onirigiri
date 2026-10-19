@@ -7,7 +7,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { PanePictureSnapshot } from "./panePictureSnapshot";
-import type { SavedPanePicture } from "./panePictureStore";
+import { pictureRecordKey, type SavedPanePicture } from "./panePictureStore";
 import { createPaneLifecycleStore } from "./paneLifecycle";
 import { markPaneSynced, usePanePictureTheme, useSavedPanePictures } from "./useSavedPanePictures";
 
@@ -44,6 +44,7 @@ const snapshot = vi.hoisted(() =>
     async (
       _element: HTMLElement,
       canSnapshot: () => boolean,
+      _waitToDraw?: () => Promise<boolean>,
     ): Promise<PanePictureSnapshot | null> =>
       canSnapshot()
         ? { image: new Blob(["snapshot"]), cssSize: { width: 400, height: 580 } }
@@ -53,15 +54,19 @@ const snapshot = vi.hoisted(() =>
 vi.mock("./panePictureSnapshot", () => ({
   snapshotPanePicture: snapshot,
 }));
-vi.mock("./panePictureStore", () => ({
-  MAX_SAVED: 200,
-  loadPanePictures: async () => store.loading ?? store.saved,
+vi.mock("./panePictureStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./panePictureStore")>()),
+  loadPanePictures: async () => {
+    const pictures = await (store.loading ?? store.saved);
+    return new Map([...pictures.values()].map((picture) => [picture.recordKey, picture]));
+  },
   savePanePicture: async (picture: SavedPanePicture) => {
     store.writes.push(picture);
   },
-  deletePanePicture: async (paneId: string) => {
+  deletePanePictures: async (paneId: string) => {
     store.deleted.push(paneId);
-    store.saved.delete(paneId);
+    for (const [key, picture] of store.saved)
+      if (picture.paneId === paneId) store.saved.delete(key);
   },
 }));
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({
@@ -124,10 +129,18 @@ let currentLayout = layout(400);
 let defaultRowHeight: number | "viewport" = "viewport";
 const getLayout = () => currentLayout;
 const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
+const backgroundPanes = new Set<string>();
+let backgroundLifecycle: ReturnType<typeof createPaneLifecycleStore> | null = null;
+const pictureMount = (id: string) =>
+  backgroundLifecycle
+    ? backgroundLifecycle.pictureMount(id)
+    : backgroundPanes.has(id)
+      ? "background"
+      : "ordinary";
 
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
-  const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight);
+  const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight, pictureMount);
   const { pictureFor } = value;
   const shown = useMemo(() => pictureFor(paneId)?.image ?? null, [pictureFor]);
   useEffect(() => {
@@ -163,15 +176,23 @@ const advance = (ms: number) =>
     await vi.advanceTimersByTimeAsync(ms);
   });
 
-const savedPicture = (picture: Partial<SavedPanePicture> = {}): SavedPanePicture => ({
-  paneId,
-  revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-  image: new Blob(["png"]),
-  cssSize: { width: 400, height: 580 },
-  savedAt: 1,
-  source: "capture",
-  ...picture,
-});
+const contentRevision = `u1|dark|dark|${fontRevision}|chat-chrome-2`;
+
+const savedPicture = (picture: Partial<SavedPanePicture> = {}): SavedPanePicture => {
+  const id = picture.paneId ?? paneId;
+  const geometryRevision = picture.geometryRevision ?? geometry(400);
+  return {
+    recordKey: pictureRecordKey(id, geometryRevision),
+    paneId: id,
+    geometryRevision,
+    revision: contentRevision,
+    image: new Blob(["png"]),
+    cssSize: { width: 400, height: 580 },
+    savedAt: 1,
+    source: "capture",
+    ...picture,
+  };
+};
 
 function pictureImageFor(id: string): Blob | null {
   return hook.pictureFor(id)?.image ?? null;
@@ -272,6 +293,9 @@ afterEach(async () => {
   currentLayout = layout(400);
   defaultRowHeight = "viewport";
   markPaneSynced(paneId, null);
+  backgroundPanes.clear();
+  backgroundLifecycle?.dispose();
+  backgroundLifecycle = null;
   snapshot.mockReset();
   snapshotFailures.mockReset();
   snapshot.mockImplementation(async (_element, canSnapshot) =>
@@ -311,18 +335,18 @@ it("refreshes pictures when the engine stage grows inside an unchanged workspace
   const oldImage = new Blob(["shorter stage"]);
   await act(() => capturePicture(pane, oldImage));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  const oldRevision = store.writes[0]!.revision;
+  const oldGeometry = store.writes[0]!.geometryRevision;
 
   await act(() => resizeElement(stage, 800, 600));
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   expect(hook.getPanePicture(pane)).toBeNull();
-  expect(pictureImageFor(paneId)).toBe(oldImage);
+  expect(pictureImageFor(paneId)).toBeNull();
 
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   await advance(3500);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(hook.getPanePicture(pane)?.image).not.toBe(oldImage);
-  expect(store.writes[1]!.revision).not.toBe(oldRevision);
+  expect(store.writes[1]!.geometryRevision).not.toBe(oldGeometry);
 });
 
 it("follows committed compact layout after a same-size resize without resizing again", async () => {
@@ -438,6 +462,147 @@ function fillPictureCache() {
   }
 }
 
+it("keeps the in-memory set under the byte cap and stops background filling near it", async () => {
+  const heavy = (name: string) => ({ size: 70 * 1024 * 1024, name }) as unknown as Blob;
+  store.threadIds = ["t1", "t2", "t3"];
+  currentLayout = layout(400);
+  const second = "thread:e:t2";
+  const third = "thread:e:t3";
+  store.saved.set(paneId, savedPicture({ image: heavy("older"), savedAt: 1 }));
+  store.saved.set(second, savedPicture({ paneId: second, image: heavy("newer"), savedAt: 2 }));
+  await mount();
+  expect(pictureImageFor(second)).toMatchObject({ name: "newer" });
+  expect(pictureImageFor(paneId)).toBeNull();
+  expect(hook.canBackgroundPicture(second)).toBe(true);
+  expect(hook.canBackgroundPicture(third)).toBe(false);
+  expect(hook.canBackgroundPicture(third, true)).toBe(true);
+});
+
+it("does not admit background pictures before the stage geometry is known", async () => {
+  await mount({ resizeStage: false });
+  expect(hook.canBackgroundPicture(paneId)).toBe(false);
+  expect(hook.canBackgroundPicture(paneId, true)).toBe(false);
+  await act(() => resize(800, 600));
+  expect(hook.canBackgroundPicture(paneId)).toBe(true);
+});
+
+it("draws a departing view quickly, pictures an untouched pane once the lifecycle admits it, and drops an expired mount's drawing", async () => {
+  store.threadIds = Array.from({ length: 12 }, (_, i) => `t${i}`);
+  currentLayout = layout(400);
+  for (const id of store.threadIds.slice(1, 11)) {
+    const pictured = `thread:e:${id}`;
+    store.saved.set(pictured, savedPicture({ paneId: pictured, image: new Blob([id]) }));
+  }
+  await mount();
+  const panes = store.threadIds.map((id, slot) => ({ paneId: `thread:e:${id}`, plane: 0, slot }));
+  const first = "thread:e:t0";
+  const last = "thread:e:t11";
+  const lifecycle = createPaneLifecycleStore(panes, first);
+  backgroundLifecycle = lifecycle;
+  const elements = new Map(panes.map(({ paneId: id }) => [id, { isConnected: true, id }]));
+  let unmountCommitDelay = 0;
+  for (const { paneId: id } of panes) {
+    lifecycle.subscribe(id, () => {
+      const mounted = lifecycle.isMounted(id);
+      lifecycle.committed(id, mounted);
+      if (mounted) elements.get(id)!.isConnected = true;
+      else
+        setTimeout(() => {
+          elements.get(id)!.isConnected = false;
+          markPaneSynced(id, null);
+        }, unmountCommitDelay);
+      if (mounted) markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
+      if (mounted && !hook.hasFreshPicture(id))
+        hook.paneSnapshots.request(id, elements.get(id) as HTMLElement);
+    });
+  }
+  markPaneSynced(first, { updatedAt: store.updatedAt, theme: appearance });
+  const syncPictures = () =>
+    lifecycle.setPictures((id) => hook.hasFreshPicture(id), true, hook.canBackgroundPicture);
+  syncPictures();
+  lifecycle.setBackgroundPictures(true);
+  for (let slot = 1; slot <= 8; slot++) {
+    hook.setCaptureActivity(true, true);
+    lifecycle.setMoving(true);
+    lifecycle.setFocus(`thread:e:t${slot}`);
+    lifecycle.setVisible(`thread:e:t${slot}`, true);
+    await advance(100);
+    lifecycle.setMoving(false);
+    hook.setCaptureActivity(true, false);
+    await advance(200);
+  }
+  expect(lifecycle.isMounted(first)).toBe(true);
+  expect(lifecycle.pictureMount(first)).toBe("ordinary");
+  expect(panes.filter(({ paneId: id }) => lifecycle.isMounted(id)).length).toBeGreaterThan(8);
+  window.dispatchEvent(new Event("keydown"));
+  hook.paneSnapshots.request(first, elements.get(first) as HTMLElement);
+  await advance(450);
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(hook.hasFreshPicture(first)).toBe(true);
+  syncPictures();
+  await advance(1500);
+  expect(lifecycle.isMounted(first)).toBe(false);
+
+  expect(lifecycle.isMounted(last)).toBe(false);
+  await advance(8000);
+  expect(lifecycle.isMounted(last)).toBe(false);
+  await advance(2000);
+  expect(lifecycle.isMounted(last)).toBe(true);
+  expect(lifecycle.pictureMount(last)).toBe("background");
+  await advance(100);
+  expect(snapshot).toHaveBeenCalledTimes(2);
+  expect(hook.hasFreshPicture(last)).toBe(true);
+  syncPictures();
+  await advance(1500);
+  expect(lifecycle.isMounted(last)).toBe(false);
+
+  const admissions: boolean[] = [];
+  const interrupt = () => {
+    hook.setCaptureActivity(true, true);
+    hook.setCaptureActivity(true, false);
+  };
+  snapshot.mockImplementationOnce(async (_element, canSnapshot, waitToDraw) => {
+    interrupt();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    interrupt();
+    const admitted = await waitToDraw!();
+    admissions.push(admitted);
+    if (!admitted || !canSnapshot()) return null;
+    return { image: new Blob(["expired mount"]), cssSize: { width: 400, height: 580 } };
+  });
+  unmountCommitDelay = 30_000;
+  store.updatedAt = "u2";
+  await act(() => renderer!.update(<Probe />));
+  syncPictures();
+  await advance(300);
+  const redrawn = panes
+    .map(({ paneId: id }) => id)
+    .find((id) => lifecycle.pictureMount(id) === "background")!;
+  expect(redrawn).toBeDefined();
+  const drawsOf = (id: string) =>
+    snapshot.mock.calls.filter((call) => (call[0] as unknown as { id: string }).id === id).length;
+  expect(drawsOf(redrawn)).toBe(1);
+  await advance(11_200);
+  expect(lifecycle.isMounted(redrawn)).toBe(false);
+  expect(elements.get(redrawn)!.isConnected).toBe(true);
+  expect(admissions).toEqual([]);
+  await advance(1500);
+  expect(admissions).toEqual([false]);
+  expect(drawsOf(redrawn)).toBe(1);
+  expect(snapshotFailures).not.toHaveBeenCalled();
+  expect(hook.hasFreshPicture(redrawn)).toBe(false);
+  const focused = "thread:e:t8";
+  expect(lifecycle.pictureMount(focused)).toBe("ordinary");
+  markPaneSynced(focused, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(focused, elements.get(focused) as HTMLElement);
+  await advance(3500);
+  expect(drawsOf(focused)).toBe(1);
+  expect(hook.hasFreshPicture(focused)).toBe(true);
+  await advance(60_000);
+  expect(drawsOf(redrawn)).toBe(1);
+  expect(lifecycle.isMounted(redrawn)).toBe(false);
+});
+
 it("prepares this workspace even when other workspaces fill the persistent cache", async () => {
   fillPictureCache();
   store.threadIds = ["t201"];
@@ -490,8 +655,10 @@ it("saves captures only from panes showing a synchronized thread", async () => {
   capturePicture(pane, image);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]).toMatchObject({
+    recordKey: pictureRecordKey(paneId, geometry(400)),
     paneId,
-    revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
+    geometryRevision: geometry(400),
+    revision: contentRevision,
     image,
   });
 });
@@ -547,7 +714,7 @@ it("keeps the last completed picture through streaming and saves the completed t
   await act(() => capturePicture(pane, completed));
   expect(store.writes).toHaveLength(2);
   expect(store.writes[1]).toMatchObject({
-    revision: `u2|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
+    revision: `u2|dark|dark|${fontRevision}|chat-chrome-2`,
     image: completed,
   });
 });
@@ -576,9 +743,7 @@ it("refreshes pictures when the palette changes within the same appearance", asy
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `iris|dark|${fontRevision}` });
   await act(() => capturePicture(pane, new Blob(["iris"])));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  expect(store.writes[2]?.revision).toBe(
-    `u1|iris|dark|${fontRevision}|chat-chrome-2|${geometry(400)}`,
-  );
+  expect(store.writes[2]?.revision).toBe(`u1|iris|dark|${fontRevision}|chat-chrome-2`);
 });
 
 it("waits for committed detail to catch up with shell metadata before saving either picture path", async () => {
@@ -597,7 +762,7 @@ it("waits for committed detail to catch up with shell metadata before saving eit
   await advance(3500);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.revision).toBe(
-    `u2|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}|responsive-css-4`,
+    `u2|dark|dark|${fontRevision}|chat-chrome-2|responsive-css-4`,
   );
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
@@ -627,14 +792,14 @@ it.each([
 ])("does not display a persisted picture with outdated %s", async (_changed, updatedAt, chrome) => {
   store.saved.set(
     paneId,
-    savedPicture({ revision: `${updatedAt}|dark|dark|${fontRevision}|${chrome}|${geometry(400)}` }),
+    savedPicture({ revision: `${updatedAt}|dark|dark|${fontRevision}|${chrome}` }),
   );
   await mount();
   expect(pictureImageFor(paneId)).toBeNull();
 });
 
 it.each(["stored", "captured"])(
-  "retains a validated %s cover through resize without a placeholder render",
+  "shows the card while resized away from a validated %s cover and re-warms it on return without redrawing",
   async (source) => {
     const image = new Blob(["cover"]);
     if (source === "stored") store.saved.set(paneId, savedPicture({ image }));
@@ -649,9 +814,15 @@ it.each(["stored", "captured"])(
     await act(() => resize(900, 600));
     expect(hook.hasFreshPicture(paneId)).toBe(false);
     expect(hook.getPanePicture(pane)).toBeNull();
+    expect(pictureImageFor(paneId)).toBeNull();
+    expect(hook.preparedPictureUrl(image)).toBeNull();
+    expect(revokedUrls).toContain(url);
+    await act(() => resize(800, 600));
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
     expect(pictureImageFor(paneId)).toBe(image);
-    expect(hook.preparedPictureUrl(image)).toBe(url);
-    expect(revokedUrls).not.toContain(url);
+    await advance(10);
+    expect(hook.preparedPictureUrl(image)).not.toBeNull();
+    expect(snapshot).not.toHaveBeenCalled();
   },
 );
 
@@ -791,12 +962,11 @@ it.each(["motion", "input", "content", "readiness", "disconnect", "native"])(
   },
 );
 
-it.each(["capture", "snapshot", undefined] as const)(
+it.each(["capture", "snapshot"] as const)(
   "refreshes old drawing styles while preserving saved %s content",
   async (source) => {
     const image = new Blob(["previous picture"]);
-    const { source: _source, ...unsourced } = savedPicture({ image });
-    store.saved.set(paneId, source ? { ...unsourced, source } : unsourced);
+    store.saved.set(paneId, savedPicture({ image, source }));
     await mount();
     expect(hook.hasFreshPicture(paneId)).toBe(source === "capture");
     expect(pictureImageFor(paneId)).toBe(source === "capture" ? image : null);
@@ -909,6 +1079,66 @@ it("captures first pixels between ordinary navigation inputs, once motion has st
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   window.dispatchEvent(new Event("keydown"));
   expect(store.writes).toHaveLength(1);
+});
+
+it("draws a background-only picture after ten quiet seconds while first covers keep the short gate", async () => {
+  store.threadIds = ["t1", "t2"];
+  currentLayout = layout(400);
+  await mount();
+  const other = "thread:e:t2";
+  backgroundPanes.add(paneId);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  markPaneSynced(other, { updatedAt: store.updatedAt, theme: appearance });
+  window.dispatchEvent(new Event("keydown"));
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  hook.paneSnapshots.request(other, { isConnected: true } as HTMLElement);
+  await advance(450);
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(hook.hasFreshPicture(other)).toBe(true);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  await advance(9000);
+  expect(snapshot).toHaveBeenCalledOnce();
+  await advance(600);
+  expect(snapshot).toHaveBeenCalledTimes(2);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it("lets an interrupted background drawing yield to a first cover and finish after its own quiet period", async () => {
+  store.threadIds = ["t1", "t2"];
+  currentLayout = layout(400);
+  const drawn: string[] = [];
+  snapshot.mockImplementation(async (element, canSnapshot, waitToDraw) => {
+    const id = (element as unknown as { id: string }).id;
+    if (id === "background" && drawn.length === 0) {
+      drawn.push("background-clone");
+      window.dispatchEvent(new Event("keydown"));
+      if (!(await waitToDraw!())) return null;
+    }
+    if (!canSnapshot()) return null;
+    drawn.push(id);
+    return { image: new Blob([id]), cssSize: { width: 400, height: 580 } };
+  });
+  await mount();
+  const other = "thread:e:t2";
+  backgroundPanes.add(paneId);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  markPaneSynced(other, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, {
+    id: "background",
+    isConnected: true,
+  } as unknown as HTMLElement);
+  await advance(10_100);
+  expect(drawn).toEqual(["background-clone"]);
+  hook.paneSnapshots.request(other, { id: "first", isConnected: true } as unknown as HTMLElement);
+  await advance(500);
+  expect(drawn).toEqual(["background-clone", "first"]);
+  expect(hook.hasFreshPicture(other)).toBe(true);
+  expect(snapshotFailures).not.toHaveBeenCalled();
+  await advance(9000);
+  expect(drawn).toEqual(["background-clone", "first"]);
+  await advance(1000);
+  expect(drawn).toEqual(["background-clone", "first", "background"]);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
 it.each([
@@ -1055,7 +1285,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   store.saved.set(
     paneId,
     savedPicture({
-      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(400)}|responsive-css-4`,
+      revision: `${contentRevision}|responsive-css-4`,
       image: old,
       source: "snapshot",
     }),
@@ -1204,13 +1434,7 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
 
 it("does not decode a stored picture that was never valid in this session", async () => {
   const invalid = new Blob(["old geometry"]);
-  store.saved.set(
-    paneId,
-    savedPicture({
-      revision: `u1|dark|dark|${fontRevision}|chat-chrome-2|${geometry(600)}`,
-      image: invalid,
-    }),
-  );
+  store.saved.set(paneId, savedPicture({ geometryRevision: geometry(600), image: invalid }));
   await mount();
   await advance(5);
   expect(hook.preparedPictureUrl(invalid)).toBeNull();
@@ -1398,7 +1622,7 @@ it.each([
   expect(store.writes).toHaveLength(0);
 });
 
-it("keeps a shown cover through a resize away and back until a replacement arrives", async () => {
+it("keeps a picture for each stage size and selects the stored one on return without redrawing", async () => {
   const image = new Blob(["stored"]);
   store.saved.set(paneId, savedPicture({ image }));
   await mount();
@@ -1407,14 +1631,30 @@ it("keeps a shown cover through a resize away and back until a replacement arriv
   const url = hook.preparedPictureUrl(image);
   expect(url).not.toBeNull();
   await act(() => resize(900, 600));
-  expect(shownPicture).toBe(image);
+  expect(shownPicture).toBeNull();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(500);
+  const wide = store.writes.at(-1)!;
+  expect(wide.geometryRevision).toContain("stage:900x600");
+  expect(shownPicture).toBe(wide.image);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
   await act(() => resize(800, 600));
   expect(shownPicture).toBe(image);
-  expect(hook.preparedPictureUrl(image)).toBe(url);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.preparedPictureUrl(wide.image)).toBeNull();
+  await advance(10);
+  expect(hook.preparedPictureUrl(image)).not.toBe(url);
+  expect(hook.preparedPictureUrl(image)).not.toBeNull();
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(5000);
+  expect(store.writes).toHaveLength(1);
+  await act(() => resize(900, 600));
+  expect(shownPicture).toBe(wide.image);
   const replacement = new Blob(["replacement"]);
   await act(() => capturePicture(pane, replacement));
   expect(shownPicture).toBe(replacement);
+  expect(store.writes).toHaveLength(2);
 });
 
 const setCompact = (compact: boolean) =>
@@ -1441,12 +1681,15 @@ it("keeps a pane's tiled and compact pictures apart through a layout round trip"
 
   await setCompact(false);
   expect(shownPicture).toBe(tiled);
-  expect(store.writes.map((picture) => picture.paneId)).toEqual([paneId, `compact:${paneId}`]);
+  expect(store.writes.map((picture) => picture.geometryRevision.split("|").at(-1))).toEqual([
+    "tiled",
+    "compact",
+  ]);
 
   await act(() => {
     hook.paneSnapshots.setLiveProducer(paneId, true);
   });
-  expect(store.deleted).toEqual([paneId, `compact:${paneId}`]);
+  expect(store.deleted).toEqual([paneId]);
   await setCompact(true);
   expect(shownPicture).toBeNull();
 });
@@ -1467,18 +1710,12 @@ it("keeps pictures deleted by a live producer out of a load that finishes later"
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
   const replacement = new Blob(["replacement"]);
   await act(() => capturePicture(pane, replacement));
-  const compactId = `compact:${paneId}`;
+  const compact = savedPicture({ geometryRevision: geometry(400).replace(/\|tiled$/, "|compact") });
   await act(async () =>
     loaded(
       new Map([
         [paneId, savedPicture()],
-        [
-          compactId,
-          savedPicture({
-            paneId: compactId,
-            revision: savedPicture().revision.replace(/\|tiled$/, "|compact"),
-          }),
-        ],
+        [compact.recordKey, compact],
       ]),
     ),
   );
@@ -1490,12 +1727,8 @@ it("keeps pictures deleted by a live producer out of a load that finishes later"
 it("restores a stored compact picture only in compact layout", async () => {
   const image = new Blob(["compact"]);
   store.saved.set(
-    `compact:${paneId}`,
-    savedPicture({
-      paneId: `compact:${paneId}`,
-      image,
-      revision: savedPicture().revision.replace(/\|tiled$/, "|compact"),
-    }),
+    paneId,
+    savedPicture({ image, geometryRevision: geometry(400).replace(/\|tiled$/, "|compact") }),
   );
   await mount({ compact: true });
   expect(shownPicture).toBe(image);
@@ -1506,7 +1739,7 @@ it("restores a stored compact picture only in compact layout", async () => {
 it("does not display a picture saved without its layout mode", async () => {
   store.saved.set(
     paneId,
-    savedPicture({ revision: savedPicture().revision.replace(/\|tiled$/, "") }),
+    savedPicture({ geometryRevision: geometry(400).replace(/\|tiled$/, "") }),
   );
   await mount();
   expect(shownPicture).toBeNull();
@@ -1531,7 +1764,7 @@ it("merges pictures loaded from storage with captures already accepted this sess
     loaded(
       new Map([
         [paneId, record],
-        [secondId, { ...record, paneId: secondId }],
+        [secondId, savedPicture({ image: previous, paneId: secondId })],
       ]),
     ),
   );
@@ -1735,9 +1968,9 @@ it("keeps capture CSS bounds through resize and persists replacement bounds", as
   expect(hook.getPanePicture(pane)).toMatchObject({ image, cssSize, position: "left top" });
   await act(() => resize(650, 410));
   expect(hook.hasFreshPicture(paneId)).toBe(false);
-  expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize });
+  expect(hook.pictureFor(paneId)).toBeNull();
   await act(() => resize(1850, 1400));
-  expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize });
+  expect(hook.pictureFor(paneId)).toBeNull();
 
   const replacement = new Blob(["smaller replacement"]);
   const replacementSize = { width: 382.75, height: 209.5 };
@@ -1766,7 +1999,7 @@ it.each(["height", "weight", "sibling", "defaults"])(
     await act(() => hook.onLayoutChange(resized));
     expect(hook.hasFreshPicture(paneId)).toBe(false);
     expect(hook.getPanePicture(pane)).toBeNull();
-    expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize: { width: 400, height: 290 } });
+    expect(hook.pictureFor(paneId)).toBeNull();
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
     await advance(3500);
     expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -1787,7 +2020,7 @@ it("refreshes pictures when the default row height changes and validates it afte
   expect(hook.paneSnapshots.geometryVersion).toBe(version + 1);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   expect(hook.getPanePicture(pane)).toBeNull();
-  expect(hook.pictureFor(paneId)?.image).toBe(image);
+  expect(hook.pictureFor(paneId)).toBeNull();
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   await advance(3500);
   const replacement = hook.pictureFor(paneId)!;
@@ -1840,7 +2073,7 @@ it("refreshes and re-arms picture preparation when only display density changes"
   expect(hook.paneSnapshots.geometryVersion).toBe(version + 1);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   expect(hook.getPanePicture(pane)).toBeNull();
-  expect(hook.pictureFor(paneId)).toMatchObject({ image, cssSize });
+  expect(hook.pictureFor(paneId)).toBeNull();
   expect(resolutionQueries.at(-1)?.media).toBe("(resolution: 2dppx)");
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   await advance(3500);
@@ -1880,7 +2113,7 @@ it("does not persist a capture completed after leaving its display density", asy
   await act(() => capturePicture(pane, new Blob(["old in-flight density"]), undefined, 1));
   expect(store.writes).toHaveLength(1);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
-  expect(hook.pictureFor(paneId)?.image).toBe(image);
+  expect(hook.pictureFor(paneId)).toBeNull();
   const replacement = new Blob(["current monitor"]);
   await act(() => capturePicture(pane, replacement));
   expect(store.writes).toHaveLength(2);

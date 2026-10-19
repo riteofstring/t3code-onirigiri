@@ -89,37 +89,46 @@ that span files and are easy to break without noticing.
 
 - About eight views stay warm. Visible views are never evicted, and views the user has seen stay
   mounted while their turn runs or while they host a live producer.
-- The focused pane mounts first once focus and visibility have been quiet briefly. A saved picture
-  covers camera motion and the view mounts after the final frame; a destination without one mounts
-  during motion. Visible peers then mount one at a time, each after the previous one commits.
+- The focused pane mounts first once focus and visibility have been quiet briefly. No new mounts
+  are admitted during camera motion, though a transition admitted just before may still commit: a
+  saved picture or the thread card covers the destination and the view mounts after the final
+  frame. Visible peers then mount one at a time, each after the previous one commits.
 - Neighbours, the next one in the direction of travel first, and unviewed running threads use spare
   slots only while the page is idle and input has been quiet. Navigation cancels speculative work
   that has not started.
 - Leaving overview releases excess views one commit at a time during idle input, instead of
   unmounting them all on the last frame.
 - Panes without a picture share one extra mount slot to be pictured: untried panes first, visited
-  ones before untouched ones, then the oldest attempt. A reservation interrupted by input, motion or
-  covering keeps its place without counting as a failure; a real failure waits minutes before a
-  retry; a deliberate revisit takes the pane over.
+  ones before untouched ones, then the oldest attempt. A mount made only to picture a pane is
+  admitted after ten seconds without input or camera motion, so preparing a new display's pictures
+  happens while the user is away rather than between their moves; a view leaving the warm set before
+  its first picture keeps its slot under the ordinary gates. A reservation interrupted by input,
+  motion or covering keeps its place without counting as a failure; a real failure waits minutes
+  before a retry; a deliberate revisit takes the pane over.
 - Mount changes reach panes as transitions (`usePaneMounted`), so mounting a ChatView does not block
   input.
 - The lifecycle and the snapshot queue track input separately: the queue only timestamps it, while
-  the lifecycle also interrupts a picture reservation.
+  the lifecycle also interrupts a picture reservation. The queue asks the lifecycle whether a pane is
+  mounted only to be pictured, holds that drawing to the same ten quiet seconds, and drops it once
+  the lifecycle has released the mount, even while React is still unmounting the view.
 
 ## Pictures
 
 Unmounted thread panes show a picture of their last synchronized content, or a `ThreadCard` built from
 the thread shell, which is never stale.
 
-- A picture matches only the same thread update, theme (palette, appearance and font settings),
-  stage size, device pixel ratio and pane geometry (column width, cell sizing, default row height).
-  The revision includes `chat-chrome-2`, and drawn pictures add `responsive-css-4`; bump them when chat
-  chrome or the drawing changes so old pictures stop matching. Geometry starts with `stage:` because
-  older records measured the outer workspace, including its toolbar.
-- Geometry ends with the layout mode, `tiled` or `compact`. Compact layout, including full screen, draws
-  every pane at the stage size while the layout keeps its column widths, so the two modes keep separate
-  records (`compact:<paneId>` for compact). A mode switch drops the other mode's covers and never shows
-  them; a live producer deletes both records.
+- A record is keyed by pane and geometry: stage size, device pixel ratio, pane geometry (column
+  width, cell sizing, default row height) and the layout mode, `tiled` or `compact`. Pictures of
+  several displays and modes coexist, so returning to a display selects its stored pictures instead
+  of drawing every thread again, and only the record for the current geometry is ever shown; another
+  geometry's picture would be the wrong size, so the thread card shows until a matching picture
+  exists. Compact layout, including full screen, draws every pane at the stage size while the layout
+  keeps its column widths. A live producer deletes every record of its pane. The store is IndexedDB
+  version 2; opening it drops the version 1 per-pane records.
+- A record's revision holds the thread update and theme (palette, appearance and font settings),
+  includes `chat-chrome-2`, and drawn pictures add `responsive-css-4`; bump them when chat chrome or
+  the drawing changes so old pictures stop matching. Geometry starts with `stage:` because older
+  records measured the outer workspace, including its toolbar.
 - Pictures come only from panes whose committed detail has caught up with the thread shell
   (`markPaneSynced`), never during a running turn, and only at the current device pixel ratio.
   Native capture (HTML-in-Canvas) goes first; a drawn fallback follows when no capture arrives within
@@ -127,10 +136,14 @@ the thread shell, which is never stale.
 - Local visual changes such as scrolling or typing bump a pane's visual revision, which discards
   in-flight captures and drawings but keeps the current cover and the persisted picture until
   replacement pixels are accepted. A picture validated this session stays the cover while its thread
-  refreshes.
+  refreshes, for the same geometry only.
 - Stored pictures usually load before the stage is measured and the thread shells arrive, so
-  placeholders render again whenever a pane's first valid cover appears. Shell refreshes and resizes
-  keep the existing cover without re-rendering placeholders.
+  placeholders render again whenever a pane's first valid cover appears, and again on every geometry
+  change to select that geometry's record. Shell refreshes keep the existing cover without
+  re-rendering placeholders.
+- `useSavedPanePictures` opts out of the React Compiler (`"use no memo"`): its callbacks publish
+  geometry and cover changes through version counters in their dependency lists, which the compiler
+  would drop.
 - `ThreadPane` invalidates on content mutations and scroll or input events without forcing layout of
   hidden content. Attribute changes compare a batch's first old value with the final value, because
   React can briefly clear an input's name while changing its type. Composer focus classes are
@@ -139,10 +152,11 @@ the thread shell, which is never stale.
 - Live producers (canvas, video, iframes, webviews, custom elements, shadow roots, browser slots)
   cannot be drawn. While present the pane renders live and its stored picture is deleted; after
   removal it keeps its live view until current static pixels exist.
-- Pictures are drawn one at a time while idle, after 400 ms without input for a first picture and
-  3 s for a refresh behind an existing cover; failures back off up to five minutes. Camera motion
-  and full-screen transitions count as input when they start and when they end, and nothing is
-  drawn or prepared during a full-screen transition.
+- Pictures are drawn one at a time while idle, after 400 ms without input for a first picture, 3 s
+  for a refresh behind an existing cover and 10 s for a pane mounted only to be pictured; a drawing
+  of that kind interrupted midway yields to a waiting first picture. Failures back off up to five
+  minutes. Camera motion and full-screen transitions count as input when they start and when they
+  end, and nothing is drawn or prepared during a full-screen transition.
 - Drawing rasterizes the cloned pane on the main thread, about in proportion to its pixels, so a
   drawn picture holds at most 3 megapixels: tiled panes keep the device pixel ratio, while
   stage-sized compact pictures drop to roughly 1x.

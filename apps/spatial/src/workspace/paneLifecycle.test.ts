@@ -50,6 +50,14 @@ function drain(store: PaneLifecycleStore, panes: PanePosition[]) {
   }
 }
 
+function travel(store: PaneLifecycleStore, paneId: string, settleMs = 200) {
+  store.setMoving(true);
+  store.setFocus(paneId);
+  vi.advanceTimersByTime(100);
+  store.setMoving(false);
+  vi.advanceTimersByTime(settleMs);
+}
+
 function mountedOf(store: PaneLifecycleStore, panes: PanePosition[]) {
   return panes.filter(({ paneId }) => store.isMounted(paneId)).map(({ paneId }) => paneId);
 }
@@ -75,17 +83,14 @@ it("gives a departing uncovered view one bounded slot until its first picture co
   const pictures = new Set<string>();
   store.setPictures((paneId) => pictures.has(paneId));
   store.setBackgroundPictures(true);
-  store.setMoving(true);
   for (let slot = 1; slot < 12; slot++) {
-    store.setFocus(`p0-${slot}`);
-    vi.advanceTimersByTime(200);
+    travel(store, `p0-${slot}`);
     store.committed(`p0-${slot}`, true);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
   }
   expect(store.isMounted("p0-0")).toBe(true);
   pictures.add("p0-0");
   store.setPictures((paneId) => pictures.has(paneId));
-  store.setMoving(false);
   vi.advanceTimersByTime(1500);
   expect(store.isMounted("p0-0")).toBe(false);
   expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
@@ -99,10 +104,8 @@ it.each(["completed", "expired"])(
     const pictures = new Set<string>();
     store.setPictures((paneId) => pictures.has(paneId));
     store.setBackgroundPictures(true);
-    store.setMoving(true);
     const visit = (slot: number) => {
-      store.setFocus(`p0-${slot}`);
-      vi.advanceTimersByTime(900);
+      travel(store, `p0-${slot}`, 800);
       store.committed(`p0-${slot}`, true);
       expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
     };
@@ -128,21 +131,17 @@ it("retries a departing picture owner that expires during continuous navigation"
   store.subscribe("p0-0", () => transitions.push(store.isMounted("p0-0")));
   store.setPictures((paneId) => pictures.has(paneId));
   store.setBackgroundPictures(true);
-  store.setMoving(true);
   for (let slot = 1; slot <= 24; slot++) {
-    store.setFocus(`p0-${slot}`);
-    vi.advanceTimersByTime(900);
+    travel(store, `p0-${slot}`, 800);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
     if (slot === 9) expect(store.isMounted("p0-0")).toBe(true);
   }
-  expect(store.isMoving()).toBe(true);
   expect(transitions).toEqual([false]);
 
   for (const { paneId } of panes) if (paneId !== "p0-0") pictures.add(paneId);
   store.setPictures((paneId) => pictures.has(paneId));
   window.dispatchEvent(new Event("keydown"));
-  store.setMoving(false);
-  vi.advanceTimersByTime(2900);
+  vi.advanceTimersByTime(9900);
   expect(store.isMounted("p0-0")).toBe(false);
   vi.advanceTimersByTime(200);
   expect(transitions).toEqual([false, true]);
@@ -167,7 +166,7 @@ it.each(["motion", "keydown", "pointerdown", "wheel"])(
     store.subscribe("p0-2", () => transitions.push(store.isMounted("p0-2")));
     store.setPictures((paneId) => paneId !== "p0-2");
     store.setBackgroundPictures(true);
-    vi.advanceTimersByTime(3500);
+    vi.advanceTimersByTime(10_500);
     expect(transitions).toEqual([true]);
 
     if (type === "motion") store.setMoving(true);
@@ -182,7 +181,7 @@ it.each(["motion", "keydown", "pointerdown", "wheel"])(
     }
     vi.advanceTimersByTime(500);
     expect(transitions).toEqual([true, false]);
-    vi.advanceTimersByTime(2400);
+    vi.advanceTimersByTime(9400);
     expect(transitions).toEqual([true, false]);
     vi.advanceTimersByTime(200);
     expect(transitions).toEqual([true, false, true]);
@@ -201,17 +200,14 @@ it("retries a departing owner reserved while recent input still pauses capture",
   const transitions: boolean[] = [];
   commitOnChange(store, panes);
   store.subscribe("p0-0", () => transitions.push(store.isMounted("p0-0")));
-  store.setMoving(true);
-  for (let slot = 1; slot <= 7; slot++) {
-    store.setFocus(`p0-${slot}`);
-    vi.advanceTimersByTime(200);
-  }
+  for (let slot = 1; slot <= 7; slot++) travel(store, `p0-${slot}`);
 
   window.dispatchEvent(new Event("keydown"));
   store.setBackgroundPictures(true);
+  store.setMoving(true);
   store.setVisible("p0-9", true);
   store.setMoving(false);
-  vi.advanceTimersByTime(100);
+  vi.advanceTimersByTime(250);
   expect(store.isMounted("p0-9")).toBe(true);
   expect(store.isMounted("p0-0")).toBe(true);
   expect(mountedOf(store, panes)).toHaveLength(9);
@@ -231,7 +227,7 @@ it("keeps failure backoff when input arrives after an uninterrupted reservation'
   store.subscribe("p0-2", () => transitions.push(store.isMounted("p0-2")));
   store.setPictures((paneId) => paneId !== "p0-2");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(4000);
+  vi.advanceTimersByTime(11_000);
   expect(transitions).toEqual([true]);
   vi.advanceTimersByTime(10_001);
   window.dispatchEvent(new Event("keydown"));
@@ -266,7 +262,7 @@ it.each(["input", "motion"])(
     }
     store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
     store.setBackgroundPictures(true);
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(120_000);
     expect(mounts.slice(0, 4)).toEqual(["p0-2", "p0-3", "p0-2", "p0-3"]);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(3);
   },
@@ -285,12 +281,14 @@ it("ignores a failed capture started during an earlier reservation of the same p
   }
   store.setPictures((paneId) => paneId !== "p0-2");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(3500);
+  vi.advanceTimersByTime(10_500);
   expect(mounts).toHaveLength(1);
   store.setMoving(true);
   vi.advanceTimersByTime(11_000);
   store.setMoving(false);
-  vi.advanceTimersByTime(1);
+  vi.advanceTimersByTime(9000);
+  expect(mounts).toHaveLength(1);
+  vi.advanceTimersByTime(1500);
   expect(mounts).toHaveLength(2);
 
   store.pictureFailed("p0-2", mounts[0]!);
@@ -315,7 +313,7 @@ it("keeps confirmed failure backoff across background deactivation and return", 
   }
   store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(3500);
+  vi.advanceTimersByTime(10_500);
   expect(mounts.map(({ paneId }) => paneId)).toEqual(["p0-2"]);
   store.pictureFailed("p0-2", performance.now());
 
@@ -323,7 +321,7 @@ it("keeps confirmed failure backoff across background deactivation and return", 
   expect(store.isMounted("p0-2")).toBe(false);
   vi.advanceTimersByTime(1000);
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(1000);
+  vi.advanceTimersByTime(10_500);
   expect(mounts.map(({ paneId }) => paneId)).toEqual(["p0-2", "p0-3"]);
   vi.advanceTimersByTime(mounts[0]!.at + 5 * 60_000 - performance.now() - 1);
   expect(mounts.filter(({ paneId }) => paneId === "p0-2")).toHaveLength(1);
@@ -345,13 +343,13 @@ it("keeps interrupted panes in fair order across repeated background deactivatio
   }
   store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(3500);
+  vi.advanceTimersByTime(10_500);
   for (let visit = 0; visit < 3; visit++) {
     store.setBackgroundPictures(false);
     expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
     vi.advanceTimersByTime(1000);
     store.setBackgroundPictures(true);
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(10_500);
   }
   expect(mounts).toEqual(["p0-2", "p0-3", "p0-2", "p0-3"]);
 });
@@ -424,13 +422,21 @@ it("keeps a saved picture through motion and mounts its view after the final fra
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-8", "p0-9", "p0-10"]);
 });
 
-it("prepares a destination without a picture during motion and keeps retention bounded", () => {
+it("mounts an unpictured destination only after motion ends and keeps retention bounded", () => {
   const panes = row(12);
   const store = lifecycle(panes, "p0-0");
   store.setMoving(true);
   for (let slot = 1; slot < 12; slot++) {
     store.setFocus(`p0-${slot}`);
     vi.advanceTimersByTime(200);
+    expect(store.isMounted(`p0-${slot}`)).toBe(false);
+  }
+  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
+  store.setMoving(false);
+  vi.advanceTimersByTime(0);
+  expect(store.isMounted("p0-11")).toBe(true);
+  for (let slot = 1; slot < 12; slot++) {
+    travel(store, `p0-${slot}`);
     expect(store.isMounted(`p0-${slot}`)).toBe(true);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
     store.committed(`p0-${slot}`, true);
@@ -486,7 +492,7 @@ it.each(["uncaptured focus", "visible neighbor"])(
     fresh.delete("p0-10");
     store.setPictures(hasPicture);
     store.setBackgroundPictures(true);
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(10_500);
     expect(store.isMounted("p0-10")).toBe(true);
     expect(mountedOf(store, panes)).toHaveLength(9);
 
@@ -512,10 +518,8 @@ it.each(["uncaptured focus", "visible neighbor"])(
     store.setVisible("p0-9", false);
     store.setVisible("p0-11", true);
     vi.advanceTimersByTime(200);
-    if (destination === "visible neighbor") {
-      store.setMoving(false);
-      vi.advanceTimersByTime(1);
-    }
+    store.setMoving(false);
+    vi.advanceTimersByTime(1);
     expect(store.isMounted("p0-10")).toBe(true);
     expect(store.isMounted("p0-11")).toBe(true);
     expect(store.isMounted("p0-1")).toBe(true);
@@ -547,7 +551,7 @@ it("keeps a departing picture slot when every other view is visibly required", (
   fresh.delete("p0-10");
   store.setPictures(hasPicture);
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(3000);
+  vi.advanceTimersByTime(10_500);
   expect(mountedOf(store, panes)).toHaveLength(9);
 
   const visible = [...panes.slice(0, 8).map(({ paneId }) => paneId), "p0-11"];
@@ -559,6 +563,9 @@ it("keeps a departing picture slot when every other view is visibly required", (
   store.setPictures(hasPicture);
   store.setFocus("p0-11");
   vi.advanceTimersByTime(200);
+  store.setMoving(false);
+  vi.advanceTimersByTime(200);
+  store.setMoving(true);
   expect(visible.every(store.isMounted)).toBe(true);
   expect(store.isMounted("p0-10")).toBe(true);
   expect(mountedOf(store, panes)).toHaveLength(visible.length + 1);
@@ -612,8 +619,9 @@ it("pauses neighbor and background preparation through same-pane camera motion",
   drain(store, panes);
   expect(mountedOf(store, panes)).toEqual(warm);
   store.setMoving(false);
-  vi.advanceTimersByTime(0);
-  vi.advanceTimersByTime(1);
+  vi.advanceTimersByTime(9000);
+  expect(store.isMounted("p0-10")).toBe(false);
+  vi.advanceTimersByTime(1500);
   expect(store.isMounted("p0-10")).toBe(true);
 });
 
@@ -667,7 +675,7 @@ it("keeps recent prepared views while one extra view is pictured in the backgrou
   expect(warm).toHaveLength(8);
   store.setPictures((paneId) => paneId !== "p0-15");
   store.setBackgroundPictures(true);
-  for (let step = 0; step < 6; step++) {
+  for (let step = 0; step < 12; step++) {
     vi.advanceTimersByTime(1000);
     for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
   }
@@ -708,7 +716,7 @@ it("keeps at most eight views, unmounting the least recently wanted only to make
   expect(mounted.length).toBe(8);
 });
 
-it("does not evict visible views when an unpictured destination mounts during motion", () => {
+it("keeps visible views live when an unpictured destination mounts after motion", () => {
   const panes = row(14);
   const store = lifecycle(panes, "p0-0");
   store.setPictures((paneId) => paneId !== "p0-13");
@@ -719,6 +727,9 @@ it("does not evict visible views when an unpictured destination mounts during mo
   store.setMoving(true);
   store.setFocus("p0-13");
   vi.advanceTimersByTime(250);
+  expect(mountedOf(store, panes)).toEqual(live);
+  store.setMoving(false);
+  vi.advanceTimersByTime(0);
   expect(mountedOf(store, panes)).toEqual([...live, "p0-13"]);
 });
 
@@ -836,7 +847,9 @@ it("mounts panes without a picture one at a time to picture them, then lets them
       for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
     }
   };
-  step(5000);
+  step(9500);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
+  step(1000);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2"]);
   pictured.add("p0-2");
   store.setPictures((paneId) => pictured.has(paneId));
@@ -864,7 +877,7 @@ it("pictures a briefly visible pane after rest before untouched panes", () => {
 
   window.dispatchEvent(new Event("keydown"));
   store.setMoving(false);
-  vi.advanceTimersByTime(2900);
+  vi.advanceTimersByTime(9900);
   expect(store.isMounted("p0-6")).toBe(false);
   vi.advanceTimersByTime(200);
   expect(store.isMounted("p0-6")).toBe(true);
@@ -897,7 +910,7 @@ it("prepares a crossed pane at cache capacity without refilling its later evicti
   vi.advanceTimersByTime(1000);
   expect(store.isMounted("p0-6")).toBe(false);
   store.setMoving(false);
-  vi.advanceTimersByTime(3500);
+  vi.advanceTimersByTime(10_500);
   expect(store.isMounted("p0-6")).toBe(true);
   expect(store.isMounted("p0-2")).toBe(false);
 
@@ -912,7 +925,7 @@ it("prepares a crossed pane at cache capacity without refilling its later evicti
 
   store.setVisible("p0-6", true);
   store.setVisible("p0-6", false);
-  vi.advanceTimersByTime(3500);
+  vi.advanceTimersByTime(10_500);
   expect(mounts.filter((paneId) => paneId === "p0-6")).toHaveLength(2);
 });
 
@@ -954,13 +967,13 @@ it.each(["keydown", "pointerdown", "wheel"])(
     const pictured = new Set(["p0-0", "p0-1"]);
     store.setPictures((paneId) => pictured.has(paneId));
     store.setBackgroundPictures(true);
-    vi.advanceTimersByTime(3500);
+    vi.advanceTimersByTime(10_500);
     expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2"]);
 
     pictured.add("p0-2");
     store.setPictures((paneId) => pictured.has(paneId));
     window.dispatchEvent(new Event(type));
-    vi.advanceTimersByTime(2900);
+    vi.advanceTimersByTime(9900);
     expect(store.isMounted("p0-3")).toBe(false);
     vi.advanceTimersByTime(200);
     expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
@@ -1050,7 +1063,7 @@ it("does not apply failure backoff to a successful picture that later becomes st
   const pictured = new Set(["p0-0", "p0-1"]);
   store.setPictures((paneId) => pictured.has(paneId));
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(5000);
+  vi.advanceTimersByTime(10_500);
   expect(store.isMounted("p0-2")).toBe(true);
   store.committed("p0-2", true);
   pictured.add("p0-2");
@@ -1234,7 +1247,7 @@ it("retains a background view that starts running before its picture finishes", 
   const store = lifecycle(panes, "p0-0");
   store.setPictures((paneId) => paneId !== "p0-7");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(3000);
+  vi.advanceTimersByTime(10_000);
   for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
   vi.advanceTimersByTime(1000);
   expect(store.isMounted("p0-7")).toBe(true);
@@ -1254,7 +1267,7 @@ it("cancels background picturing while covered and retries the interrupted pane 
   const store = lifecycle(panes, "p0-0");
   store.setPictures((paneId) => paneId !== "p0-2");
   store.setBackgroundPictures(true);
-  for (let step = 0; step < 5; step++) {
+  for (let step = 0; step < 11; step++) {
     vi.advanceTimersByTime(1000);
     for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
   }
@@ -1267,7 +1280,7 @@ it("cancels background picturing while covered and retries the interrupted pane 
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
 
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(5000);
+  vi.advanceTimersByTime(10_500);
   expect(store.isMounted("p0-2")).toBe(true);
   expect(store.isMounted("p0-3")).toBe(false);
 });
@@ -1277,7 +1290,7 @@ it("retains a visible view when its background picturing is disabled", () => {
   const store = lifecycle(panes, "p0-0");
   store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
   store.setBackgroundPictures(true);
-  for (let step = 0; step < 5; step++) {
+  for (let step = 0; step < 11; step++) {
     vi.advanceTimersByTime(1000);
     for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
   }
@@ -1300,11 +1313,11 @@ it("retries a cancelled picture mount before the old commit deadline", () => {
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(1000);
   store.committed("p0-1", true);
-  vi.advanceTimersByTime(2200);
+  vi.advanceTimersByTime(9500);
   expect(transitions).toEqual([true]);
   store.setBackgroundPictures(false);
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(500);
+  vi.advanceTimersByTime(10_500);
   expect(transitions).toEqual([true, false, true]);
   expect(store.isMounted("p0-0")).toBe(true);
 });
@@ -1342,7 +1355,7 @@ it("keeps a prepared producer after it becomes visible through disable and timeo
   const store = lifecycle(panes, "p0-0");
   store.setPictures((paneId) => paneId === "p0-0" || paneId === "p0-1");
   store.setBackgroundPictures(true);
-  for (let step = 0; step < 5; step++) {
+  for (let step = 0; step < 11; step++) {
     vi.advanceTimersByTime(1000);
     for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
   }

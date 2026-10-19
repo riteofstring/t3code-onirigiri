@@ -211,6 +211,10 @@ function SpatialWorkspaceView({
     (paneId: string, startedAt: number) => lifecycle?.pictureFailed(paneId, startedAt),
     [lifecycle],
   );
+  const pictureMount = useCallback(
+    (paneId: string) => (lifecycle ? lifecycle.pictureMount(paneId) : "ordinary"),
+    [lifecycle],
+  );
   const {
     getPanePicture,
     getPanePresentation,
@@ -228,7 +232,7 @@ function SpatialWorkspaceView({
     setCaptureActivity,
     stageRef,
     stageViewport,
-  } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight);
+  } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight, pictureMount);
   const {
     requested: fullScreenRequested,
     fullScreen,
@@ -780,7 +784,7 @@ function SpatialWorkspaceView({
       const picture = pictureFor(pane.paneId);
       return picture ? (
         <SavedPanePicture
-          key={picture.paneId}
+          key={picture.recordKey}
           image={picture.image}
           cssSize={picture.cssSize}
           preparedUrl={preparedPictureUrl(picture.image)}

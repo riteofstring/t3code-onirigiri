@@ -8,7 +8,7 @@ const INPUT_QUIET_MS = 400;
 const COMMIT_TIMEOUT_MS = 2000;
 const STORED_PICTURES_WAIT_MS = 2000;
 const PICTURE_TIMEOUT_MS = 10_000;
-const PICTURE_INPUT_QUIET_MS = 3000;
+const BACKGROUND_PICTURE_QUIET_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 
 export interface PanePosition {
@@ -18,6 +18,8 @@ export interface PanePosition {
 }
 
 type Direction = "left" | "right" | "up" | "down";
+
+export type PictureMount = "background" | "ordinary" | null;
 
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
@@ -56,11 +58,17 @@ export function createPaneLifecycleStore(
   let picturesReady = true;
   let storedPicturesTimer: ReturnType<typeof setTimeout> | null = null;
   let storedPicturesWaited = false;
-  let picturing: { paneId: string; since: number; interrupted: boolean; failed: boolean } | null =
-    null;
+  let picturing: {
+    paneId: string;
+    since: number;
+    interrupted: boolean;
+    failed: boolean;
+    background: boolean;
+  } | null = null;
   const pictureAttempted = new Map<string, { since: number; retryAt: number }>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundPictures = false;
+  let backgroundQuietFrom = performance.now();
   const pictureEligible = (paneId: string) => canPicture(paneId, unpicturedVisits.has(paneId));
 
   const notify = (paneId: string) => {
@@ -136,9 +144,9 @@ export function createPaneLifecycleStore(
     );
   };
 
-  const reservePicture = (paneId: string, interrupted: boolean) => {
+  const reservePicture = (paneId: string, interrupted: boolean, background: boolean) => {
     const since = performance.now();
-    picturing = { paneId, since, interrupted, failed: false };
+    picturing = { paneId, since, interrupted, failed: false, background };
     pictureAttempted.set(paneId, { since, retryAt: since + PICTURE_RETRY_MS });
   };
 
@@ -153,7 +161,7 @@ export function createPaneLifecycleStore(
       !running.has(paneId) &&
       performance.now() >= (pictureAttempted.get(paneId)?.retryAt ?? -Infinity)
     ) {
-      reservePicture(paneId, moving || performance.now() - lastInput < INPUT_QUIET_MS);
+      reservePicture(paneId, moving || performance.now() - lastInput < INPUT_QUIET_MS, false);
       return true;
     }
     return false;
@@ -340,7 +348,7 @@ export function createPaneLifecycleStore(
       return;
     }
     const now = performance.now();
-    const wait = lastInput + PICTURE_INPUT_QUIET_MS - now;
+    const wait = Math.max(lastInput, backgroundQuietFrom) + BACKGROUND_PICTURE_QUIET_MS - now;
     if (wait > 0) {
       waitForPicture(wait);
       return;
@@ -349,7 +357,7 @@ export function createPaneLifecycleStore(
       (paneId) => panes.has(paneId) && mustRetain(paneId) && paneId !== focused,
     ).length;
     if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
-    reservePicture(paneId, false);
+    reservePicture(paneId, false, true);
     mountPrepared(paneId);
   };
 
@@ -388,12 +396,6 @@ export function createPaneLifecycleStore(
     settleTimer = null;
     if (moving) {
       settleDue = true;
-      if (focused && panes.has(focused) && !hasPicture(focused) && !mounted.has(focused)) {
-        clock += 1;
-        lastWanted.set(focused, clock);
-        mountPrepared(focused);
-        evictBeyond(MAX_MOUNTED, new Set([focused, ...wanted].slice(0, MAX_MOUNTED)));
-      }
       return;
     }
     settleDue = false;
@@ -458,6 +460,12 @@ export function createPaneLifecycleStore(
   return {
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving,
+    pictureMount: (paneId: string): PictureMount =>
+      !mounted.has(paneId)
+        ? null
+        : picturing?.paneId === paneId && picturing.background
+          ? "background"
+          : "ordinary",
     subscribeMotion: (listener: () => void) => {
       motionListeners.add(listener);
       return () => {
@@ -488,11 +496,11 @@ export function createPaneLifecycleStore(
         interruptPicture();
         cancelSpeculation();
         requestSettle();
-      } else if (settleDue) {
-        settleTimer = setTimeout(settle, 0);
-      } else {
-        schedule();
+        return;
       }
+      backgroundQuietFrom = performance.now();
+      if (settleDue) settleTimer = setTimeout(settle, 0);
+      else schedule();
     },
     setFocus: (paneId: string | null) => {
       const from = focused ? panes.get(focused) : undefined;
@@ -550,6 +558,7 @@ export function createPaneLifecycleStore(
       requestSettle();
     },
     setBackgroundPictures: (enabled: boolean) => {
+      if (enabled && !backgroundPictures) backgroundQuietFrom = performance.now();
       backgroundPictures = enabled;
       if (!enabled && picturing) releasePicture(picturing.paneId, !picturing.failed);
       requestSettle();
