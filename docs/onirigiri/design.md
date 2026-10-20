@@ -120,15 +120,17 @@ the thread shell, which is never stale.
 - A record is keyed by pane and geometry: stage size, device pixel ratio, pane geometry (column
   width, cell sizing, default row height) and the layout mode, `tiled` or `compact`. Pictures of
   several displays and modes coexist, so returning to a display selects its stored pictures instead
-  of drawing every thread again, and only the record for the current geometry is ever shown; another
-  geometry's picture would be the wrong size, so the thread card shows until a matching picture
-  exists. Compact layout, including full screen, draws every pane at the stage size while the layout
-  keeps its column widths. A live producer deletes every record of its pane. The store is IndexedDB
-  version 2; opening it drops the version 1 per-pane records.
+  of drawing every thread again. A picture already validated this session remains a cover during a
+  same-mode resize until an exact-geometry replacement decodes. Tiled and compact covers never cross
+  modes: compact layout, including full screen, draws every pane at the stage size while the layout
+  keeps its column widths, so reusing it in a tiled pane would clip the chat. A live producer deletes
+  every record of its pane. The store is IndexedDB version 2; opening it drops the version 1
+  per-pane records.
 - A record's revision holds the thread update and theme (palette, appearance and font settings),
-  includes `chat-chrome-2`, and drawn pictures add `responsive-css-4`; bump them when chat chrome or
-  the drawing changes so old pictures stop matching. Geometry starts with `stage:` because older
-  records measured the outer workspace, including its toolbar.
+  includes `chat-chrome-2`, and drawn pictures add `responsive-css-5`; bump them when chat chrome or
+  the drawing changes so old pictures stop matching. Revision 5 invalidates pictures saved under the
+  former raster-size cap even when their display geometry still matches. Geometry starts with
+  `stage:` because older records measured the outer workspace, including its toolbar.
 - Pictures come only from panes whose committed detail has caught up with the thread shell
   (`markPaneSynced`), never during a running turn, and only at the current device pixel ratio.
   Native capture (HTML-in-Canvas) goes first; a drawn fallback follows when no capture arrives within
@@ -136,7 +138,9 @@ the thread shell, which is never stale.
 - Local visual changes such as scrolling or typing bump a pane's visual revision, which discards
   in-flight captures and drawings but keeps the current cover and the persisted picture until
   replacement pixels are accepted. A picture validated this session stays the cover while its thread
-  refreshes, for the same geometry only.
+  refreshes or its same-mode geometry changes, but does not count as fresh. Keep supplying that cover
+  to the engine: withdrawing a replaceable picture releases its image and submitting it again repeats
+  decoding and low-resolution preview preparation.
 - Stored pictures usually load before the stage is measured and the thread shells arrive, so
   placeholders render again whenever a pane's first valid cover appears, and again on every geometry
   change to select that geometry's record. Shell refreshes keep the existing cover without
@@ -162,10 +166,12 @@ the thread shell, which is never stale.
   that cost out of input and motion; a smaller picture would read blurred on the display it was
   drawn for.
 - Picture URLs are decoded during idle time to warm the browser's discardable image cache.
-  `SavedPanePicture` keeps the current cover until a replacement decodes, since warmed pixels may
-  have been discarded, and shows the thread card until its first picture decodes rather than an
-  empty frame.
-- Saved pictures are capped at 200 records and 128 MiB; the least recently saved go first.
+  `SavedPanePicture` keeps the current cover until a replacement decodes, including same-mode geometry
+  changes, since warmed pixels may have been discarded, and shows the thread card until its first
+  picture decodes rather than an empty frame. Only the selected cover per pane retains a warmed URL.
+- Saved pictures are capped at 200 records and 128 MiB; the least recently saved go first. Background
+  preparation counts only current-geometry records against its budget, so pictures of older displays
+  cannot prevent the current display from acquiring pictures.
 
 ### Drawn fallback
 

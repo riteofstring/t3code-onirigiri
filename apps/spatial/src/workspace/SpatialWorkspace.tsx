@@ -784,7 +784,7 @@ function SpatialWorkspaceView({
       const picture = pictureFor(pane.paneId);
       return picture ? (
         <SavedPanePicture
-          key={picture.recordKey}
+          key={picture.geometryRevision.endsWith("|compact") ? "compact" : "tiled"}
           image={picture.image}
           cssSize={picture.cssSize}
           preparedUrl={preparedPictureUrl(picture.image)}

@@ -45,7 +45,7 @@ function contentKey(content: PaneContentRevision): string {
 }
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
-  return source === "capture" ? revision : `${revision}|responsive-css-4`;
+  return source === "capture" ? revision : `${revision}|responsive-css-5`;
 }
 
 function paneHasCommittedContent(
@@ -383,13 +383,16 @@ export function useSavedPanePictures(
     let bytes = 0;
     let largest = 0;
     for (const picture of saved?.values() ?? []) {
-      if (!contentRevisions.has(picture.paneId)) continue;
+      // oxlint-disable-next-line react/refs -- Observer geometry is published through geometryVersion before counting current records.
+      if (!contentRevisions.has(picture.paneId) || recordKey(picture.paneId) !== picture.recordKey)
+        continue;
       count += 1;
       bytes += picture.image.size;
       largest = Math.max(largest, picture.image.size);
     }
     return { count, bytes, largest };
-  }, [contentRevisions, saved]);
+    // oxlint-disable-next-line react/memo-dependencies -- Observer geometry selects which records occupy the current display's preparation budget.
+  }, [contentRevisions, geometryVersion, recordKey, saved]);
   const canBackgroundPicture = useCallback(
     (paneId: string, visited = false) => {
       const key = recordKey(paneId);
@@ -420,46 +423,75 @@ export function useSavedPanePictures(
 
   const [coverVersion, setCoverVersion] = useState(0);
   const [pictureUrls] = useState(createPanePictureUrls);
+  const validatedCoverFor = useCallback(
+    (paneId: string): SavedPanePicture | null => {
+      const key = recordKey(paneId);
+      if (key === null || retainedRef.current.has(paneId)) return null;
+      const exact = lastValidPictures.current.get(key);
+      if (exact && savedRef.current?.has(key)) return exact;
+      let cover: SavedPanePicture | null = null;
+      for (const picture of lastValidPictures.current.values()) {
+        if (
+          picture.paneId === paneId &&
+          picture.geometryRevision.endsWith("|compact") === compactRef.current &&
+          savedRef.current?.has(picture.recordKey) &&
+          (!cover || picture.savedAt > cover.savedAt)
+        )
+          cover = picture;
+      }
+      return cover;
+    },
+    [recordKey],
+  );
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       const key = recordKey(paneId);
       const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
-      if (retainedRef.current.has(paneId) || !picture || !content) return null;
+      if (retainedRef.current.has(paneId) || !content) return null;
       const fresh =
-        picture.revision === pictureRevision(contentKey(content), picture.source) ? picture : null;
-      return fresh ?? lastValidPictures.current.get(picture.recordKey) ?? null;
+        picture && picture.revision === pictureRevision(contentKey(content), picture.source)
+          ? picture
+          : null;
+      return fresh ?? validatedCoverFor(paneId);
     },
     // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again, and observer geometry selects another record; a replaced cover already changes `saved`.
-    [coverVersion, geometryVersion, recordKey, saved],
+    [coverVersion, geometryVersion, recordKey, saved, validatedCoverFor],
   );
   useLayoutEffect(() => {
     for (const [key, picture] of lastValidPictures.current) {
       if (
         retainedRef.current.has(picture.paneId) ||
         !saved?.has(key) ||
-        !contentRevisions.has(picture.paneId) ||
-        recordKey(picture.paneId) !== key
+        !contentRevisions.has(picture.paneId)
       ) {
         lastValidPictures.current.delete(key);
       }
     }
     let coverAppeared = false;
     pictureUrls.retain(
-      new Set([
-        ...[...contentRevisions.keys()].flatMap((paneId) => {
+      new Set(
+        [...contentRevisions.keys()].flatMap((paneId) => {
           const picture = freshPictureFor(paneId);
           if (picture && !lastValidPictures.current.has(picture.recordKey)) coverAppeared = true;
           if (picture) lastValidPictures.current.set(picture.recordKey, picture);
-          return picture ? [picture.image] : [];
+          const cover = picture ?? validatedCoverFor(paneId);
+          return cover ? [cover.image] : [];
         }),
-        ...[...lastValidPictures.current.values()].map((picture) => picture.image),
-      ]),
+      ),
     );
     // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
     if (coverAppeared) setCoverVersion((version) => version + 1);
+  }, [
+    contentRevisions,
+    freshPictureFor,
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
-  }, [contentRevisions, freshPictureFor, geometryVersion, pictureUrls, recordKey, retained, saved]);
+    geometryVersion,
+    pictureUrls,
+    retained,
+    saved,
+    validatedCoverFor,
+  ]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
     (paneId: string) => {
@@ -469,12 +501,12 @@ export function useSavedPanePictures(
     // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
     [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
   );
-  const freshPictureForRef = useRef(freshPictureFor);
+  const pictureForRef = useRef(pictureFor);
   useLayoutEffect(() => {
-    freshPictureForRef.current = freshPictureFor;
-  }, [freshPictureFor]);
+    pictureForRef.current = pictureFor;
+  }, [pictureFor]);
   const getPanePicture = useCallback<OnirigiriPanePictureResolver>((pane) => {
-    const picture = freshPictureForRef.current(pane.paneId);
+    const picture = pictureForRef.current(pane.paneId);
     return picture
       ? {
           image: picture.image,
@@ -654,13 +686,10 @@ export function useSavedPanePictures(
             !pictureMatchesVisualRevision(paneId, previous.image)
           );
         },
-        (paneId) => {
-          const key = recordKey(paneId);
-          return key !== null && lastValidPictures.current.has(key);
-        },
+        (paneId) => validatedCoverFor(paneId) !== null,
         (paneId) => pictureMountRef.current(paneId),
       ),
-    [pictureMatchesVisualRevision, recordKey, snapshots],
+    [pictureMatchesVisualRevision, recordKey, snapshots, validatedCoverFor],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
