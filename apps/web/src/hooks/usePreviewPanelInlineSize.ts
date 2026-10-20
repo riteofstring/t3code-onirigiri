@@ -57,8 +57,8 @@ function useViewportClampedMaxWidth(
     getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
   );
   useLayoutEffect(() => {
-    if (typeof window === "undefined") return;
-    const row = container ?? (enabled ? hostRef?.current?.parentElement : null) ?? null;
+    if (!enabled || typeof window === "undefined") return;
+    const row = container ?? hostRef?.current?.parentElement ?? null;
     // Measure before first paint: the persisted width must be clamped against
     // the row on the initial render, not one observer tick later (the panel
     // would flash over-wide on every mount). Only the derived cap is stored: the
