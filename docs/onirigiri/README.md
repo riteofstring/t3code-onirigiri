@@ -77,19 +77,27 @@ T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial dev
 For a step-by-step trial on a fresh Mac, written for a setup agent, see
 [the macOS beta trial](beta-trial-macos.md).
 
-Windows development has a temporary dependency risk:
-[GHSA-698v-4r3x-3vcv](https://github.com/vitejs/launch-editor/security/advisories/GHSA-698v-4r3x-3vcv)
-affects the editor-launch endpoint bundled in this checkout's Vite+ 1.0.0.
-An attacker-controlled existing filename and Windows shell expansion can lead
-to command execution. Loopback binding does not prevent malicious local-page
-requests, and `--share` additionally exposes the dev server to tailnet peers.
-The built spatial frontend served with `preview` above has no editor-launch
-endpoint. On Windows, use that built frontend for untrusted-file work and stop
-hot-reload dev servers before inspecting such files. Windows hot-reload use
-remains a residual development risk.
-Reviewed by Codex on 2026-10-20: retain the current toolchain for this beta and
-update Vite+ and its pinned core together to 1.1.0 by 2026-11-07, after the fix
-reaches 30 days on 2026-11-06. Remove this note after verifying that update.
+The pinned Vite+ 1.0.0 toolchain contains editor-launch vulnerabilities:
+[Windows percent expansion](https://github.com/vitejs/launch-editor/security/advisories/GHSA-698v-4r3x-3vcv),
+[a Windows existence-check bypass](https://github.com/vitejs/launch-editor/security/advisories/GHSA-587h-7wmj-h5pm)
+and [WSL editor argument injection](https://github.com/vitejs/launch-editor/security/advisories/GHSA-r825-w8mm-5pxw).
+The Windows combination does not require an attacker-created file. Loopback
+binding alone does not prevent malicious local-page requests, and `--share`
+additionally exposes a development server to tailnet peers.
+
+Web, spatial and marketing development servers disable Vite's editor-launch
+HTTP endpoint before its middleware can handle a request. The development error
+overlay's source-file links therefore do not launch an editor. T3's own editor
+commands, hot reload and production UI retain their behavior. The built spatial
+frontend served with `preview` has no editor-launch endpoint. Custom Vite server
+configurations must include `scripts/lib/disable-dev-editor.ts` until the
+bundled dependency is updated.
+
+Reviewed by Codex on 2026-10-20: retain the pinned toolchain with this mitigation
+and update Vite+ and its pinned core together to 1.1.0 by 2026-11-07, after the fix
+reaches 30 days on 2026-11-06. The HTTP tests prove endpoint rejection, not safe
+Windows parsing in the affected launcher. Remove the temporary mitigation and
+this note after verifying the dependency update.
 
 The existing `dev`, `dev:web`, and desktop commands retain their upstream entry
 points unless the explicit spatial URL above is supplied. Embedded Browser

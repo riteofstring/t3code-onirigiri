@@ -15,6 +15,7 @@ import {
 } from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
+import { disableDevEditor } from "../../scripts/lib/disable-dev-editor";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { tailwindPlugins } from "./vite/tailwind";
 
@@ -160,6 +161,7 @@ export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      disableDevEditor(),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",
