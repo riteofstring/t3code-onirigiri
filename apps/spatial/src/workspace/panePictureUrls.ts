@@ -1,6 +1,7 @@
 type PictureUrl = {
   url: string | null;
   state: "queued" | "decoding" | "ready" | "failed";
+  decoder?: HTMLImageElement;
 };
 
 export function createPanePictureUrls() {
@@ -26,6 +27,7 @@ export function createPanePictureUrls() {
       const entry = entryFor(image);
       entry.state = "decoding";
       const decoder = new Image();
+      entry.decoder = decoder;
       decoding = true;
       decoder.src = entry.url!;
       void decoder

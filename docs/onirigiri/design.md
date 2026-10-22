@@ -175,7 +175,9 @@ the thread shell, which is never stale.
   proportion to its pixels (a stage-sized 2x picture takes about 670 ms). The idle gates above keep
   that cost out of input and motion; a smaller picture would read blurred on the display it was
   drawn for.
-- Picture URLs are decoded during idle time to warm the browser's discardable image cache.
+- Picture URLs are decoded during idle time. Each selected cover retains its decoder so a ready URL
+  keeps its loaded image resource when the live view temporarily replaces its image element.
+  Removing the cover releases both the URL and decoder; decoded pixels remain browser-managed.
   `SavedPanePicture` keeps the current cover until a replacement decodes, including same-mode geometry
   changes, since warmed pixels may have been discarded, and shows the thread card until its first
   picture decodes rather than an empty frame. Only the selected cover per pane retains a warmed URL.
