@@ -248,12 +248,7 @@ export function WorkspaceToolbar({
                     <SelectTrigger size="compact" aria-label="Overview zoom">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectPopup
-                      ref={selectPopupRef}
-                      side="top"
-                      alignItemWithTrigger={false}
-                      data-spatial-workspace-popup=""
-                    >
+                    <SelectPopup ref={selectPopupRef} side="top" alignItemWithTrigger={false}>
                       {overviewZoomChoices.map((choice) => (
                         <SelectItem key={choice.value} value={choice.value}>
                           {choice.label}

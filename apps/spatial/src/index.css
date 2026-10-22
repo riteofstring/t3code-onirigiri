@@ -21,23 +21,15 @@
   outline-color: var(--onirigiri-focus);
 }
 
-:is(
-  .spatial-workspace [data-onirigiri-slot],
-  .spatial-workspace-controls,
-  .spatial-workspace-controls *,
-  [data-spatial-workspace-popup],
-  [data-spatial-workspace-popup] *
-) {
-  &,
-  &::before,
-  &::after {
-    box-shadow: none;
-  }
+*,
+*::before,
+*::after {
+  --tw-drop-shadow: initial;
+  box-shadow: none;
+  text-shadow: none;
 }
 
-.spatial-workspace
-  :is([data-onirigiri-slot="control"], [data-onirigiri-slot="pane-action"]):focus-visible,
-.spatial-workspace-controls :focus-visible {
+:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

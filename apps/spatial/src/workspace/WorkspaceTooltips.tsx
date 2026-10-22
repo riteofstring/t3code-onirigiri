@@ -20,11 +20,7 @@ export function WorkspaceTooltips({ children }: { children: ReactNode }) {
     <TooltipProvider delay={350} closeDelay={100} timeout={400}>
       <WorkspaceTooltipContext value={handle}>{children}</WorkspaceTooltipContext>
       <Tooltip handle={handle}>
-        {({ payload }) => (
-          <TooltipPopup side="top" data-spatial-workspace-popup="">
-            {payload}
-          </TooltipPopup>
-        )}
+        {({ payload }) => <TooltipPopup side="top">{payload}</TooltipPopup>}
       </Tooltip>
     </TooltipProvider>
   );

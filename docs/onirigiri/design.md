@@ -247,6 +247,6 @@ app keeps one routed thread.
 - A sidebar drag writes an inline width to the sidebar gap only while it runs. The spatial app holds
   the gap at the committed `--sidebar-width` instead, so the workspace resizes once on release rather
   than on every frame; the sidebar container still follows the pointer and overlays the workspace.
-- Spatial chrome is flat: panes, minimap, controls, menus, and tooltips have no shadows in either
-  theme or presentation mode. Keyboard focus uses outlines. These rules are scoped to workspace
-  chrome so embedded thread content retains its own styling.
+- The spatial app has no box, text, or icon drop shadows, including shared chat controls,
+  notifications, menus, and tooltips, in either theme or presentation mode. Keyboard focus uses
+  outlines. The rule lives in the spatial stylesheet; other T3 clients retain their own styling.
