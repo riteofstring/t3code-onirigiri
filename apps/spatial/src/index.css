@@ -21,6 +21,27 @@
   outline-color: var(--onirigiri-focus);
 }
 
+:is(
+  .spatial-workspace [data-onirigiri-slot],
+  .spatial-workspace-controls,
+  .spatial-workspace-controls *,
+  [data-spatial-workspace-popup],
+  [data-spatial-workspace-popup] *
+) {
+  &,
+  &::before,
+  &::after {
+    box-shadow: none;
+  }
+}
+
+.spatial-workspace
+  :is([data-onirigiri-slot="control"], [data-onirigiri-slot="pane-action"]):focus-visible,
+.spatial-workspace-controls :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .spatial-workspace .onirigiri-pane__live-content[data-spatial-snapshot],
 .spatial-workspace
   .onirigiri-pane__live-content:has(
@@ -68,22 +89,13 @@
   --onirigiri-focus-ring-size: 0px;
   --onirigiri-control: transparent;
   --onirigiri-control-hover: var(--accent);
-  --onirigiri-control-shadow: none;
   --onirigiri-control-size: 24px;
   --onirigiri-control-icon-size: 14px;
   --onirigiri-toolbar: transparent;
-  --onirigiri-toolbar-shadow: none;
   --onirigiri-toolbar-padding: 0px;
   --onirigiri-compact-toolbar-min-height: var(--spatial-compact-toolbar-height);
   --onirigiri-z-toolbar: 35;
   --onirigiri-minimap-background: var(--card);
-  --onirigiri-pane-shadow:
-    0 0 0 1px var(--border), 0 1px 4px rgb(0 0 0 / 12%), 0 10px 40px rgb(0 0 0 / 10%);
-
-  @variant dark {
-    --onirigiri-pane-shadow:
-      0 0 0 1px var(--border), 0 1px 4px rgb(0 0 0 / 55%), 0 10px 40px rgb(0 0 0 / 28%);
-  }
 }
 
 [data-slot="sidebar-gap"][style*="width"] {
@@ -242,7 +254,6 @@
   padding-inline: var(--onirigiri-compact-toolbar-padding-inline);
   border-radius: 0;
   background: var(--card);
-  box-shadow: inset 0 1px 0 var(--border);
 }
 
 .spatial-workspace-controls__surface {
@@ -254,14 +265,12 @@
   border-radius: 8px;
   transition:
     background-color var(--workspace-reveal-duration),
-    border-color var(--workspace-reveal-duration),
-    box-shadow var(--workspace-reveal-duration);
+    border-color var(--workspace-reveal-duration);
 }
 
 .spatial-workspace-controls__surface[data-expanded="true"] {
   background: var(--card);
   border-color: var(--border);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
 }
 
 .spatial-workspace[data-spatial-navigation-bar="true"]
@@ -270,7 +279,6 @@
   .spatial-workspace-controls__surface[data-expanded="true"] {
   border-color: transparent;
   background-clip: padding-box;
-  box-shadow: none;
 }
 
 .spatial-workspace[data-spatial-compact="true"]

@@ -227,7 +227,7 @@ app keeps one routed thread.
 - The engine toolbar (z-index 35) stays below the floating controls (40) so the Onirigiri control
   remains visible inside the bar. With a fine pointer the bottom bar matches the sidebar footer's
   40 px; touch keeps 52 px.
-- Over a bottom bar, the open Onirigiri control drops its border and shadow and takes the bar's
+- Over a bottom bar, the open Onirigiri control drops its border and takes the bar's
   color: the card on the desktop navigation bar, the workspace grey on the compact bar. Its buttons
   then read as part of the bar, while it still covers the bar controls it slides over when the
   advanced settings are open or the screen is narrow. Its transparent 1 px border stays unpainted,
@@ -247,9 +247,6 @@ app keeps one routed thread.
 - A sidebar drag writes an inline width to the sidebar gap only while it runs. The spatial app holds
   the gap at the committed `--sidebar-width` instead, so the workspace resizes once on release rather
   than on every frame; the sidebar container still follows the pointer and overlays the workspace.
-- Pane shadows pair a tight darker layer with a wide faint one, so the pane edge stays distinct
-  from its shadow. Each pane is its own compositor layer, and Chrome blends that layer's shadow
-  onto the dark workspace grey without dithering, so the faint layer can step one color level at a
-  time. Noise above or below the pane layer cannot help: it lands after the steps are fixed, and
-  noise inside every pane layer (a filtered SVG `border-image`) made motion visibly slower on a 4K
-  display, so the shadows are not dithered. Overview keeps the engine's edge-only pane shadow.
+- Spatial chrome is flat: panes, minimap, controls, menus, and tooltips have no shadows in either
+  theme or presentation mode. Keyboard focus uses outlines. These rules are scoped to workspace
+  chrome so embedded thread content retains its own styling.
