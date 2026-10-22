@@ -157,11 +157,6 @@ export function useSavedPanePictures(
     setRetained(next);
   }, []);
   const retainedPaneIds = useMemo(() => new Set(retained.keys()), [retained]);
-  const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane) =>
-      pane.surfaceKind !== "thread" || retained.get(pane.paneId) === "live" ? "dom" : "auto",
-    [retained],
-  );
   const updateSaved = useCallback((pictures: Map<string, SavedPanePicture>) => {
     let count = 0;
     let bytes = 0;
@@ -457,6 +452,20 @@ export function useSavedPanePictures(
     },
     // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again, and observer geometry selects another record; a replaced cover already changes `saved`.
     [coverVersion, geometryVersion, recordKey, saved, validatedCoverFor],
+  );
+  const getPanePresentation = useCallback<PanePresentationResolver>(
+    (pane, { phase }) => {
+      if (
+        pane.surfaceKind !== "thread" ||
+        retained.get(pane.paneId) === "live" ||
+        runningPanes.has(pane.paneId)
+      )
+        return "dom";
+      return phase !== "rest" && phase !== "resize" && pictureFor(pane.paneId)
+        ? { kind: "placeholder" }
+        : "auto";
+    },
+    [pictureFor, retained, runningPanes],
   );
   useLayoutEffect(() => {
     for (const [key, picture] of lastValidPictures.current) {

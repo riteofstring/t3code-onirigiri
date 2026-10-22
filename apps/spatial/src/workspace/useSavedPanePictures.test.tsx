@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 
-import type { OnirigiriLayout, WorkspacePane } from "@riteofstring/onirigiri";
+import type {
+  OnirigiriLayout,
+  PanePresentationContext,
+  WorkspacePane,
+} from "@riteofstring/onirigiri";
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import { useEffect, useMemo } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -99,6 +103,15 @@ vi.mock("./useWorkspacePanes", () => ({
 
 const paneId = "thread:e:t1";
 const pane = { paneId } as WorkspacePane;
+const threadPane = { ...pane, surfaceKind: "thread" };
+const presentationAt = (phase: PanePresentationContext["phase"]) =>
+  hook.getPanePresentation(threadPane, {
+    phase,
+    focused: true,
+    maximized: false,
+    visible: true,
+    capabilities: { canCapture: true, hasVideo: false },
+  });
 const layout = (width: number) =>
   ({
     panes: store.threadIds.map((id) => ({ paneId: `thread:e:${id}` })),
@@ -1924,6 +1937,53 @@ it("restores a stored compact picture only in compact layout", async () => {
   expect(shownPicture).toBe(image);
   await setCompact(false);
   expect(shownPicture).toBeNull();
+});
+
+it.each([false, true])(
+  "keeps a usable picture through navigation in compact=%s",
+  async (compact) => {
+    const picture = savedPicture({
+      geometryRevision: compact ? geometry(400).replace(/\|tiled$/, "|compact") : geometry(400),
+    });
+    store.saved.set(paneId, picture);
+    await mount({ compact });
+    expect(presentationAt("rest")).toBe("auto");
+    for (const phase of ["motion", "overview", "overview-motion"] as const) {
+      expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
+      expect(pictureImageFor(paneId)).toBe(picture.image);
+    }
+    expect(presentationAt("resize")).toBe("auto");
+    expect(presentationAt("rest")).toBe("auto");
+    await setCompact(!compact);
+    expect(presentationAt("motion")).toBe("auto");
+    await setCompact(compact);
+    expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
+  },
+);
+
+it("keeps content live until a first picture arrives and while a producer runs", async () => {
+  await mount();
+  expect(presentationAt("motion")).toBe("auto");
+  const beforePicture = hook.getPanePresentation;
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  await act(() => capturePicture(pane, new Blob(["first picture"])));
+  expect(hook.getPanePresentation).not.toBe(beforePicture);
+  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
+  store.runtimeStatus = "running";
+  await act(() => renderer!.update(<Probe />));
+  expect(presentationAt("motion")).toBe("dom");
+  store.runtimeStatus = null;
+  await act(() => renderer!.update(<Probe />));
+  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
+  await act(() => {
+    hook.paneSnapshots.setLiveProducer(paneId, true);
+  });
+  expect(presentationAt("motion")).toBe("dom");
+  await act(() => {
+    hook.paneSnapshots.setLiveProducer(paneId, false);
+  });
+  expect(presentationAt("motion")).toBe("auto");
+  expect(hook.retainedPaneIds.has(paneId)).toBe(true);
 });
 
 it("does not display a picture saved without its layout mode", async () => {

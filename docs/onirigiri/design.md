@@ -122,6 +122,11 @@ that span files and are easy to break without noticing.
 Unmounted thread panes show a picture of their last synchronized content, or a `ThreadCard` built from
 the thread shell, which is never stale.
 
+- Static threads with a usable picture keep that image during navigation and overview, including
+  when their live view is still mounted. Revealing retained chat DOM during camera movement forces
+  costly style and layout work; the live view returns at rest or during resizing. Threads awaiting
+  their first picture, running turns, live producers and tool panes keep their live presentation.
+  The cover uses the same geometry validation and layout-mode separation as an unmounted pane.
 - A record is keyed by pane and geometry: stage size, device pixel ratio, pane geometry (column
   width, cell sizing, default row height) and the layout mode, `tiled` or `compact`. Pictures of
   several displays and modes coexist, so returning to a display selects its stored pictures instead
