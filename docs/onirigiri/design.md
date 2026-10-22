@@ -88,7 +88,11 @@ that span files and are easy to break without noticing.
 `paneLifecycle.ts` decides which thread panes mount a live ChatView; mounting is the expensive step.
 
 - About eight views stay warm. Visible views are never evicted, and views the user has seen stay
-  mounted while their turn runs or while they host a live producer.
+  mounted while their turn runs, while they host a live producer, or until their prepared content
+  has a usable picture in the current layout mode. The warm target may be exceeded during a cold
+  traversal: preserving already prepared content avoids loading it again on the return trip without
+  forcing capture into navigation. A usable older cover permits eviction while its replacement is
+  pending. Capture failures retain the view through the existing retry schedule.
 - The focused pane mounts first once focus and visibility have been quiet briefly. No new mounts
   are admitted during camera motion, though a transition admitted just before may still commit: a
   saved picture or the thread card covers the destination and the view mounts after the final
@@ -101,8 +105,9 @@ that span files and are easy to break without noticing.
 - Panes without a picture share one extra mount slot to be pictured: untried panes first, visited
   ones before untouched ones, then the oldest attempt. A mount made only to picture a pane is
   admitted after ten seconds without input or camera motion, so preparing a new display's pictures
-  happens while the user is away rather than between their moves; a view leaving the warm set before
-  its first picture keeps its slot under the ordinary gates. A reservation interrupted by input,
+  happens while the user is away rather than between their moves. This extra slot is only for passive
+  preparation; visited content awaiting its first picture uses the retention rule above. A
+  reservation interrupted by input,
   motion or covering keeps its place without counting as a failure; a real failure waits minutes
   before a retry; a deliberate revisit takes the pane over.
 - Mount changes reach panes as transitions (`usePaneMounted`), so mounting a ChatView does not block

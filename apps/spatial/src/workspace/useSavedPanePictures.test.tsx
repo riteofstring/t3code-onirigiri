@@ -519,8 +519,13 @@ it("draws a departing view quickly, pictures an untouched pane once the lifecycl
     });
   }
   markPaneSynced(first, { updatedAt: store.updatedAt, theme: appearance });
-  const syncPictures = () =>
-    lifecycle.setPictures((id) => hook.hasFreshPicture(id), true, hook.canBackgroundPicture);
+  const syncPictures = () => {
+    lifecycle.setRetainedPanes(hook.retainedPaneIds);
+    lifecycle.setPictures(hook.hasFreshPicture, true, hook.canBackgroundPicture);
+  };
+  await act(() => {
+    hook.paneSnapshots.request(first, elements.get(first) as HTMLElement);
+  });
   syncPictures();
   lifecycle.setBackgroundPictures(true);
   for (let slot = 1; slot <= 8; slot++) {
@@ -1718,6 +1723,134 @@ const setCompact = (compact: boolean) =>
   act(async () => {
     stage.parentElement!.dataset.compactLayout = String(compact);
   });
+
+it.each([false, true])(
+  "keeps visited content through a cold round trip until pictures finish (compact=%s)",
+  async (compact) => {
+    snapshot.mockImplementation(async (_element, canSnapshot) =>
+      canSnapshot()
+        ? {
+            image: new Blob(["snapshot"]),
+            cssSize: compact ? { width: 800, height: 600 } : { width: 400, height: 580 },
+          }
+        : null,
+    );
+    store.threadIds = Array.from({ length: 27 }, (_, index) => `t${index}`);
+    currentLayout = layout(400);
+    await mount({ compact });
+    const panes = store.threadIds.map((id, slot) => ({ paneId: `thread:e:${id}`, plane: 0, slot }));
+    const lifecycle = createPaneLifecycleStore(panes, panes[0]!.paneId);
+    backgroundLifecycle = lifecycle;
+    const elements = new Map(panes.map(({ paneId: id }) => [id, { isConnected: false }]));
+    const syncPictures = () => {
+      lifecycle.setRetainedPanes(hook.retainedPaneIds);
+      lifecycle.setPictures(hook.hasFreshPicture, true, hook.canBackgroundPicture);
+    };
+    const connect = (id: string) => {
+      const mounted = lifecycle.isMounted(id);
+      elements.get(id)!.isConnected = mounted;
+      lifecycle.committed(id, mounted);
+      markPaneSynced(id, mounted ? { updatedAt: store.updatedAt, theme: appearance } : null);
+      if (mounted) hook.paneSnapshots.request(id, elements.get(id) as HTMLElement);
+    };
+    for (const { paneId: id } of panes) lifecycle.subscribe(id, () => connect(id));
+    lifecycle.setVisible(panes[0]!.paneId, true);
+    await act(() => connect(panes[0]!.paneId));
+    syncPictures();
+    lifecycle.setBackgroundPictures(true);
+    let previous = panes[0]!.paneId;
+    const visit = async (id: string) => {
+      window.dispatchEvent(new Event("keydown"));
+      hook.setCaptureActivity(true, true);
+      lifecycle.setMoving(true);
+      lifecycle.setFocus(id);
+      lifecycle.setVisible(previous, false);
+      lifecycle.setVisible(id, true);
+      await advance(100);
+      lifecycle.setMoving(false);
+      hook.setCaptureActivity(true, false);
+      await advance(150);
+      syncPictures();
+      previous = id;
+    };
+    for (const { paneId: id } of panes.slice(1)) await visit(id);
+    expect(snapshot).not.toHaveBeenCalled();
+    for (const { paneId: id } of panes.toReversed().slice(1)) {
+      expect(lifecycle.isMounted(id) || hook.pictureFor(id) !== null).toBe(true);
+      await visit(id);
+    }
+    for (let step = 0; step < 10; step++) {
+      await advance(500);
+      syncPictures();
+    }
+    expect(panes.every(({ paneId: id }) => hook.hasFreshPicture(id))).toBe(true);
+    expect(panes.filter(({ paneId: id }) => lifecycle.isMounted(id)).length).toBeLessThanOrEqual(8);
+    expect(store.writes).toHaveLength(27);
+    lifecycle.dispose();
+  },
+);
+
+it("releases a first-picture hold when stored fullscreen pixels finish loading", async () => {
+  let loaded!: (pictures: Map<string, SavedPanePicture>) => void;
+  store.loading = new Promise((resolve) => {
+    loaded = resolve;
+  });
+  await mount({ compact: true });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  await act(() => {
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  });
+  expect(hook.retainedPaneIds.has(paneId)).toBe(true);
+  const picture = savedPicture({
+    geometryRevision: geometry(400).replace(/\|tiled$/, "|compact"),
+    cssSize: { width: 800, height: 600 },
+  });
+  await act(() => loaded(new Map([[picture.recordKey, picture]])));
+  expect(shownPicture).toBe(picture.image);
+  expect(hook.retainedPaneIds.has(paneId)).toBe(false);
+  await advance(3500);
+  expect(snapshot).not.toHaveBeenCalled();
+});
+
+it("preserves tiled pictures while the first fullscreen picture is pending", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const tiled = new Blob(["tiled"]);
+  await act(() => capturePicture(pane, tiled));
+  await setCompact(true);
+  await act(() => {
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  });
+  expect(shownPicture).toBeNull();
+  expect(hook.retainedPaneIds.has(paneId)).toBe(true);
+  await setCompact(false);
+  expect(shownPicture).toBe(tiled);
+  expect(hook.retainedPaneIds.has(paneId)).toBe(false);
+  await setCompact(true);
+  const fullscreen = new Blob(["fullscreen"]);
+  await act(() => capturePicture(pane, fullscreen, { width: 800, height: 600 }));
+  expect(shownPicture).toBe(fullscreen);
+  expect(hook.retainedPaneIds.has(paneId)).toBe(false);
+  await setCompact(false);
+  expect(shownPicture).toBe(tiled);
+  expect(store.writes).toHaveLength(2);
+});
+
+it("allows eviction behind a usable picture while newer content needs capturing", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const image = new Blob(["usable cover"]);
+  await act(() => capturePicture(pane, image));
+  store.updatedAt = "u2";
+  await act(() => renderer!.update(<Probe />));
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  await act(() => {
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  });
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(shownPicture).toBe(image);
+  expect(hook.retainedPaneIds.has(paneId)).toBe(false);
+});
 
 it("keeps a pane's tiled and compact pictures apart through a layout round trip", async () => {
   await mount();

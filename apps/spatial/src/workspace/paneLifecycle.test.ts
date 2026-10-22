@@ -77,83 +77,28 @@ it("retries exhausted background pictures after backoff without new input", () =
   expect(mountedOf(store, row(3)).length).toBeLessThanOrEqual(3);
 });
 
-it("gives a departing uncovered view one bounded slot until its first picture completes", () => {
+it("keeps prepared views until their first pictures exist despite continuous input", () => {
   const panes = row(12);
   const store = lifecycle(panes, "p0-0");
-  const pictures = new Set<string>();
-  store.setPictures((paneId) => pictures.has(paneId));
+  const retained = new Set(["p0-0"]);
+  commitOnChange(store, panes);
+  store.setRetainedPanes(retained);
   store.setBackgroundPictures(true);
   for (let slot = 1; slot < 12; slot++) {
-    travel(store, `p0-${slot}`);
-    store.committed(`p0-${slot}`, true);
-    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
-  }
-  expect(store.isMounted("p0-0")).toBe(true);
-  pictures.add("p0-0");
-  store.setPictures((paneId) => pictures.has(paneId));
-  vi.advanceTimersByTime(1500);
-  expect(store.isMounted("p0-0")).toBe(false);
-  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
-});
-
-it.each(["completed", "expired"])(
-  "releases a %s picture slot during continuous navigation",
-  (result) => {
-    const panes = row(28);
-    const store = lifecycle(panes, "p0-0");
-    const pictures = new Set<string>();
-    store.setPictures((paneId) => pictures.has(paneId));
-    store.setBackgroundPictures(true);
-    const visit = (slot: number) => {
-      travel(store, `p0-${slot}`, 800);
-      store.committed(`p0-${slot}`, true);
-      expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
-    };
-    for (let slot = 1; slot <= 9; slot++) visit(slot);
-    expect(store.isMounted("p0-0")).toBe(true);
-    if (result === "completed") {
-      pictures.add("p0-0");
-      store.setPictures((paneId) => pictures.has(paneId));
-      visit(10);
-    } else {
-      for (let slot = 10; slot <= 24; slot++) visit(slot);
-    }
-    expect(store.isMounted("p0-0")).toBe(false);
-  },
-);
-
-it("retries a departing picture owner that expires during continuous navigation", () => {
-  const panes = row(28);
-  const store = lifecycle(panes, "p0-0");
-  const pictures = new Set<string>();
-  const transitions: boolean[] = [];
-  commitOnChange(store, panes);
-  store.subscribe("p0-0", () => transitions.push(store.isMounted("p0-0")));
-  store.setPictures((paneId) => pictures.has(paneId));
-  store.setBackgroundPictures(true);
-  for (let slot = 1; slot <= 24; slot++) {
+    window.dispatchEvent(new Event("keydown"));
     travel(store, `p0-${slot}`, 800);
-    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
-    if (slot === 9) expect(store.isMounted("p0-0")).toBe(true);
+    retained.add(`p0-${slot}`);
+    store.setRetainedPanes(new Set(retained));
   }
-  expect(transitions).toEqual([false]);
-
-  for (const { paneId } of panes) if (paneId !== "p0-0") pictures.add(paneId);
-  store.setPictures((paneId) => pictures.has(paneId));
-  window.dispatchEvent(new Event("keydown"));
-  vi.advanceTimersByTime(9900);
-  expect(store.isMounted("p0-0")).toBe(false);
-  vi.advanceTimersByTime(200);
-  expect(transitions).toEqual([false, true]);
-  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
-
-  pictures.add("p0-0");
-  store.setPictures((paneId) => pictures.has(paneId));
-  vi.advanceTimersByTime(1200);
-  expect(transitions).toEqual([false, true, false]);
-  vi.advanceTimersByTime(60_000);
-  expect(transitions).toEqual([false, true, false]);
+  store.setMoving(true);
+  vi.advanceTimersByTime(20_000);
+  expect(mountedOf(store, panes)).toHaveLength(12);
+  store.setPictures(() => true);
+  store.setRetainedPanes(new Set());
+  store.setMoving(false);
+  vi.advanceTimersByTime(2000);
   expect(mountedOf(store, panes).length).toBeLessThanOrEqual(8);
+  expect(store.isMounted("p0-11")).toBe(true);
 });
 
 it.each(["motion", "keydown", "pointerdown", "wheel"])(
@@ -193,30 +138,6 @@ it.each(["motion", "keydown", "pointerdown", "wheel"])(
     expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
   },
 );
-
-it("retries a departing owner reserved while recent input still pauses capture", () => {
-  const panes = row(10);
-  const store = lifecycle(panes, "p0-0");
-  const transitions: boolean[] = [];
-  commitOnChange(store, panes);
-  store.subscribe("p0-0", () => transitions.push(store.isMounted("p0-0")));
-  for (let slot = 1; slot <= 7; slot++) travel(store, `p0-${slot}`);
-
-  window.dispatchEvent(new Event("keydown"));
-  store.setBackgroundPictures(true);
-  store.setMoving(true);
-  store.setVisible("p0-9", true);
-  store.setMoving(false);
-  vi.advanceTimersByTime(250);
-  expect(store.isMounted("p0-9")).toBe(true);
-  expect(store.isMounted("p0-0")).toBe(true);
-  expect(mountedOf(store, panes)).toHaveLength(9);
-
-  store.setPictures((paneId) => paneId !== "p0-0");
-  vi.advanceTimersByTime(11_000);
-  expect(transitions).toEqual([false, true]);
-  expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
-});
 
 it("keeps failure backoff when input arrives after an uninterrupted reservation's deadline", () => {
   vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 1000));
@@ -507,6 +428,7 @@ it.each(["uncaptured focus", "visible neighbor"])(
     expect(store.isMounted("p0-9")).toBe(true);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
 
+    store.setRetainedPanes(new Set(["p0-1"]));
     for (const paneId of mountedOf(store, panes)) fresh.delete(paneId);
     fresh.add("p0-10");
     if (destination === "uncaptured focus") fresh.delete("p0-11");
@@ -527,6 +449,7 @@ it.each(["uncaptured focus", "visible neighbor"])(
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
 
     fresh.add("p0-1");
+    store.setRetainedPanes(new Set());
     store.setPictures(hasPicture);
     store.setMoving(false);
     vi.advanceTimersByTime(201);
@@ -537,7 +460,7 @@ it.each(["uncaptured focus", "visible neighbor"])(
   },
 );
 
-it("keeps a departing picture slot when every other view is visibly required", () => {
+it("keeps a prepared uncaptured view when every other view is visibly required", () => {
   const panes = row(14);
   const store = lifecycle(panes, "p0-0");
   const fresh = new Set(panes.map(({ paneId }) => paneId));
@@ -558,6 +481,7 @@ it("keeps a departing picture slot when every other view is visibly required", (
   for (const paneId of visible) store.setVisible(paneId, true);
   store.setMoving(true);
   store.setFocus("p0-10");
+  store.setRetainedPanes(new Set(["p0-10"]));
   vi.advanceTimersByTime(200);
   fresh.delete("p0-11");
   store.setPictures(hasPicture);
@@ -571,6 +495,7 @@ it("keeps a departing picture slot when every other view is visibly required", (
   expect(mountedOf(store, panes)).toHaveLength(visible.length + 1);
 
   fresh.add("p0-10");
+  store.setRetainedPanes(new Set());
   store.setPictures(hasPicture);
   store.setMoving(false);
   vi.advanceTimersByTime(201);

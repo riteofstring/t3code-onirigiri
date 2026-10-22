@@ -410,7 +410,7 @@ export function useSavedPanePictures(
 
   const freshPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
-      if (retainedRef.current.has(paneId)) return null;
+      if (retainedRef.current.get(paneId) === "live") return null;
       const key = recordKey(paneId);
       const content = contentRevisions.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
@@ -426,7 +426,7 @@ export function useSavedPanePictures(
   const validatedCoverFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       const key = recordKey(paneId);
-      if (key === null || retainedRef.current.has(paneId)) return null;
+      if (key === null || retainedRef.current.get(paneId) === "live") return null;
       const exact = lastValidPictures.current.get(key);
       if (exact && savedRef.current?.has(key)) return exact;
       let cover: SavedPanePicture | null = null;
@@ -448,7 +448,7 @@ export function useSavedPanePictures(
       const key = recordKey(paneId);
       const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
-      if (retainedRef.current.has(paneId) || !content) return null;
+      if (retainedRef.current.get(paneId) === "live" || !content) return null;
       const fresh =
         picture && picture.revision === pictureRevision(contentKey(content), picture.source)
           ? picture
@@ -461,7 +461,7 @@ export function useSavedPanePictures(
   useLayoutEffect(() => {
     for (const [key, picture] of lastValidPictures.current) {
       if (
-        retainedRef.current.has(picture.paneId) ||
+        retainedRef.current.get(picture.paneId) === "live" ||
         !saved?.has(key) ||
         !contentRevisions.has(picture.paneId)
       ) {
@@ -482,6 +482,10 @@ export function useSavedPanePictures(
     );
     // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
     if (coverAppeared) setCoverVersion((version) => version + 1);
+    const waiting = [...retainedRef.current].filter(
+      ([paneId, reason]) => reason === "live" || validatedCoverFor(paneId) === null,
+    );
+    if (waiting.length !== retainedRef.current.size) updateRetained(new Map(waiting));
   }, [
     contentRevisions,
     freshPictureFor,
@@ -490,6 +494,7 @@ export function useSavedPanePictures(
     pictureUrls,
     retained,
     saved,
+    updateRetained,
     validatedCoverFor,
   ]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
@@ -719,6 +724,15 @@ export function useSavedPanePictures(
         return visualRevision(paneId);
       },
       request: (paneId, element, options) => {
+        const content = contentRevisionsRef.current.get(paneId);
+        if (
+          content &&
+          paneHasCommittedContent(paneId, content, visualRevision(paneId)) &&
+          pictureMountRef.current(paneId) === "ordinary" &&
+          !retainedRef.current.has(paneId) &&
+          pictureForRef.current(paneId) === null
+        )
+          updateRetained(new Map(retainedRef.current).set(paneId, "awaiting-picture"));
         snapshots.request(paneId, element, options?.preferNative === true);
         return visualRevision(paneId);
       },

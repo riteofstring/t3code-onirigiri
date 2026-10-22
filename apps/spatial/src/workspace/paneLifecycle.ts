@@ -63,7 +63,6 @@ export function createPaneLifecycleStore(
     since: number;
     interrupted: boolean;
     failed: boolean;
-    background: boolean;
   } | null = null;
   const pictureAttempted = new Map<string, { since: number; retryAt: number }>();
   let pictureTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,27 +143,10 @@ export function createPaneLifecycleStore(
     );
   };
 
-  const reservePicture = (paneId: string, interrupted: boolean, background: boolean) => {
+  const reservePicture = (paneId: string) => {
     const since = performance.now();
-    picturing = { paneId, since, interrupted, failed: false, background };
+    picturing = { paneId, since, interrupted: false, failed: false };
     pictureAttempted.set(paneId, { since, retryAt: since + PICTURE_RETRY_MS });
-  };
-
-  const retainForPicture = (paneId: string) => {
-    if (
-      picturing === null &&
-      backgroundPictures &&
-      picturesReady &&
-      viewed.has(paneId) &&
-      !hasPicture(paneId) &&
-      pictureEligible(paneId) &&
-      !running.has(paneId) &&
-      performance.now() >= (pictureAttempted.get(paneId)?.retryAt ?? -Infinity)
-    ) {
-      reservePicture(paneId, moving || performance.now() - lastInput < INPUT_QUIET_MS, false);
-      return true;
-    }
-    return false;
   };
 
   const interruptPicture = () => {
@@ -176,9 +158,7 @@ export function createPaneLifecycleStore(
   const evictBeyond = (limit: number, keep: ReadonlySet<string>) => {
     picturingPending();
     const paneId = evictionCandidate(limit + (picturing ? 1 : 0), keep);
-    if (paneId === null) return;
-    const retiring = retainForPicture(paneId) ? evictionCandidate(limit + 1, keep) : paneId;
-    if (retiring !== null) unmount(retiring);
+    if (paneId !== null) unmount(paneId);
   };
 
   const cancelSpeculation = () => {
@@ -323,13 +303,10 @@ export function createPaneLifecycleStore(
     }
     const retiring = evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
     if (retiring !== null) {
-      if (retainForPicture(retiring)) schedule();
-      else {
-        waitForCommit(retiring);
-        mounted.delete(retiring);
-        viewed.delete(retiring);
-        notify(retiring);
-      }
+      waitForCommit(retiring);
+      mounted.delete(retiring);
+      viewed.delete(retiring);
+      notify(retiring);
       return;
     }
     const waitForPicture = (ms: number) => {
@@ -357,7 +334,7 @@ export function createPaneLifecycleStore(
       (paneId) => panes.has(paneId) && mustRetain(paneId) && paneId !== focused,
     ).length;
     if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
-    reservePicture(paneId, false, true);
+    reservePicture(paneId);
     mountPrepared(paneId);
   };
 
@@ -461,11 +438,7 @@ export function createPaneLifecycleStore(
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving,
     pictureMount: (paneId: string): PictureMount =>
-      !mounted.has(paneId)
-        ? null
-        : picturing?.paneId === paneId && picturing.background
-          ? "background"
-          : "ordinary",
+      !mounted.has(paneId) ? null : picturing?.paneId === paneId ? "background" : "ordinary",
     subscribeMotion: (listener: () => void) => {
       motionListeners.add(listener);
       return () => {
