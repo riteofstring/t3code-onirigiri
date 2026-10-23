@@ -44,6 +44,8 @@ export function stubWorkspaceFrames() {
     window.setTimeout(() => callback(performance.now()), 16),
   );
   vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => window.setTimeout(callback, 0));
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    window.setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 0),
+  );
   vi.stubGlobal("cancelIdleCallback", (id: number) => window.clearTimeout(id));
 }

@@ -48,6 +48,7 @@ import {
 import { usePaneActivity } from "./paneActivity";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
+import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
 export const SpatialWorkspaceActiveContext = createContext(true);
@@ -122,7 +123,12 @@ function usePaneContent(
         idle = null;
         if (!focused && lifecycle?.isMoving()) return;
         if (focused || visible) show();
-        else idle = requestIdleCallback(show, { timeout: 1000 });
+        else
+          idle = requestIdleCallback((deadline) => {
+            idle = null;
+            if (deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) prepare();
+            else show();
+          });
       };
       const unsubscribe = lifecycle?.subscribeMotion(prepare);
       prepare();

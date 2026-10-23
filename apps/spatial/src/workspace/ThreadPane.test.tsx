@@ -246,7 +246,9 @@ beforeEach(() => {
     setTimeout(() => callback(performance.now()), 16),
   );
   vi.stubGlobal("cancelAnimationFrame", clearTimeout);
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 0));
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 0),
+  );
   vi.stubGlobal("cancelIdleCallback", clearTimeout);
   lifecycle = null;
   paneId = "thread:environment-one:thread-one";
@@ -882,7 +884,9 @@ it("cancels an offscreen content mount if motion starts before its idle callback
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
   live();
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 100));
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 100),
+  );
   await render(false, false);
   await act(() => lifecycle!.setMoving(true));
   await act(() => vi.advanceTimersByTimeAsync(150));

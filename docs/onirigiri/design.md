@@ -104,18 +104,29 @@ that span files and are easy to break without noticing.
   unmounting them all on the last frame.
 - Panes without a picture share one extra mount slot to be pictured: untried panes first, visited
   ones before untouched ones, then the oldest attempt. A mount made only to picture a pane is
-  admitted after ten seconds without input or camera motion, so preparing a new display's pictures
-  happens while the user is away rather than between their moves. This extra slot is only for passive
+  admitted after three seconds without input or camera motion, when a browser idle callback has
+  spare time. A held pointer pauses preparation until release. This extra slot is only for passive
   preparation; visited content awaiting its first picture uses the retention rule above. A
   reservation interrupted by input,
   motion or covering keeps its place without counting as a failure; a real failure waits minutes
   before a retry; a deliberate revisit takes the pane over.
-- Mount changes reach panes as transitions (`usePaneMounted`), so mounting a ChatView does not block
-  input.
-- The lifecycle and the snapshot queue track input separately: the queue only timestamps it, while
-  the lifecycle also interrupts a picture reservation. The queue asks the lifecycle whether a pane is
-  mounted only to be pictured, holds that drawing to the same ten quiet seconds, and drops it once
+- Mount changes reach panes as transitions (`usePaneMounted`), allowing React to prioritize input;
+  synchronous layout and rasterization still have a cost.
+- The lifecycle and snapshot queue share the passive quiet-period and idle-budget policy. Both
+  track input, held pointers and motion; the lifecycle also interrupts a picture reservation.
+  The queue asks the lifecycle whether a pane is mounted only to be pictured, holds that drawing
+  to the same three quiet seconds, and drops it once
   the lifecycle has released the mount, even while React is still unmounting the view.
+- Passive mounts, content reveals and drawings require browser idle time without a forced timeout.
+  Where supported, long-task and long-animation-frame notifications postpone speculative work for
+  three seconds after the latest busy period. They also cover pressure from preparation itself,
+  preventing repeated expensive pictures from running back to back. Visible destinations and needed
+  first covers retain priority. These signals approximate browser responsiveness, not system CPU/GPU
+  utilization, and need no continuous polling. Browsers without those observers still use idle
+  deadlines and the interaction gates.
+  Pressure never resets an unsuccessful reservation's failure backoff: preparation can itself
+  produce a long frame, so treating every pressure report as an interruption would retry broken
+  panes indefinitely. A reservation that cannot finish within its existing lifetime is released.
 
 ## Pictures
 
@@ -143,14 +154,13 @@ the thread shell, which is never stale.
   `stage:` because older records measured the outer workspace, including its toolbar.
 - Pictures come only from panes whose committed detail has caught up with the thread shell
   (`markPaneSynced`), never during a running turn, and only at the current device pixel ratio.
-  Native capture (HTML-in-Canvas) goes first; a drawn fallback follows when no capture arrives within
-  a grace period, and never replaces a capture of the same content.
+  The app owns picture acquisition; it does not also seed or capture through the engine.
 - Local visual changes such as scrolling or typing bump a pane's visual revision, which discards
   in-flight captures and drawings but keeps the current cover and the persisted picture until
   replacement pixels are accepted. A picture validated this session stays the cover while its thread
   refreshes or its same-mode geometry changes, but does not count as fresh. Keep supplying that cover
-  to the engine: withdrawing a replaceable picture releases its image and submitting it again repeats
-  decoding and low-resolution preview preparation.
+  to the placeholder: withdrawing a replaceable picture releases its image and submitting it again
+  repeats decoding.
 - Stored pictures usually load before the stage is measured and the thread shells arrive, so
   placeholders render again whenever a pane's first valid cover appears, and again on every geometry
   change to select that geometry's record. Shell refreshes keep the existing cover without
@@ -167,14 +177,15 @@ the thread shell, which is never stale.
   cannot be drawn. While present the pane renders live and its stored picture is deleted; after
   removal it keeps its live view until current static pixels exist.
 - Pictures are drawn one at a time while idle, after 400 ms without input for a first picture, 3 s
-  for a refresh behind an existing cover and 10 s for a pane mounted only to be pictured; a drawing
+  for a refresh behind an existing cover and 3 s for a pane mounted only to be pictured; a drawing
   of that kind interrupted midway yields to a waiting first picture. Failures back off up to five
   minutes. Camera motion and full-screen transitions count as input when they start and when they
   end, and nothing is drawn or prepared during a full-screen transition.
-- Drawing rasterizes the cloned pane on the main thread at the device pixel ratio, about in
-  proportion to its pixels (a stage-sized 2x picture takes about 670 ms). The idle gates above keep
-  that cost out of input and motion; a smaller picture would read blurred on the display it was
-  drawn for.
+- Browser drawing rasterizes the cloned pane on the main thread at the device pixel ratio. Its
+  synchronous raster flush can exceed an idle budget and cannot be interrupted once started. The
+  gates limit when new work starts and pause subsequent passive work after observed pressure; they
+  cannot guarantee a stall-free capture. Keep timing the full preparation and export on hardware.
+  Lowering picture density would blur the cover on the display it was drawn for.
 - Picture URLs are decoded during idle time. Each selected cover retains its decoder so a ready URL
   keeps its loaded image resource when the live view temporarily replaces its image element.
   Removing the cover releases both the URL and decoder; decoded pixels remain browser-managed.

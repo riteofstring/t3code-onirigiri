@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
+import { simulatePicturePressure } from "./picturePressure.test-support";
+
 import {
   createPaneLifecycleStore,
   type PaneLifecycleStore,
@@ -11,7 +13,9 @@ const stores: PaneLifecycleStore[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("window", new EventTarget());
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => setTimeout(callback, 0));
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 0),
+  );
   vi.stubGlobal("cancelIdleCallback", (handle: ReturnType<typeof setTimeout>) =>
     clearTimeout(handle),
   );
@@ -61,6 +65,86 @@ function travel(store: PaneLifecycleStore, paneId: string, settleMs = 200) {
 function mountedOf(store: PaneLifecycleStore, panes: PanePosition[]) {
   return panes.filter(({ paneId }) => store.isMounted(paneId)).map(({ paneId }) => paneId);
 }
+
+it.each(["longtask", "long-animation-frame"])(
+  "defers passive mounts under %s pressure but keeps a visible destination available",
+  (type) => {
+    const busy = simulatePicturePressure();
+    const panes = row(5);
+    const store = lifecycle(panes, "p0-0");
+    commitOnChange(store, panes);
+    store.setPictures((id) => id !== "p0-2");
+    store.setBackgroundPictures(true);
+    vi.advanceTimersByTime(2500);
+    busy(type);
+    vi.advanceTimersByTime(2500);
+    expect(store.isMounted("p0-2")).toBe(false);
+    busy(type);
+    store.setVisible("p0-4", true);
+    vi.advanceTimersByTime(500);
+    expect(store.isMounted("p0-4")).toBe(true);
+    expect(store.isMounted("p0-2")).toBe(false);
+    vi.advanceTimersByTime(2600);
+    expect(store.pictureMount("p0-2")).toBe("background");
+  },
+);
+
+it("waits for browser idle headroom without forcing a passive mount on a timeout", () => {
+  let available = 0;
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => available }), 50),
+  );
+  const panes = row(3);
+  const store = lifecycle(panes, "p0-0");
+  commitOnChange(store, panes);
+  store.setPictures((id) => id !== "p0-2");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(30_000);
+  expect(store.isMounted("p0-2")).toBe(false);
+  available = 50;
+  vi.advanceTimersByTime(500);
+  expect(store.pictureMount("p0-2")).toBe("background");
+});
+
+it("preserves failure backoff when a reservation produces pressure but never yields a picture", () => {
+  const busy = simulatePicturePressure();
+  const panes = row(3);
+  const store = lifecycle(panes, "p0-0");
+  commitOnChange(store, panes);
+  const mounts: number[] = [];
+  store.subscribe("p0-2", () => {
+    if (store.isMounted("p0-2")) mounts.push(performance.now());
+  });
+  store.setPictures((id) => id !== "p0-2");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(3500);
+  expect(mounts).toHaveLength(1);
+  for (let second = 0; second < 20; second++) {
+    busy();
+    vi.advanceTimersByTime(1000);
+  }
+  expect(mounts).toHaveLength(1);
+  vi.advanceTimersByTime(2500);
+  expect(mounts).toHaveLength(1);
+  vi.advanceTimersByTime(300_000);
+  expect(mounts).toHaveLength(2);
+});
+
+it("waits through a held pointer and starts the passive quiet period at release", () => {
+  const panes = row(3);
+  const store = lifecycle(panes, "p0-0");
+  commitOnChange(store, panes);
+  store.setPictures((id) => id !== "p0-2");
+  store.setBackgroundPictures(true);
+  window.dispatchEvent(new Event("pointerdown"));
+  vi.advanceTimersByTime(15_000);
+  expect(store.isMounted("p0-2")).toBe(false);
+  window.dispatchEvent(new Event("pointerup"));
+  vi.advanceTimersByTime(2900);
+  expect(store.isMounted("p0-2")).toBe(false);
+  vi.advanceTimersByTime(200);
+  expect(store.pictureMount("p0-2")).toBe("background");
+});
 
 it("retries exhausted background pictures after backoff without new input", () => {
   const store = lifecycle(row(3), "p0-0");
@@ -124,9 +208,10 @@ it.each(["motion", "keydown", "pointerdown", "wheel"])(
       window.dispatchEvent(new Event("keydown"));
       store.setMoving(false);
     }
+    if (type === "pointerdown") window.dispatchEvent(new Event("pointerup"));
     vi.advanceTimersByTime(500);
     expect(transitions).toEqual([true, false]);
-    vi.advanceTimersByTime(9400);
+    vi.advanceTimersByTime(2400);
     expect(transitions).toEqual([true, false]);
     vi.advanceTimersByTime(200);
     expect(transitions).toEqual([true, false, true]);
@@ -207,7 +292,7 @@ it("ignores a failed capture started during an earlier reservation of the same p
   store.setMoving(true);
   vi.advanceTimersByTime(11_000);
   store.setMoving(false);
-  vi.advanceTimersByTime(9000);
+  vi.advanceTimersByTime(2000);
   expect(mounts).toHaveLength(1);
   vi.advanceTimersByTime(1500);
   expect(mounts).toHaveLength(2);
@@ -544,7 +629,7 @@ it("pauses neighbor and background preparation through same-pane camera motion",
   drain(store, panes);
   expect(mountedOf(store, panes)).toEqual(warm);
   store.setMoving(false);
-  vi.advanceTimersByTime(9000);
+  vi.advanceTimersByTime(2000);
   expect(store.isMounted("p0-10")).toBe(false);
   vi.advanceTimersByTime(1500);
   expect(store.isMounted("p0-10")).toBe(true);
@@ -772,7 +857,7 @@ it("mounts panes without a picture one at a time to picture them, then lets them
       for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
     }
   };
-  step(9500);
+  step(2500);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
   step(1000);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2"]);
@@ -802,7 +887,7 @@ it("pictures a briefly visible pane after rest before untouched panes", () => {
 
   window.dispatchEvent(new Event("keydown"));
   store.setMoving(false);
-  vi.advanceTimersByTime(9900);
+  vi.advanceTimersByTime(2900);
   expect(store.isMounted("p0-6")).toBe(false);
   vi.advanceTimersByTime(200);
   expect(store.isMounted("p0-6")).toBe(true);
@@ -898,7 +983,8 @@ it.each(["keydown", "pointerdown", "wheel"])(
     pictured.add("p0-2");
     store.setPictures((paneId) => pictured.has(paneId));
     window.dispatchEvent(new Event(type));
-    vi.advanceTimersByTime(9900);
+    if (type === "pointerdown") window.dispatchEvent(new Event("pointerup"));
+    vi.advanceTimersByTime(2900);
     expect(store.isMounted("p0-3")).toBe(false);
     vi.advanceTimersByTime(200);
     expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);

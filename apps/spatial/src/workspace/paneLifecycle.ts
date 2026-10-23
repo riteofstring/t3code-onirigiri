@@ -1,5 +1,11 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
+import {
+  BACKGROUND_PICTURE_QUIET_MS,
+  PICTURE_IDLE_BUDGET_MS,
+  observePicturePressure,
+} from "./panePictureIdle";
+
 const NEIGHBORS = 4;
 const MAX_MOUNTED = 8;
 const SETTLE_MS = 200;
@@ -8,7 +14,6 @@ const INPUT_QUIET_MS = 400;
 const COMMIT_TIMEOUT_MS = 2000;
 const STORED_PICTURES_WAIT_MS = 2000;
 const PICTURE_TIMEOUT_MS = 10_000;
-const BACKGROUND_PICTURE_QUIET_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 
 export interface PanePosition {
@@ -49,6 +54,8 @@ export function createPaneLifecycleStore(
   let neighborTimer: ReturnType<typeof setTimeout> | null = null;
   let neighborsWanted = false;
   let lastInput = 0;
+  const pointers = new Set<number>();
+  let busyUntil = 0;
   let clock = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
   let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
@@ -274,26 +281,33 @@ export function createPaneLifecycleStore(
       }, 0);
       return;
     }
-    const sinceInput = performance.now() - lastInput;
-    if (sinceInput < INPUT_QUIET_MS) {
+    if (pointers.size > 0) return;
+    const wait = Math.max(lastInput + INPUT_QUIET_MS, busyUntil) - performance.now();
+    if (wait > 0) {
       quietTimer = setTimeout(() => {
         quietTimer = null;
         schedule();
-      }, INPUT_QUIET_MS - sinceInput);
+      }, wait);
       return;
     }
-    idleCallback = requestIdleCallback(advance, { timeout: 1000 });
+    idleCallback = requestIdleCallback(advance);
   };
 
-  const advance = () => {
+  const advance = (deadline?: IdleDeadline) => {
     idleCallback = null;
     if (moving) return;
-    picturingPending();
     queue = queue.filter((paneId) => panes.has(paneId) && !mounted.has(paneId));
-    if (!visibleQueued() && performance.now() - lastInput < INPUT_QUIET_MS) {
-      schedule();
-      return;
+    if (!visibleQueued()) {
+      if (pointers.size > 0) return;
+      if (
+        performance.now() < Math.max(lastInput + INPUT_QUIET_MS, busyUntil) ||
+        (deadline && (deadline.didTimeout || deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS))
+      ) {
+        schedule();
+        return;
+      }
     }
+    picturingPending();
     if (queue.length > 0) {
       const visibleIndex = queue.findIndex((paneId) => visible.has(paneId));
       const paneId = queue.splice(Math.max(0, visibleIndex), 1)[0]!;
@@ -423,14 +437,37 @@ export function createPaneLifecycleStore(
     }, NEIGHBOR_SETTLE_MS);
   };
 
-  const noteInput = () => {
+  const noteInput = (event: Event) => {
+    if (event.type === "blur" && event.target !== window) return;
     lastInput = performance.now();
+    if (event.type === "pointerdown") pointers.add((event as PointerEvent).pointerId);
+    else if (event.type === "blur") pointers.clear();
+    else if (
+      event.type === "pointerup" ||
+      event.type === "pointercancel" ||
+      event.type === "lostpointercapture"
+    )
+      pointers.delete((event as PointerEvent).pointerId);
     interruptPicture();
+    if (event.type !== "keydown" && event.type !== "wheel" && event.type !== "pointerdown")
+      schedule();
   };
-  const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
+  const inputEvents = [
+    "keydown",
+    "pointerdown",
+    "pointerup",
+    "pointercancel",
+    "lostpointercapture",
+    "wheel",
+    "blur",
+  ] as const;
   for (const type of inputEvents) {
     window.addEventListener(type, noteInput, { capture: true, passive: true });
   }
+  const stopObservingPressure = observePicturePressure((finishedAt) => {
+    busyUntil = Math.max(busyUntil, finishedAt + BACKGROUND_PICTURE_QUIET_MS);
+    schedule();
+  });
 
   restartNeighborWait();
 
@@ -590,6 +627,7 @@ export function createPaneLifecycleStore(
       requestSettle();
     },
     dispose: () => {
+      stopObservingPressure();
       cancelSpeculation();
       clearCommitWait();
       picturing = null;

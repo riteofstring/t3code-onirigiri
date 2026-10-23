@@ -26,6 +26,11 @@ import {
 import type { PictureMount } from "./paneLifecycle";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
+import {
+  BACKGROUND_PICTURE_QUIET_MS,
+  PICTURE_IDLE_BUDGET_MS,
+  observePicturePressure,
+} from "./panePictureIdle";
 import { threadPaneId } from "./useWorkspacePanes";
 
 interface PaneContentRevision {
@@ -704,7 +709,6 @@ export function useSavedPanePictures(
 
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const FIRST_PICTURE_INPUT_QUIET_MS = 400;
-const BACKGROUND_PICTURE_QUIET_MS = 10_000;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
 export function createSnapshotQueue() {
@@ -735,6 +739,7 @@ export function createSnapshotQueue() {
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
+  let busyUntil = 0;
   const pointers = new Set<number>();
   const noteInput = (event?: Event) => {
     if (event?.type === "blur" && event.target !== window) return;
@@ -783,111 +788,126 @@ export function createSnapshotQueue() {
     )
       return;
     const current = draw;
-    idle = requestIdleCallback(
-      (deadline) => {
-        idle = null;
-        if (draw !== current || (!continuation && pending.size === 0)) return;
-        if (deadline.timeRemaining() < 4) {
-          next();
-          return;
-        }
-        const now = performance.now();
-        const due = ([paneId, request]: [string, { after: number; background: boolean }]) =>
-          Math.max(lastInput + quietTime(paneId, request.background), request.after);
-        if (continuation) {
-          const resumeAt = lastInput + quietTime(continuation.paneId, continuation.background);
-          if (
-            continuation.background &&
-            [...pending].some((candidate) => !candidate[1].background && due(candidate) < resumeAt)
-          ) {
-            const yielding = continuation;
-            continuation = null;
-            yielding.cancel();
-            return;
-          }
-          if (resumeAt > now) {
-            timer = setTimeout(() => {
-              timer = null;
-              next();
-            }, resumeAt - now);
-            return;
-          }
-          const resume = continuation;
-          continuation = null;
-          if (mountOf(resume.paneId) === null) resume.drop();
-          else resume.resolve(true);
-          return;
-        }
-        const [paneId, request] = [...pending].reduce((first, candidate) =>
-          due(candidate) < due(first) ? candidate : first,
+    idle = requestIdleCallback((deadline) => {
+      idle = null;
+      if (draw !== current || (!continuation && pending.size === 0)) return;
+      if (continuation && mountOf(continuation.paneId) === null) {
+        const abandoned = continuation;
+        continuation = null;
+        abandoned.drop();
+        return;
+      }
+      if (deadline.timeRemaining() < 4) {
+        next();
+        return;
+      }
+      const now = performance.now();
+      const due = ([paneId, request]: [string, { after: number; background: boolean }]) =>
+        Math.max(
+          lastInput + quietTime(paneId, request.background),
+          request.after,
+          request.background ? busyUntil : 0,
         );
-        const wait = due([paneId, request]) - now;
-        if (wait > 0) {
+      if (continuation) {
+        const resumeAt = due([continuation.paneId, { ...continuation, after: 0 }]);
+        if (
+          continuation.background &&
+          [...pending].some((candidate) => !candidate[1].background && due(candidate) < resumeAt)
+        ) {
+          const yielding = continuation;
+          continuation = null;
+          yielding.cancel();
+          return;
+        }
+        if (resumeAt > now) {
           timer = setTimeout(() => {
             timer = null;
             next();
-          }, wait);
+          }, resumeAt - now);
           return;
         }
-        pending.delete(paneId);
-        const owner = mountOf(paneId);
-        if (owner === null) {
+        if (continuation.background && deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) {
           next();
           return;
         }
-        drawing = true;
-        const background = request.background && owner === "background";
-        let deferred = false;
-        let dropped = false;
-        const canStart = () => {
-          if (mountOf(paneId) === null) dropped = true;
-          else if (
-            !enabled ||
-            moving ||
-            pointers.size > 0 ||
-            performance.now() - lastInput < quietTime(paneId, background)
-          )
-            deferred = true;
-          return !deferred && !dropped && draw === current;
-        };
-        const waitToDraw = () => {
-          if (draw !== current) return Promise.resolve(false);
-          return new Promise<boolean>((resolve) => {
-            continuation = {
-              paneId,
-              background,
-              resolve,
-              cancel: () => {
-                deferred = true;
-                resolve(false);
-              },
-              drop: () => {
-                dropped = true;
-                resolve(false);
-              },
-            };
-            next();
-          });
-        };
-        void current(paneId, request.element, canStart, waitToDraw)
-          .catch(() => {})
-          .finally(() => {
-            drawing = false;
-            if (draw === current && !pending.has(paneId) && !dropped) {
-              if (deferred) pending.set(paneId, request);
-              else if (request.element.isConnected && needsPicture(paneId)) {
-                pending.set(paneId, {
-                  ...request,
-                  after: performance.now() + request.retryAfter,
-                  retryAfter: Math.min(request.retryAfter * 2, SNAPSHOT_RETRY_LIMIT_MS),
-                });
-              }
+        const resume = continuation;
+        continuation = null;
+        resume.resolve(true);
+        return;
+      }
+      const [paneId, request] = [...pending].reduce((first, candidate) =>
+        due(candidate) < due(first) ? candidate : first,
+      );
+      const wait = due([paneId, request]) - now;
+      if (wait > 0) {
+        timer = setTimeout(() => {
+          timer = null;
+          next();
+        }, wait);
+        return;
+      }
+      if (request.background && deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) {
+        next();
+        return;
+      }
+      pending.delete(paneId);
+      const owner = mountOf(paneId);
+      if (owner === null) {
+        next();
+        return;
+      }
+      drawing = true;
+      const background = request.background && owner === "background";
+      let deferred = false;
+      let dropped = false;
+      const canStart = () => {
+        if (mountOf(paneId) === null) dropped = true;
+        else if (
+          !enabled ||
+          moving ||
+          pointers.size > 0 ||
+          (background && performance.now() < busyUntil) ||
+          performance.now() - lastInput < quietTime(paneId, background)
+        )
+          deferred = true;
+        return !deferred && !dropped && draw === current;
+      };
+      const waitToDraw = () => {
+        if (draw !== current) return Promise.resolve(false);
+        return new Promise<boolean>((resolve) => {
+          continuation = {
+            paneId,
+            background,
+            resolve,
+            cancel: () => {
+              deferred = true;
+              resolve(false);
+            },
+            drop: () => {
+              dropped = true;
+              resolve(false);
+            },
+          };
+          next();
+        });
+      };
+      void current(paneId, request.element, canStart, waitToDraw)
+        .catch(() => {})
+        .finally(() => {
+          drawing = false;
+          if (draw === current && !pending.has(paneId) && !dropped) {
+            if (deferred) pending.set(paneId, request);
+            else if (request.element.isConnected && needsPicture(paneId)) {
+              pending.set(paneId, {
+                ...request,
+                after: performance.now() + request.retryAfter,
+                retryAfter: Math.min(request.retryAfter * 2, SNAPSHOT_RETRY_LIMIT_MS),
+              });
             }
-            next();
-          });
-      },
-      { timeout: 4000 },
-    );
+          }
+          next();
+        });
+    });
   };
   const request = (paneId: string, element: HTMLElement) => {
     if (mountOf(paneId) === null) return;
@@ -914,8 +934,13 @@ export function createSnapshotQueue() {
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });
     }
+    const stopObservingPressure = observePicturePressure((finishedAt) => {
+      busyUntil = Math.max(busyUntil, finishedAt + BACKGROUND_PICTURE_QUIET_MS);
+      next();
+    });
     next();
     return () => {
+      stopObservingPressure();
       if (draw !== nextDraw) return;
       draw = null;
       pending.clear();

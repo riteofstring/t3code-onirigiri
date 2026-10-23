@@ -14,6 +14,7 @@ import type { PanePictureSnapshot } from "./panePictureSnapshot";
 import { pictureRecordKey, type SavedPanePicture } from "./panePictureStore";
 import { createPaneLifecycleStore } from "./paneLifecycle";
 import { markPaneSynced, usePanePictureTheme, useSavedPanePictures } from "./useSavedPanePictures";
+import { simulatePicturePressure } from "./picturePressure.test-support";
 
 const defaultFontSettings = {
   fontFamilySans: "",
@@ -562,7 +563,7 @@ it("draws a departing view quickly, pictures an untouched pane once the lifecycl
   expect(lifecycle.isMounted(first)).toBe(false);
 
   expect(lifecycle.isMounted(last)).toBe(false);
-  await advance(8000);
+  await advance(900);
   expect(lifecycle.isMounted(last)).toBe(false);
   await advance(2000);
   expect(lifecycle.isMounted(last)).toBe(true);
@@ -581,7 +582,7 @@ it("draws a departing view quickly, pictures an untouched pane once the lifecycl
   };
   snapshot.mockImplementationOnce(async (_element, canSnapshot, waitToDraw) => {
     interrupt();
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 9000));
     interrupt();
     const admitted = await waitToDraw!();
     admissions.push(admitted);
@@ -603,7 +604,7 @@ it("draws a departing view quickly, pictures an untouched pane once the lifecycl
   await advance(11_200);
   expect(lifecycle.isMounted(redrawn)).toBe(false);
   expect(elements.get(redrawn)!.isConnected).toBe(true);
-  expect(admissions).toEqual([]);
+  expect(admissions).toEqual([false]);
   await advance(1500);
   expect(admissions).toEqual([false]);
   expect(drawsOf(redrawn)).toBe(1);
@@ -1114,7 +1115,33 @@ it("captures first pixels between ordinary navigation inputs, once motion has st
   expect(store.writes).toHaveLength(1);
 });
 
-it("draws a background-only picture after ten quiet seconds while first covers keep the short gate", async () => {
+it.each(["longtask", "long-animation-frame"])(
+  "defers background drawing after %s pressure while a needed first cover can finish",
+  async (type) => {
+    const busy = simulatePicturePressure();
+    store.threadIds = ["t1", "t2"];
+    currentLayout = layout(400);
+    await mount();
+    const other = "thread:e:t2";
+    backgroundPanes.add(paneId);
+    for (const id of [paneId, other]) {
+      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
+      hook.paneSnapshots.request(id, { isConnected: true } as HTMLElement);
+    }
+    await advance(450);
+    expect(hook.hasFreshPicture(other)).toBe(true);
+    await advance(2000);
+    busy(type);
+    await advance(2500);
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    expect(snapshot).toHaveBeenCalledOnce();
+    await advance(600);
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(snapshot).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("draws a background-only picture after three quiet seconds while first covers keep the short gate", async () => {
   store.threadIds = ["t1", "t2"];
   currentLayout = layout(400);
   await mount();
@@ -1129,11 +1156,37 @@ it("draws a background-only picture after ten quiet seconds while first covers k
   expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.hasFreshPicture(other)).toBe(true);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
-  await advance(9000);
+  await advance(2400);
   expect(snapshot).toHaveBeenCalledOnce();
-  await advance(600);
+  await advance(300);
   expect(snapshot).toHaveBeenCalledTimes(2);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it("releases an abandoned drawing even when idle headroom is exhausted", async () => {
+  await mount();
+  const lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  backgroundLifecycle = lifecycle;
+  let available = 50;
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => available }), 1),
+  );
+  const admissions: boolean[] = [];
+  snapshot.mockImplementationOnce(async (_element, _canSnapshot, waitToDraw) => {
+    available = 0;
+    const admitted = await waitToDraw!();
+    admissions.push(admitted);
+    return null;
+  });
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(500);
+  expect(admissions).toEqual([]);
+  lifecycle.setPanes([]);
+  await advance(10);
+  expect(admissions).toEqual([false]);
+  expect(snapshotFailures).not.toHaveBeenCalled();
+  expect(store.writes).toHaveLength(0);
 });
 
 it("lets an interrupted background drawing yield to a first cover and finish after its own quiet period", async () => {
@@ -1160,14 +1213,14 @@ it("lets an interrupted background drawing yield to a first cover and finish aft
     id: "background",
     isConnected: true,
   } as unknown as HTMLElement);
-  await advance(10_100);
+  await advance(3100);
   expect(drawn).toEqual(["background-clone"]);
   hook.paneSnapshots.request(other, { id: "first", isConnected: true } as unknown as HTMLElement);
   await advance(500);
   expect(drawn).toEqual(["background-clone", "first"]);
   expect(hook.hasFreshPicture(other)).toBe(true);
   expect(snapshotFailures).not.toHaveBeenCalled();
-  await advance(9000);
+  await advance(2000);
   expect(drawn).toEqual(["background-clone", "first"]);
   await advance(1000);
   expect(drawn).toEqual(["background-clone", "first", "background"]);
