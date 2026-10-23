@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   composerVersion: 0,
   composerActions: [] as number[],
   activeKeys: 0,
+  showClock: false,
   shellUpdatedAt: "2026-10-15T12:00:00.000Z",
   runtimeStatus: null as ThreadRuntimeSummary["status"] | null,
   historyLoading: false,
@@ -98,7 +99,13 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     await import("@t3tools/web/src/panelAnimations");
   const { ChatViewPendingContent, useChatViewContentReady, useComposerSyncPhase } =
     await import("@t3tools/web/src/components/chatViewContentReady");
-  const { useActiveChatViewEffect } = await import("@t3tools/web/src/components/chatViewActivity");
+  const { useActiveChatViewEffect, useChatViewActivity } =
+    await import("@t3tools/web/src/components/chatViewActivity");
+  const { useNowMinute } = await import("@t3tools/web/src/hooks/useNowMinute");
+  function Clock() {
+    const minute = useNowMinute(useChatViewActivity());
+    return <output aria-label="Current minute">{minute}</output>;
+  }
   function ChatContent() {
     "use no memo";
     useActiveChatViewEffect(() => {
@@ -139,6 +146,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     );
     return (
       <>
+        {state.showClock ? <Clock /> : null}
         {state.suspended ? <ChatViewPendingContent /> : null}
         <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
@@ -252,6 +260,7 @@ beforeEach(() => {
   state.composerVersion = 0;
   state.composerActions = [];
   state.activeKeys = 0;
+  state.showClock = false;
   appComposerRef = { current: null };
   workspaceActive = true;
   state.shellUpdatedAt = "2026-10-15T12:00:00.000Z";
@@ -881,6 +890,38 @@ it("cancels an offscreen content mount if motion starts before its idle callback
   await act(() => lifecycle!.setMoving(false));
   await act(() => vi.advanceTimersByTimeAsync(100));
   expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it("updates visible neighbors' clocks, pauses hidden content, and catches up on return", async () => {
+  vi.setSystemTime("2026-10-23T12:00:30.000Z");
+  state.showClock = true;
+  state.interactive = true;
+  live();
+  await render(false, false, true);
+  const minute = () => container.querySelector('[aria-label="Current minute"]')?.textContent;
+  expect(minute()).toBe("2026-10-23T12:00");
+  await act(() => vi.advanceTimersByTimeAsync(30_000));
+  expect(minute()).toBe("2026-10-23T12:01");
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+  expect(state.activeKeys).toBe(0);
+
+  state.interactive = false;
+  await render(false, false);
+  await act(() => vi.advanceTimersByTimeAsync(120_000));
+  expect(minute()).toBe("2026-10-23T12:01");
+  state.interactive = true;
+  await render(false, false, true);
+  expect(minute()).toBe("2026-10-23T12:03");
+
+  workspaceActive = false;
+  await render(false, false, true);
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(minute()).toBe("2026-10-23T12:03");
+  workspaceActive = true;
+  await render(false, false, true);
+  expect(minute()).toBe("2026-10-23T12:04");
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+  expect(state.activeKeys).toBe(0);
 });
 
 it("keeps command-palette actions bound to the active composer's latest handle", async () => {

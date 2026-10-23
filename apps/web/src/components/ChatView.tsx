@@ -6981,7 +6981,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerHasDraftContent = useComposerDraftStore((store) =>
     composerDraftHasUserContent(store.getComposerDraft(composerDraftTarget)),
   );
-  const nowMinute = useNowMinute();
+  const nowMinute = useNowMinute(chatViewActivity);
   const activeBranchMismatchKey = branchMismatchKey(
     activeThread?.id ?? null,
     localCheckoutBranchMismatch,

@@ -8,6 +8,7 @@ import {
 
 export interface ChatViewActivity {
   readonly isActive: () => boolean;
+  readonly isVisible?: () => boolean;
   readonly subscribe: (listener: () => void) => () => void;
   readonly autofocusComposer?: boolean;
 }

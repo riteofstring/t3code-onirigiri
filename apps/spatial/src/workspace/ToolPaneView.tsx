@@ -102,7 +102,7 @@ export function ToolPaneView({
   );
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
-  const activity = usePaneActivity(active, rootRef);
+  const activity = usePaneActivity(active, interactive, rootRef);
   useEffect(() => {
     if (
       surface?.kind !== "preview" ||

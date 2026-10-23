@@ -244,7 +244,8 @@ export const ThreadPane = memo(function ThreadPane({
   );
   const interactive = useOnirigiriPaneInteractive();
   const workspaceActive = use(SpatialWorkspaceActiveContext);
-  const active = workspaceActive && focused && interactive;
+  const liveVisible = workspaceActive && interactive;
+  const active = focused && liveVisible;
   const threadPath = `/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [visualRevision, setVisualRevision] = useState(0);
@@ -259,7 +260,7 @@ export const ThreadPane = memo(function ThreadPane({
   const paneComposerRef = usePaneComposerHandle(active);
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const activity = usePaneActivity(active, contentRef);
+  const activity = usePaneActivity(active, liveVisible, contentRef);
 
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);

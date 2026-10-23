@@ -1,4 +1,6 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
+
+import type { ChatViewActivity } from "../components/chatViewActivity";
 
 /** Minute-quantized UI clock ("YYYY-MM-DDTHH:MM"). One module-level timer
     feeds every consumer through useSyncExternalStore. */
@@ -61,6 +63,27 @@ function getSnapshot(): string {
   return nowMinute;
 }
 
-export function useNowMinute(): string {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+export function useNowMinute(activity?: ChatViewActivity): string {
+  const clock = useMemo(() => {
+    if (!activity) return { subscribe, getSnapshot };
+    let minute = getSnapshot();
+    return {
+      getSnapshot: () => minute,
+      subscribe: (listener: () => void) => {
+        const update = () => {
+          if (!(activity.isVisible?.() ?? activity.isActive())) return;
+          minute = getSnapshot();
+          listener();
+        };
+        const unsubscribeClock = subscribe(update);
+        const unsubscribeActivity = activity.subscribe(update);
+        update();
+        return () => {
+          unsubscribeClock();
+          unsubscribeActivity();
+        };
+      },
+    };
+  }, [activity]);
+  return useSyncExternalStore(clock.subscribe, clock.getSnapshot, clock.getSnapshot);
 }
