@@ -1051,6 +1051,39 @@ it("preserves an already idle pane before its view is released", async () => {
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
+it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
+  "waits for a held resize to end with %s, then saves only its final geometry",
+  async (end) => {
+    store.threadIds = ["t1", "t2"];
+    currentLayout = layout(400);
+    const old = new Blob(["old size"]);
+    store.saved.set(paneId, savedPicture({ image: old }));
+    store.saved.set("thread:e:t2", savedPicture({ paneId: "thread:e:t2" }));
+    await mount();
+    for (const id of [paneId, "thread:e:t2"])
+      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
+    window.dispatchEvent(new MouseEvent("pointerdown"));
+    for (const width of [450, 500]) {
+      const resized = structuredClone(currentLayout);
+      resized.columns[0]!.widthSpec = { unit: "px", value: width };
+      await act(() => hook.onLayoutChange(resized));
+      hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+      hook.paneSnapshots.request("thread:e:t2", { isConnected: true } as HTMLElement);
+      await advance(4000);
+      expect(snapshot).not.toHaveBeenCalled();
+      expect(hook.pictureFor(paneId)?.image).toBe(old);
+    }
+    window.dispatchEvent(new Event(end));
+    await advance(2999);
+    expect(snapshot).not.toHaveBeenCalled();
+    await advance(10);
+    expect(snapshot).toHaveBeenCalledOnce();
+    expect(store.writes).toHaveLength(1);
+    expect(store.writes[0]?.geometryRevision).toBe(geometry(500));
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+  },
+);
+
 it("lets a newly opened workspace settle even when the page has been open a while", async () => {
   await vi.advanceTimersByTimeAsync(5000);
   window.dispatchEvent(new Event("pointerdown"));
@@ -1270,6 +1303,7 @@ it.each(["keydown", "pointerdown", "wheel"])(
 
     await advance(250);
     window.dispatchEvent(new Event(type));
+    if (type === "pointerdown") window.dispatchEvent(new Event("pointerup"));
     await advance(399);
     expect(snapshot).toHaveBeenCalledOnce();
     await advance(2);
@@ -1515,6 +1549,74 @@ it("refreshes a saved native picture after local scrolling while retaining its c
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes.at(-1)?.source).toBe("snapshot");
   expect(pictureImageFor(paneId)).not.toBe(old);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it("refreshes resized content after active DOM changes without another request", async () => {
+  const old = new Blob(["old geometry"]);
+  store.saved.set(paneId, savedPicture({ image: old }));
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  await act(() => {
+    currentLayout = layout(500);
+    hook.onLayoutChange(currentLayout);
+  });
+  const image = new Blob(["resized and scrolled"]);
+  snapshot.mockResolvedValue({ image, cssSize: { width: 500, height: 580 } });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  hook.paneSnapshots.invalidate(paneId, true);
+  hook.paneSnapshots.invalidate(paneId, true);
+  expect(pictureImageFor(paneId)).toBe(old);
+  await advance(3500);
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]).toMatchObject({
+    image,
+    geometryRevision: geometry(500),
+    cssSize: { width: 500, height: 580 },
+  });
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});
+
+it("marks active DOM changes stale without scheduling new pictures", async () => {
+  const old = new Blob(["old content"]);
+  store.saved.set(paneId, savedPicture({ image: old }));
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.invalidate(paneId, true);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(pictureImageFor(paneId)).toBe(old);
+  await advance(65_000);
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(store.writes).toHaveLength(0);
+});
+
+it("does not acknowledge an outstanding content transition through an active DOM change", async () => {
+  store.saved.set(paneId, savedPicture());
+  await mount();
+  const content = { updatedAt: store.updatedAt, theme: appearance };
+  markPaneSynced(paneId, content);
+  hook.paneSnapshots.invalidate(paneId);
+  hook.paneSnapshots.invalidate(paneId, true);
+  const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
+  expect(store.writes).toHaveLength(0);
+  markPaneSynced(paneId, content, revision);
+  await advance(3500);
+  expect(store.writes).toHaveLength(1);
+});
+
+it("retries an encoding invalidated by active DOM changes without another request", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const pending = pendingPicture();
+  snapshot.mockImplementationOnce(() => pending.promise);
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
+  hook.paneSnapshots.invalidate(paneId, true);
+  await act(async () => pending.resolve(new Blob(["old encoding"])));
+  expect(store.writes).toHaveLength(0);
+  await advance(3500);
+  expect(store.writes).toHaveLength(1);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 

@@ -132,6 +132,7 @@ it("resumes a loaded SVG after the workspace is enabled and recent input becomes
   expect(drawImage).not.toHaveBeenCalled();
 
   window.dispatchEvent(new Event("pointerdown"));
+  window.dispatchEvent(new Event("pointerup"));
   f.queue.setActivity(true, false);
   await vi.advanceTimersByTimeAsync(399);
   expect(drawImage).not.toHaveBeenCalled();

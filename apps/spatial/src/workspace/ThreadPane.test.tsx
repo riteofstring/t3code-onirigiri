@@ -565,7 +565,7 @@ it.each(["wheel", "scroll"])(
     expect(state.engineRevision).toBe(revision);
     await render(false);
     expect(state.engineRevision).not.toBe(revision);
-    expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+    expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
     expect(requestSnapshot).toHaveBeenCalled();
 
     await render(true);
@@ -658,7 +658,7 @@ it("refreshes a scrolled descendant on departure without predicting its keydown"
   });
   expect(panel.scrollTop).toBe(120);
   expect(invalidateSnapshot).toHaveBeenCalledOnce();
-  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
   expect(requestSnapshot).not.toHaveBeenCalled();
   expect(state.engineRevision).toBe(revision);
 

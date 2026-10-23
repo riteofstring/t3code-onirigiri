@@ -62,7 +62,7 @@ export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => numb
 interface PaneSnapshots {
   geometryVersion: number;
   request: RequestPaneSnapshot;
-  invalidate: (paneId: string) => void;
+  invalidate: (paneId: string, committed?: boolean) => void;
   setLiveProducer: (paneId: string, present: boolean) => number;
 }
 
@@ -638,8 +638,13 @@ export function useSavedPanePictures(
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
       geometryVersion,
-      invalidate: (paneId) => {
-        visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
+      invalidate: (paneId, committed = false) => {
+        const previous = visualRevision(paneId);
+        const next = previous + 1;
+        visualRevisions.current.set(paneId, next);
+        const content = syncedPanes.get(paneId);
+        if (committed && content?.visualRevision === previous)
+          syncedPanes.set(paneId, { ...content, visualRevision: next });
       },
       setLiveProducer: (paneId, present) => {
         const previous = retainedRef.current.get(paneId);
@@ -730,10 +735,28 @@ export function createSnapshotQueue() {
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
-  const noteInput = () => {
+  const pointers = new Set<number>();
+  const noteInput = (event?: Event) => {
     lastInput = performance.now();
+    if (event?.type === "pointerdown") pointers.add((event as PointerEvent).pointerId);
+    else if (
+      event?.type === "pointerup" ||
+      event?.type === "pointercancel" ||
+      event?.type === "lostpointercapture"
+    )
+      pointers.delete((event as PointerEvent).pointerId);
+    else if (event?.type === "blur") pointers.clear();
+    if (event) next();
   };
-  const inputEvents = ["keydown", "pointerdown", "wheel"] as const;
+  const inputEvents = [
+    "keydown",
+    "pointerdown",
+    "pointerup",
+    "pointercancel",
+    "lostpointercapture",
+    "wheel",
+    "blur",
+  ] as const;
   const quietTime = (paneId: string, background: boolean) =>
     background
       ? BACKGROUND_PICTURE_QUIET_MS
@@ -750,6 +773,7 @@ export function createSnapshotQueue() {
     if (
       !enabled ||
       moving ||
+      pointers.size > 0 ||
       (drawing && !continuation) ||
       idle !== null ||
       timer !== null ||
@@ -819,6 +843,7 @@ export function createSnapshotQueue() {
           else if (
             !enabled ||
             moving ||
+            pointers.size > 0 ||
             performance.now() - lastInput < quietTime(paneId, background)
           )
             deferred = true;
@@ -893,6 +918,7 @@ export function createSnapshotQueue() {
       if (draw !== nextDraw) return;
       draw = null;
       pending.clear();
+      pointers.clear();
       cancelScheduled();
       continuation?.resolve(false);
       continuation = null;
