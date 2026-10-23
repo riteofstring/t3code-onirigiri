@@ -1,9 +1,4 @@
-import type {
-  OnirigiriLayout,
-  OnirigiriPanePictureCaptureListener,
-  OnirigiriPanePictureResolver,
-  PanePresentationResolver,
-} from "@riteofstring/onirigiri";
+import type { OnirigiriLayout, PanePresentationResolver } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import {
   createContext,
@@ -62,11 +57,7 @@ function paneHasCommittedContent(
   );
 }
 
-export type RequestPaneSnapshot = (
-  paneId: string,
-  element: HTMLElement,
-  options?: { preferNative?: boolean },
-) => number;
+export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => number;
 
 interface PaneSnapshots {
   geometryVersion: number;
@@ -127,9 +118,7 @@ export function useSavedPanePictures(
   defaultRowHeight: number | "viewport" = "viewport",
   pictureMount: (paneId: string) => PictureMount = () => "ordinary",
 ): {
-  getPanePicture: OnirigiriPanePictureResolver;
   getPanePresentation: PanePresentationResolver;
-  onPanePictureCaptured: OnirigiriPanePictureCaptureListener;
   onLayoutChange: (layout: OnirigiriLayout) => void;
   pictureFor: (paneId: string) => SavedPanePicture | null;
   preparedPictureUrl: (image: Blob) => string | null;
@@ -463,7 +452,7 @@ export function useSavedPanePictures(
         return "dom";
       return phase !== "rest" && phase !== "resize" && pictureFor(pane.paneId)
         ? { kind: "placeholder" }
-        : "auto";
+        : "dom";
     },
     [pictureFor, retained, runningPanes],
   );
@@ -519,19 +508,6 @@ export function useSavedPanePictures(
   useLayoutEffect(() => {
     pictureForRef.current = pictureFor;
   }, [pictureFor]);
-  const getPanePicture = useCallback<OnirigiriPanePictureResolver>((pane) => {
-    const picture = pictureForRef.current(pane.paneId);
-    return picture
-      ? {
-          image: picture.image,
-          cssSize: picture.cssSize,
-          fit: "fill",
-          position: "left top",
-          replaceable: true,
-        }
-      : null;
-  }, []);
-
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
       const { paneId } = picture;
@@ -552,42 +528,6 @@ export function useSavedPanePictures(
       );
     },
     [updateRetained, updateSaved, visualRevision],
-  );
-
-  const onPanePictureCaptured = useCallback<OnirigiriPanePictureCaptureListener>(
-    (pane, image, receipt) => {
-      const stageSized =
-        `${Math.round(receipt.bounds.width)}x${Math.round(receipt.bounds.height)}` ===
-        stageSizeRef.current;
-      if (
-        stageSized !== compactRef.current ||
-        receipt.devicePixelRatio !== window.devicePixelRatio ||
-        retainedRef.current.get(pane.paneId) === "live" ||
-        runningPanesRef.current.has(pane.paneId)
-      )
-        return;
-      const content = contentRevisionsRef.current.get(pane.paneId);
-      const geometry = geometryRevision(pane.paneId);
-      const currentVisualRevision = visualRevision(pane.paneId);
-      if (
-        !content ||
-        !geometry ||
-        !paneHasCommittedContent(pane.paneId, content, currentVisualRevision)
-      )
-        return;
-      const picture = {
-        recordKey: pictureRecordKey(pane.paneId, geometry),
-        paneId: pane.paneId,
-        geometryRevision: geometry,
-        revision: contentKey(content),
-        image,
-        cssSize: { width: receipt.bounds.width, height: receipt.bounds.height },
-        savedAt: Date.now(),
-        source: "capture" as const,
-      };
-      void keepPicture(picture, currentVisualRevision).catch(() => {});
-    },
-    [geometryRevision, keepPicture, visualRevision],
   );
 
   const drawSnapshot = useCallback(
@@ -627,25 +567,15 @@ export function useSavedPanePictures(
         pictureMatchesVisualRevision(paneId, previous.image)
       )
         return;
-      const captured = () => {
-        const kept = savedRef.current?.get(record);
-        return (
-          kept?.source === "capture" &&
-          kept.revision === contentBefore &&
-          pictureMatchesVisualRevision(paneId, kept.image)
-        );
-      };
-      if (captured()) return;
       const current = () =>
         retainedRef.current.get(paneId) !== "live" &&
         !runningPanesRef.current.has(paneId) &&
         revision() === before &&
-        visualRevision(paneId) === beforeVisualRevision &&
-        !captured();
+        visualRevision(paneId) === beforeVisualRevision;
       const snapshot = await snapshotPanePicture(
         element,
         canSnapshot,
-        async () => (await waitToDraw()) && canSnapshot() && !captured(),
+        async () => (await waitToDraw()) && canSnapshot(),
       ).catch(() => null);
       if (!snapshot) {
         if (current() && canSnapshot()) onSnapshotFailure(paneId, startedAt);
@@ -732,7 +662,7 @@ export function useSavedPanePictures(
         }
         return visualRevision(paneId);
       },
-      request: (paneId, element, options) => {
+      request: (paneId, element) => {
         const content = contentRevisionsRef.current.get(paneId);
         if (
           content &&
@@ -742,7 +672,7 @@ export function useSavedPanePictures(
           pictureForRef.current(paneId) === null
         )
           updateRetained(new Map(retainedRef.current).set(paneId, "awaiting-picture"));
-        snapshots.request(paneId, element, options?.preferNative === true);
+        snapshots.request(paneId, element);
         return visualRevision(paneId);
       },
     }),
@@ -750,9 +680,7 @@ export function useSavedPanePictures(
   );
 
   return {
-    getPanePicture,
     getPanePresentation,
-    onPanePictureCaptured,
     onLayoutChange,
     pictureFor,
     preparedPictureUrl: pictureUrls.preparedUrl,
@@ -772,7 +700,6 @@ export function useSavedPanePictures(
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const FIRST_PICTURE_INPUT_QUIET_MS = 400;
 const BACKGROUND_PICTURE_QUIET_MS = 10_000;
-const NATIVE_CAPTURE_GRACE_MS = 2000;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
 export function createSnapshotQueue() {
@@ -936,14 +863,11 @@ export function createSnapshotQueue() {
       { timeout: 4000 },
     );
   };
-  const request = (paneId: string, element: HTMLElement, preferNative: boolean) => {
+  const request = (paneId: string, element: HTMLElement) => {
     if (mountOf(paneId) === null) return;
     pending.set(paneId, {
       element,
-      after: Math.min(
-        pending.get(paneId)?.after ?? Infinity,
-        performance.now() + (preferNative ? NATIVE_CAPTURE_GRACE_MS : 0),
-      ),
+      after: Math.min(pending.get(paneId)?.after ?? Infinity, performance.now()),
       retryAfter: SNAPSHOT_INPUT_QUIET_MS,
       background: mountOf(paneId) === "background",
     });

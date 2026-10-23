@@ -1,10 +1,3 @@
-export function canCapturePanes(): boolean {
-  return (
-    typeof (CanvasRenderingContext2D.prototype as { drawElementImage?: unknown })
-      .drawElementImage === "function"
-  );
-}
-
 export function hasLivePaneProducer(element: Element): boolean {
   const visit = (node: Element) =>
     node.matches("canvas, video, iframe, object, embed, webview, [data-browser-surface-slot]") ||

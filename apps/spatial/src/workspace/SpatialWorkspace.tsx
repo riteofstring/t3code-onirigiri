@@ -216,10 +216,8 @@ function SpatialWorkspaceView({
     [lifecycle],
   );
   const {
-    getPanePicture,
     getPanePresentation,
     onLayoutChange: onPictureLayoutChange,
-    onPanePictureCaptured,
     pictureFor,
     preparedPictureUrl,
     pictureUrl,
@@ -838,7 +836,6 @@ function SpatialWorkspaceView({
                     desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}
                     {...(stageViewport.compact ? { focusHighlight: false } : {})}
-                    getPanePicture={getPanePicture}
                     getPanePresentation={getPanePresentation}
                     gridAxes={gridAxes}
                     initialPanes={initialPanes}
@@ -847,7 +844,6 @@ function SpatialWorkspaceView({
                     onFocusedPaneFrame={onFocusedPaneFrame}
                     onLayoutChange={onLayoutChange}
                     onPaneClose={onPaneClose}
-                    onPanePictureCaptured={onPanePictureCaptured}
                     {...(overviewCardWidth === undefined
                       ? {}
                       : {

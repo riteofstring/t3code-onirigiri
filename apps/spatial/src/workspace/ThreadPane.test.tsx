@@ -81,10 +81,6 @@ vi.mock("./useSavedPanePictures", async () => {
     usePanePictureTheme: () => "default|dark",
   };
 });
-vi.mock("./panePictureSnapshot", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./panePictureSnapshot")>()),
-  canCapturePanes: () => false,
-}));
 vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: { panelAnimationDurationMs: number }) => unknown) =>
     select({ panelAnimationDurationMs: state.panelDurationMs }),

@@ -85,7 +85,7 @@ async function beginPicture() {
     () => false,
     () => false,
   );
-  queue.request("first", element, false);
+  queue.request("first", element);
   await vi.advanceTimersByTimeAsync(450);
   expect(images).toHaveLength(1);
   expect(clone).toHaveBeenCalledOnce();
@@ -101,7 +101,7 @@ it.each([false, true])(
     f.queue.setActivity(true, true);
     if (detached) f.element.remove();
     f.image.dispatchEvent(new Event("load"));
-    f.queue.request("second", f.element, false);
+    f.queue.request("second", f.element);
     await vi.advanceTimersByTimeAsync(500);
     expect(drawImage).not.toHaveBeenCalled();
     expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();

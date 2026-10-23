@@ -47,7 +47,7 @@ import {
 
 import { usePaneActivity } from "./paneActivity";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
-import { canCapturePanes, hasLivePaneProducer } from "./panePictureSnapshot";
+import { hasLivePaneProducer } from "./panePictureSnapshot";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
 export const SpatialWorkspaceActiveContext = createContext(true);
@@ -290,7 +290,7 @@ export const ThreadPane = memo(function ThreadPane({
       if (!snapshotPrepared.current) return;
       snapshots?.invalidate(paneId);
       if (active || picturable === null || !snapshots) return;
-      setVisualRevision(snapshots.request(paneId, element, { preferNative: canCapturePanes() }));
+      setVisualRevision(snapshots.request(paneId, element));
     };
     const contentChanged = (records: MutationRecord[]) => {
       const attributes = new Map<Element, Set<string>>();
@@ -346,11 +346,7 @@ export const ThreadPane = memo(function ThreadPane({
   }, [active, mounted, paneId, picturable, snapshots]);
   useEffect(() => {
     if (picturable !== null && contentRef.current && snapshots) {
-      setVisualRevision(
-        snapshots.request(paneId, contentRef.current, {
-          preferNative: canCapturePanes(),
-        }),
-      );
+      setVisualRevision(snapshots.request(paneId, contentRef.current));
     }
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Visibility retries a previously unmeasurable pane.
   }, [active, paneId, picturable, snapshots, visible]);

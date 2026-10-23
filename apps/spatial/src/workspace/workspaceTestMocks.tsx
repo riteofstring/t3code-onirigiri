@@ -7,10 +7,8 @@ export const bindWorkspace = vi.fn<(target: { focusPane: (id: string) => void } 
 export const pictureLayoutChanged = vi.fn();
 
 const pictures = {
-  getPanePicture: () => null,
   getPanePresentation: () => "dom",
   onLayoutChange: pictureLayoutChanged,
-  onPanePictureCaptured: vi.fn(),
   pictureFor: () => null,
   preparedPictureUrl: () => null,
   pictureUrl: () => "",
