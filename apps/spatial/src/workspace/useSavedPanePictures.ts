@@ -737,6 +737,7 @@ export function createSnapshotQueue() {
   let lastInput = performance.now();
   const pointers = new Set<number>();
   const noteInput = (event?: Event) => {
+    if (event?.type === "blur" && event.target !== window) return;
     lastInput = performance.now();
     if (event?.type === "pointerdown") pointers.add((event as PointerEvent).pointerId);
     else if (

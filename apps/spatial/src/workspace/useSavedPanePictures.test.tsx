@@ -1063,6 +1063,7 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
     for (const id of [paneId, "thread:e:t2"])
       markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
     window.dispatchEvent(new MouseEvent("pointerdown"));
+    stage.dispatchEvent(new FocusEvent("blur"));
     for (const width of [450, 500]) {
       const resized = structuredClone(currentLayout);
       resized.columns[0]!.widthSpec = { unit: "px", value: width };
