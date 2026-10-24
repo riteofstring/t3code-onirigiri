@@ -55,7 +55,7 @@ function settings() {
 }
 
 function rowHeight() {
-  return host.querySelector<HTMLInputElement>('input[aria-label="Default row height in pixels"]')!;
+  return host.querySelector<HTMLInputElement>('input[aria-label="Row height in pixels"]')!;
 }
 
 async function click(label: string) {
@@ -109,7 +109,12 @@ afterEach(async () => {
 });
 
 it("remembers overview and row defaults across reloads, with a way back to viewport height", async () => {
-  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport", navigationBar: false, maximizeAll: false });
+  expect(settings()).toEqual({
+    overviewZoom: "medium",
+    rowHeight: "viewport",
+    navigationBar: false,
+    maximizeAll: false,
+  });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await act(() => {
@@ -124,16 +129,31 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     option.click();
   });
   await typeHeight("384");
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, navigationBar: false, maximizeAll: false });
+  expect(settings()).toEqual({
+    overviewZoom: "near",
+    rowHeight: 384,
+    navigationBar: false,
+    maximizeAll: false,
+  });
 
   await act(() => root.unmount());
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: 384, navigationBar: false, maximizeAll: false });
+  expect(settings()).toEqual({
+    overviewZoom: "near",
+    rowHeight: 384,
+    navigationBar: false,
+    maximizeAll: false,
+  });
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await typeHeight("880");
-  expect(settings()).toEqual({ overviewZoom: "near", rowHeight: "viewport", navigationBar: false, maximizeAll: false });
+  expect(settings()).toEqual({
+    overviewZoom: "near",
+    rowHeight: "viewport",
+    navigationBar: false,
+    maximizeAll: false,
+  });
 });
 
 it("keeps drag previews local and applies only the final pane height", async () => {
@@ -270,7 +290,12 @@ it("uses safe defaults for malformed saved preferences", async () => {
   );
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
-  expect(settings()).toEqual({ overviewZoom: "medium", rowHeight: "viewport", navigationBar: false, maximizeAll: false });
+  expect(settings()).toEqual({
+    overviewZoom: "medium",
+    rowHeight: "viewport",
+    navigationBar: false,
+    maximizeAll: false,
+  });
 });
 
 it("toggles the navigation bar preference from the hover bar", async () => {
@@ -279,9 +304,9 @@ it("toggles the navigation bar preference from the hover bar", async () => {
   await click("Show navigation bar");
   expect(settings().navigationBar).toBe(true);
   expect(button("Hide navigation bar").getAttribute("aria-pressed")).toBe("true");
-  expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).navigationBar).toBe(
-    true,
-  );
+  expect(
+    JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).navigationBar,
+  ).toBe(true);
   await click("Hide navigation bar");
   expect(settings().navigationBar).toBe(false);
   expect(button("Show navigation bar").getAttribute("aria-pressed")).toBe("false");

@@ -53,6 +53,7 @@ import {
   useFocusAnchorPreference,
   useLayoutModePreference,
   useWorkspacePreferences,
+  type WorkspacePreferences,
 } from "./useWorkspacePreferences";
 import {
   readPaneLayout,
@@ -193,6 +194,30 @@ function SpatialWorkspaceView({
     return savedLayout ? reconcilePaneLayout(layout, savedLayout) : layout;
   }, [gridAxes, initialPanes, paneDefaults, savedLayout]);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
+  const changePreferences = useCallback(
+    (change: Partial<WorkspacePreferences>) => {
+      const workspace = workspaceRef.current;
+      if (change.rowHeight !== undefined && workspace) {
+        const layout = workspace.getLayout();
+        if (
+          layout.columns.some((column) => column.cells.some((cell) => cell.heightPx !== undefined))
+        ) {
+          workspace.restoreLayout(
+            {
+              ...layout,
+              columns: layout.columns.map((column) => ({
+                ...column,
+                cells: column.cells.map(({ heightPx: _heightPx, ...cell }) => cell),
+              })),
+            },
+            { keepPresentation: true },
+          );
+        }
+      }
+      updatePreferences(change);
+    },
+    [updatePreferences],
+  );
   const [focusAnchor, toggleFocusAnchor] = useFocusAnchorPreference();
   const overviewCardWidth = overviewZoomChoices.find(
     (choice) => choice.value === preferences.overviewZoom,
@@ -815,7 +840,7 @@ function SpatialWorkspaceView({
           maxRowHeight={
             stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
           }
-          onPreferencesChange={updatePreferences}
+          onPreferencesChange={changePreferences}
           layoutMode={layoutMode}
           onLayoutModeChange={onLayoutModeChange}
           controlsRef={setControlsContainer}

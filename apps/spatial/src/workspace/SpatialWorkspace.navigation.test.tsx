@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-import type { OnirigiriPaneDefinition } from "@riteofstring/onirigiri";
+import {
+  createWorkspaceScene,
+  serializeWorkspaceLayout,
+  type OnirigiriPaneDefinition,
+} from "@riteofstring/onirigiri";
 import type { DesktopPreviewHostKey, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { matchesPreviewHostShortcut } from "../../../../packages/shared/src/previewHostKeyboard";
 import type { BrowserSurfaceProjectionPolicy } from "@t3tools/web/src/browser/browserSurfaceProjection";
@@ -8,7 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { SpatialWorkspace } from "./SpatialWorkspace";
-import { readPaneLayout, threadLayoutPositions } from "./workspaceLayout";
+import { readPaneLayout, threadLayoutPositions, writePaneLayout } from "./workspaceLayout";
 import { bindWorkspace, pictureLayoutChanged, stubWorkspaceFrames } from "./workspaceTestMocks";
 
 type RouteLocation = { environmentId: string; threadId: string };
@@ -55,8 +59,6 @@ vi.mock("./useToolPanes", () => {
 });
 vi.mock("./SpatialSurfaceProvider", async () => (await import("./workspaceTestMocks")).controller);
 vi.mock("./useSavedPanePictures", async () => (await import("./workspaceTestMocks")).savedPictures);
-vi.mock("./WorkspaceToolbar", () => ({ WorkspaceToolbar: () => null }));
-vi.mock("./WorkspaceTooltips", async () => (await import("./workspaceTestMocks")).tooltips);
 vi.mock("./ToolPaneView", () => ({ ToolPaneView: () => null }));
 vi.mock("./SpatialSurfaceHost", () => ({
   SpatialSurfaceHost: ({ children }: { children: ReactNode }) => children,
@@ -146,6 +148,28 @@ function status() {
   return host.querySelector('[data-onirigiri-slot="status"]')!.textContent;
 }
 
+function rowHeight() {
+  return host.querySelector<HTMLInputElement>('input[aria-label="Row height in pixels"]')!;
+}
+
+function paneHeights() {
+  return [...host.querySelectorAll<HTMLElement>('[data-onirigiri-slot="pane"]')].map((element) =>
+    Number.parseFloat(element.style.height),
+  );
+}
+
+async function changeHeight(value: string, commit = true) {
+  await act(() => {
+    const input = rowHeight();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  if (commit) {
+    await act(() => rowHeight().dispatchEvent(new Event("pointerup", { bubbles: true })));
+    await act(() => vi.advanceTimersByTime(120));
+  }
+}
+
 async function key(key: string, ctrlKey = false) {
   const event = new KeyboardEvent("keydown", {
     key,
@@ -173,6 +197,11 @@ async function explicitRoute(threadId: string) {
 beforeEach(() => {
   stubWorkspaceFrames();
   vi.stubGlobal("PointerEvent", MouseEvent);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -215,6 +244,61 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("applies row height to manually sized rows without changing widths or selection", async () => {
+  const { scene, cursor } = createWorkspaceScene({ id: "onirigiri-t3", panes: fixture.panes });
+  const layout = serializeWorkspaceLayout(scene, cursor);
+  const pinned = {
+    ...layout,
+    columns: layout.columns.map((column, index) => ({
+      ...column,
+      widthSpec: { unit: "px" as const, value: 520 + index * 40 },
+      cells: column.cells.map((cell) => ({ ...cell, heightPx: 500 })),
+    })),
+  };
+  writePaneLayout("rows", pinned);
+  await render("right");
+  expect(paneHeights()).toEqual([500, 500, 500]);
+  const widths = pinned.columns.map((column) => column.widthSpec);
+  expect(status()).toContain("right");
+
+  await changeHeight("420", false);
+  expect(paneHeights()).toEqual([500, 500, 500]);
+  await changeHeight(rowHeight().max);
+  const maximum = Number(rowHeight().max);
+  expect(paneHeights()).toEqual([maximum, maximum, maximum]);
+  await changeHeight("420");
+  expect(paneHeights()).toEqual([420, 420, 420]);
+  expect(status()).toContain("right");
+
+  await act(() => root.unmount());
+  root = createRoot(host);
+  await render("right");
+  expect(paneHeights()).toEqual([420, 420, 420]);
+  expect(readPaneLayout("rows")!.columns.map((column) => column.widthSpec)).toEqual(widths);
+});
+
+it("leaves full screen panes when committing a shorter row height", async () => {
+  localStorage.setItem(
+    "onirigiri-t3:workspace-preferences",
+    JSON.stringify({
+      rowHeight: 420,
+      maximizeAll: true,
+    }),
+  );
+  await render();
+  expect(rowHeight().value).toBe(rowHeight().max);
+  await act(() => vi.advanceTimersByTime(120));
+  expect(paneHeights().every((height) => height > 420)).toBe(true);
+  await changeHeight("420");
+  expect(paneHeights()).toEqual([420, 420, 420]);
+  expect(host.querySelector('[aria-label="Full screen panes"]')!.getAttribute("aria-pressed")).toBe(
+    "false",
+  );
+  await changeHeight(rowHeight().max);
+  const maximum = Number(rowHeight().max);
+  expect(paneHeights()).toEqual([maximum, maximum, maximum]);
 });
 
 it("delivers global surface focus only after the initial workspace and route are ready", async () => {

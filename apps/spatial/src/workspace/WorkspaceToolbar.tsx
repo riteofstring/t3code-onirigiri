@@ -258,9 +258,9 @@ export function WorkspaceToolbar({
                   </Select>
                 </label>
                 <RowHeightControl
-                  height={preferences.rowHeight}
+                  height={preferences.maximizeAll ? "viewport" : preferences.rowHeight}
                   maximum={maxRowHeight}
-                  onChange={(rowHeight) => onPreferencesChange({ rowHeight })}
+                  onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
                 />
               </div>
             </div>
@@ -410,7 +410,7 @@ function RowHeightControl({
     if (draft === null) return;
     setDraft(null);
     const next = value === max ? "viewport" : value;
-    if (next !== height) onChange(next);
+    onChange(next);
   };
   return (
     <label className="spatial-workspace-controls__field">
@@ -423,8 +423,8 @@ function RowHeightControl({
           max={max}
           step={1}
           disabled={maximum === null || min === max}
-          aria-label="Default row height in pixels"
-          aria-description="The maximum follows the view height. Manually resized panes keep their height."
+          aria-label="Row height in pixels"
+          aria-description="Applies to all rows and leaves full screen panes. The maximum follows the view height."
           aria-valuetext={value === max ? "Full view height" : `${value} pixels`}
           value={value}
           style={
