@@ -10,6 +10,7 @@ import {
 } from "./Sidebar.logic";
 
 const stationary = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
+const stationaryStrategy: SortingStrategy = () => stationary;
 const hidden = { ...stationary, scaleY: 0 };
 type ThreadItem = Extract<SidebarListItem, { kind: "thread" }>;
 type Layout = Parameters<SortingStrategy>[0];
@@ -99,7 +100,7 @@ export function createSidebarCollisionDetection(
  * A zero scaleY marks rows/markers to hide while retaining their measured nodes. */
 export function createSidebarSortingStrategy(input: {
   items: readonly SidebarListItem[];
-  /** Suspend the reorder preview while the thread is dragged out as context. */
+  /** Suspend the reorder preview while idle or dragging a thread out as context. */
   enabled?: boolean;
   settledOrder: readonly string[];
   /** Time-ordered inbox (Working beta): where the lifted row would land. */
@@ -114,7 +115,7 @@ export function createSidebarSortingStrategy(input: {
    * markers stay zero height at rest, so nothing is reserved until pickup. */
   boundaryLabelHeight?: number;
 }): SortingStrategy {
-  if (input.enabled === false) return () => stationary;
+  if (input.enabled === false) return stationaryStrategy;
   const { items } = input;
   const indices = new Map(items.map((item, index) => [sidebarListItemId(item), index]));
   let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;

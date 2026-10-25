@@ -3988,11 +3988,12 @@ export default function Sidebar({
       inboxReturns.returnedAt,
     ).map(key);
   }, [activeThreads, dragState, threadByKey, workingShelfEnabled]);
+  const sortingEnabled = dragState !== null && !isContextDrag;
   const sidebarSortingStrategy = useMemo(
     () =>
       createSidebarSortingStrategy({
         items: sidebarListItems,
-        enabled: !isContextDrag,
+        enabled: sortingEnabled,
         boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
         settledOrder: draggedSettledOrder,
         ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
@@ -4004,7 +4005,7 @@ export default function Sidebar({
     [
       draggedActiveOrder,
       draggedSettledOrder,
-      isContextDrag,
+      sortingEnabled,
       routeThreadKey,
       settledShelfExpanded,
       settledVisibleCount,
