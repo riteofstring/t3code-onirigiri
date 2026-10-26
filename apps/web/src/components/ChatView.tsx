@@ -1,7 +1,7 @@
 import { useDraftHeroLayoutTransition } from "./chat/useDraftHeroLayoutTransition";
 import { readLayoutRect, readLayoutScale } from "./chat/layoutGeometry";
 import { useActiveChatViewEffect, useChatViewActivity } from "./chatViewActivity";
-import { useChatViewContentReady } from "./chatViewContentReady";
+import { useChatViewContentGated, useChatViewContentReady } from "./chatViewContentReady";
 import { useChatViewVcsStatus } from "./chatViewVcsStatus";
 import { ThreadSurfaceContent } from "./ThreadSurfaceContent";
 import type { PersistentTerminalLaunchContext } from "./PersistentThreadTerminalPanel";
@@ -3808,11 +3808,13 @@ export default function ChatView(props: ChatViewProps) {
     () => timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
     [timelineEntries],
   );
+  const contentGated = useChatViewContentGated();
   const displayedTimeline = resolveThreadSwitchTimeline({
     loading: timelineEntries.length === 0 && threadSyncPhase !== null,
     activeThreadKey,
     nextEntries: timelineEntries,
     rememberedForActive: peekRememberedThreadTimeline<typeof timelineEntries>(activeThreadKey),
+    ...(contentGated ? { lastReady: null } : {}),
   });
   const displayedTimelineKey = displayedTimeline.displayThreadKey ?? routeThreadKey;
   const paintOnlyDisplayedTimeline = isPaintOnlyThreadTimeline(

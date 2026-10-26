@@ -36,6 +36,7 @@ const state = vi.hoisted(() => ({
   panelRenders: 0,
   checkoutReady: true,
   timelineReady: true,
+  composerMounted: true,
   hasChatView: true,
   suspended: false,
   engineReady: false,
@@ -138,6 +139,8 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
       "thread-one",
       state.checkoutReady,
       state.timelineReady,
+      false,
+      state.composerMounted,
     );
     const shownSyncPhase = useComposerSyncPhase(
       "thread-one",
@@ -275,6 +278,7 @@ beforeEach(() => {
   state.panelRenders = 0;
   state.checkoutReady = true;
   state.timelineReady = true;
+  state.composerMounted = true;
   state.hasChatView = true;
   state.suspended = false;
   state.engineReady = false;
@@ -371,6 +375,22 @@ it("prepares a background view after its projection arrives and retains its draf
   state.mounted = true;
   await render();
   expect(container.querySelector("textarea")).toBeNull();
+});
+
+it("keeps unsynchronized content covered even without a composer readiness gate", async () => {
+  state.composerMounted = false;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  expect(container.querySelector("[data-spatial-preparing]")).not.toBeNull();
+  expect(state.engineReady).toBe(false);
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  live();
+  await render(true, false);
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+  expect(state.engineReady).toBe(true);
+  expect(requestSnapshot).toHaveBeenCalledOnce();
 });
 
 it("keeps the focused view available while its first projection loads", async () => {

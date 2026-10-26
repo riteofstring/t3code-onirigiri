@@ -38,6 +38,10 @@ export function ChatViewContentReadyProvider({
   return <ChatViewContentReadyContext value={context}>{children}</ChatViewContentReadyContext>;
 }
 
+export function useChatViewContentGated(): boolean {
+  return useContext(ChatViewContentReadyContext) !== null;
+}
+
 export function ChatViewPendingContent() {
   const suspend = useContext(ChatViewContentReadyContext)?.suspend;
   useLayoutEffect(() => suspend?.(), [suspend]);

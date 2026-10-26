@@ -1090,6 +1090,35 @@ describe("resolveThreadSwitchTimeline", () => {
     ).toEqual({ entries: ["a1", "a2"], displayThreadKey: "env-1:thread-a" });
   });
 
+  it("omits a foreign transcript when the host supplies the loading cover", () => {
+    rememberReadyThreadTimeline(held);
+    expect(
+      resolveThreadSwitchTimeline({
+        loading: true,
+        activeThreadKey: "env-1:thread-b",
+        nextEntries: [],
+        lastReady: null,
+      }),
+    ).toEqual({ entries: [], displayThreadKey: "env-1:thread-b" });
+    rememberReadyThreadTimeline({ threadKey: "env-1:thread-b", entries: ["b1"] });
+    expect(
+      resolveThreadSwitchTimeline({
+        loading: true,
+        activeThreadKey: "env-1:thread-b",
+        nextEntries: [],
+        lastReady: null,
+      }),
+    ).toEqual({ entries: ["b1"], displayThreadKey: "env-1:thread-b" });
+    expect(
+      resolveThreadSwitchTimeline({
+        loading: false,
+        activeThreadKey: "env-1:thread-b",
+        nextEntries: ["fresh-b"],
+        lastReady: null,
+      }),
+    ).toEqual({ entries: ["fresh-b"], displayThreadKey: "env-1:thread-b" });
+  });
+
   it("paints a remembered destination instead of the last-viewed thread", () => {
     rememberReadyThreadTimeline(held);
     rememberReadyThreadTimeline({ threadKey: "env-1:thread-b", entries: ["b1", "b2"] });
