@@ -878,6 +878,7 @@ function SpatialWorkspaceView({
                     paneDefaults={paneDefaults}
                     renderPane={renderPane}
                     renderPanePlaceholder={renderPanePlaceholder}
+                    restPictureFade
                     shortcutScope={active ? "application" : "workspace"}
                     shortcuts={SHORTCUTS}
                     workspaceId={WORKSPACE_ID}
