@@ -98,6 +98,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -652,17 +653,22 @@ type SortableThreadRowBag = Pick<
   "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
 >;
 
-function SortableThreadRow(props: {
+const SortableThreadRow = memo(function SortableThreadRow({
+  id,
+  disabled,
+  contextDrag,
+  environmentId,
+  ...rowProps
+}: ComponentProps<typeof SidebarThreadRow> & {
   id: string;
   disabled: boolean;
   contextDrag: boolean;
   environmentId: EnvironmentId;
-  children: (bag: SortableThreadRowBag) => ReactNode;
 }) {
-  const canOperateThread = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
+  const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const { listeners, setNodeRef, transform, transition, isDragging, isSorting } = useSortable({
-    id: props.id,
-    disabled: { draggable: props.disabled || !canOperateThread },
+    id,
+    disabled: { draggable: disabled || !canOperateThread },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
   // dnd-kit memoizes each field but not the bag, so the memoized row would
@@ -672,16 +678,16 @@ function SortableThreadRow(props: {
     () => ({
       listeners,
       setNodeRef,
-      transform: props.contextDrag ? null : transform,
+      transform: contextDrag ? null : transform,
       // The lifted row normally follows the pointer without a transition.
       // When it becomes a context ghost, glide its sidebar copy back home.
-      transition: props.contextDrag && isDragging ? "transform 150ms ease-out" : dragTransition,
-      isDragging: isDragging && !props.contextDrag,
+      transition: contextDrag && isDragging ? "transform 150ms ease-out" : dragTransition,
+      isDragging: isDragging && !contextDrag,
     }),
-    [listeners, setNodeRef, transform, dragTransition, isDragging, props.contextDrag],
+    [listeners, setNodeRef, transform, dragTransition, isDragging, contextDrag],
   );
-  return props.children(bag);
-}
+  return <SidebarThreadRow key={`${id}:${rowProps.variant}`} {...rowProps} sortable={bag} />;
+});
 
 // Unsent work shares one look: the new-thread draft rows and thread rows
 // with unsent composer text both use this tint and pen so they read alike.
@@ -5286,10 +5292,9 @@ export default function Sidebar({
                     )}
                   >
                     {(() => {
-                      const renderThreadRowInner = (
+                      const renderThreadRow = (
                         thread: EnvironmentThreadShell,
                         section: SidebarSection,
-                        sortable?: SortableThreadRowBag,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -5303,10 +5308,17 @@ export default function Sidebar({
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = isCard ? "card" : "slim";
                         return (
-                          <SidebarThreadRow
-                            // Fade between card and compact rows while the outer
-                            // sortable wrapper keeps its identity during a drag.
-                            key={`${threadKey}:${rowVariant}`}
+                          <SortableThreadRow
+                            key={threadKey}
+                            id={threadKey}
+                            contextDrag={isContextDrag}
+                            environmentId={thread.environmentId}
+                            disabled={
+                              renamingThreadKey === threadKey ||
+                              section === "working" ||
+                              !draggableThreadKeys.has(threadKey) ||
+                              optimisticDrop !== null
+                            }
                             thread={thread}
                             variant={rowVariant}
                             // Snoozed rows wake, settled rows un-settle, and cards settle.
@@ -5330,7 +5342,6 @@ export default function Sidebar({
                                 .threadPinning === true
                             }
                             isPinned={thread.pinnedAt != null}
-                            sortable={sortable}
                             dropVerb={
                               dragState?.activeKey === threadKey
                                 ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)
@@ -5403,30 +5414,6 @@ export default function Sidebar({
                             }
                             onChangeRequestSnapshot={setThreadChangeRequestSnapshot}
                           />
-                        );
-                      };
-                      const renderThreadRow = (
-                        thread: EnvironmentThreadShell,
-                        section: SidebarSection,
-                      ) => {
-                        const threadKey = scopedThreadKey(
-                          scopeThreadRef(thread.environmentId, thread.id),
-                        );
-                        return (
-                          <SortableThreadRow
-                            key={threadKey}
-                            id={threadKey}
-                            contextDrag={isContextDrag}
-                            environmentId={thread.environmentId}
-                            disabled={
-                              renamingThreadKey === threadKey ||
-                              section === "working" ||
-                              !draggableThreadKeys.has(threadKey) ||
-                              optimisticDrop !== null
-                            }
-                          >
-                            {(bag) => renderThreadRowInner(thread, section, bag)}
-                          </SortableThreadRow>
                         );
                       };
                       const from = isContextDrag ? null : (dragState?.activeSection ?? null);
