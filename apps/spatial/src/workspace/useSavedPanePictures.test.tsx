@@ -105,12 +105,16 @@ vi.mock("./useWorkspacePanes", () => ({
 const paneId = "thread:e:t1";
 const pane = { paneId } as WorkspacePane;
 const threadPane = { ...pane, surfaceKind: "thread" };
-const presentationAt = (phase: PanePresentationContext["phase"]) =>
+const presentationAt = (
+  phase: PanePresentationContext["phase"],
+  visible = true,
+  focused = visible,
+) =>
   hook.getPanePresentation(threadPane, {
     phase,
-    focused: true,
+    focused,
     maximized: false,
-    visible: true,
+    visible,
     capabilities: { canCapture: true, hasVideo: false },
   });
 const layout = (width: number) =>
@@ -1274,9 +1278,12 @@ it("keeps refresh work deferred when a usable cover already exists", async () =>
   }
   expect(snapshot).not.toHaveBeenCalled();
   expect(pictureImageFor(paneId)).toBe(cover);
+  expect(presentationAt("rest", false)).toEqual({ kind: "placeholder" });
   await advance(3000);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(pictureImageFor(paneId)).not.toBe(cover);
+  expect(presentationAt("rest", false)).toEqual({ kind: "placeholder" });
+  expect(presentationAt("rest")).toBe("dom");
 });
 
 it("requeues a first picture interrupted by camera motion before cloning", async () => {
@@ -2001,9 +2008,26 @@ it.each([false, true])(
   },
 );
 
+it("keeps an offscreen saved cover stable until the pane becomes visible", async () => {
+  store.saved.set(paneId, savedPicture());
+  await mount();
+  for (const phase of ["rest", "motion", "resize", "overview", "overview-motion"] as const) {
+    expect(presentationAt(phase, false)).toEqual({ kind: "placeholder" });
+  }
+  expect(presentationAt("rest")).toBe("dom");
+  expect(presentationAt("resize")).toBe("dom");
+  expect(presentationAt("rest", false, true)).toBe("dom");
+  expect(presentationAt("resize", false, true)).toBe("dom");
+  store.runtimeStatus = "running";
+  await act(() => renderer!.update(<Probe />));
+  expect(presentationAt("rest", false)).toBe("dom");
+  expect(presentationAt("motion", false)).toBe("dom");
+});
+
 it("keeps content live until a first picture arrives and while a producer runs", async () => {
   await mount();
   expect(presentationAt("motion")).toBe("dom");
+  expect(presentationAt("rest", false)).toBe("dom");
   const beforePicture = hook.getPanePresentation;
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   await act(() => drawPicture(pane, new Blob(["first picture"])));

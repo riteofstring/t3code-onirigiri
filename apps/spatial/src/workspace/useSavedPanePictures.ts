@@ -448,14 +448,15 @@ export function useSavedPanePictures(
     [coverVersion, geometryVersion, recordKey, saved, validatedCoverFor],
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane, { phase }) => {
+    (pane, { phase, visible, focused }) => {
       if (
         pane.surfaceKind !== "thread" ||
         retained.get(pane.paneId) === "live" ||
         runningPanes.has(pane.paneId)
       )
         return "dom";
-      return phase !== "rest" && phase !== "resize" && pictureFor(pane.paneId)
+      return ((!visible && !focused) || (phase !== "rest" && phase !== "resize")) &&
+        pictureFor(pane.paneId)
         ? { kind: "placeholder" }
         : "dom";
     },
