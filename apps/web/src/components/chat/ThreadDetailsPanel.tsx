@@ -64,7 +64,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
-export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+export const ThreadDetailsPanel = memo(function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
     props.activeProjectScripts ? props.gitCwd : null,
@@ -186,4 +186,4 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       )}
     </ThreadDetailsCard>
   );
-}
+});

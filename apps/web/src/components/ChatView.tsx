@@ -2462,7 +2462,10 @@ export default function ChatView(props: ChatViewProps) {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };
   const handleNewThreadInActiveProjectStable = useStableCallback(handleNewThreadInActiveProject);
-  const projectGroupingSettings = selectProjectGroupingSettings(settings);
+  const projectGroupingSettings = useMemo(
+    () => selectProjectGroupingSettings(settings),
+    [settings],
+  );
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
       ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
@@ -10597,6 +10600,8 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
+  const onStartFromOriginChangeStable = useStableCallback(onStartFromOriginChange);
+
   const onExpandTimelineImage = (preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   };
@@ -10776,7 +10781,7 @@ export default function ChatView(props: ChatViewProps) {
         }
       : {}),
     startFromOrigin,
-    onStartFromOriginChange,
+    onStartFromOriginChange: onStartFromOriginChangeStable,
     ...(canCheckoutPullRequestIntoThread
       ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
       : {}),
@@ -11433,7 +11438,7 @@ export default function ChatView(props: ChatViewProps) {
                                 {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                 onEnvModeChange={onEnvModeChangeStable}
                                 startFromOrigin={startFromOrigin}
-                                onStartFromOriginChange={onStartFromOriginChange}
+                                onStartFromOriginChange={onStartFromOriginChangeStable}
                                 envMode={envMode}
                                 {...(canOverrideServerThreadEnvMode
                                   ? {

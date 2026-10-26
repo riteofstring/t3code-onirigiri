@@ -158,3 +158,57 @@ it("reports the measured card presentation on mount and follows later width chan
     expect(onPresentationChange).toHaveBeenLastCalledWith(expected);
   }
 });
+
+it("keeps card content and actions current through density and parent updates", async () => {
+  const threadRef = {
+    environmentId: EnvironmentId.make("canvas-test"),
+    threadId: ThreadId.make("card-content-test"),
+  };
+  useRightPanelStore.getState().setThreadPanelOpen(threadRef, "inline", true);
+  let height = 1000;
+  vi.mocked(
+    Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")!.get!,
+  ).mockImplementation(() => height);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    if (this.hasAttribute("data-thread-details-card")) return height;
+    return this.closest("[data-density]")?.getAttribute("data-density") === "compact" ? 220 : 420;
+  });
+  const handle = PopoverCreateHandle();
+  const anchor = { current: null };
+  const onPresentationChange = vi.fn();
+  const onAction = vi.fn();
+  const render = async (label: string) => {
+    await act(() =>
+      root.render(
+        <ChatCanvas composerOverlayElement={null}>
+          <ThreadDetailsCard
+            threadRef={threadRef}
+            anchor={anchor}
+            handle={handle}
+            onPresentationChange={onPresentationChange}
+          >
+            {(density) => <button onClick={() => onAction(label)}>{`${label} ${density}`}</button>}
+          </ThreadDetailsCard>
+        </ChatCanvas>,
+      ),
+    );
+  };
+  await render("first");
+  expect(container.querySelector("button")?.textContent).toBe("first full");
+  await render("updated");
+  await act(() => container.querySelector("button")!.click());
+  expect(onAction).toHaveBeenLastCalledWith("updated");
+  for (const [nextHeight, density] of [
+    [300, "compact"],
+    [200, "essential"],
+    [1000, "full"],
+  ] as const) {
+    height = nextHeight;
+    await act(() => {
+      for (const callback of resize.callbacks) callback();
+    });
+    expect(container.querySelector("button")?.textContent).toBe(`updated ${density}`);
+  }
+});
