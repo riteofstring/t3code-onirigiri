@@ -6,7 +6,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { type PanelAnimationDurationMs } from "@t3tools/contracts/settings";
@@ -83,7 +82,13 @@ export function usePanelAnimationSettings(): {
   const durationMs = useClientSettings((settings) => settings.panelAnimationDurationMs);
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const scope = useContext(PanelAnimationScopeContext);
-  const suppressed = useSyncExternalStore(scope.subscribe, scope.get);
+  const [suppressed, setSuppressed] = useState(scope.get);
+  // Subscribe during layout: a consumer mounted by the navigation that suppresses it must
+  // hear the provider's layout-phase update before the first paint.
+  useLayoutEffect(() => {
+    setSuppressed(scope.get());
+    return scope.subscribe(() => setSuppressed(scope.get()));
+  }, [scope]);
   return { active: durationMs > 0 && !prefersReducedMotion && !suppressed, durationMs };
 }
 
