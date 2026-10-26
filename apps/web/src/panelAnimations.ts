@@ -3,8 +3,10 @@ import {
   createElement,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { type PanelAnimationDurationMs } from "@t3tools/contracts/settings";
@@ -12,8 +14,30 @@ import { type PanelAnimationDurationMs } from "@t3tools/contracts/settings";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useClientSettings } from "./hooks/useSettings";
 
-const DefaultPanelAnimationSuppressionContext = createContext(false);
-const PanelAnimationScopeContext = createContext(DefaultPanelAnimationSuppressionContext);
+interface PanelAnimationSuppressionScope {
+  readonly get: () => boolean;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly set: (suppressed: boolean) => void;
+}
+
+function createSuppressionScope(initial: boolean): PanelAnimationSuppressionScope {
+  let suppressed = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => suppressed,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    set: (next) => {
+      if (next === suppressed) return;
+      suppressed = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+const PanelAnimationScopeContext = createContext(createSuppressionScope(false));
 
 export function PanelAnimationSuppressionProvider({
   value,
@@ -22,13 +46,11 @@ export function PanelAnimationSuppressionProvider({
   value: boolean;
   children: ReactNode;
 }) {
-  // A separate context identity keeps outer navigation from scheduling retained pane consumers.
-  const [scope] = useState(() => createContext(false));
-  return createElement(
-    PanelAnimationScopeContext,
-    { value: scope },
-    createElement(scope, { value }, children),
-  );
+  // Navigation toggles suppression twice. A stable scope notifies its few panel consumers
+  // instead of making React search every retained pane below it for context readers.
+  const [scope] = useState(() => createSuppressionScope(value));
+  useLayoutEffect(() => scope.set(value), [scope, value]);
+  return createElement(PanelAnimationScopeContext, { value: scope }, children);
 }
 
 /**
@@ -61,7 +83,7 @@ export function usePanelAnimationSettings(): {
   const durationMs = useClientSettings((settings) => settings.panelAnimationDurationMs);
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const scope = useContext(PanelAnimationScopeContext);
-  const suppressed = useContext(scope);
+  const suppressed = useSyncExternalStore(scope.subscribe, scope.get);
   return { active: durationMs > 0 && !prefersReducedMotion && !suppressed, durationMs };
 }
 
