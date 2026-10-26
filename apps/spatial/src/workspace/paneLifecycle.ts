@@ -7,7 +7,9 @@ import {
 } from "./panePictureIdle";
 
 const NEIGHBORS = 4;
-const MAX_MOUNTED = 8;
+// Remounting a conversation costs far more than keeping it: editor, list measurement and
+// transcript work dominate arrival. Repeated tours of a typical workspace stay mounted.
+const MAX_MOUNTED = 32;
 const SETTLE_MS = 200;
 const NEIGHBOR_SETTLE_MS = 600;
 const INPUT_QUIET_MS = 400;
@@ -29,6 +31,7 @@ export type PictureMount = "background" | "ordinary" | null;
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
   focusedPaneId: string | null,
+  maxMounted = MAX_MOUNTED,
 ) {
   let panes = new Map(initialPanes.map((pane) => [pane.paneId, pane]));
   let focused =
@@ -251,7 +254,7 @@ export function createPaneLifecycleStore(
       queue.length === 0 &&
       picturing === null &&
       nextToPicture() === null &&
-      evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted) === null
+      evictionCandidate(maxMounted + (picturing ? 1 : 0), wanted) === null
     ) {
       const retryAt =
         backgroundPictures && picturesReady
@@ -311,11 +314,11 @@ export function createPaneLifecycleStore(
     if (queue.length > 0) {
       const visibleIndex = queue.findIndex((paneId) => visible.has(paneId));
       const paneId = queue.splice(Math.max(0, visibleIndex), 1)[0]!;
-      evictBeyond(MAX_MOUNTED - 1, wanted);
+      evictBeyond(maxMounted - 1, wanted);
       mountPrepared(paneId);
       return;
     }
-    const retiring = evictionCandidate(MAX_MOUNTED + (picturing ? 1 : 0), wanted);
+    const retiring = evictionCandidate(maxMounted + (picturing ? 1 : 0), wanted);
     if (retiring !== null) {
       waitForCommit(retiring);
       mounted.delete(retiring);
@@ -347,7 +350,7 @@ export function createPaneLifecycleStore(
     const retainedCount = [...mounted].filter(
       (paneId) => panes.has(paneId) && mustRetain(paneId) && paneId !== focused,
     ).length;
-    if (mounted.size >= Math.max(MAX_MOUNTED, retainedCount + (focused ? 1 : 0)) + 1) return;
+    if (mounted.size >= Math.max(maxMounted, retainedCount + (focused ? 1 : 0)) + 1) return;
     reservePicture(paneId);
     mountPrepared(paneId);
   };
@@ -410,12 +413,12 @@ export function createPaneLifecycleStore(
     );
     wanted = new Set([
       ...required,
-      ...speculative.slice(0, Math.max(0, MAX_MOUNTED - required.size)),
+      ...speculative.slice(0, Math.max(0, maxMounted - required.size)),
     ]);
     for (const paneId of wanted) lastWanted.set(paneId, clock);
     if (focused && panes.has(focused) && !mounted.has(focused)) {
       mountPrepared(focused);
-      evictBeyond(MAX_MOUNTED, wanted);
+      evictBeyond(maxMounted, wanted);
     }
     cancelSpeculation();
     queue = [...wanted].filter((paneId) => !mounted.has(paneId));

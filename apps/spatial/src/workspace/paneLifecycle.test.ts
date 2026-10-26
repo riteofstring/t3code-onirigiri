@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 function lifecycle(panes: readonly PanePosition[], focusedPaneId: string | null) {
-  const store = createPaneLifecycleStore(panes, focusedPaneId);
+  const store = createPaneLifecycleStore(panes, focusedPaneId, 8);
   stores.push(store);
   return store;
 }
@@ -637,7 +637,7 @@ it("pauses neighbor and background preparation through same-pane camera motion",
 
 it("cancels a deferred focused mount on disposal", () => {
   const panes = row(12);
-  const store = createPaneLifecycleStore(panes, "p0-0");
+  const store = createPaneLifecycleStore(panes, "p0-0", 8);
   store.setPictures(() => true);
   store.setMoving(true);
   store.setFocus("p0-9");
