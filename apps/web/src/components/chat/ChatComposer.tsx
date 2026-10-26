@@ -2345,7 +2345,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     hadWorkspaceSnapshotRef.current = hasWorkspaceSnapshot;
   }, [gitCwd, selectedProviderStatus]);
-  useEffect(() => {
+  // Each refresh republishes every provider to every mounted view, so only the
+  // composer the user can type in keeps its workspace commands current.
+  useActiveChatViewEffect(() => {
     if (!gitCwd || !selectedProviderEntry) return;
     const key = `${environmentId}:${selectedProviderEntry.instanceId}:${gitCwd}`;
     const now = Date.now();
