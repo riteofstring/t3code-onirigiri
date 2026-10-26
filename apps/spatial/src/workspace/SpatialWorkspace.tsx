@@ -16,6 +16,7 @@ import {
 import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
 import {
+  memo,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -127,6 +128,7 @@ const BROWSER_SHORTCUTS = (
   Object.keys(defaultOnirigiriShortcuts) as OnirigiriShortcutAction[]
 ).flatMap((action) => getOnirigiriShortcutBindings(action, SHORTCUTS));
 const ROUTE_SETTLE_MS = 450;
+const MemoizedOnirigiriWorkspace = memo(OnirigiriWorkspace);
 
 function withoutPane(paneIds: ReadonlySet<string>, paneId: string) {
   if (!paneIds.has(paneId)) return paneIds;
@@ -851,7 +853,7 @@ function SpatialWorkspaceView({
             <PaneLifecycleContext value={lifecycle}>
               <PaneSnapshotContext value={paneSnapshots}>
                 <BrowserSurfaceProjectionContext value={browserProjection}>
-                  <OnirigiriWorkspace
+                  <MemoizedOnirigiriWorkspace
                     ref={workspaceRef}
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
