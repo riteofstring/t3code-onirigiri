@@ -5,6 +5,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { ChatCanvas } from "./ChatCanvas";
 import { useChatCanvas } from "./ChatCanvasContext";
+import { ThreadDetailsCard } from "./ThreadDetailsCard";
+import { PopoverCreateHandle } from "../ui/popover";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 const resize = vi.hoisted(() => ({ callbacks: new Set<() => void>() }));
 vi.mock("../../lib/observeResize", () => ({
@@ -116,4 +120,41 @@ it("remeasures the open bar when its font size changes without resizing the canv
   });
   expect(canvas?.detailsCardTopInset).toBe(72);
   expect(canvas?.layout.frame?.y).toBe(84);
+});
+
+it("reports the measured card presentation on mount and follows later width changes", async () => {
+  const threadRef = {
+    environmentId: EnvironmentId.make("canvas-test"),
+    threadId: ThreadId.make("card-test"),
+  };
+  useRightPanelStore.getState().setThreadPanelOpen(threadRef, "inline", false);
+  const onPresentationChange = vi.fn();
+  await act(() =>
+    root.render(
+      <ChatCanvas composerOverlayElement={null}>
+        <ThreadDetailsCard
+          threadRef={threadRef}
+          anchor={{ current: null }}
+          handle={PopoverCreateHandle()}
+          onPresentationChange={onPresentationChange}
+        >
+          {() => null}
+        </ThreadDetailsCard>
+      </ChatCanvas>,
+    ),
+  );
+  expect(onPresentationChange.mock.calls).toEqual([["inline"]]);
+
+  for (const [width, expected] of [
+    [700, "popover"],
+    [1800, "inline"],
+  ] as const) {
+    vi.mocked(
+      Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")!.get!,
+    ).mockReturnValue(width);
+    await act(() => {
+      for (const callback of resize.callbacks) callback();
+    });
+    expect(onPresentationChange).toHaveBeenLastCalledWith(expected);
+  }
 });

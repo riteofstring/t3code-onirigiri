@@ -28,6 +28,7 @@ export function ThreadDetailsCard({
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
   const canvas = useChatCanvas();
+  const measured = !canvas || (canvas.container.width > 0 && canvas.container.height > 0);
   const preferredPlacement = canvas
     ? resolveThreadDetailsCardLayout({
         container: canvas.container,
@@ -82,10 +83,11 @@ export function ThreadDetailsCard({
   }, [reportDetailsCard, inlineOpen, cardLeft, cardRight, cardBottom]);
   useLayoutEffect(() => () => reportDetailsCard?.(null), [reportDetailsCard]);
   useLayoutEffect(() => {
+    if (!measured) return;
     onPresentationChange(mode);
     if (mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
-  }, [mode, onPresentationChange, threadRef, popoverOpen]);
+  }, [measured, mode, onPresentationChange, threadRef, popoverOpen]);
   useLayoutEffect(() => {
     const element = contentElement;
     if (!element || density === "essential") return;
@@ -120,6 +122,7 @@ export function ThreadDetailsCard({
     measure();
     return observeResize(element, measure);
   }, [contentElement, density, measurementKey]);
+  if (!measured) return null;
   const card = (
     <div
       className={cn(
