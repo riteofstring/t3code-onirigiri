@@ -2413,6 +2413,7 @@ function useChatMarkdownState({
     [createAssetUrl, cwd, expandMedia, preparedConnection, surfaceNavigation, threadRef],
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const pullRequestsEnabled = serverConfig?.environment.capabilities.pullRequests === true;
   const projects = useProjects();
   const availableEditors = serverConfig?.availableEditors ?? [];
   const [preferredEditor] = usePreferredEditor(availableEditors);
@@ -2777,7 +2778,7 @@ function useChatMarkdownState({
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       resolvedTheme,
-      serverConfig,
+      pullRequestsEnabled,
       skills,
       text,
       threadRef,
@@ -2810,7 +2811,7 @@ function useChatMarkdownState({
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       resolvedTheme,
-      serverConfig,
+      pullRequestsEnabled,
       skills,
       text,
       threadRef,
@@ -2958,7 +2959,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       projects,
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
-      serverConfig,
+      pullRequestsEnabled,
       updateThreadPullRequestLink,
       fileLinkChip,
       renderContextReference,
@@ -3010,7 +3011,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         ? resolvePullRequestPreviewTarget({
             environmentId,
             projects,
-            pullRequestsEnabled: serverConfig?.environment.capabilities.pullRequests === true,
+            pullRequestsEnabled,
             url: pullRequestCandidateUrl,
           })
         : null;

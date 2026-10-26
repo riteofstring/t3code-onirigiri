@@ -21,6 +21,40 @@ export function withoutEnvironmentThemes(config: ServerConfig): ServerConfig {
   return rest;
 }
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" &&
+  value !== null &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+
+/**
+ * Provider pushes repeat every provider's full catalog when one of them changes.
+ * Keeping the previous value wherever the push repeats it lets views that derive
+ * from unchanged models, skills or commands skip their work.
+ */
+function reuseUnchanged<T>(previous: unknown, next: T): T {
+  if (Object.is(previous, next)) return next;
+  if (Array.isArray(next) && Array.isArray(previous)) {
+    let same = previous.length === next.length;
+    const merged = next.map((item, index) => {
+      const value = reuseUnchanged(previous[index], item);
+      if (value !== previous[index]) same = false;
+      return value;
+    });
+    return (same ? previous : merged) as T;
+  }
+  if (isPlainObject(next) && isPlainObject(previous)) {
+    const keys = Object.keys(next);
+    let same = keys.length === Object.keys(previous).length;
+    const merged: Record<string, unknown> = {};
+    for (const key of keys) {
+      merged[key] = reuseUnchanged(previous[key], next[key]);
+      if (merged[key] !== previous[key] || !Object.hasOwn(previous, key)) same = false;
+    }
+    return (same ? previous : merged) as T;
+  }
+  return next;
+}
+
 export function applyServerConfigProjection(
   current: Option.Option<ServerConfigProjection>,
   event: ServerConfigStreamEvent,
@@ -63,7 +97,7 @@ export function applyServerConfigProjection(
       return Option.map(current, (projection) => ({
         config: {
           ...projection.config,
-          providers: event.payload.providers,
+          providers: reuseUnchanged(projection.config.providers, event.payload.providers),
         },
         latestEvent: event,
         source: "live",
