@@ -412,20 +412,20 @@ export function createPaneLifecycleStore(
         .toSorted((a, b) => distance(a) - distance(b)),
       ...[...mounted].filter((paneId) => panes.has(paneId) && mustRetain(paneId)),
     ]);
-    // Once the focused pane has settled, prepare every pane, neighbours first, so any
-    // later visit is a warm arrival; the mount budget bounds how many stay mounted.
-    const nearby = (
-      neighborsWanted && prepareAhead
-        ? [...neighbors(), ...[...panes.keys()].toSorted((a, b) => distance(a) - distance(b))]
-        : neighbors()
-    ).filter((paneId) => neighborsWanted || mounted.has(paneId));
+    const nearby = neighbors().filter((paneId) => neighborsWanted || mounted.has(paneId));
     const live = [...panes.values()]
       .filter((pane) => running.has(pane.paneId) && (neighborsWanted || mounted.has(pane.paneId)))
       .toSorted(
         (a, b) => distance(a.paneId) - distance(b.paneId) || a.plane - b.plane || a.slot - b.slot,
       )
       .map((pane) => pane.paneId);
-    const speculative = [...new Set([...nearby, ...live])].filter(
+    // Once the focused pane has settled, prepare every other pane by distance after the
+    // neighbours and running threads, so later visits are warm arrivals within the budget.
+    const ahead =
+      neighborsWanted && prepareAhead
+        ? [...panes.keys()].toSorted((a, b) => distance(a) - distance(b))
+        : [];
+    const speculative = [...new Set([...nearby, ...live, ...ahead])].filter(
       (paneId) => !required.has(paneId) && panes.has(paneId),
     );
     wanted = new Set([

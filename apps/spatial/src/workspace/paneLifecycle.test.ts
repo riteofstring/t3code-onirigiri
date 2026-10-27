@@ -1481,3 +1481,13 @@ it("prepares every pane ahead, nearest first, within the mount budget", () => {
   drain(all, panes);
   expect(mountedOf(all, panes)).toHaveLength(12);
 });
+
+it("prepares a distant running thread before nearer panes when preparing ahead", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0", 4);
+  commitOnChange(store, panes);
+  store.setRunning(new Set(["p0-11"]));
+  drain(store, panes);
+  expect(store.isMounted("p0-11")).toBe(true);
+  expect(mountedOf(store, panes)).toHaveLength(4);
+});
