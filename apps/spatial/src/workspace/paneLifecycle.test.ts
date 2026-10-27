@@ -1491,3 +1491,17 @@ it("prepares a distant running thread before nearer panes when preparing ahead",
   expect(store.isMounted("p0-11")).toBe(true);
   expect(mountedOf(store, panes)).toHaveLength(4);
 });
+
+it("prepares panes beyond the neighbours only after input has paused", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-0");
+  commitOnChange(store, panes);
+  for (let step = 0; step < 20; step++) {
+    window.dispatchEvent(new Event("wheel"));
+    vi.advanceTimersByTime(1000);
+    for (const { paneId } of panes) store.committed(paneId, store.isMounted(paneId));
+  }
+  expect(store.isMounted("p0-6")).toBe(false);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toHaveLength(12);
+});

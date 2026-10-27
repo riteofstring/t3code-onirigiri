@@ -15,6 +15,9 @@ const NEIGHBOR_SETTLE_MS = 600;
 const INPUT_QUIET_MS = 400;
 // Preparing views ahead keeps visits warm; a long frame pauses it only briefly.
 const MOUNT_PRESSURE_QUIET_MS = 500;
+// Panes beyond the neighbours wait for a short pause in input, so mounting them does not
+// interrupt reading.
+const PREPARE_AHEAD_QUIET_MS = 2000;
 const COMMIT_TIMEOUT_MS = 2000;
 const STORED_PICTURES_WAIT_MS = 2000;
 const PICTURE_TIMEOUT_MS = 10_000;
@@ -50,6 +53,7 @@ export function createPaneLifecycleStore(
   const motionListeners = new Set<() => void>();
   let queue: string[] = [];
   let wanted = new Set<string>();
+  let aheadOnly = new Set<string>();
   let waitingFor: string | null = null;
   let commitTimer: ReturnType<typeof setTimeout> | null = null;
   let idleCallback: number | null = null;
@@ -244,6 +248,12 @@ export function createPaneLifecycleStore(
   };
 
   const visibleQueued = () => queue.some((paneId) => visible.has(paneId) && !mounted.has(paneId));
+  const inputQuiet = () => {
+    const pending = queue.filter((paneId) => !mounted.has(paneId));
+    return pending.length > 0 && pending.every((paneId) => aheadOnly.has(paneId))
+      ? PREPARE_AHEAD_QUIET_MS
+      : INPUT_QUIET_MS;
+  };
 
   const schedule = () => {
     if (moving) return;
@@ -292,7 +302,7 @@ export function createPaneLifecycleStore(
       return;
     }
     if (pointers.size > 0) return;
-    const wait = Math.max(lastInput + INPUT_QUIET_MS, busyUntil) - performance.now();
+    const wait = Math.max(lastInput + inputQuiet(), busyUntil) - performance.now();
     if (wait > 0) {
       quietTimer = setTimeout(() => {
         quietTimer = null;
@@ -310,7 +320,7 @@ export function createPaneLifecycleStore(
     if (!visibleQueued()) {
       if (pointers.size > 0) return;
       if (
-        performance.now() < Math.max(lastInput + INPUT_QUIET_MS, busyUntil) ||
+        performance.now() < Math.max(lastInput + inputQuiet(), busyUntil) ||
         (deadline && (deadline.didTimeout || deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS))
       ) {
         schedule();
@@ -425,6 +435,9 @@ export function createPaneLifecycleStore(
       neighborsWanted && prepareAhead
         ? [...panes.keys()].toSorted((a, b) => distance(a) - distance(b))
         : [];
+    aheadOnly = new Set(
+      ahead.filter((paneId) => !nearby.includes(paneId) && !live.includes(paneId)),
+    );
     const speculative = [...new Set([...nearby, ...live, ...ahead])].filter(
       (paneId) => !required.has(paneId) && panes.has(paneId),
     );
@@ -496,7 +509,12 @@ export function createPaneLifecycleStore(
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving,
     pictureMount: (paneId: string): PictureMount =>
-      !mounted.has(paneId) ? null : picturing?.paneId === paneId ? "background" : "ordinary",
+      // Views prepared ahead but never seen picture as background work, after any view in use.
+      !mounted.has(paneId)
+        ? null
+        : picturing?.paneId === paneId || (aheadOnly.has(paneId) && !viewed.has(paneId))
+          ? "background"
+          : "ordinary",
     subscribeMotion: (listener: () => void) => {
       motionListeners.add(listener);
       return () => {
