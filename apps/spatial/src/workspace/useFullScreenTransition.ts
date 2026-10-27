@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type FullScreenPhase = "out" | "swap" | "in";
+export type FullScreenPhase = "enter" | "out" | "swap" | "in";
 
 export const FULL_SCREEN_FADE_OUT_MS = 120;
 export const FULL_SCREEN_SETTLE_MS = 320;
@@ -19,16 +19,19 @@ export function useFullScreenTransition(requested: boolean, animate: boolean) {
   });
   if (state.requested !== requested) {
     const motion = animate && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const enter = motion && requested && !state.fullScreen;
     setState({
       requested,
-      fullScreen: motion ? state.fullScreen : requested,
+      fullScreen: motion && !enter ? state.fullScreen : requested,
       phase: !motion
         ? null
-        : requested !== state.fullScreen
-          ? "out"
-          : state.phase === "out"
-            ? "in"
-            : state.phase,
+        : enter
+          ? "enter"
+          : requested !== state.fullScreen
+            ? "out"
+            : state.phase === "out"
+              ? "in"
+              : state.phase,
     });
   }
   const { fullScreen, phase } = state;
@@ -41,9 +44,11 @@ export function useFullScreenTransition(requested: boolean, animate: boolean) {
       );
       return () => clearTimeout(timer);
     }
-    if (phase === "swap") {
+    if (phase === "swap" || phase === "enter") {
       let frame = requestAnimationFrame(() => {
-        frame = requestAnimationFrame(() => setState((current) => ({ ...current, phase: "in" })));
+        frame = requestAnimationFrame(() =>
+          setState((current) => ({ ...current, phase: phase === "swap" ? "in" : null })),
+        );
       });
       return () => cancelAnimationFrame(frame);
     }

@@ -48,32 +48,41 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("fades the workspace out, swaps the layout unseen, then fades it back in", async () => {
+it("enters full screen at once with a snapped camera", async () => {
   await show(false);
   expect(seen).toEqual({ fullScreen: false, phase: null });
 
   await show(true);
-  expect(seen).toEqual({ fullScreen: false, phase: "out" });
-
-  await advance(FULL_SCREEN_FADE_OUT_MS);
-  expect(seen).toEqual({ fullScreen: true, phase: "swap" });
+  expect(seen).toEqual({ fullScreen: true, phase: "enter" });
 
   await advance(32);
-  expect(seen).toEqual({ fullScreen: true, phase: "in" });
-
-  await advance(FULL_SCREEN_SETTLE_MS);
   expect(seen).toEqual({ fullScreen: true, phase: null });
 });
 
-it("keeps the layout when the toggle is undone during the fade-out", async () => {
-  await show(false);
+it("fades the workspace out, swaps the layout unseen, then fades it back in on exit", async () => {
   await show(true);
-  await advance(FULL_SCREEN_FADE_OUT_MS / 2);
   await show(false);
+  expect(seen).toEqual({ fullScreen: true, phase: "out" });
+
+  await advance(FULL_SCREEN_FADE_OUT_MS);
+  expect(seen).toEqual({ fullScreen: false, phase: "swap" });
+
+  await advance(32);
   expect(seen).toEqual({ fullScreen: false, phase: "in" });
 
   await advance(FULL_SCREEN_SETTLE_MS);
   expect(seen).toEqual({ fullScreen: false, phase: null });
+});
+
+it("keeps full screen when the exit is undone during the fade-out", async () => {
+  await show(true);
+  await show(false);
+  await advance(FULL_SCREEN_FADE_OUT_MS / 2);
+  await show(true);
+  expect(seen).toEqual({ fullScreen: true, phase: "in" });
+
+  await advance(FULL_SCREEN_SETTLE_MS);
+  expect(seen).toEqual({ fullScreen: true, phase: null });
 });
 
 it("applies the layout at once when the stage cannot animate or motion is reduced", async () => {

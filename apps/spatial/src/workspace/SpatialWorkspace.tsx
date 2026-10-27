@@ -861,7 +861,9 @@ function SpatialWorkspaceView({
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
                     compactBreakpoint={fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH}
-                    {...(fullScreenPhase === "swap" ? { cameraMotion: SNAP_CAMERA } : {})}
+                    {...(fullScreenPhase === "swap" || fullScreenPhase === "enter"
+                      ? { cameraMotion: SNAP_CAMERA }
+                      : {})}
                     chromeComponents={WORKSPACE_CHROME}
                     desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}
