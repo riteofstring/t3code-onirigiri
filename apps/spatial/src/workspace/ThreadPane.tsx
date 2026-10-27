@@ -1,3 +1,4 @@
+import { RegistryContext } from "@effect/atom-react";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -46,6 +47,7 @@ import {
 } from "@t3tools/web/src/panelAnimations";
 
 import { usePaneActivity } from "./paneActivity";
+import { createPaneRegistry } from "./paneRegistry";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
@@ -267,6 +269,9 @@ export const ThreadPane = memo(function ThreadPane({
 
   const contentRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, liveVisible, contentRef);
+  const appRegistry = use(RegistryContext);
+  const [paneRegistry] = useState(() => createPaneRegistry(appRegistry, activity));
+  useEffect(() => paneRegistry.dispose, [paneRegistry]);
 
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
@@ -371,24 +376,26 @@ export const ThreadPane = memo(function ThreadPane({
   );
 
   return (
-    <ChatPaneControlsContext value={paneControls}>
-      <ChatViewActivityContext value={activity}>
-        <ComposerHandleContext value={paneComposerRef}>
-          <div
-            ref={contentRef}
-            onKeyDownCapture={leaveComposerOnEscape}
-            className="spatial-thread-pane h-full w-full"
-            data-spatial-thread={thread.threadId}
-            data-spatial-active={String(active)}
-            data-spatial-preparing={preparing ? "" : undefined}
-          >
-            <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
-            </ChatViewContentReadyProvider>
-          </div>
-        </ComposerHandleContext>
-      </ChatViewActivityContext>
-    </ChatPaneControlsContext>
+    <RegistryContext value={paneRegistry.registry}>
+      <ChatPaneControlsContext value={paneControls}>
+        <ChatViewActivityContext value={activity}>
+          <ComposerHandleContext value={paneComposerRef}>
+            <div
+              ref={contentRef}
+              onKeyDownCapture={leaveComposerOnEscape}
+              className="spatial-thread-pane h-full w-full"
+              data-spatial-thread={thread.threadId}
+              data-spatial-active={String(active)}
+              data-spatial-preparing={preparing ? "" : undefined}
+            >
+              <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
+                {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+              </ChatViewContentReadyProvider>
+            </div>
+          </ComposerHandleContext>
+        </ChatViewActivityContext>
+      </ChatPaneControlsContext>
+    </RegistryContext>
   );
 });
 
