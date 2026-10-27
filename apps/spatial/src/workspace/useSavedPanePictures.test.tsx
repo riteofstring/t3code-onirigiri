@@ -515,7 +515,7 @@ it("draws a departing view quickly, pictures an untouched pane once the lifecycl
   const panes = store.threadIds.map((id, slot) => ({ paneId: `thread:e:${id}`, plane: 0, slot }));
   const first = "thread:e:t0";
   const last = "thread:e:t11";
-  const lifecycle = createPaneLifecycleStore(panes, first, 8);
+  const lifecycle = createPaneLifecycleStore(panes, first, 8, false);
   backgroundLifecycle = lifecycle;
   const elements = new Map(panes.map(({ paneId: id }) => [id, { isConnected: true, id }]));
   let unmountCommitDelay = 0;
@@ -876,7 +876,7 @@ it.each(["null", "error"])(
       plane: 0,
       slot,
     }));
-    const lifecycle = createPaneLifecycleStore(panes, "thread:e:t0", 8);
+    const lifecycle = createPaneLifecycleStore(panes, "thread:e:t0", 8, false);
     snapshotFailures.mockImplementation((id, startedAt) => lifecycle.pictureFailed(id, startedAt));
     const nearest = { isConnected: true } as HTMLElement;
     snapshot.mockImplementation(async (element, canSnapshot) => {
@@ -1800,7 +1800,7 @@ it.each([false, true])(
     currentLayout = layout(400);
     await mount({ compact });
     const panes = store.threadIds.map((id, slot) => ({ paneId: `thread:e:${id}`, plane: 0, slot }));
-    const lifecycle = createPaneLifecycleStore(panes, panes[0]!.paneId, 8);
+    const lifecycle = createPaneLifecycleStore(panes, panes[0]!.paneId, 8, false);
     backgroundLifecycle = lifecycle;
     const elements = new Map(panes.map(({ paneId: id }) => [id, { isConnected: false }]));
     const syncPictures = () => {

@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 function lifecycle(panes: readonly PanePosition[], focusedPaneId: string | null) {
-  const store = createPaneLifecycleStore(panes, focusedPaneId, 8);
+  const store = createPaneLifecycleStore(panes, focusedPaneId, 8, false);
   stores.push(store);
   return store;
 }
@@ -637,7 +637,7 @@ it("pauses neighbor and background preparation through same-pane camera motion",
 
 it("cancels a deferred focused mount on disposal", () => {
   const panes = row(12);
-  const store = createPaneLifecycleStore(panes, "p0-0", 8);
+  const store = createPaneLifecycleStore(panes, "p0-0", 8, false);
   store.setPictures(() => true);
   store.setMoving(true);
   store.setFocus("p0-9");
@@ -1467,4 +1467,17 @@ it("does not add speculative picture mounts beyond a large visible overview", ()
   expect(mountedOf(store, panes)).toHaveLength(18);
   expect(store.isMounted("p0-18")).toBe(false);
   expect(store.isMounted("p0-19")).toBe(false);
+});
+
+it("prepares every pane ahead, nearest first, within the mount budget", () => {
+  const panes = row(12);
+  const store = createPaneLifecycleStore(panes, "p0-5", 6);
+  commitOnChange(store, panes);
+  drain(store, panes);
+  expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3", "p0-4", "p0-5", "p0-6", "p0-7"]);
+
+  const all = createPaneLifecycleStore(panes, "p0-0");
+  commitOnChange(all, panes);
+  drain(all, panes);
+  expect(mountedOf(all, panes)).toHaveLength(12);
 });

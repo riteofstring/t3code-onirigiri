@@ -13,6 +13,8 @@ const MAX_MOUNTED = 32;
 const SETTLE_MS = 200;
 const NEIGHBOR_SETTLE_MS = 600;
 const INPUT_QUIET_MS = 400;
+// Preparing views ahead keeps visits warm; a long frame pauses it only briefly.
+const MOUNT_PRESSURE_QUIET_MS = 500;
 const COMMIT_TIMEOUT_MS = 2000;
 const STORED_PICTURES_WAIT_MS = 2000;
 const PICTURE_TIMEOUT_MS = 10_000;
@@ -32,6 +34,7 @@ export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
   focusedPaneId: string | null,
   maxMounted = MAX_MOUNTED,
+  prepareAhead = true,
 ) {
   let panes = new Map(initialPanes.map((pane) => [pane.paneId, pane]));
   let focused =
@@ -59,6 +62,7 @@ export function createPaneLifecycleStore(
   let lastInput = 0;
   const pointers = new Set<number>();
   let busyUntil = 0;
+  let pictureBusyUntil = 0;
   let clock = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
   let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
@@ -345,7 +349,11 @@ export function createPaneLifecycleStore(
       return;
     }
     const now = performance.now();
-    const wait = Math.max(lastInput, backgroundQuietFrom) + BACKGROUND_PICTURE_QUIET_MS - now;
+    const wait =
+      Math.max(
+        Math.max(lastInput, backgroundQuietFrom) + BACKGROUND_PICTURE_QUIET_MS,
+        pictureBusyUntil,
+      ) - now;
     if (wait > 0) {
       waitForPicture(wait);
       return;
@@ -404,7 +412,13 @@ export function createPaneLifecycleStore(
         .toSorted((a, b) => distance(a) - distance(b)),
       ...[...mounted].filter((paneId) => panes.has(paneId) && mustRetain(paneId)),
     ]);
-    const nearby = neighbors().filter((paneId) => neighborsWanted || mounted.has(paneId));
+    // Once the focused pane has settled, prepare every pane, neighbours first, so any
+    // later visit is a warm arrival; the mount budget bounds how many stay mounted.
+    const nearby = (
+      neighborsWanted && prepareAhead
+        ? [...neighbors(), ...[...panes.keys()].toSorted((a, b) => distance(a) - distance(b))]
+        : neighbors()
+    ).filter((paneId) => neighborsWanted || mounted.has(paneId));
     const live = [...panes.values()]
       .filter((pane) => running.has(pane.paneId) && (neighborsWanted || mounted.has(pane.paneId)))
       .toSorted(
@@ -471,7 +485,8 @@ export function createPaneLifecycleStore(
     window.addEventListener(type, noteInput, { capture: true, passive: true });
   }
   const stopObservingPressure = observePicturePressure((finishedAt) => {
-    busyUntil = Math.max(busyUntil, finishedAt + BACKGROUND_PICTURE_QUIET_MS);
+    busyUntil = Math.max(busyUntil, finishedAt + MOUNT_PRESSURE_QUIET_MS);
+    pictureBusyUntil = Math.max(pictureBusyUntil, finishedAt + BACKGROUND_PICTURE_QUIET_MS);
     schedule();
   });
 
