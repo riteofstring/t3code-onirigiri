@@ -233,7 +233,10 @@ export function createPaneLifecycleStore(
       const attempted = pictureAttempted.get(paneId);
       if (attempted) attempted.retryAt = performance.now();
     }
-    if (!wanted.has(paneId) && !visible.has(paneId) && paneId !== focused) unmount(paneId);
+    // A pictured view stays mounted within the budget so visiting it is a warm arrival;
+    // eviction releases pictured views first.
+    if (!hasPicture(paneId) && !wanted.has(paneId) && !visible.has(paneId) && paneId !== focused)
+      unmount(paneId);
   };
 
   const visibleQueued = () => queue.some((paneId) => visible.has(paneId) && !mounted.has(paneId));

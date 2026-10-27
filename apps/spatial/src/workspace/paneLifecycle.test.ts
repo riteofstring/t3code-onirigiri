@@ -845,7 +845,7 @@ it("prepares only the next pictured neighbour in the direction of travel", () =>
   expect(mountedOf(store, panes)).toEqual(["p0-2", "p0-3", "p0-4"]);
 });
 
-it("mounts panes without a picture one at a time to picture them, then lets them go", () => {
+it("mounts panes without a picture one at a time to picture them, then keeps them mounted", () => {
   const panes = row(5);
   const store = lifecycle(panes, "p0-0");
   const pictured = new Set(["p0-0", "p0-1"]);
@@ -864,7 +864,7 @@ it("mounts panes without a picture one at a time to picture them, then lets them
   pictured.add("p0-2");
   store.setPictures((paneId) => pictured.has(paneId));
   step(1000);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2", "p0-3"]);
   step(12_000);
   expect(store.isMounted("p0-3")).toBe(false);
   step(60_000);
@@ -896,7 +896,7 @@ it("pictures a briefly visible pane after rest before untouched panes", () => {
   pictured.add("p0-6");
   store.setPictures((paneId) => pictured.has(paneId));
   vi.advanceTimersByTime(1200);
-  expect(store.isMounted("p0-6")).toBe(false);
+  expect(store.isMounted("p0-6")).toBe(true);
   expect(store.isMounted("p0-2")).toBe(true);
 });
 
@@ -927,7 +927,7 @@ it("prepares a crossed pane at cache capacity without refilling its later evicti
   pictured.add("p0-6");
   store.setPictures((paneId) => pictured.has(paneId), true, canPicture);
   vi.advanceTimersByTime(1200);
-  expect(store.isMounted("p0-6")).toBe(false);
+  expect(store.isMounted("p0-6")).toBe(true);
   pictured.delete("p0-6");
   store.setPictures((paneId) => pictured.has(paneId), true, canPicture);
   vi.advanceTimersByTime(6 * 60_000);
@@ -936,7 +936,8 @@ it("prepares a crossed pane at cache capacity without refilling its later evicti
   store.setVisible("p0-6", true);
   store.setVisible("p0-6", false);
   vi.advanceTimersByTime(10_500);
-  expect(mounts.filter((paneId) => paneId === "p0-6")).toHaveLength(2);
+  expect(store.isMounted("p0-6")).toBe(true);
+  expect(mounts.filter((paneId) => paneId === "p0-6")).toHaveLength(1);
 });
 
 it.each(["never visible", "removed"])(
@@ -987,7 +988,7 @@ it.each(["keydown", "pointerdown", "wheel"])(
     vi.advanceTimersByTime(2900);
     expect(store.isMounted("p0-3")).toBe(false);
     vi.advanceTimersByTime(200);
-    expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-3"]);
+    expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1", "p0-2", "p0-3"]);
   },
 );
 
@@ -1080,7 +1081,7 @@ it("does not apply failure backoff to a successful picture that later becomes st
   pictured.add("p0-2");
   store.setPictures((paneId) => pictured.has(paneId));
   vi.advanceTimersByTime(1200);
-  expect(store.isMounted("p0-2")).toBe(false);
+  expect(store.isMounted("p0-2")).toBe(true);
   pictured.delete("p0-2");
   store.setPictures((paneId) => pictured.has(paneId));
   vi.advanceTimersByTime(5000);
