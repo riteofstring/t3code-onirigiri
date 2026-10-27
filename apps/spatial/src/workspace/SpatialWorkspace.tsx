@@ -224,6 +224,11 @@ function SpatialWorkspaceView({
   )?.width;
   const [workspacePadding, setWorkspacePadding] = useState(0);
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
+  const [overview, setOverview] = useState(false);
+  const onPresentationModeChange = useCallback(
+    (mode: string) => setOverview(mode === "overview"),
+    [],
+  );
   const syncMaximized = useCallback(() => {
     setMaximizedPaneId(workspaceRef.current?.getSnapshot().maximizedPaneId ?? null);
   }, []);
@@ -860,7 +865,7 @@ function SpatialWorkspaceView({
                     chromeComponents={WORKSPACE_CHROME}
                     desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
                     focusAnchor={focusAnchor}
-                    {...(stageViewport.compact ? { focusHighlight: false } : {})}
+                    {...(stageViewport.compact && !overview ? { focusHighlight: false } : {})}
                     getPanePresentation={getPanePresentation}
                     gridAxes={gridAxes}
                     initialPanes={initialPanes}
@@ -868,6 +873,7 @@ function SpatialWorkspaceView({
                     liveContent
                     onFocusedPaneFrame={onFocusedPaneFrame}
                     onLayoutChange={onLayoutChange}
+                    onPresentationModeChange={onPresentationModeChange}
                     onPaneClose={onPaneClose}
                     {...(overviewCardWidth === undefined
                       ? {}
