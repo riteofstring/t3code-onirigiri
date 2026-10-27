@@ -2,12 +2,12 @@
 
 This fork's spatial app lives in `apps/spatial`. Use each repository's pinned Node
 and pnpm versions (Node 25.2.1 for the engine, Node 24 for T3), and Vite+ (see the
-[root README](../../README.md)). Clone the engine's `v0.4.0-beta.1` release beside
+[root README](../../README.md)). Clone the engine's `onirigiri-beta-2026-10-27` release beside
 this repository's `onirigiri-t3-beta-2026-10-27` release, using the exact sibling
 directory name `onirigiri-beta`:
 
 ```bash
-git clone --branch v0.4.0-beta.1 https://github.com/riteofstring/onirigiri.git onirigiri-beta
+git clone --branch onirigiri-beta-2026-10-27 https://github.com/riteofstring/onirigiri.git onirigiri-beta
 git clone --branch onirigiri-t3-beta-2026-10-27 https://github.com/riteofstring/t3code-onirigiri.git t3code-onirigiri
 cd onirigiri-beta
 pnpm install --frozen-lockfile --ignore-scripts
