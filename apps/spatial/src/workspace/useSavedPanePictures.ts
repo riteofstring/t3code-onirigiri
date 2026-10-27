@@ -636,10 +636,15 @@ export function useSavedPanePictures(
             !pictureMatchesVisualRevision(paneId, previous.image)
           );
         },
-        (paneId) => validatedCoverFor(paneId) !== null,
+        // A picture saved at another size shows the pane at its old size, so only a
+        // picture at the current geometry earns the longer quiet wait.
+        (paneId) => {
+          const key = recordKey(paneId);
+          return key !== null && savedRef.current?.has(key) === true;
+        },
         (paneId) => pictureMountRef.current(paneId),
       ),
-    [pictureMatchesVisualRevision, recordKey, snapshots, validatedCoverFor],
+    [pictureMatchesVisualRevision, recordKey, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({

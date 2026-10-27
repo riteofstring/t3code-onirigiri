@@ -1033,10 +1033,10 @@ it("keeps a decoded cover through resize and navigation until replacement pixels
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   window.dispatchEvent(new Event("keydown"));
-  await advance(500);
+  await advance(399);
   expect(snapshot).not.toHaveBeenCalled();
   expect(shownPicture).toBe(image);
-  await advance(3000);
+  await advance(10);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(shownPicture).toBe(store.writes.at(-1)!.image);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -1080,7 +1080,7 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
       expect(hook.pictureFor(paneId)?.image).toBe(old);
     }
     window.dispatchEvent(new Event(end));
-    await advance(2999);
+    await advance(399);
     expect(snapshot).not.toHaveBeenCalled();
     await advance(10);
     expect(snapshot).toHaveBeenCalledOnce();
