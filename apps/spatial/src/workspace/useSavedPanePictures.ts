@@ -717,6 +717,14 @@ const SNAPSHOT_INPUT_QUIET_MS = 3000;
 const FIRST_PICTURE_INPUT_QUIET_MS = 400;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
+function distanceFromCenter(element: HTMLElement) {
+  const { left, top, width, height } = element.getBoundingClientRect();
+  return Math.hypot(
+    left + width / 2 - window.innerWidth / 2,
+    top + height / 2 - window.innerHeight / 2,
+  );
+}
+
 export function createSnapshotQueue() {
   type Draw = (
     paneId: string,
@@ -841,13 +849,21 @@ export function createSnapshotQueue() {
         resume.resolve(true);
         return;
       }
-      // A view in use pictures before background preparation whenever it is due.
+      // A view in use pictures before background preparation whenever it is due, and
+      // the due view nearest the focused pane goes first.
       const ordinaryDue = [...pending].filter(
         (candidate) => !candidate[1].background && due(candidate) <= now,
       );
-      const [paneId, request] = (ordinaryDue.length > 0 ? ordinaryDue : [...pending]).reduce(
-        (first, candidate) => (due(candidate) < due(first) ? candidate : first),
-      );
+      const [paneId, request] =
+        ordinaryDue.length === 1
+          ? ordinaryDue[0]!
+          : ordinaryDue.length > 1
+            ? ordinaryDue
+                .map((candidate) => [candidate, distanceFromCenter(candidate[1].element)] as const)
+                .reduce((first, candidate) => (candidate[1] < first[1] ? candidate : first))[0]
+            : [...pending].reduce((first, candidate) =>
+                due(candidate) < due(first) ? candidate : first,
+              );
       const wait = due([paneId, request]) - now;
       if (wait > 0) {
         timer = setTimeout(() => {

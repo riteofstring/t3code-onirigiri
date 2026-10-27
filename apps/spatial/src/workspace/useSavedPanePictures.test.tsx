@@ -1802,7 +1802,12 @@ it.each([false, true])(
     const panes = store.threadIds.map((id, slot) => ({ paneId: `thread:e:${id}`, plane: 0, slot }));
     const lifecycle = createPaneLifecycleStore(panes, panes[0]!.paneId, 8, false);
     backgroundLifecycle = lifecycle;
-    const elements = new Map(panes.map(({ paneId: id }) => [id, { isConnected: false }]));
+    const elements = new Map(
+      panes.map(({ paneId: id, slot }) => [
+        id,
+        { isConnected: false, getBoundingClientRect: () => new DOMRect(slot * 400, 0, 400, 580) },
+      ]),
+    );
     const syncPictures = () => {
       lifecycle.setRetainedPanes(hook.retainedPaneIds);
       lifecycle.setPictures(hook.hasFreshPicture, true, hook.canBackgroundPicture);

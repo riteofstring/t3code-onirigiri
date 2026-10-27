@@ -367,3 +367,25 @@ it("pictures a view in use before earlier background preparation that is equally
   await vi.advanceTimersByTimeAsync(3500);
   expect(drawn[0]).toBe("seen");
 });
+
+it("pictures the due view nearest the focused pane first", async () => {
+  const queue = createSnapshotQueue();
+  const drawn: string[] = [];
+  dispose = queue.setDraw(
+    async (paneId) => {
+      drawn.push(paneId);
+    },
+    (paneId) => !drawn.includes(paneId),
+    () => false,
+  );
+  const at = (left: number) => {
+    const pane = createPane();
+    pane.getBoundingClientRect = () => new DOMRect(left, 0, 400, window.innerHeight);
+    return pane;
+  };
+  queue.request("far", at(window.innerWidth * 3));
+  queue.request("near", at(window.innerWidth / 2 - 200));
+  queue.request("beside", at(window.innerWidth));
+  await vi.advanceTimersByTimeAsync(3500);
+  expect(drawn).toEqual(["near", "beside", "far"]);
+});
