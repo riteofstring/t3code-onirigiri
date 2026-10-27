@@ -412,34 +412,33 @@ it("uses spare mounts beyond visible neighbors in both grid axes", () => {
   );
 });
 
-it("keeps a saved picture through motion and mounts its view after the final frame", () => {
+it("keeps a saved picture through motion and mounts its view once focus settles", () => {
   const panes = row(12);
   const store = lifecycle(panes, "p0-0");
   store.setPictures(() => true);
   store.setMoving(true);
   store.setFocus("p0-9");
   vi.advanceTimersByTime(1200);
-  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
+  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-9"]);
   store.setMoving(false);
-  expect(store.isMounted("p0-9")).toBe(false);
   vi.advanceTimersByTime(0);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-9"]);
   drain(store, panes);
   expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-8", "p0-9", "p0-10"]);
 });
 
-it("mounts an unpictured destination only after motion ends and keeps retention bounded", () => {
+it("mounts an unpictured destination passed through quickly only after motion ends and keeps retention bounded", () => {
   const panes = row(12);
   const store = lifecycle(panes, "p0-0");
   store.setMoving(true);
   for (let slot = 1; slot < 12; slot++) {
     store.setFocus(`p0-${slot}`);
-    vi.advanceTimersByTime(200);
+    vi.advanceTimersByTime(150);
     expect(store.isMounted(`p0-${slot}`)).toBe(false);
   }
   expect(mountedOf(store, panes)).toEqual(["p0-0"]);
   store.setMoving(false);
-  vi.advanceTimersByTime(0);
+  vi.advanceTimersByTime(50);
   expect(store.isMounted("p0-11")).toBe(true);
   for (let slot = 1; slot < 12; slot++) {
     travel(store, `p0-${slot}`);
@@ -471,10 +470,10 @@ it("keeps cached focus visits bounded when input never becomes quiet", () => {
     store.setVisible(visible, false);
     store.setVisible(paneId, true);
     visible = paneId;
-    vi.advanceTimersByTime(250);
+    vi.advanceTimersByTime(150);
     expect(store.isMounted(paneId)).toBe(false);
     store.setMoving(false);
-    vi.advanceTimersByTime(0);
+    vi.advanceTimersByTime(50);
     expect(store.isMounted(paneId)).toBe(true);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
     vi.advanceTimersByTime(50);
@@ -507,9 +506,9 @@ it.each(["uncaptured focus", "visible neighbor"])(
     store.setFocus("p0-9");
     store.setVisible("p0-9", true);
     store.setVisible("p0-10", true);
-    vi.advanceTimersByTime(250);
+    vi.advanceTimersByTime(150);
     store.setMoving(false);
-    vi.advanceTimersByTime(0);
+    vi.advanceTimersByTime(50);
     expect(store.isMounted("p0-9")).toBe(true);
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(9);
 
@@ -524,9 +523,9 @@ it.each(["uncaptured focus", "visible neighbor"])(
     store.setFocus(destination === "uncaptured focus" ? "p0-11" : "p0-10");
     store.setVisible("p0-9", false);
     store.setVisible("p0-11", true);
-    vi.advanceTimersByTime(200);
+    vi.advanceTimersByTime(150);
     store.setMoving(false);
-    vi.advanceTimersByTime(1);
+    vi.advanceTimersByTime(51);
     expect(store.isMounted("p0-10")).toBe(true);
     expect(store.isMounted("p0-11")).toBe(true);
     expect(store.isMounted("p0-1")).toBe(true);
@@ -608,7 +607,7 @@ it("discards a deferred destination when focus changes before the posted mount",
   store.setPictures(() => true);
   store.setMoving(true);
   store.setFocus("p0-8");
-  vi.advanceTimersByTime(250);
+  vi.advanceTimersByTime(150);
   store.setMoving(false);
   store.setFocus("p0-10");
   vi.advanceTimersByTime(199);
@@ -641,7 +640,7 @@ it("cancels a deferred focused mount on disposal", () => {
   store.setPictures(() => true);
   store.setMoving(true);
   store.setFocus("p0-9");
-  vi.advanceTimersByTime(250);
+  vi.advanceTimersByTime(150);
   store.setMoving(false);
   store.dispose();
   vi.runAllTimers();
@@ -654,7 +653,7 @@ it("abandons a deferred destination when navigation leaves pane focus", () => {
   store.setPictures(() => true);
   store.setMoving(true);
   store.setFocus("p0-9");
-  vi.advanceTimersByTime(250);
+  vi.advanceTimersByTime(150);
   store.setFocus(null);
   store.setMoving(false);
   drain(store, panes);
@@ -736,10 +735,10 @@ it("keeps visible views live when an unpictured destination mounts after motion"
   expect(live).toHaveLength(10);
   store.setMoving(true);
   store.setFocus("p0-13");
-  vi.advanceTimersByTime(250);
+  vi.advanceTimersByTime(150);
   expect(mountedOf(store, panes)).toEqual(live);
   store.setMoving(false);
-  vi.advanceTimersByTime(0);
+  vi.advanceTimersByTime(50);
   expect(mountedOf(store, panes)).toEqual([...live, "p0-13"]);
 });
 
@@ -1504,4 +1503,22 @@ it("prepares panes beyond the neighbours only after input has paused", () => {
   expect(store.isMounted("p0-6")).toBe(false);
   drain(store, panes);
   expect(mountedOf(store, panes)).toHaveLength(12);
+});
+
+it("mounts a destination still focused after the settle delay while the camera moves", () => {
+  const panes = row(12);
+  const store = lifecycle(panes, "p0-0");
+  store.setMoving(true);
+  store.setFocus("p0-9");
+  vi.advanceTimersByTime(199);
+  expect(store.isMounted("p0-9")).toBe(false);
+  vi.advanceTimersByTime(1);
+  expect(store.isMounted("p0-9")).toBe(true);
+  store.setFocus("p0-11");
+  vi.advanceTimersByTime(200);
+  expect(store.isMounted("p0-11")).toBe(false);
+  store.committed("p0-9", true);
+  store.setFocus("p0-10");
+  vi.advanceTimersByTime(200);
+  expect(store.isMounted("p0-10")).toBe(true);
 });
