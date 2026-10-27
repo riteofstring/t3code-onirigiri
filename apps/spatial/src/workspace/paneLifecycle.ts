@@ -412,8 +412,10 @@ export function createPaneLifecycleStore(
     if (moving) {
       // A destination still focused after the settle delay starts mounting during the camera
       // move, so its view and data load while it travels. One such mount runs at a time.
-      if (focused && panes.has(focused) && !mounted.has(focused) && waitingFor === null)
+      if (focused && panes.has(focused) && !mounted.has(focused) && waitingFor === null) {
         mountPrepared(focused);
+        evictBeyond(maxMounted, new Set([focused, ...wanted]));
+      }
       settleDue = true;
       return;
     }

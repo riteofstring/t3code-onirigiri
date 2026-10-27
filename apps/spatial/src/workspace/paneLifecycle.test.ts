@@ -1522,3 +1522,16 @@ it("mounts a destination still focused after the settle delay while the camera m
   vi.advanceTimersByTime(200);
   expect(store.isMounted("p0-10")).toBe(true);
 });
+
+it("keeps the mount budget while settled destinations mount during continuous motion", () => {
+  const panes = row(16);
+  const store = createPaneLifecycleStore(panes, "p0-0", 4, false);
+  store.setMoving(true);
+  for (let slot = 1; slot < 16; slot++) {
+    store.setFocus(`p0-${slot}`);
+    vi.advanceTimersByTime(250);
+    expect(store.isMounted(`p0-${slot}`)).toBe(true);
+    store.committed(`p0-${slot}`, true);
+    expect(mountedOf(store, panes).length).toBeLessThanOrEqual(5);
+  }
+});
