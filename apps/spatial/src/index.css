@@ -34,6 +34,10 @@
   outline-offset: 2px;
 }
 
+.spatial-workspace .onirigiri-pane:focus-visible {
+  outline: none;
+}
+
 .spatial-workspace .onirigiri-pane__live-content[data-spatial-snapshot],
 .spatial-workspace
   .onirigiri-pane__live-content:has(
