@@ -158,16 +158,13 @@ function paneHeights() {
   );
 }
 
-async function changeHeight(value: string, commit = true) {
+async function changeHeight(value: string) {
   await act(() => {
     const input = rowHeight();
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  if (commit) {
-    await act(() => rowHeight().dispatchEvent(new Event("pointerup", { bubbles: true })));
-    await act(() => vi.advanceTimersByTime(120));
-  }
+  await act(() => vi.advanceTimersByTime(120));
 }
 
 async function key(key: string, ctrlKey = false) {
@@ -263,8 +260,8 @@ it("applies row height to manually sized rows without changing widths or selecti
   const widths = pinned.columns.map((column) => column.widthSpec);
   expect(status()).toContain("right");
 
-  await changeHeight("420", false);
-  expect(paneHeights()).toEqual([500, 500, 500]);
+  await changeHeight("420");
+  expect(paneHeights()).toEqual([420, 420, 420]);
   await changeHeight(rowHeight().max);
   const maximum = Number(rowHeight().max);
   expect(paneHeights()).toEqual([maximum, maximum, maximum]);

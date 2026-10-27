@@ -401,17 +401,10 @@ function RowHeightControl({
   maximum: number | null;
   onChange: (height: WorkspacePreferences["rowHeight"]) => void;
 }) {
-  const [draft, setDraft] = useState<number | null>(null);
   const max = maximum ?? 96;
   const min = Math.min(96, max);
-  const value = Math.max(min, Math.min(max, draft ?? (height === "viewport" ? max : height)));
+  const value = Math.max(min, Math.min(max, height === "viewport" ? max : height));
   const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
-  const commit = () => {
-    if (draft === null) return;
-    setDraft(null);
-    const next = value === max ? "viewport" : value;
-    onChange(next);
-  };
   return (
     <label className="spatial-workspace-controls__field">
       <span>Row height</span>
@@ -433,11 +426,10 @@ function RowHeightControl({
               "--settings-slider-fill-offset": `${0.5 - progress / 100}rem`,
             } as CSSProperties
           }
-          onChange={(event) => setDraft(event.currentTarget.valueAsNumber)}
-          onPointerUp={commit}
-          onKeyUp={commit}
-          onBlur={commit}
-          onPointerCancel={() => setDraft(null)}
+          onChange={(event) => {
+            const next = event.currentTarget.valueAsNumber;
+            if (next !== value) onChange(next === max ? "viewport" : next);
+          }}
         />
       </span>
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
