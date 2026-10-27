@@ -2,12 +2,13 @@
 
 This fork's spatial app lives in `apps/spatial`. Use each repository's pinned Node
 and pnpm versions (Node 25.2.1 for the engine, Node 24 for T3), and Vite+ (see the
-[root README](../../README.md)). Clone the engine's `beta` branch beside this
-repository using the exact sibling directory name `onirigiri-beta`:
+[root README](../../README.md)). Clone the engine's `v0.4.0-beta.1` release beside
+this repository's `onirigiri-t3-beta-2026-10-27` release, using the exact sibling
+directory name `onirigiri-beta`:
 
 ```bash
-git clone --branch beta https://github.com/riteofstring/onirigiri.git onirigiri-beta
-git clone git@github.com:riteofstring/t3code-onirigiri.git t3code-onirigiri
+git clone --branch v0.4.0-beta.1 https://github.com/riteofstring/onirigiri.git onirigiri-beta
+git clone --branch onirigiri-t3-beta-2026-10-27 https://github.com/riteofstring/t3code-onirigiri.git t3code-onirigiri
 cd onirigiri-beta
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm build
@@ -74,8 +75,8 @@ command:
 T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 vp run --filter @t3tools/spatial dev
 ```
 
-For a step-by-step trial on a fresh Mac, written for a setup agent, see
-[the macOS beta trial](beta-trial-macos.md).
+For a step-by-step setup on a fresh Mac, written for a setup agent, see
+[the macOS beta](beta-trial-macos.md).
 
 The pinned Vite+ 1.0.0 toolchain contains editor-launch vulnerabilities:
 [Windows percent expansion](https://github.com/vitejs/launch-editor/security/advisories/GHSA-698v-4r3x-3vcv),
