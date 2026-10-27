@@ -818,7 +818,7 @@ export function createSnapshotQueue() {
         const resumeAt = due([continuation.paneId, { ...continuation, after: 0 }]);
         if (
           continuation.background &&
-          [...pending].some((candidate) => !candidate[1].background && due(candidate) < resumeAt)
+          [...pending].some((candidate) => !candidate[1].background && due(candidate) <= resumeAt)
         ) {
           const yielding = continuation;
           continuation = null;
@@ -841,8 +841,12 @@ export function createSnapshotQueue() {
         resume.resolve(true);
         return;
       }
-      const [paneId, request] = [...pending].reduce((first, candidate) =>
-        due(candidate) < due(first) ? candidate : first,
+      // A view in use pictures before background preparation whenever it is due.
+      const ordinaryDue = [...pending].filter(
+        (candidate) => !candidate[1].background && due(candidate) <= now,
+      );
+      const [paneId, request] = (ordinaryDue.length > 0 ? ordinaryDue : [...pending]).reduce(
+        (first, candidate) => (due(candidate) < due(first) ? candidate : first),
       );
       const wait = due([paneId, request]) - now;
       if (wait > 0) {

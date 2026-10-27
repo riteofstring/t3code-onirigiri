@@ -349,3 +349,21 @@ it.each([
     delete (window as { devicePixelRatio?: number }).devicePixelRatio;
   }
 });
+
+it("pictures a view in use before earlier background preparation that is equally due", async () => {
+  const queue = createSnapshotQueue();
+  const drawn: string[] = [];
+  dispose = queue.setDraw(
+    async (paneId) => {
+      drawn.push(paneId);
+    },
+    () => true,
+    () => true,
+    (paneId) => (paneId === "prepared" ? "background" : "ordinary"),
+  );
+  queue.request("prepared", createPane());
+  queue.request("seen", createPane());
+  idleBudget = 5;
+  await vi.advanceTimersByTimeAsync(3500);
+  expect(drawn[0]).toBe("seen");
+});
