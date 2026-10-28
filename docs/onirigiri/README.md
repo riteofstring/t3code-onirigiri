@@ -108,3 +108,6 @@ panes require the desktop client. The upstream installation instructions in the
 directory details.
 
 Design constraints that span files are recorded in [design.md](design.md).
+
+The [2026-10-28 all-live A/B results](all-live-performance-2026-10-28.md) record the
+performance experiment and the decision against keeping the optimization bundle.
