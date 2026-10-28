@@ -165,8 +165,11 @@ export function useThreadProjection(ref: ScopedThreadRef | null): EnvironmentThr
 
 const hasThreadProjection = (thread: EnvironmentThread | null) => thread !== null;
 
-export function useThreadProjectionAvailable(ref: ScopedThreadRef): boolean {
-  return useAtomValue(environmentThreadDetails.threadAtom(ref), hasThreadProjection);
+export function useThreadProjectionAvailable(ref: ScopedThreadRef | null): boolean {
+  return useAtomValue(
+    ref === null ? EMPTY_THREAD_PROJECTION_ATOM : environmentThreadDetails.threadAtom(ref),
+    hasThreadProjection,
+  );
 }
 
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {

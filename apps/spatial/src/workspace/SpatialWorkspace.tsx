@@ -364,8 +364,14 @@ function SpatialWorkspaceView({
     setLiveUpdates(createLivePaneUpdates(threadLayoutPositions(initialLayout), routePaneId));
   }
 
-  if (!alwaysLive && lifecycle === null && initialLayout !== null) {
-    setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
+  if (lifecycle === null && initialLayout !== null) {
+    setLifecycle(
+      createPaneLifecycleStore(
+        threadLayoutPositions(initialLayout),
+        routePaneId,
+        alwaysLive ? Number.POSITIVE_INFINITY : undefined,
+      ),
+    );
   }
 
   useEffect(() => {
@@ -430,14 +436,17 @@ function SpatialWorkspaceView({
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useLayoutEffect(() => {
+    if (alwaysLive) return;
     lifecycle?.setRetainedPanes(retainedPaneIds);
-  }, [lifecycle, retainedPaneIds]);
+  }, [alwaysLive, lifecycle, retainedPaneIds]);
   useEffect(() => {
+    if (alwaysLive) return;
     lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
-  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
+  }, [alwaysLive, hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
   useEffect(() => {
+    if (alwaysLive) return;
     lifecycle?.setRunning(active ? runningPanes : new Set());
-  }, [active, lifecycle, runningPanes]);
+  }, [active, alwaysLive, lifecycle, runningPanes]);
   const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
@@ -757,10 +766,10 @@ function SpatialWorkspaceView({
     setDismissedPaneIds((current) => withoutPane(current, paneId));
   }, []);
   useEffect(() => {
-    if (!active || !initialPanes || (!alwaysLive && !lifecycle) || !workspaceRef.current) return;
+    if (!active || !initialPanes || !lifecycle || !workspaceRef.current) return;
     bindWorkspace({ focusPane: focusSurfacePane, isPaneClosing });
     return () => bindWorkspace(null);
-  }, [active, alwaysLive, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
+  }, [active, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
 
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
@@ -881,7 +890,7 @@ function SpatialWorkspaceView({
           controlsRef={setControlsContainer}
           shortcuts={SHORTCUTS}
         />
-        {initialPanes && (alwaysLive || lifecycle) ? (
+        {initialPanes && lifecycle ? (
           <SpatialWorkspaceActiveContext value={active}>
             <LivePaneUpdatesContext value={liveUpdates}>
               <PaneLifecycleContext value={lifecycle}>
