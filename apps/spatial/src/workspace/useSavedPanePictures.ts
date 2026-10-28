@@ -73,20 +73,22 @@ interface PaneSnapshots {
 
 export const PaneSnapshotContext = createContext<PaneSnapshots | null>(null);
 
-export function usePanePictureTheme(): string {
+export function usePanePictureTheme(enabled = true): string {
   const { theme, resolvedTheme, themeHalves } = useTheme();
   const fonts = useClientSettings((settings) =>
-    JSON.stringify([
-      settings.fontFamilySans,
-      settings.fontFamilyCode,
-      settings.fontFamilyComposer,
-      settings.fontSizeInterface,
-      settings.fontSizePrompt,
-      settings.fontSizeCode,
-      settings.fontSmoothing,
-    ]),
+    enabled
+      ? JSON.stringify([
+          settings.fontFamilySans,
+          settings.fontFamilyCode,
+          settings.fontFamilyComposer,
+          settings.fontSizeInterface,
+          settings.fontSizePrompt,
+          settings.fontSizeCode,
+          settings.fontSmoothing,
+        ])
+      : "",
   );
-  return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}`;
+  return enabled ? `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}` : "";
 }
 
 export function markPaneSynced(
@@ -140,8 +142,8 @@ export function useSavedPanePictures(
   stageViewport: { width: number; height: number; compact: boolean };
 } {
   "use no memo";
-  const threads = useThreadShells();
-  const pictureTheme = usePanePictureTheme();
+  const threads = useThreadShells(enabled);
+  const pictureTheme = usePanePictureTheme(enabled);
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const savedRef = useRef(saved);
   type Retention = "live" | "awaiting-picture";

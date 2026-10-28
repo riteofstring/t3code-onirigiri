@@ -62,6 +62,7 @@ import {
   threadLayoutPositions,
 } from "./workspaceLayout";
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
+import { LivePaneUpdatesContext, createLivePaneUpdates } from "./livePaneUpdates";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
@@ -238,6 +239,9 @@ function SpatialWorkspaceView({
   const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
     null,
   );
+  const [liveUpdates, setLiveUpdates] = useState<ReturnType<typeof createLivePaneUpdates> | null>(
+    null,
+  );
   const onSnapshotFailure = useCallback(
     (paneId: string, startedAt: number) => lifecycle?.pictureFailed(paneId, startedAt),
     [lifecycle],
@@ -299,8 +303,9 @@ function SpatialWorkspaceView({
       syncMaximized();
       onPictureLayoutChange(layout);
       lifecycle?.setPanes(threadLayoutPositions(layout));
+      liveUpdates?.setPanes(threadLayoutPositions(layout));
     },
-    [layoutPersistence, lifecycle, onPictureLayoutChange, syncMaximized],
+    [layoutPersistence, lifecycle, liveUpdates, onPictureLayoutChange, syncMaximized],
   );
 
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -354,6 +359,10 @@ function SpatialWorkspaceView({
     target?.kind === "server"
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
+
+  if (alwaysLive && liveUpdates === null && initialLayout !== null) {
+    setLiveUpdates(createLivePaneUpdates(threadLayoutPositions(initialLayout), routePaneId));
+  }
 
   if (!alwaysLive && lifecycle === null && initialLayout !== null) {
     setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
@@ -479,6 +488,7 @@ function SpatialWorkspaceView({
       focusedPaneIdRef.current = paneId;
       if (paneId === null) {
         lifecycle?.setFocus(null);
+        liveUpdates?.setFocus(null);
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
         return;
       }
@@ -491,6 +501,7 @@ function SpatialWorkspaceView({
         .getState()
         .setFocusedThreadKey(scopedThreadKey(scopeThreadRef(data.environmentId, data.threadId)));
       if (!tool) lifecycle?.setFocus(paneId);
+      liveUpdates?.setFocus(routeTarget);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       const follow = () => {
         if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
@@ -508,7 +519,16 @@ function SpatialWorkspaceView({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [alwaysLive, getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
+    [
+      alwaysLive,
+      getPanes,
+      syncMaximized,
+      lifecycle,
+      liveUpdates,
+      paneData,
+      router,
+      setCaptureActivity,
+    ],
   );
 
   useEffect(() => {
@@ -737,10 +757,10 @@ function SpatialWorkspaceView({
     setDismissedPaneIds((current) => withoutPane(current, paneId));
   }, []);
   useEffect(() => {
-    if (!active || !initialPanes || !lifecycle || !workspaceRef.current) return;
+    if (!active || !initialPanes || (!alwaysLive && !lifecycle) || !workspaceRef.current) return;
     bindWorkspace({ focusPane: focusSurfacePane, isPaneClosing });
     return () => bindWorkspace(null);
-  }, [active, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
+  }, [active, alwaysLive, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
 
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {
@@ -863,47 +883,53 @@ function SpatialWorkspaceView({
         />
         {initialPanes && (alwaysLive || lifecycle) ? (
           <SpatialWorkspaceActiveContext value={active}>
-            <PaneLifecycleContext value={lifecycle}>
-              <PaneSnapshotContext value={alwaysLive ? null : paneSnapshots}>
-                <BrowserSurfaceProjectionContext value={browserProjection}>
-                  <OnirigiriWorkspace
-                    ref={workspaceRef}
-                    ariaLabel="Onirigiri for T3 Code"
-                    className="min-h-0 flex-1"
-                    compactBreakpoint={fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH}
-                    {...(fullScreenPhase === "swap" || fullScreenPhase === "enter"
-                      ? { cameraMotion: SNAP_CAMERA }
-                      : {})}
-                    chromeComponents={WORKSPACE_CHROME}
-                    desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
-                    focusAnchor={focusAnchor}
-                    {...(stageViewport.compact && !overview ? { focusHighlight: false } : {})}
-                    getPanePresentation={getPanePresentation}
-                    gridAxes={gridAxes}
-                    initialPanes={initialPanes}
-                    initialLayout={initialLayout}
-                    liveContent
-                    onFocusedPaneFrame={onFocusedPaneFrame}
-                    onLayoutChange={onLayoutChange}
-                    onPresentationModeChange={onPresentationModeChange}
-                    onPaneClose={onPaneClose}
-                    {...(overviewCardWidth === undefined
-                      ? {}
-                      : {
-                          overviewCardMaxWidthPx: overviewCardWidth,
-                          overviewCardMinWidthPx: overviewCardWidth,
-                        })}
-                    paneDefaults={paneDefaults}
-                    renderPane={renderPane}
-                    renderPanePlaceholder={renderPanePlaceholder}
-                    restPictureFade={!alwaysLive}
-                    shortcutScope={active ? "application" : "workspace"}
-                    shortcuts={SHORTCUTS}
-                    workspaceId={WORKSPACE_ID}
-                  />
-                </BrowserSurfaceProjectionContext>
-              </PaneSnapshotContext>
-            </PaneLifecycleContext>
+            <LivePaneUpdatesContext value={liveUpdates}>
+              <PaneLifecycleContext value={lifecycle}>
+                <PaneSnapshotContext value={alwaysLive ? null : paneSnapshots}>
+                  <BrowserSurfaceProjectionContext value={browserProjection}>
+                    <OnirigiriWorkspace
+                      ref={workspaceRef}
+                      ariaLabel="Onirigiri for T3 Code"
+                      className="min-h-0 flex-1"
+                      compactBreakpoint={
+                        fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH
+                      }
+                      {...(fullScreenPhase === "swap" || fullScreenPhase === "enter"
+                        ? { cameraMotion: SNAP_CAMERA }
+                        : {})}
+                      chromeComponents={WORKSPACE_CHROME}
+                      desktopControlsContainer={
+                        preferences.navigationBar ? null : controlsContainer
+                      }
+                      focusAnchor={focusAnchor}
+                      {...(stageViewport.compact && !overview ? { focusHighlight: false } : {})}
+                      getPanePresentation={getPanePresentation}
+                      gridAxes={gridAxes}
+                      initialPanes={initialPanes}
+                      initialLayout={initialLayout}
+                      liveContent
+                      onFocusedPaneFrame={onFocusedPaneFrame}
+                      onLayoutChange={onLayoutChange}
+                      onPresentationModeChange={onPresentationModeChange}
+                      onPaneClose={onPaneClose}
+                      {...(overviewCardWidth === undefined
+                        ? {}
+                        : {
+                            overviewCardMaxWidthPx: overviewCardWidth,
+                            overviewCardMinWidthPx: overviewCardWidth,
+                          })}
+                      paneDefaults={paneDefaults}
+                      renderPane={renderPane}
+                      renderPanePlaceholder={renderPanePlaceholder}
+                      restPictureFade={!alwaysLive}
+                      shortcutScope={active ? "application" : "workspace"}
+                      shortcuts={SHORTCUTS}
+                      workspaceId={WORKSPACE_ID}
+                    />
+                  </BrowserSurfaceProjectionContext>
+                </PaneSnapshotContext>
+              </PaneLifecycleContext>
+            </LivePaneUpdatesContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
         <FullScreenBorder ref={fullScreenBorderRef} />

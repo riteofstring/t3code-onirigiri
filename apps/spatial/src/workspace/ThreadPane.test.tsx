@@ -17,7 +17,12 @@ import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
-import { PaneSnapshotContext, type RequestPaneSnapshot } from "./useSavedPanePictures";
+import {
+  markPaneSynced,
+  usePanePictureTheme,
+  PaneSnapshotContext,
+  type RequestPaneSnapshot,
+} from "./useSavedPanePictures";
 
 const state = vi.hoisted(() => ({
   mounted: true,
@@ -68,6 +73,7 @@ vi.mock("@t3tools/web/src/state/entities", () => ({
     updatedAt: state.shellUpdatedAt,
     runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
   }),
+  useThreadProjectionAvailable: () => state.projection !== null,
   useThreadProjection: (ref: ScopedThreadRef | null) =>
     ref === null || state.projection === null
       ? null
@@ -80,7 +86,7 @@ vi.mock("./useSavedPanePictures", async () => {
   return {
     PaneSnapshotContext: createContext(null),
     markPaneSynced: vi.fn(),
-    usePanePictureTheme: () => "default|dark",
+    usePanePictureTheme: vi.fn(() => "default|dark"),
   };
 });
 vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
@@ -314,6 +320,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 it.each([
@@ -1225,4 +1232,26 @@ it("retains the presented editor while earlier history loads and waits for its f
   expect(state.engineReady).toBe(true);
   expect(requestSnapshot).toHaveBeenCalledOnce();
   expect(container.querySelector("textarea")).toBe(editor);
+});
+
+it("keeps an all-live editor mounted without snapshot revisions or observers", async () => {
+  vi.stubEnv("MODE", "all-live");
+  vi.mocked(markPaneSynced).mockClear();
+  vi.mocked(usePanePictureTheme).mockClear();
+  live();
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep my live draft";
+  expect(state.engineReady).toBe(true);
+  await render(false);
+  live("2026-10-15T13:00:00.000Z");
+  await render(false);
+  await render(true);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep my live draft");
+  expect(markPaneSynced).not.toHaveBeenCalled();
+  expect(usePanePictureTheme).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
 });
