@@ -145,6 +145,7 @@ let shownPicture: Blob | null = null;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 let defaultRowHeight: number | "viewport" = "viewport";
+let picturesEnabled = true;
 const getLayout = () => currentLayout;
 const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 const backgroundPanes = new Set<string>();
@@ -158,7 +159,13 @@ const pictureMount = (id: string) =>
 
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
-  const value = useSavedPanePictures(getLayout, snapshotFailures, defaultRowHeight, pictureMount);
+  const value = useSavedPanePictures(
+    getLayout,
+    snapshotFailures,
+    defaultRowHeight,
+    pictureMount,
+    picturesEnabled,
+  );
   const { pictureFor } = value;
   const shown = useMemo(() => pictureFor(paneId)?.image ?? null, [pictureFor]);
   useEffect(() => {
@@ -311,6 +318,7 @@ afterEach(async () => {
   store.fontSettings = { ...defaultFontSettings };
   currentLayout = layout(400);
   defaultRowHeight = "viewport";
+  picturesEnabled = true;
   markPaneSynced(paneId, null);
   backgroundPanes.clear();
   backgroundLifecycle?.dispose();
@@ -322,6 +330,27 @@ afterEach(async () => {
   );
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("keeps live presentation without restoring or capturing pictures when disabled", async () => {
+  picturesEnabled = false;
+  store.saved.set(paneId, savedPicture());
+  await mount();
+  expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: false });
+  expect(hook.pictureFor(paneId)).toBeNull();
+  expect(decodedUrls).toEqual([]);
+  for (const phase of ["rest", "motion", "overview", "overview-motion", "resize"] as const) {
+    expect(presentationAt(phase)).toBe("dom");
+    expect(presentationAt(phase, false)).toBe("dom");
+  }
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.setCaptureActivity(true, false);
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(4000);
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(store.writes).toEqual([]);
+  expect(store.deleted).toEqual([]);
+  expect(hook.canBackgroundPicture(paneId)).toBe(false);
 });
 
 it("keeps a validated cover until matching replacement pixels arrive", async () => {

@@ -241,6 +241,25 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+it("keeps every chat mounted through navigation and overview in all-live builds", async () => {
+  vi.stubEnv("MODE", "all-live");
+  fixture.panes = Array.from({ length: 40 }, (_, index) => pane(`live-${index}`, 0, index));
+  await render("live-0");
+  const composers = [
+    ...host.querySelectorAll<HTMLTextAreaElement>('textarea[aria-label="Thread composer"]'),
+  ];
+  expect(composers).toHaveLength(40);
+  await key("ArrowRight");
+  expect(status()).toContain("live-1");
+  await key("o");
+  expect(workspace().dataset.presentationMode).toBe("overview");
+  expect([...host.querySelectorAll('textarea[aria-label="Thread composer"]')]).toEqual(composers);
+  await key("o");
+  expect(workspace().dataset.presentationMode).toBe("normal");
+  expect([...host.querySelectorAll('textarea[aria-label="Thread composer"]')]).toEqual(composers);
 });
 
 it("applies row height to manually sized rows without changing widths or selection", async () => {

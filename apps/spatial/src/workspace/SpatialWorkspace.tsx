@@ -165,6 +165,7 @@ function SpatialWorkspaceView({
   layoutMode: WorkspaceLayoutMode;
   onLayoutModeChange: (mode: WorkspaceLayoutMode) => void;
 }) {
+  const alwaysLive = import.meta.env.MODE === "all-live";
   const router = useRouter();
   const { controller: toolController, bindWorkspace } = useSpatialController();
   const { toolPanes, addEmpty, getPanes, remove } = toolController;
@@ -260,7 +261,13 @@ function SpatialWorkspaceView({
     setCaptureActivity,
     stageRef,
     stageViewport,
-  } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight, pictureMount);
+  } = useSavedPanePictures(
+    getLayout,
+    onSnapshotFailure,
+    preferences.rowHeight,
+    pictureMount,
+    !alwaysLive,
+  );
   const {
     requested: fullScreenRequested,
     fullScreen,
@@ -348,7 +355,7 @@ function SpatialWorkspaceView({
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
 
-  if (lifecycle === null && initialLayout !== null) {
+  if (!alwaysLive && lifecycle === null && initialLayout !== null) {
     setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
   }
 
@@ -425,10 +432,10 @@ function SpatialWorkspaceView({
   const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
-    const pictures = active && fullScreenPhase === null;
+    const pictures = !alwaysLive && active && fullScreenPhase === null;
     lifecycle?.setBackgroundPictures(pictures);
     setCaptureActivity(pictures, lifecycle?.isMoving() ?? false);
-  }, [active, fullScreenPhase, lifecycle, setCaptureActivity]);
+  }, [active, alwaysLive, fullScreenPhase, lifecycle, setCaptureActivity]);
 
   const requestedRoutesRef = useRef(new Set<string>());
   const pendingNavigationPaneRef = useRef<string | null>(null);
@@ -462,7 +469,10 @@ function SpatialWorkspaceView({
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
       syncMaximized();
-      setCaptureActivity(activeRef.current && fullScreenPhaseRef.current === null, moving);
+      setCaptureActivity(
+        !alwaysLive && activeRef.current && fullScreenPhaseRef.current === null,
+        moving,
+      );
       lifecycle?.setMoving(activeRef.current && moving);
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
       if (paneId === focusedPaneIdRef.current || !activeRef.current) return;
@@ -498,7 +508,7 @@ function SpatialWorkspaceView({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
+    [alwaysLive, getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
   );
 
   useEffect(() => {
@@ -851,10 +861,10 @@ function SpatialWorkspaceView({
           controlsRef={setControlsContainer}
           shortcuts={SHORTCUTS}
         />
-        {initialPanes && lifecycle ? (
+        {initialPanes && (alwaysLive || lifecycle) ? (
           <SpatialWorkspaceActiveContext value={active}>
             <PaneLifecycleContext value={lifecycle}>
-              <PaneSnapshotContext value={paneSnapshots}>
+              <PaneSnapshotContext value={alwaysLive ? null : paneSnapshots}>
                 <BrowserSurfaceProjectionContext value={browserProjection}>
                   <OnirigiriWorkspace
                     ref={workspaceRef}
@@ -886,7 +896,7 @@ function SpatialWorkspaceView({
                     paneDefaults={paneDefaults}
                     renderPane={renderPane}
                     renderPanePlaceholder={renderPanePlaceholder}
-                    restPictureFade
+                    restPictureFade={!alwaysLive}
                     shortcutScope={active ? "application" : "workspace"}
                     shortcuts={SHORTCUTS}
                     workspaceId={WORKSPACE_ID}

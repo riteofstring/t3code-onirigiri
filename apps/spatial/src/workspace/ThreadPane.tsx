@@ -273,7 +273,7 @@ export const ThreadPane = memo(function ThreadPane({
   const producerInspected = useRef(false);
   useLayoutEffect(() => {
     const element = contentRef.current;
-    if (!element) return;
+    if (!element || !snapshots) return;
     if (!mounted) {
       snapshotPrepared.current = false;
       producerInspected.current = false;
