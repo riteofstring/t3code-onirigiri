@@ -36,7 +36,6 @@ import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import {
   useThreadHistory,
   useThreadProjection,
-  useThreadProjectionAvailable,
   useThreadShell,
   useThreadStatus,
 } from "@t3tools/web/src/state/entities";
@@ -47,7 +46,6 @@ import {
 } from "@t3tools/web/src/panelAnimations";
 
 import { usePaneActivity } from "./paneActivity";
-import { useLivePaneWarm } from "./livePaneUpdates";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
@@ -217,37 +215,28 @@ function createPaneRouter(threadPath: string) {
   });
 }
 
-interface ThreadPaneProps {
+export const ThreadPane = memo(function ThreadPane({
+  thread,
+  paneId,
+  focused,
+  visible,
+  onNavigateAway,
+  maximized = false,
+  onAddPane,
+  onClosePane,
+  onToggleMaximized,
+}: {
   thread: ThreadPaneThread;
   paneId: string;
   focused: boolean;
   visible: boolean;
   onNavigateAway: (href: string) => void;
   maximized?: boolean;
-  onAddPane?: ((paneId: string) => void) | undefined;
-  onClosePane?: ((paneId: string) => void) | undefined;
-  onToggleMaximized?: ((paneId: string) => void) | undefined;
-}
-
-export const ThreadPane = memo(function ThreadPane(props: ThreadPaneProps) {
-  return import.meta.env.MODE === "all-live" ? (
-    <LiveThreadPane {...props} />
-  ) : (
-    <PictureThreadPane {...props} />
-  );
-});
-
-function usePaneControls({
-  paneId,
-  maximized = false,
-  onAddPane,
-  onClosePane,
-  onToggleMaximized,
-}: Pick<
-  ThreadPaneProps,
-  "paneId" | "maximized" | "onAddPane" | "onClosePane" | "onToggleMaximized"
->) {
-  return useMemo(
+  onAddPane?: (paneId: string) => void;
+  onClosePane?: (paneId: string) => void;
+  onToggleMaximized?: (paneId: string) => void;
+}) {
+  const paneControls = useMemo(
     () =>
       onAddPane && onClosePane && onToggleMaximized
         ? {
@@ -259,81 +248,6 @@ function usePaneControls({
         : null,
     [maximized, onAddPane, onClosePane, onToggleMaximized, paneId],
   );
-}
-
-function LiveThreadPane(props: ThreadPaneProps) {
-  const { thread, paneId, visible, focused, onNavigateAway } = props;
-  const paneControls = usePaneControls(props);
-  const interactive = useOnirigiriPaneInteractive();
-  const workspaceActive = use(SpatialWorkspaceActiveContext);
-  const warm = useLivePaneWarm(paneId, visible, focused);
-  const liveVisible = workspaceActive && interactive;
-  const active = focused && liveVisible;
-  const contentRef = useRef<HTMLDivElement>(null);
-  const activity = usePaneActivity(active, liveVisible, contentRef, workspaceActive && warm);
-  const paneComposerRef = usePaneComposerHandle(active);
-  const threadPath = `/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
-  const [router] = useState(() => createPaneRouter(threadPath));
-  // Retain the data subscription even while transcript rendering is deferred.
-  const available = useThreadProjectionAvailable(thread);
-  const status = useThreadStatus(thread);
-  const history = useThreadHistory(thread);
-  const [mounted, setMounted] = useState(false);
-  if (!mounted && (available || focused || status === "deleted")) setMounted(true);
-  const [ready, setReady] = useState(false);
-  useOnirigiriPaneContentReady(status === "deleted" || (ready && !history.loading));
-  useEffect(
-    () =>
-      router.history.subscribe(({ location }) => {
-        if (location.pathname === threadPath) return;
-        onNavigateAway(location.href);
-        router.history.replace(threadPath);
-      }),
-    [onNavigateAway, router, threadPath],
-  );
-
-  return (
-    <ChatPaneControlsContext value={paneControls}>
-      <ChatViewActivityContext value={activity}>
-        <ComposerHandleContext value={paneComposerRef}>
-          <div
-            ref={contentRef}
-            onKeyDownCapture={leaveComposerOnEscape}
-            className="spatial-thread-pane h-full w-full"
-            data-spatial-thread={thread.threadId}
-            data-spatial-active={String(active)}
-            data-spatial-preparing={
-              mounted && (!ready || (workspaceActive && warm && !visible)) ? "" : undefined
-            }
-          >
-            <ChatViewContentReadyProvider onReadyChange={setReady}>
-              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
-            </ChatViewContentReadyProvider>
-          </div>
-        </ComposerHandleContext>
-      </ChatViewActivityContext>
-    </ChatPaneControlsContext>
-  );
-}
-
-const PictureThreadPane = memo(function PictureThreadPane({
-  thread,
-  paneId,
-  focused,
-  visible,
-  onNavigateAway,
-  maximized = false,
-  onAddPane,
-  onClosePane,
-  onToggleMaximized,
-}: ThreadPaneProps) {
-  const paneControls = usePaneControls({
-    paneId,
-    maximized,
-    onAddPane,
-    onClosePane,
-    onToggleMaximized,
-  });
   const interactive = useOnirigiriPaneInteractive();
   const workspaceActive = use(SpatialWorkspaceActiveContext);
   const liveVisible = workspaceActive && interactive;

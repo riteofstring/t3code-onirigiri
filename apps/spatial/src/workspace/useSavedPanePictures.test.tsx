@@ -81,11 +81,9 @@ vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: typeof defaultFontSettings) => unknown) =>
     select(store.fontSettings),
 }));
-const emptyShells: unknown[] = [];
 let shells: { key: string; value: unknown[] } | null = null;
 vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThreadShells: (enabled = true) => {
-    if (!enabled) return emptyShells;
+  useThreadShells: () => {
     const key = JSON.stringify([store.threadIds, store.updatedAt, store.runtimeStatus]);
     if (shells?.key !== key)
       shells = {
@@ -160,7 +158,7 @@ const pictureMount = (id: string) =>
       : "ordinary";
 
 function Probe() {
-  const pictureAppearance = usePanePictureTheme(picturesEnabled);
+  const pictureAppearance = usePanePictureTheme();
   const value = useSavedPanePictures(
     getLayout,
     snapshotFailures,
@@ -336,11 +334,6 @@ afterEach(async () => {
 
 it("keeps live presentation without restoring or capturing pictures when disabled", async () => {
   picturesEnabled = false;
-  const readPictureFont = vi.fn(() => 16);
-  Object.defineProperty(store.fontSettings, "fontSizeInterface", {
-    get: readPictureFont,
-    configurable: true,
-  });
   store.saved.set(paneId, savedPicture());
   await mount();
   expect(hook.stageViewport).toEqual({ width: 800, height: 600, compact: false });
@@ -358,7 +351,6 @@ it("keeps live presentation without restoring or capturing pictures when disable
   expect(store.writes).toEqual([]);
   expect(store.deleted).toEqual([]);
   expect(hook.canBackgroundPicture(paneId)).toBe(false);
-  expect(readPictureFont).not.toHaveBeenCalled();
 });
 
 it("keeps a validated cover until matching replacement pixels arrive", async () => {

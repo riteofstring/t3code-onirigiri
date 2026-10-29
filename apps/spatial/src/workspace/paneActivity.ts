@@ -1,27 +1,22 @@
 import type { ChatViewActivity } from "@t3tools/web/src/components/chatViewActivity";
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 
-function createPaneActivity(initial: boolean, initiallyVisible: boolean, initiallyWarm?: boolean) {
+function createPaneActivity(initial: boolean, initiallyVisible: boolean) {
   let active = initial;
   let visible = initiallyVisible;
-  let warm = initiallyWarm;
   const listeners = new Set<() => void>();
-  const activity: ChatViewActivity & {
-    set: (next: boolean, nextVisible: boolean, nextWarm?: boolean) => void;
-  } = {
+  const activity: ChatViewActivity & { set: (next: boolean, nextVisible: boolean) => void } = {
     autofocusComposer: false,
     isActive: () => active,
     isVisible: () => visible,
-    ...(initiallyWarm === undefined ? {} : { shouldUpdateContent: () => warm ?? true }),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    set: (next, nextVisible, nextWarm) => {
-      if (next === active && nextVisible === visible && nextWarm === warm) return;
+    set: (next, nextVisible) => {
+      if (next === active && nextVisible === visible) return;
       active = next;
       visible = nextVisible;
-      warm = nextWarm;
       for (const listener of listeners) listener();
     },
   };
@@ -32,11 +27,10 @@ export function usePaneActivity(
   active: boolean,
   visible: boolean,
   root: RefObject<HTMLElement | null>,
-  warm?: boolean,
 ) {
-  const [activity] = useState(() => createPaneActivity(active, visible, warm));
-  useLayoutEffect(() => {
-    activity.set(active, visible, warm);
+  const [activity] = useState(() => createPaneActivity(active, visible));
+  useEffect(() => {
+    activity.set(active, visible);
     const focused = document.activeElement;
     if (!active && focused instanceof HTMLElement) {
       const ownsGuest =
@@ -46,6 +40,6 @@ export function usePaneActivity(
         ].some((slot) => slot.dataset.browserSurfaceSlot === focused.dataset.previewTab);
       if (ownsGuest || root.current?.contains(focused)) focused.blur();
     }
-  }, [active, visible, warm, activity, root]);
+  }, [active, visible, activity, root]);
   return activity;
 }
