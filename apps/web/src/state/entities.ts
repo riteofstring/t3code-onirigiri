@@ -81,8 +81,8 @@ export function setActiveEnvironmentId(environmentId: EnvironmentId | null): voi
   appAtomRegistry.set(activeEnvironmentIdAtom, environmentId);
 }
 
-export function useThreadRefs(): ReadonlyArray<ScopedThreadRef> {
-  return useAtomValue(environmentThreadShells.threadRefsAtom);
+export function useThreadRefs(enabled = true): ReadonlyArray<ScopedThreadRef> {
+  return useAtomValue(enabled ? environmentThreadShells.threadRefsAtom : EMPTY_THREAD_REFS_ATOM);
 }
 
 export function useEnvironmentThreadRefs(
@@ -160,6 +160,15 @@ export function useChildThreadInputs(ref: ScopedThreadRef | null) {
 export function useThreadProjection(ref: ScopedThreadRef | null): EnvironmentThread | null {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_PROJECTION_ATOM : environmentThreadDetails.threadAtom(ref),
+  );
+}
+
+const hasThreadProjection = (thread: EnvironmentThread | null) => thread !== null;
+
+export function useThreadProjectionAvailable(ref: ScopedThreadRef | null): boolean {
+  return useAtomValue(
+    ref === null ? EMPTY_THREAD_PROJECTION_ATOM : environmentThreadDetails.threadAtom(ref),
+    hasThreadProjection,
   );
 }
 

@@ -62,6 +62,7 @@ import {
   threadLayoutPositions,
 } from "./workspaceLayout";
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
+import { LivePaneUpdatesContext, createLivePaneUpdates } from "./livePaneUpdates";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
@@ -165,6 +166,7 @@ function SpatialWorkspaceView({
   layoutMode: WorkspaceLayoutMode;
   onLayoutModeChange: (mode: WorkspaceLayoutMode) => void;
 }) {
+  const alwaysLive = import.meta.env.MODE === "all-live";
   const router = useRouter();
   const { controller: toolController, bindWorkspace } = useSpatialController();
   const { toolPanes, addEmpty, getPanes, remove } = toolController;
@@ -237,6 +239,9 @@ function SpatialWorkspaceView({
   const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
     null,
   );
+  const [liveUpdates, setLiveUpdates] = useState<ReturnType<typeof createLivePaneUpdates> | null>(
+    null,
+  );
   const onSnapshotFailure = useCallback(
     (paneId: string, startedAt: number) => lifecycle?.pictureFailed(paneId, startedAt),
     [lifecycle],
@@ -260,7 +265,13 @@ function SpatialWorkspaceView({
     setCaptureActivity,
     stageRef,
     stageViewport,
-  } = useSavedPanePictures(getLayout, onSnapshotFailure, preferences.rowHeight, pictureMount);
+  } = useSavedPanePictures(
+    getLayout,
+    onSnapshotFailure,
+    preferences.rowHeight,
+    pictureMount,
+    !alwaysLive,
+  );
   const {
     requested: fullScreenRequested,
     fullScreen,
@@ -292,8 +303,9 @@ function SpatialWorkspaceView({
       syncMaximized();
       onPictureLayoutChange(layout);
       lifecycle?.setPanes(threadLayoutPositions(layout));
+      liveUpdates?.setPanes(threadLayoutPositions(layout));
     },
-    [layoutPersistence, lifecycle, onPictureLayoutChange, syncMaximized],
+    [layoutPersistence, lifecycle, liveUpdates, onPictureLayoutChange, syncMaximized],
   );
 
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -348,8 +360,18 @@ function SpatialWorkspaceView({
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
       : null;
 
+  if (alwaysLive && liveUpdates === null && initialLayout !== null) {
+    setLiveUpdates(createLivePaneUpdates(threadLayoutPositions(initialLayout), routePaneId));
+  }
+
   if (lifecycle === null && initialLayout !== null) {
-    setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
+    setLifecycle(
+      createPaneLifecycleStore(
+        threadLayoutPositions(initialLayout),
+        routePaneId,
+        alwaysLive ? Number.POSITIVE_INFINITY : undefined,
+      ),
+    );
   }
 
   useEffect(() => {
@@ -414,21 +436,24 @@ function SpatialWorkspaceView({
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useLayoutEffect(() => {
+    if (alwaysLive) return;
     lifecycle?.setRetainedPanes(retainedPaneIds);
-  }, [lifecycle, retainedPaneIds]);
+  }, [alwaysLive, lifecycle, retainedPaneIds]);
   useEffect(() => {
+    if (alwaysLive) return;
     lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
-  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
+  }, [alwaysLive, hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
   useEffect(() => {
+    if (alwaysLive) return;
     lifecycle?.setRunning(active ? runningPanes : new Set());
-  }, [active, lifecycle, runningPanes]);
+  }, [active, alwaysLive, lifecycle, runningPanes]);
   const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
-    const pictures = active && fullScreenPhase === null;
+    const pictures = !alwaysLive && active && fullScreenPhase === null;
     lifecycle?.setBackgroundPictures(pictures);
     setCaptureActivity(pictures, lifecycle?.isMoving() ?? false);
-  }, [active, fullScreenPhase, lifecycle, setCaptureActivity]);
+  }, [active, alwaysLive, fullScreenPhase, lifecycle, setCaptureActivity]);
 
   const requestedRoutesRef = useRef(new Set<string>());
   const pendingNavigationPaneRef = useRef<string | null>(null);
@@ -462,13 +487,17 @@ function SpatialWorkspaceView({
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
       syncMaximized();
-      setCaptureActivity(activeRef.current && fullScreenPhaseRef.current === null, moving);
+      setCaptureActivity(
+        !alwaysLive && activeRef.current && fullScreenPhaseRef.current === null,
+        moving,
+      );
       lifecycle?.setMoving(activeRef.current && moving);
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
       if (paneId === focusedPaneIdRef.current || !activeRef.current) return;
       focusedPaneIdRef.current = paneId;
       if (paneId === null) {
         lifecycle?.setFocus(null);
+        liveUpdates?.setFocus(null);
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
         return;
       }
@@ -481,6 +510,7 @@ function SpatialWorkspaceView({
         .getState()
         .setFocusedThreadKey(scopedThreadKey(scopeThreadRef(data.environmentId, data.threadId)));
       if (!tool) lifecycle?.setFocus(paneId);
+      liveUpdates?.setFocus(routeTarget);
       if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
       const follow = () => {
         if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
@@ -498,7 +528,16 @@ function SpatialWorkspaceView({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
+    [
+      alwaysLive,
+      getPanes,
+      syncMaximized,
+      lifecycle,
+      liveUpdates,
+      paneData,
+      router,
+      setCaptureActivity,
+    ],
   );
 
   useEffect(() => {
@@ -853,47 +892,53 @@ function SpatialWorkspaceView({
         />
         {initialPanes && lifecycle ? (
           <SpatialWorkspaceActiveContext value={active}>
-            <PaneLifecycleContext value={lifecycle}>
-              <PaneSnapshotContext value={paneSnapshots}>
-                <BrowserSurfaceProjectionContext value={browserProjection}>
-                  <OnirigiriWorkspace
-                    ref={workspaceRef}
-                    ariaLabel="Onirigiri for T3 Code"
-                    className="min-h-0 flex-1"
-                    compactBreakpoint={fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH}
-                    {...(fullScreenPhase === "swap" || fullScreenPhase === "enter"
-                      ? { cameraMotion: SNAP_CAMERA }
-                      : {})}
-                    chromeComponents={WORKSPACE_CHROME}
-                    desktopControlsContainer={preferences.navigationBar ? null : controlsContainer}
-                    focusAnchor={focusAnchor}
-                    {...(stageViewport.compact && !overview ? { focusHighlight: false } : {})}
-                    getPanePresentation={getPanePresentation}
-                    gridAxes={gridAxes}
-                    initialPanes={initialPanes}
-                    initialLayout={initialLayout}
-                    liveContent
-                    onFocusedPaneFrame={onFocusedPaneFrame}
-                    onLayoutChange={onLayoutChange}
-                    onPresentationModeChange={onPresentationModeChange}
-                    onPaneClose={onPaneClose}
-                    {...(overviewCardWidth === undefined
-                      ? {}
-                      : {
-                          overviewCardMaxWidthPx: overviewCardWidth,
-                          overviewCardMinWidthPx: overviewCardWidth,
-                        })}
-                    paneDefaults={paneDefaults}
-                    renderPane={renderPane}
-                    renderPanePlaceholder={renderPanePlaceholder}
-                    restPictureFade
-                    shortcutScope={active ? "application" : "workspace"}
-                    shortcuts={SHORTCUTS}
-                    workspaceId={WORKSPACE_ID}
-                  />
-                </BrowserSurfaceProjectionContext>
-              </PaneSnapshotContext>
-            </PaneLifecycleContext>
+            <LivePaneUpdatesContext value={liveUpdates}>
+              <PaneLifecycleContext value={lifecycle}>
+                <PaneSnapshotContext value={alwaysLive ? null : paneSnapshots}>
+                  <BrowserSurfaceProjectionContext value={browserProjection}>
+                    <OnirigiriWorkspace
+                      ref={workspaceRef}
+                      ariaLabel="Onirigiri for T3 Code"
+                      className="min-h-0 flex-1"
+                      compactBreakpoint={
+                        fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH
+                      }
+                      {...(fullScreenPhase === "swap" || fullScreenPhase === "enter"
+                        ? { cameraMotion: SNAP_CAMERA }
+                        : {})}
+                      chromeComponents={WORKSPACE_CHROME}
+                      desktopControlsContainer={
+                        preferences.navigationBar ? null : controlsContainer
+                      }
+                      focusAnchor={focusAnchor}
+                      {...(stageViewport.compact && !overview ? { focusHighlight: false } : {})}
+                      getPanePresentation={getPanePresentation}
+                      gridAxes={gridAxes}
+                      initialPanes={initialPanes}
+                      initialLayout={initialLayout}
+                      liveContent
+                      onFocusedPaneFrame={onFocusedPaneFrame}
+                      onLayoutChange={onLayoutChange}
+                      onPresentationModeChange={onPresentationModeChange}
+                      onPaneClose={onPaneClose}
+                      {...(overviewCardWidth === undefined
+                        ? {}
+                        : {
+                            overviewCardMaxWidthPx: overviewCardWidth,
+                            overviewCardMinWidthPx: overviewCardWidth,
+                          })}
+                      paneDefaults={paneDefaults}
+                      renderPane={renderPane}
+                      renderPanePlaceholder={renderPanePlaceholder}
+                      restPictureFade={!alwaysLive}
+                      shortcutScope={active ? "application" : "workspace"}
+                      shortcuts={SHORTCUTS}
+                      workspaceId={WORKSPACE_ID}
+                    />
+                  </BrowserSurfaceProjectionContext>
+                </PaneSnapshotContext>
+              </PaneLifecycleContext>
+            </LivePaneUpdatesContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
         <FullScreenBorder ref={fullScreenBorderRef} />

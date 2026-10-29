@@ -73,20 +73,22 @@ interface PaneSnapshots {
 
 export const PaneSnapshotContext = createContext<PaneSnapshots | null>(null);
 
-export function usePanePictureTheme(): string {
+export function usePanePictureTheme(enabled = true): string {
   const { theme, resolvedTheme, themeHalves } = useTheme();
   const fonts = useClientSettings((settings) =>
-    JSON.stringify([
-      settings.fontFamilySans,
-      settings.fontFamilyCode,
-      settings.fontFamilyComposer,
-      settings.fontSizeInterface,
-      settings.fontSizePrompt,
-      settings.fontSizeCode,
-      settings.fontSmoothing,
-    ]),
+    enabled
+      ? JSON.stringify([
+          settings.fontFamilySans,
+          settings.fontFamilyCode,
+          settings.fontFamilyComposer,
+          settings.fontSizeInterface,
+          settings.fontSizePrompt,
+          settings.fontSizeCode,
+          settings.fontSmoothing,
+        ])
+      : "",
   );
-  return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}`;
+  return enabled ? `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}` : "";
 }
 
 export function markPaneSynced(
@@ -122,6 +124,7 @@ export function useSavedPanePictures(
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
   defaultRowHeight: number | "viewport" = "viewport",
   pictureMount: (paneId: string) => PictureMount = () => "ordinary",
+  enabled = true,
 ): {
   getPanePresentation: PanePresentationResolver;
   onLayoutChange: (layout: OnirigiriLayout) => void;
@@ -139,8 +142,8 @@ export function useSavedPanePictures(
   stageViewport: { width: number; height: number; compact: boolean };
 } {
   "use no memo";
-  const threads = useThreadShells();
-  const pictureTheme = usePanePictureTheme();
+  const threads = useThreadShells(enabled);
+  const pictureTheme = usePanePictureTheme(enabled);
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const savedRef = useRef(saved);
   type Retention = "live" | "awaiting-picture";
@@ -198,6 +201,7 @@ export function useSavedPanePictures(
 
   const deletedWhileLoading = useRef<Set<string> | null>(new Set());
   useEffect(() => {
+    if (!enabled) return;
     let current = true;
     loadPanePictures()
       .catch(() => new Map<string, SavedPanePicture>())
@@ -215,7 +219,7 @@ export function useSavedPanePictures(
     return () => {
       current = false;
     };
-  }, [updateSaved]);
+  }, [enabled, updateSaved]);
 
   const workspaceElementRef = useRef<HTMLElement | null>(null);
   const observedStageRef = useRef<HTMLElement | null>(null);
@@ -299,6 +303,7 @@ export function useSavedPanePictures(
   const onLayoutChange = useCallback(
     (layout: OnirigiriLayout) => {
       observeStage();
+      if (!enabled) return;
       const next = paneGeometry(layout);
       const previous = paneGeometryRef.current;
       paneGeometryRef.current = next;
@@ -312,7 +317,7 @@ export function useSavedPanePictures(
         updateRetained(new Map([...retainedRef.current].filter(([paneId]) => next.has(paneId))));
       }
     },
-    [observeStage, updateRetained],
+    [enabled, observeStage, updateRetained],
   );
 
   const geometryRevision = useCallback(
@@ -384,12 +389,13 @@ export function useSavedPanePictures(
   }, [contentRevisions, geometryVersion, recordKey, saved]);
   const canBackgroundPicture = useCallback(
     (paneId: string, visited = false) => {
+      if (!enabled) return false;
       const key = recordKey(paneId);
       if (key === null || retained.get(paneId) === "live" || runningPanes.has(paneId)) return false;
       if (visited || saved === null || saved.has(key)) return true;
       return savedHere.count < MAX_SAVED && savedHere.bytes + savedHere.largest <= MAX_SAVED_BYTES;
     },
-    [recordKey, retained, runningPanes, saved, savedHere],
+    [enabled, recordKey, retained, runningPanes, saved, savedHere],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
@@ -434,6 +440,7 @@ export function useSavedPanePictures(
   );
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
+      if (!enabled) return null;
       const key = recordKey(paneId);
       const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
@@ -445,11 +452,12 @@ export function useSavedPanePictures(
       return fresh ?? validatedCoverFor(paneId);
     },
     // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again, and observer geometry selects another record; a replaced cover already changes `saved`.
-    [coverVersion, geometryVersion, recordKey, saved, validatedCoverFor],
+    [coverVersion, enabled, geometryVersion, recordKey, saved, validatedCoverFor],
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
     (pane, { phase, visible, focused }) => {
       if (
+        !enabled ||
         pane.surfaceKind !== "thread" ||
         retained.get(pane.paneId) === "live" ||
         runningPanes.has(pane.paneId)
@@ -460,9 +468,10 @@ export function useSavedPanePictures(
         ? { kind: "placeholder" }
         : "dom";
     },
-    [pictureFor, retained, runningPanes],
+    [enabled, pictureFor, retained, runningPanes],
   );
   useLayoutEffect(() => {
+    if (!enabled) return;
     for (const [key, picture] of lastValidPictures.current) {
       if (
         retainedRef.current.get(picture.paneId) === "live" ||
@@ -492,6 +501,7 @@ export function useSavedPanePictures(
     if (waiting.length !== retainedRef.current.size) updateRetained(new Map(waiting));
   }, [
     contentRevisions,
+    enabled,
     freshPictureFor,
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
     geometryVersion,
@@ -616,45 +626,48 @@ export function useSavedPanePictures(
   const [snapshots] = useState(createSnapshotQueue);
   useEffect(
     () =>
-      snapshots.setDraw(
-        (...args) => drawSnapshotRef.current(...args),
-        (paneId) => {
-          const key = recordKey(paneId);
-          const content = contentRevisionsRef.current.get(paneId);
-          if (
-            key === null ||
-            !content ||
-            retainedRef.current.get(paneId) === "live" ||
-            runningPanesRef.current.has(paneId) ||
-            !syncedPanes.has(paneId)
+      enabled
+        ? snapshots.setDraw(
+            (...args) => drawSnapshotRef.current(...args),
+            (paneId) => {
+              const key = recordKey(paneId);
+              const content = contentRevisionsRef.current.get(paneId);
+              if (
+                key === null ||
+                !content ||
+                retainedRef.current.get(paneId) === "live" ||
+                runningPanesRef.current.has(paneId) ||
+                !syncedPanes.has(paneId)
+              )
+                return false;
+              const previous = savedRef.current?.get(key);
+              return (
+                !previous ||
+                previous.revision !== pictureRevision(contentKey(content), previous.source) ||
+                !pictureMatchesVisualRevision(paneId, previous.image)
+              );
+            },
+            // A picture saved at another size shows the pane at its old size, so only a
+            // picture at the current geometry earns the longer quiet wait.
+            (paneId) => {
+              const key = recordKey(paneId);
+              return key !== null && savedRef.current?.has(key) === true;
+            },
+            (paneId) => {
+              const mount = pictureMountRef.current(paneId);
+              return mount === "background" && pictureForRef.current(paneId) !== null
+                ? "ordinary"
+                : mount;
+            },
           )
-            return false;
-          const previous = savedRef.current?.get(key);
-          return (
-            !previous ||
-            previous.revision !== pictureRevision(contentKey(content), previous.source) ||
-            !pictureMatchesVisualRevision(paneId, previous.image)
-          );
-        },
-        // A picture saved at another size shows the pane at its old size, so only a
-        // picture at the current geometry earns the longer quiet wait.
-        (paneId) => {
-          const key = recordKey(paneId);
-          return key !== null && savedRef.current?.has(key) === true;
-        },
-        (paneId) => {
-          const mount = pictureMountRef.current(paneId);
-          return mount === "background" && pictureForRef.current(paneId) !== null
-            ? "ordinary"
-            : mount;
-        },
-      ),
-    [pictureMatchesVisualRevision, recordKey, snapshots],
+        : undefined,
+    [enabled, pictureMatchesVisualRevision, recordKey, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
       geometryVersion,
       invalidate: (paneId, committed = false) => {
+        if (!enabled) return;
         const previous = visualRevision(paneId);
         const next = previous + 1;
         visualRevisions.current.set(paneId, next);
@@ -663,6 +676,7 @@ export function useSavedPanePictures(
           syncedPanes.set(paneId, { ...content, visualRevision: next });
       },
       setLiveProducer: (paneId, present) => {
+        if (!enabled) return visualRevision(paneId);
         const previous = retainedRef.current.get(paneId);
         if (present === (previous === "live")) return visualRevision(paneId);
         const next = new Map(retainedRef.current);
@@ -684,6 +698,7 @@ export function useSavedPanePictures(
         return visualRevision(paneId);
       },
       request: (paneId, element) => {
+        if (!enabled) return visualRevision(paneId);
         const content = contentRevisionsRef.current.get(paneId);
         if (
           content &&
@@ -697,7 +712,7 @@ export function useSavedPanePictures(
         return visualRevision(paneId);
       },
     }),
-    [geometryVersion, snapshots, updateRetained, updateSaved, visualRevision],
+    [enabled, geometryVersion, snapshots, updateRetained, updateSaved, visualRevision],
   );
 
   return {
@@ -710,7 +725,7 @@ export function useSavedPanePictures(
     canBackgroundPicture,
     runningPanes,
     retainedPaneIds,
-    picturesLoaded: saved !== null,
+    picturesLoaded: !enabled || saved !== null,
     paneSnapshots,
     setCaptureActivity: snapshots.setActivity,
     stageRef,

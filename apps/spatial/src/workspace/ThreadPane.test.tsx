@@ -16,8 +16,14 @@ import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatCo
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
+import { createLivePaneUpdates, LivePaneUpdatesContext } from "./livePaneUpdates";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
-import { PaneSnapshotContext, type RequestPaneSnapshot } from "./useSavedPanePictures";
+import {
+  markPaneSynced,
+  usePanePictureTheme,
+  PaneSnapshotContext,
+  type RequestPaneSnapshot,
+} from "./useSavedPanePictures";
 
 const state = vi.hoisted(() => ({
   mounted: true,
@@ -36,6 +42,7 @@ const state = vi.hoisted(() => ({
   panelRenders: 0,
   checkoutReady: true,
   timelineReady: true,
+  showDeferredTranscript: false,
   composerMounted: true,
   hasChatView: true,
   suspended: false,
@@ -68,6 +75,8 @@ vi.mock("@t3tools/web/src/state/entities", () => ({
     updatedAt: state.shellUpdatedAt,
     runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
   }),
+  useThreadProjectionAvailable: (ref: ScopedThreadRef | null) =>
+    ref !== null && state.projection !== null,
   useThreadProjection: (ref: ScopedThreadRef | null) =>
     ref === null || state.projection === null
       ? null
@@ -80,7 +89,7 @@ vi.mock("./useSavedPanePictures", async () => {
   return {
     PaneSnapshotContext: createContext(null),
     markPaneSynced: vi.fn(),
-    usePanePictureTheme: () => "default|dark",
+    usePanePictureTheme: vi.fn(() => "default|dark"),
   };
 });
 vi.mock("@t3tools/web/src/hooks/useSettings", () => ({
@@ -103,6 +112,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
   const { useActiveChatViewEffect, useChatViewActivity } =
     await import("@t3tools/web/src/components/chatViewActivity");
   const { useNowMinute } = await import("@t3tools/web/src/hooks/useNowMinute");
+  const { DeferredChatContent } = await import("@t3tools/web/src/components/DeferredChatContent");
   function Clock() {
     const minute = useNowMinute(useChatViewActivity());
     return <output aria-label="Current minute">{minute}</output>;
@@ -149,6 +159,11 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
     );
     return (
       <>
+        {state.showDeferredTranscript ? (
+          <DeferredChatContent>
+            <output aria-label="Transcript revision">{state.projection?.updatedAt}</output>
+          </DeferredChatContent>
+        ) : null}
         {state.showClock ? <Clock /> : null}
         {state.suspended ? <ChatViewPendingContent /> : null}
         <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
@@ -175,7 +190,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
           return () => state.listeners.delete(listener);
         },
         () =>
-          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}:${state.suspended}`,
+          `${state.status}:${state.checkoutReady}:${state.timelineReady}:${state.hasChatView}:${state.composerVersion}:${state.suspended}:${state.showDeferredTranscript ? state.projection?.updatedAt : ""}`,
       );
       return state.hasChatView ? (
         <>
@@ -192,6 +207,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
 let root: Root;
 let container: HTMLDivElement;
 let lifecycle: PaneLifecycleStore | null;
+let liveUpdates: ReturnType<typeof createLivePaneUpdates> | null;
 let paneId: string;
 let appSuppressed: boolean;
 let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
@@ -220,17 +236,19 @@ async function render(focused = false, paintFrames = true, visible = focused) {
       <SpatialWorkspaceActiveContext value={workspaceActive}>
         <ComposerHandleContext value={appComposerRef}>
           <PanelAnimationSuppressionProvider value={appSuppressed}>
-            <PaneLifecycleContext value={lifecycle}>
-              <PaneSnapshotContext value={snapshots}>
-                <ThreadPane
-                  paneId={paneId}
-                  thread={{ ...thread }}
-                  focused={focused}
-                  visible={visible}
-                  onNavigateAway={onNavigateAway}
-                />
-              </PaneSnapshotContext>
-            </PaneLifecycleContext>
+            <LivePaneUpdatesContext value={liveUpdates}>
+              <PaneLifecycleContext value={lifecycle}>
+                <PaneSnapshotContext value={snapshots}>
+                  <ThreadPane
+                    paneId={paneId}
+                    thread={{ ...thread }}
+                    focused={focused}
+                    visible={visible}
+                    onNavigateAway={onNavigateAway}
+                  />
+                </PaneSnapshotContext>
+              </PaneLifecycleContext>
+            </LivePaneUpdatesContext>
           </PanelAnimationSuppressionProvider>
         </ComposerHandleContext>
       </SpatialWorkspaceActiveContext>,
@@ -254,6 +272,8 @@ beforeEach(() => {
   );
   vi.stubGlobal("cancelIdleCallback", clearTimeout);
   lifecycle = null;
+  liveUpdates = null;
+  state.showDeferredTranscript = false;
   paneId = "thread:environment-one:thread-one";
   thread = {
     environmentId: "environment-one" as EnvironmentId,
@@ -314,6 +334,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 it.each([
@@ -1225,4 +1246,74 @@ it("retains the presented editor while earlier history loads and waits for its f
   expect(state.engineReady).toBe(true);
   expect(requestSnapshot).toHaveBeenCalledOnce();
   expect(container.querySelector("textarea")).toBe(editor);
+});
+
+it("keeps an all-live editor mounted without snapshot revisions or observers", async () => {
+  vi.stubEnv("MODE", "all-live");
+  vi.mocked(markPaneSynced).mockClear();
+  vi.mocked(usePanePictureTheme).mockClear();
+  live();
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Keep my live draft";
+  expect(state.engineReady).toBe(true);
+  await render(false);
+  live("2026-10-15T13:00:00.000Z");
+  await render(false);
+  await render(true);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Keep my live draft");
+  expect(markPaneSynced).not.toHaveBeenCalled();
+  expect(usePanePictureTheme).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+});
+
+it("waits for all-live startup admission before creating a populated chat, then retains its editor", async () => {
+  vi.stubEnv("MODE", "all-live");
+  live();
+  state.mounted = false;
+  await render(false);
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(state.engineReady).toBe(false);
+  state.mounted = true;
+  await render(false);
+  const editor = container.querySelector("textarea")!;
+  expect(editor).not.toBeNull();
+  editor.value = "Preserve after preparation";
+  await render(true);
+  await render(false);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Preserve after preparation");
+  expect(state.engineReady).toBe(true);
+});
+
+it("finishes a distant chat's initial transcript before deferring later updates", async () => {
+  vi.stubEnv("MODE", "all-live");
+  state.showDeferredTranscript = true;
+  state.timelineReady = false;
+  liveUpdates = createLivePaneUpdates(
+    [
+      { paneId: "focused", plane: 0, slot: 0 },
+      { paneId, plane: 0, slot: 10 },
+    ],
+    "focused",
+  );
+  live("2026-10-15T12:00:00.000Z");
+  await render(false);
+  const transcript = container.querySelector('[aria-label="Transcript revision"]')!;
+  live("2026-10-15T12:01:00.000Z");
+  await render(false);
+  expect(transcript.textContent).toBe("2026-10-15T12:01:00.000Z");
+  expect(state.engineReady).toBe(false);
+  state.timelineReady = true;
+  await render(false);
+  expect(state.engineReady).toBe(true);
+  live("2026-10-15T12:02:00.000Z");
+  await render(false);
+  expect(transcript.textContent).toBe("2026-10-15T12:01:00.000Z");
+  await act(() => liveUpdates!.setFocus(paneId));
+  expect(transcript.textContent).toBe("2026-10-15T12:02:00.000Z");
+  expect(container.querySelector('[aria-label="Transcript revision"]')).toBe(transcript);
 });
