@@ -15,7 +15,6 @@ const pictures = {
   hasFreshPicture: () => false,
   canBackgroundPicture: () => false,
   runningPanes: new Set(),
-  retainedPaneIds: new Set(),
   picturesLoaded: true,
   paneSnapshots: {},
   setCaptureActivity: vi.fn(),

@@ -78,9 +78,9 @@ vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({ ThreadCard: () => null }));
 vi.mock("./ThreadPane", async () => {
-  const { createContext, use, useEffect } = await import("react");
+  const { createContext, use } = await import("react");
   const { useOnirigiriPaneContentReady } = await import("@riteofstring/onirigiri");
-  const { PaneLifecycleContext, usePaneMounted } = await import("./paneLifecycle");
+  const { usePaneMounted } = await import("./paneLifecycle");
   const { BrowserSurfaceProjectionContext } =
     await import("@t3tools/web/src/browser/browserSurfaceProjection");
   return {
@@ -98,9 +98,7 @@ vi.mock("./ThreadPane", async () => {
     }) => {
       fixture.threadRenders.push(thread.threadId);
       fixture.browserProjection = use(BrowserSurfaceProjectionContext);
-      const lifecycle = use(PaneLifecycleContext);
       const mounted = usePaneMounted(paneId, visible);
-      useEffect(() => lifecycle?.committed(paneId, mounted), [lifecycle, mounted, paneId]);
       useOnirigiriPaneContentReady(mounted);
       return (
         <div data-browser-keyboard-slot>
@@ -329,7 +327,7 @@ it("delivers global surface focus only after the initial workspace and route are
   expect(status()).not.toContain("origin");
 });
 
-it("prepares an offscreen neighbor during idle overview before navigation reaches it", async () => {
+it("keeps an offscreen neighbor unmounted in overview and mounts it on arrival", async () => {
   fixture.panes = [pane("origin", 0, 0), pane("distant", 0, 20)];
   await render();
   await key("o");
@@ -339,8 +337,7 @@ it("prepares an offscreen neighbor during idle overview before navigation reache
   expect(neighbor.querySelector("textarea")).toBeNull();
 
   await act(() => vi.advanceTimersByTime(4000));
-  const preparedComposer = neighbor.querySelector("textarea");
-  expect(preparedComposer).not.toBeNull();
+  expect(neighbor.querySelector("textarea")).toBeNull();
   expect(neighbor.dataset.visible).toBe("false");
   expect(workspace().dataset.presentationMode).toBe("overview");
   expect(status()).toContain("origin");
@@ -350,7 +347,7 @@ it("prepares an offscreen neighbor during idle overview before navigation reache
   expect(workspace().dataset.presentationMode).toBe("normal");
   expect(status()).toContain("distant");
   expect(neighbor.dataset.visible).toBe("true");
-  expect(neighbor.querySelector("textarea")).toBe(preparedComposer);
+  expect(neighbor.querySelector("textarea")).not.toBeNull();
   expect(
     neighbor
       .querySelector('[data-onirigiri-slot="pane-live-content"]')

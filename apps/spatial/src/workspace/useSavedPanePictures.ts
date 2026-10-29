@@ -132,7 +132,6 @@ export function useSavedPanePictures(
   hasFreshPicture: (paneId: string) => boolean;
   canBackgroundPicture: (paneId: string, visited?: boolean) => boolean;
   runningPanes: ReadonlySet<string>;
-  retainedPaneIds: ReadonlySet<string>;
   picturesLoaded: boolean;
   paneSnapshots: PaneSnapshots;
   setCaptureActivity: (enabled: boolean, moving: boolean) => void;
@@ -144,14 +143,12 @@ export function useSavedPanePictures(
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
   const savedRef = useRef(saved);
-  type Retention = "live" | "awaiting-picture";
-  const [retained, setRetained] = useState<ReadonlyMap<string, Retention>>(new Map());
-  const retainedRef = useRef(retained);
-  const updateRetained = useCallback((next: ReadonlyMap<string, Retention>) => {
-    retainedRef.current = next;
-    setRetained(next);
+  const [liveProducers, setLiveProducers] = useState<ReadonlyMap<string, "live">>(new Map());
+  const liveProducersRef = useRef(liveProducers);
+  const updateLiveProducers = useCallback((next: ReadonlyMap<string, "live">) => {
+    liveProducersRef.current = next;
+    setLiveProducers(next);
   }, []);
-  const retainedPaneIds = useMemo(() => new Set(retained.keys()), [retained]);
   const updateSaved = useCallback((pictures: Map<string, SavedPanePicture>) => {
     let count = 0;
     let bytes = 0;
@@ -311,11 +308,13 @@ export function useSavedPanePictures(
         [...next].some(([paneId, sizing]) => previous.get(paneId) !== sizing)
       )
         setGeometryVersion((version) => version + 1);
-      if ([...retainedRef.current.keys()].some((paneId) => !next.has(paneId))) {
-        updateRetained(new Map([...retainedRef.current].filter(([paneId]) => next.has(paneId))));
+      if ([...liveProducersRef.current.keys()].some((paneId) => !next.has(paneId))) {
+        updateLiveProducers(
+          new Map([...liveProducersRef.current].filter(([paneId]) => next.has(paneId))),
+        );
       }
     },
-    [enabled, observeStage, updateRetained],
+    [enabled, observeStage, updateLiveProducers],
   );
 
   const geometryRevision = useCallback(
@@ -389,11 +388,12 @@ export function useSavedPanePictures(
     (paneId: string, visited = false) => {
       if (!enabled) return false;
       const key = recordKey(paneId);
-      if (key === null || retained.get(paneId) === "live" || runningPanes.has(paneId)) return false;
+      if (key === null || liveProducers.get(paneId) === "live" || runningPanes.has(paneId))
+        return false;
       if (visited || saved === null || saved.has(key)) return true;
       return savedHere.count < MAX_SAVED && savedHere.bytes + savedHere.largest <= MAX_SAVED_BYTES;
     },
-    [enabled, recordKey, retained, runningPanes, saved, savedHere],
+    [enabled, recordKey, liveProducers, runningPanes, saved, savedHere],
   );
   const runningPanesRef = useRef(runningPanes);
   useLayoutEffect(() => {
@@ -403,7 +403,7 @@ export function useSavedPanePictures(
 
   const freshPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
-      if (retainedRef.current.get(paneId) === "live") return null;
+      if (liveProducersRef.current.get(paneId) === "live") return null;
       const key = recordKey(paneId);
       const content = contentRevisions.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
@@ -419,7 +419,7 @@ export function useSavedPanePictures(
   const validatedCoverFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       const key = recordKey(paneId);
-      if (key === null || retainedRef.current.get(paneId) === "live") return null;
+      if (key === null || liveProducersRef.current.get(paneId) === "live") return null;
       const exact = lastValidPictures.current.get(key);
       if (exact && savedRef.current?.has(key)) return exact;
       let cover: SavedPanePicture | null = null;
@@ -442,7 +442,7 @@ export function useSavedPanePictures(
       const key = recordKey(paneId);
       const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
-      if (retainedRef.current.get(paneId) === "live" || !content) return null;
+      if (liveProducersRef.current.get(paneId) === "live" || !content) return null;
       const fresh =
         picture && picture.revision === pictureRevision(contentKey(content), picture.source)
           ? picture
@@ -453,26 +453,17 @@ export function useSavedPanePictures(
     [coverVersion, enabled, geometryVersion, recordKey, saved, validatedCoverFor],
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane, { phase, visible, focused }) => {
-      if (
-        !enabled ||
-        pane.surfaceKind !== "thread" ||
-        retained.get(pane.paneId) === "live" ||
-        runningPanes.has(pane.paneId)
-      )
-        return "dom";
-      return ((!visible && !focused) || (phase !== "rest" && phase !== "resize")) &&
-        pictureFor(pane.paneId)
-        ? { kind: "placeholder" }
-        : "dom";
+    (pane, { phase, focused }) => {
+      if (!enabled || pane.surfaceKind !== "thread") return "dom";
+      return focused && (phase === "rest" || phase === "resize") ? "dom" : { kind: "placeholder" };
     },
-    [enabled, pictureFor, retained, runningPanes],
+    [enabled],
   );
   useLayoutEffect(() => {
     if (!enabled) return;
     for (const [key, picture] of lastValidPictures.current) {
       if (
-        retainedRef.current.get(picture.paneId) === "live" ||
+        liveProducersRef.current.get(picture.paneId) === "live" ||
         !saved?.has(key) ||
         !contentRevisions.has(picture.paneId)
       ) {
@@ -493,10 +484,6 @@ export function useSavedPanePictures(
     );
     // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
     if (coverAppeared) setCoverVersion((version) => version + 1);
-    const waiting = [...retainedRef.current].filter(
-      ([paneId, reason]) => reason === "live" || validatedCoverFor(paneId) === null,
-    );
-    if (waiting.length !== retainedRef.current.size) updateRetained(new Map(waiting));
   }, [
     contentRevisions,
     enabled,
@@ -504,9 +491,9 @@ export function useSavedPanePictures(
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
     geometryVersion,
     pictureUrls,
-    retained,
+    liveProducers,
     saved,
-    updateRetained,
+    updateLiveProducers,
     validatedCoverFor,
   ]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
@@ -527,21 +514,16 @@ export function useSavedPanePictures(
       const { paneId } = picture;
       pictureVisualRevisions.current.set(picture.image, revision);
       lastValidPictures.current.set(picture.recordKey, picture);
-      if (retainedRef.current.get(paneId) === "awaiting-picture") {
-        const next = new Map(retainedRef.current);
-        next.delete(paneId);
-        updateRetained(next);
-      }
       updateSaved(new Map(savedRef.current ?? []).set(picture.recordKey, picture));
       return savePanePicture(
         picture,
         () =>
-          retainedRef.current.get(paneId) !== "live" &&
+          liveProducersRef.current.get(paneId) !== "live" &&
           visualRevision(paneId) === revision &&
           savedRef.current?.get(picture.recordKey)?.image === picture.image,
       );
     },
-    [updateRetained, updateSaved, visualRevision],
+    [updateSaved, visualRevision],
   );
 
   const drawSnapshot = useCallback(
@@ -564,7 +546,7 @@ export function useSavedPanePictures(
         const content = contentRevisionsRef.current.get(paneId);
         return (
           element.isConnected &&
-          retainedRef.current.get(paneId) !== "live" &&
+          liveProducersRef.current.get(paneId) !== "live" &&
           !runningPanesRef.current.has(paneId) &&
           revision() === before &&
           visualRevision(paneId) === beforeVisualRevision &&
@@ -582,7 +564,7 @@ export function useSavedPanePictures(
       )
         return;
       const current = () =>
-        retainedRef.current.get(paneId) !== "live" &&
+        liveProducersRef.current.get(paneId) !== "live" &&
         !runningPanesRef.current.has(paneId) &&
         revision() === before &&
         visualRevision(paneId) === beforeVisualRevision;
@@ -633,7 +615,7 @@ export function useSavedPanePictures(
               if (
                 key === null ||
                 !content ||
-                retainedRef.current.get(paneId) === "live" ||
+                liveProducersRef.current.get(paneId) === "live" ||
                 runningPanesRef.current.has(paneId) ||
                 !syncedPanes.has(paneId)
               )
@@ -675,11 +657,12 @@ export function useSavedPanePictures(
       },
       setLiveProducer: (paneId, present) => {
         if (!enabled) return visualRevision(paneId);
-        const previous = retainedRef.current.get(paneId);
+        const previous = liveProducersRef.current.get(paneId);
         if (present === (previous === "live")) return visualRevision(paneId);
-        const next = new Map(retainedRef.current);
-        next.set(paneId, present ? "live" : "awaiting-picture");
-        updateRetained(next);
+        const next = new Map(liveProducersRef.current);
+        if (present) next.set(paneId, "live");
+        else next.delete(paneId);
+        updateLiveProducers(next);
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
         for (const [key, picture] of lastValidPictures.current) {
           if (picture.paneId === paneId) lastValidPictures.current.delete(key);
@@ -697,20 +680,11 @@ export function useSavedPanePictures(
       },
       request: (paneId, element) => {
         if (!enabled) return visualRevision(paneId);
-        const content = contentRevisionsRef.current.get(paneId);
-        if (
-          content &&
-          paneHasCommittedContent(paneId, content, visualRevision(paneId)) &&
-          pictureMountRef.current(paneId) === "ordinary" &&
-          !retainedRef.current.has(paneId) &&
-          pictureForRef.current(paneId) === null
-        )
-          updateRetained(new Map(retainedRef.current).set(paneId, "awaiting-picture"));
         snapshots.request(paneId, element);
         return visualRevision(paneId);
       },
     }),
-    [enabled, geometryVersion, snapshots, updateRetained, updateSaved, visualRevision],
+    [enabled, geometryVersion, snapshots, updateLiveProducers, updateSaved, visualRevision],
   );
 
   return {
@@ -722,7 +696,6 @@ export function useSavedPanePictures(
     hasFreshPicture,
     canBackgroundPicture,
     runningPanes,
-    retainedPaneIds,
     picturesLoaded: !enabled || saved !== null,
     paneSnapshots,
     setCaptureActivity: snapshots.setActivity,

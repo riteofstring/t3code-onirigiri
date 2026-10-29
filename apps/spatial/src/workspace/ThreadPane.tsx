@@ -121,7 +121,7 @@ function usePaneContent(
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
         idle = null;
-        if (!focused && lifecycle?.isMoving()) return;
+        if (lifecycle?.isMoving()) return;
         if (focused || visible) show();
         else
           idle = requestIdleCallback((deadline) => {
@@ -159,10 +159,6 @@ function usePaneContent(
   const [presented, setPresented] = useState(false);
   if (presented && !renderContent) setPresented(false);
   else if (!presented && prepared) setPresented(true);
-
-  useEffect(() => {
-    lifecycle?.committed(paneId, renderContent && presented);
-  }, [lifecycle, mounted, paneId, presented, renderContent]);
 
   useLayoutEffect(() => {
     markPaneSynced(

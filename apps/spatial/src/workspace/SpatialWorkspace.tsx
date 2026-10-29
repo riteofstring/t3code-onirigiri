@@ -15,15 +15,7 @@ import {
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -254,8 +246,6 @@ function SpatialWorkspaceView({
     pictureUrl,
     hasFreshPicture,
     canBackgroundPicture,
-    runningPanes,
-    retainedPaneIds,
     picturesLoaded,
     paneSnapshots,
     setCaptureActivity,
@@ -420,15 +410,17 @@ function SpatialWorkspaceView({
   }, [gridAxes, paneDefaults, panes]);
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
-  useLayoutEffect(() => {
-    lifecycle?.setRetainedPanes(retainedPaneIds);
-  }, [lifecycle, retainedPaneIds]);
   useEffect(() => {
-    lifecycle?.setPictures(hasFreshPicture, picturesLoaded, canBackgroundPicture);
-  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture]);
+    lifecycle?.setFocus(overview ? null : focusedPaneIdRef.current);
+  }, [lifecycle, overview]);
   useEffect(() => {
-    lifecycle?.setRunning(active ? runningPanes : new Set());
-  }, [active, lifecycle, runningPanes]);
+    lifecycle?.setPictures(
+      hasFreshPicture,
+      picturesLoaded,
+      canBackgroundPicture,
+      (id) => pictureFor(id) !== null,
+    );
+  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture, pictureFor]);
   const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
@@ -474,6 +466,10 @@ function SpatialWorkspaceView({
         moving,
       );
       lifecycle?.setMoving(activeRef.current && moving);
+      if (workspaceRef.current?.getSnapshot().presentationMode === "overview") {
+        lifecycle?.setFocus(null);
+        return;
+      }
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
       if (paneId === focusedPaneIdRef.current || !activeRef.current) return;
       focusedPaneIdRef.current = paneId;
@@ -539,9 +535,9 @@ function SpatialWorkspaceView({
     const paneId = workspaceRef.current?.getSnapshot().focusedPaneId;
     if (paneId && paneId !== focusedPaneIdRef.current && paneData.has(paneId)) {
       focusedPaneIdRef.current = paneId;
-      lifecycle.setFocus(paneId);
+      lifecycle.setFocus(overview ? null : paneId);
     }
-  }, [active, lifecycle, paneData]);
+  }, [active, lifecycle, paneData, overview]);
 
   const pendingRoutePaneRef = useRef<string | null>(null);
   const focusRoutePane = useEffectEvent((paneId: string) => {
