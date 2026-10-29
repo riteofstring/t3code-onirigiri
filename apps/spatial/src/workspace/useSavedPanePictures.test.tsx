@@ -1119,6 +1119,68 @@ it("captures first pixels between ordinary navigation inputs, once motion has st
   expect(store.writes).toHaveLength(1);
 });
 
+it("refreshes a covered background pane after resize with limited idle headroom", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const old = new Blob(["old pixels"]);
+  await act(() => drawPicture(pane, old, { width: 400, height: 580 }));
+  backgroundPanes.add(paneId);
+  await act(() => hook.onLayoutChange(layout(500)));
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 6 }), 1),
+  );
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(5000);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(hook.pictureFor(paneId)?.image).not.toBe(old);
+  expect(store.writes.at(-1)?.geometryRevision).toBe(geometry(500));
+});
+
+it.each(["longtask", "long-animation-frame"])(
+  "refreshes a covered background pane during sustained %s pressure and defers its first picture",
+  async (type) => {
+    const busy = simulatePicturePressure();
+    const uncovered = "thread:e:t2";
+    const old = new Blob(["old pixels"]);
+    store.threadIds = ["t1", "t2"];
+    currentLayout = layout(400);
+    store.saved.set(paneId, savedPicture({ image: old }));
+    backgroundPanes.add(paneId);
+    backgroundPanes.add(uncovered);
+    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+      setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
+    );
+    await mount();
+    await advance(10);
+    expect(hook.pictureFor(paneId)?.image).toBe(old);
+    await act(() => hook.onLayoutChange(layout(500)));
+    for (const id of [paneId, uncovered]) {
+      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
+      hook.paneSnapshots.request(id, { isConnected: true } as HTMLElement);
+    }
+    for (let i = 0; i < 5; i++) {
+      busy(type);
+      await advance(1000);
+    }
+    expect(pictureMount(paneId)).toBe("background");
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(hook.pictureFor(paneId)?.image).toBe(store.writes[0]?.image);
+    expect(hook.pictureFor(paneId)?.image).not.toBe(old);
+    expect(store.writes).toHaveLength(1);
+    expect(store.writes[0]?.paneId).toBe(paneId);
+    expect(store.writes[0]?.geometryRevision).toBe(geometry(500));
+    expect(hook.pictureFor(uncovered)).toBeNull();
+    await advance(1990);
+    expect(hook.pictureFor(uncovered)).toBeNull();
+    expect(store.writes).toHaveLength(1);
+    await advance(30);
+    expect(hook.hasFreshPicture(uncovered)).toBe(true);
+    expect(store.writes).toHaveLength(2);
+    expect(store.writes[1]?.paneId).toBe(uncovered);
+    expect(store.writes[1]?.geometryRevision).toBe(geometry(500));
+  },
+);
+
 it.each(["longtask", "long-animation-frame"])(
   "defers background drawing after %s pressure while a needed first cover can finish",
   async (type) => {

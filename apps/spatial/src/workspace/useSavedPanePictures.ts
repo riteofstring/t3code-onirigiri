@@ -642,7 +642,12 @@ export function useSavedPanePictures(
           const key = recordKey(paneId);
           return key !== null && savedRef.current?.has(key) === true;
         },
-        (paneId) => pictureMountRef.current(paneId),
+        (paneId) => {
+          const mount = pictureMountRef.current(paneId);
+          return mount === "background" && pictureForRef.current(paneId) !== null
+            ? "ordinary"
+            : mount;
+        },
       ),
     [pictureMatchesVisualRevision, recordKey, snapshots],
   );
