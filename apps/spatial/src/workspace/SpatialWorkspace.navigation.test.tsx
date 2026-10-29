@@ -244,18 +244,10 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-it("paces all-live startup and retains prepared chats through navigation and overview", async () => {
+it("keeps every chat mounted through navigation and overview in all-live builds", async () => {
   vi.stubEnv("MODE", "all-live");
   fixture.panes = Array.from({ length: 40 }, (_, index) => pane(`live-${index}`, 0, index));
   await render("live-0");
-  expect(host.querySelectorAll('textarea[aria-label="Thread composer"]').length).toBeLessThan(40);
-  for (
-    let step = 0;
-    step < 50 && host.querySelectorAll('textarea[aria-label="Thread composer"]').length < 40;
-    step++
-  ) {
-    await act(() => vi.advanceTimersByTime(1000));
-  }
   const composers = [
     ...host.querySelectorAll<HTMLTextAreaElement>('textarea[aria-label="Thread composer"]'),
   ];

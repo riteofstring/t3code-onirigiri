@@ -1535,27 +1535,3 @@ it("keeps the mount budget while settled destinations mount during continuous mo
     expect(mountedOf(store, panes).length).toBeLessThanOrEqual(5);
   }
 });
-
-it("paces an unbounded all-live workspace one prepared view at a time without eviction", () => {
-  const panes = row(66);
-  const store = createPaneLifecycleStore(panes, "p0-0", Number.POSITIVE_INFINITY);
-  stores.push(store);
-  expect(mountedOf(store, panes)).toEqual(["p0-0"]);
-  vi.advanceTimersByTime(1000);
-  expect(mountedOf(store, panes)).toEqual(["p0-0", "p0-1"]);
-  vi.advanceTimersByTime(500);
-  expect(mountedOf(store, panes)).toHaveLength(2);
-  store.setMoving(true);
-  store.committed("p0-1", true);
-  vi.advanceTimersByTime(3000);
-  expect(mountedOf(store, panes)).toHaveLength(2);
-  store.setMoving(false);
-  for (let step = 0; step < 80 && mountedOf(store, panes).length < panes.length; step++) {
-    for (const pane of panes) if (store.isMounted(pane.paneId)) store.committed(pane.paneId, true);
-    vi.advanceTimersByTime(1000);
-  }
-  expect(mountedOf(store, panes)).toHaveLength(66);
-  store.setFocus("p0-65");
-  vi.advanceTimersByTime(1000);
-  expect(mountedOf(store, panes)).toHaveLength(66);
-});

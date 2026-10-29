@@ -270,27 +270,18 @@ function LiveThreadPane(props: ThreadPaneProps) {
   const liveVisible = workspaceActive && interactive;
   const active = focused && liveVisible;
   const contentRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(false);
-  const activity = usePaneActivity(
-    active,
-    liveVisible,
-    contentRef,
-    workspaceActive && (warm || !ready),
-  );
+  const activity = usePaneActivity(active, liveVisible, contentRef, workspaceActive && warm);
   const paneComposerRef = usePaneComposerHandle(active);
   const threadPath = `/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
   const [router] = useState(() => createPaneRouter(threadPath));
-  const lifecycle = use(PaneLifecycleContext);
-  const admitted = usePaneMounted(paneId, visible);
-  // Pace initial view/data creation, then retain both while transcript updates are deferred.
-  const available = useThreadProjectionAvailable(admitted ? thread : null);
-  const status = useThreadStatus(admitted ? thread : null);
-  const history = useThreadHistory(admitted ? thread : null);
+  // Retain the data subscription even while transcript rendering is deferred.
+  const available = useThreadProjectionAvailable(thread);
+  const status = useThreadStatus(thread);
+  const history = useThreadHistory(thread);
   const [mounted, setMounted] = useState(false);
-  if (!mounted && admitted && (available || focused || status === "deleted")) setMounted(true);
-  const prepared = mounted && (status === "deleted" || (ready && !history.loading));
-  useOnirigiriPaneContentReady(prepared);
-  useEffect(() => lifecycle?.committed(paneId, prepared), [lifecycle, paneId, prepared]);
+  if (!mounted && (available || focused || status === "deleted")) setMounted(true);
+  const [ready, setReady] = useState(false);
+  useOnirigiriPaneContentReady(status === "deleted" || (ready && !history.loading));
   useEffect(
     () =>
       router.history.subscribe(({ location }) => {
