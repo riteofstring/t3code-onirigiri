@@ -26,6 +26,7 @@ export default defineConfig(async (env) => {
       ...plugins.slice(routerIndex).filter((plugin) => !isRouterPlugin(plugin)),
       scopeAncestorSelectors(),
     ],
+    test: { exclude: ["acceptance/**", "**/node_modules/**", "dist/**"] },
     publicDir: new URL("../web/public", import.meta.url).pathname,
     server: {
       ...web.server,

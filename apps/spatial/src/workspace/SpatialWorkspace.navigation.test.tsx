@@ -327,17 +327,17 @@ it("delivers global surface focus only after the initial workspace and route are
   expect(status()).not.toContain("origin");
 });
 
-it("retains an offscreen navigation neighbour through overview and arrival", async () => {
+it("mounts a distant pane on arrival from overview without retaining it offscreen", async () => {
   fixture.panes = [pane("origin", 0, 0), pane("distant", 0, 20)];
   await render();
   await key("o");
   expect(workspace().dataset.presentationMode).toBe("overview");
   const neighbor = host.querySelector<HTMLElement>('[data-onirigiri-pane-id="thread:e:distant"]')!;
   expect(neighbor.dataset.visible).toBe("false");
-  expect(neighbor.querySelector("textarea")).not.toBeNull();
+  expect(neighbor.querySelector("textarea")).toBeNull();
 
   await act(() => vi.advanceTimersByTime(4000));
-  expect(neighbor.querySelector("textarea")).not.toBeNull();
+  expect(neighbor.querySelector("textarea")).toBeNull();
   expect(neighbor.dataset.visible).toBe("false");
   expect(workspace().dataset.presentationMode).toBe("overview");
   expect(status()).toContain("origin");
