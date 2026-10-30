@@ -784,6 +784,7 @@ function SpatialWorkspaceView({
               thread={pane.data as ThreadPaneData}
               focused={state.focused}
               visible={state.visible}
+              settledVisible={state.settledVisible}
               paneId={pane.paneId}
               onNavigateAway={navigateAway}
               maximized={state.maximized}

@@ -2,7 +2,7 @@
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { act } from "react";
+import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -213,7 +213,12 @@ function live(updatedAt = "2026-10-15T12:00:00.000Z") {
   state.status = "live";
 }
 
-async function render(focused = false, paintFrames = true, visible = focused) {
+async function render(
+  focused = false,
+  paintFrames = true,
+  visible = focused,
+  settledVisible = visible,
+) {
   await act(async () => {
     for (const listener of state.listeners) listener();
     root.render(
@@ -227,6 +232,7 @@ async function render(focused = false, paintFrames = true, visible = focused) {
                   thread={{ ...thread }}
                   focused={focused}
                   visible={visible}
+                  settledVisible={settledVisible}
                   onNavigateAway={onNavigateAway}
                 />
               </PaneSnapshotContext>
@@ -861,6 +867,7 @@ it("cancels an offscreen content mount if motion starts before its idle callback
   vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
     setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 100),
   );
+  lifecycle.setPictures(() => true);
   await render(false, false);
   await act(() => lifecycle!.setMoving(true));
   await act(() => vi.advanceTimersByTimeAsync(150));
@@ -1200,4 +1207,88 @@ it("focuses the stock composer on keyboard navigation arrival and cancels on poi
   state.interactive = true;
   await render(true, false, true);
   expect(state.composerActions).toEqual([0]);
+});
+
+it("keeps current-picture transit content dormant, then admits it when retargeted", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  lifecycle.setPictures(() => true);
+  lifecycle.setMoving(true);
+  live();
+  await render(false, false, true, false);
+  expect(container.querySelector("textarea")).toBeNull();
+  await render(false, false, true, true);
+  expect(container.querySelector("textarea")).not.toBeNull();
+  const editor = container.querySelector("textarea")!;
+  editor.value = "retained draft";
+  await render(false, false, true, false);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("retained draft");
+});
+
+it("admits a transit pane when its current picture becomes stale during motion", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  lifecycle.setPictures(() => true);
+  lifecycle.setMoving(true);
+  live();
+  await render(false, false, true, false);
+  expect(container.querySelector("textarea")).toBeNull();
+  await act(() =>
+    lifecycle!.setPictures(
+      () => false,
+      true,
+      () => true,
+      () => true,
+    ),
+  );
+  expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it("commits one required motion-time chat at a time with the destination first", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  const panes = [0, 1, 2].map((slot) => ({ paneId: `p${slot}`, plane: 0, slot }));
+  lifecycle = createPaneLifecycleStore(panes, "p2");
+  lifecycle.setPictures(() => false);
+  lifecycle.setMoving(true);
+  live();
+  const commits: string[][] = [];
+  await act(async () => {
+    root.render(
+      <PaneLifecycleContext value={lifecycle}>
+        <Profiler
+          id="admissions"
+          onRender={() => {
+            commits.push(
+              [...container.querySelectorAll("textarea")].map((editor) =>
+                editor.closest("[data-test-pane]")!.getAttribute("data-test-pane")!,
+              ),
+            );
+          }}
+        >
+          {[0, 1, 2].map((slot) => (
+            <div key={slot} data-test-pane={`p${slot}`}>
+              <ThreadPane
+                paneId={`p${slot}`}
+                thread={thread}
+                focused={slot === 2}
+                visible
+                settledVisible
+                onNavigateAway={onNavigateAway}
+              />
+            </div>
+          ))}
+        </Profiler>
+      </PaneLifecycleContext>,
+    );
+  });
+  const additions = commits
+    .map((ids, index) =>
+      ids.filter((id) => !commits.slice(0, index).some((earlier) => earlier.includes(id))),
+    )
+    .filter((ids) => ids.length);
+  expect(additions).toEqual([["p2"], ["p1"], ["p0"]]);
 });

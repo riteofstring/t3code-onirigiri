@@ -38,6 +38,25 @@ export function createPaneLifecycleStore(
   let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
   let capturing: { paneId: string; since: number } | null = null;
   let disposed = false;
+  const admissions = new Map<string, { required: () => boolean; show: () => void }>();
+  let admitting: string | null = null;
+  let admissionScheduled = false;
+  const drainAdmissions = () => {
+    if (admissionScheduled || disposed) return;
+    admissionScheduled = true;
+    queueMicrotask(() => {
+      admissionScheduled = false;
+      if (disposed || admitting !== null) return;
+      const next = [...admissions.keys()]
+        .filter((id) => panes.has(id) && admissions.get(id)!.required())
+        .sort(
+          (a, b) => Number(b === focused) - Number(a === focused) || distance(a) - distance(b),
+        )[0];
+      if (!next) return;
+      admitting = next;
+      admissions.get(next)!.show();
+    });
+  };
 
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
@@ -50,6 +69,11 @@ export function createPaneLifecycleStore(
   };
   const unmount = (paneId: string) => {
     if (mounted.delete(paneId)) notify(paneId);
+    if (admitting === paneId) {
+      admitting = null;
+      admissions.delete(paneId);
+      drainAdmissions();
+    }
   };
   const cancel = () => {
     if (timer !== null) clearTimeout(timer);
@@ -182,6 +206,20 @@ export function createPaneLifecycleStore(
   return {
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving || pointers.size > 0,
+    currentPicture: (paneId: string) => hasPicture(paneId),
+    requestAdmission: (paneId: string, required: () => boolean, show: () => void) => {
+      admissions.set(paneId, { required, show });
+      drainAdmissions();
+      return () => {
+        if (admitting !== paneId) admissions.delete(paneId);
+        drainAdmissions();
+      };
+    },
+    contentMounted: (paneId: string) => {
+      admissions.delete(paneId);
+      if (admitting === paneId) admitting = null;
+      drainAdmissions();
+    },
     pictureMount: (paneId: string): PictureMount =>
       !mounted.has(paneId) ? null : capturing?.paneId === paneId ? "background" : "ordinary",
     subscribeMotion: (listener: () => void) => {
@@ -214,6 +252,7 @@ export function createPaneLifecycleStore(
         schedule();
       }
       for (const listener of motionListeners) listener();
+      drainAdmissions();
     },
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
@@ -258,6 +297,8 @@ export function createPaneLifecycleStore(
           schedule();
         }, STORED_PICTURES_WAIT_MS);
       schedule();
+      for (const listener of motionListeners) listener();
+      drainAdmissions();
     },
     setVisible: (paneId: string, isVisible: boolean) => {
       if (isVisible) {
@@ -268,6 +309,7 @@ export function createPaneLifecycleStore(
     },
     dispose: () => {
       disposed = true;
+      admissions.clear();
       cancel();
       if (storedTimer !== null) clearTimeout(storedTimer);
       for (const type of inputEvents)

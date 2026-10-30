@@ -95,6 +95,7 @@ function usePaneContent(
   paneId: string,
   thread: ThreadPaneThread,
   visible: boolean,
+  settledVisible: boolean,
   focused: boolean,
   visualRevision: number,
 ): {
@@ -119,11 +120,16 @@ function usePaneContent(
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
       let idle: number | null = null;
+      let cancelAdmission: (() => void) | undefined;
+      const required = () => focused || settledVisible || !lifecycle?.currentPicture(paneId);
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
         idle = null;
-        if (focused || visible) show();
-        else if (lifecycle?.isMoving()) return;
+        cancelAdmission?.();
+        cancelAdmission = undefined;
+        if (lifecycle?.isMoving()) {
+          if (required()) cancelAdmission = lifecycle.requestAdmission(paneId, required, show);
+        } else if (focused || visible) show();
         else
           idle = requestIdleCallback((deadline) => {
             idle = null;
@@ -135,10 +141,23 @@ function usePaneContent(
       prepare();
       return () => {
         unsubscribe?.();
+        cancelAdmission?.();
         if (idle !== null) cancelIdleCallback(idle);
       };
     }
-  }, [contentAvailable, contentMounted, focused, lifecycle, mounted, visible]);
+  }, [
+    contentAvailable,
+    contentMounted,
+    focused,
+    lifecycle,
+    mounted,
+    paneId,
+    settledVisible,
+    visible,
+  ]);
+  useEffect(() => {
+    if (contentMounted) lifecycle?.contentMounted(paneId);
+  }, [contentMounted, lifecycle, paneId]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = threadRuntimeIsActive(shell?.runtime);
@@ -217,6 +236,7 @@ export const ThreadPane = memo(function ThreadPane({
   paneId,
   focused,
   visible,
+  settledVisible,
   onNavigateAway,
   maximized = false,
   onAddPane,
@@ -227,6 +247,7 @@ export const ThreadPane = memo(function ThreadPane({
   paneId: string;
   focused: boolean;
   visible: boolean;
+  settledVisible: boolean;
   onNavigateAway: (href: string) => void;
   maximized?: boolean;
   onAddPane?: (paneId: string) => void;
@@ -256,6 +277,7 @@ export const ThreadPane = memo(function ThreadPane({
     paneId,
     thread,
     visible,
+    settledVisible,
     focused,
     visualRevision,
   );

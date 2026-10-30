@@ -69,3 +69,46 @@ it("prepares vertical neighbours as well as horizontal neighbours", () => {
   expect(store.isMounted("down")).toBe(true);
   expect(mounted(store)).toEqual(["p0", "p1"]);
 });
+
+it("serializes required admissions by destination then distance, reprioritizing pending work", async () => {
+  const store = make();
+  store.setMoving(true);
+  store.setFocus("p20");
+  const shown: string[] = [];
+  let oldRequired = true;
+  store.requestAdmission(
+    "p5",
+    () => oldRequired,
+    () => shown.push("p5"),
+  );
+  store.requestAdmission(
+    "p19",
+    () => true,
+    () => shown.push("p19"),
+  );
+  store.requestAdmission(
+    "p20",
+    () => true,
+    () => shown.push("p20"),
+  );
+  await Promise.resolve();
+  expect(shown).toEqual(["p20"]);
+  await Promise.resolve();
+  expect(shown).toEqual(["p20"]);
+  oldRequired = false;
+  store.setFocus("p18");
+  store.requestAdmission(
+    "p18",
+    () => true,
+    () => shown.push("p18"),
+  );
+  store.contentMounted("p20");
+  await Promise.resolve();
+  expect(shown).toEqual(["p20", "p18"]);
+  store.contentMounted("p18");
+  await Promise.resolve();
+  expect(shown).toEqual(["p20", "p18", "p19"]);
+  store.contentMounted("p19");
+  await Promise.resolve();
+  expect(shown).toEqual(["p20", "p18", "p19"]);
+});
