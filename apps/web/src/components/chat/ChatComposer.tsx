@@ -215,6 +215,7 @@ import {
   shouldUseRestingComposerLayout,
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
+import { insertPreparedAttachmentReferences } from "./preparedAttachmentReferences";
 import {
   type ComposerCitationCommentRequest,
   type ComposerPromptEditorHandle,
@@ -5875,7 +5876,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const storedImages = nextImages.filter((image) => storedImageIds.has(image.id));
       if (storedImages.length > 0 && imageAttachmentsGetChips) {
         insertedAny =
-          insertAttachmentReferences(storedImages.map(imageContextReference)) || insertedAny;
+          insertPreparedAttachmentReferences({
+            target: composerDraftTarget,
+            currentTargetKey: composerDraftTargetKeyRef.current,
+            references: storedImages.map(imageContextReference),
+            insertAtCaret: insertAttachmentReferences,
+          }) || insertedAny;
       }
       // Only failures are reported here. Success must not pass `null`: by
       // now other work (a failed send, an overlapping paste) may have set a
