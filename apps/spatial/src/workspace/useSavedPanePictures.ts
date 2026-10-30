@@ -62,6 +62,7 @@ function paneHasCommittedContent(
 export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => number;
 
 interface PaneSnapshots {
+  hasFreshPicture: (paneId: string) => boolean;
   geometryVersion: number;
   request: RequestPaneSnapshot;
   invalidate: (paneId: string, committed?: boolean) => void;
@@ -345,16 +346,22 @@ export function useSavedPanePictures(
     [geometryRevision],
   );
 
-  const contentRevisions = useMemo(
-    () =>
-      new Map(
-        threads.map((thread) => [
-          threadPaneId(thread.environmentId, thread.id),
-          { updatedAt: thread.updatedAt, theme: pictureTheme },
-        ]),
-      ),
-    [pictureTheme, threads],
-  );
+  const readContentRevisions = () =>
+    new Map(
+      threads.map((thread) => [
+        threadPaneId(thread.environmentId, thread.id),
+        { updatedAt: thread.updatedAt, theme: pictureTheme },
+      ]),
+    );
+  const [contentRevisions, setContentRevisions] = useState(readContentRevisions);
+  if (
+    contentRevisions.size !== threads.length ||
+    threads.some((thread) => {
+      const previous = contentRevisions.get(threadPaneId(thread.environmentId, thread.id));
+      return previous?.updatedAt !== thread.updatedAt || previous.theme !== pictureTheme;
+    })
+  )
+    setContentRevisions(readContentRevisions());
   const contentRevisionsRef = useRef(contentRevisions);
   const runningPanes = useMemo(
     () =>
@@ -604,6 +611,7 @@ export function useSavedPanePictures(
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
       geometryVersion,
+      hasFreshPicture,
       invalidate: (paneId, committed = false) => {
         if (!enabled) return;
         const previous = visualRevision(paneId);
@@ -639,7 +647,15 @@ export function useSavedPanePictures(
         return visualRevision(paneId);
       },
     }),
-    [enabled, geometryVersion, snapshots, updateLiveProducers, updateSaved, visualRevision],
+    [
+      enabled,
+      geometryVersion,
+      hasFreshPicture,
+      snapshots,
+      updateLiveProducers,
+      updateSaved,
+      visualRevision,
+    ],
   );
 
   return {

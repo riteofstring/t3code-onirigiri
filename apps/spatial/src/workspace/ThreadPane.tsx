@@ -14,6 +14,7 @@ import {
   useParams,
 } from "@tanstack/react-router";
 import {
+  Activity,
   createContext,
   memo,
   startTransition,
@@ -224,7 +225,73 @@ function createPaneRouter(threadPath: string) {
   });
 }
 
-export const ThreadPane = memo(function ThreadPane({
+export const ThreadPane = memo(function ThreadPane(props: React.ComponentProps<typeof PaneBody>) {
+  const thread = useMemo(
+    () => ({ environmentId: props.thread.environmentId, threadId: props.thread.threadId }),
+    [props.thread.environmentId, props.thread.threadId],
+  );
+  const body = <PaneBody {...props} thread={thread} />;
+  return import.meta.env.VITE_SPATIAL_ACTIVITY === "1" ? (
+    <RetainedPane
+      paneId={props.paneId}
+      focused={props.focused}
+      visible={props.visible}
+      settledVisible={props.settledVisible}
+    >
+      {body}
+    </RetainedPane>
+  ) : (
+    body
+  );
+});
+
+function RetainedPane({
+  paneId,
+  focused,
+  visible,
+  settledVisible,
+  children,
+}: {
+  paneId: string;
+  focused: boolean;
+  visible: boolean;
+  settledVisible: boolean;
+  children: React.ReactNode;
+}) {
+  const interactive = useOnirigiriPaneInteractive();
+  const lifecycle = use(PaneLifecycleContext);
+  const snapshots = use(PaneSnapshotContext);
+  const mounted = usePaneMounted(paneId, settledVisible);
+  const [rig, setRig] = useState<{ mode: string; reveal: string[] } | null>(null);
+  useEffect(() => {
+    const update = (event: Event) => setRig((event as CustomEvent).detail);
+    window.addEventListener("spatial-retained-rig", update);
+    return () => window.removeEventListener("spatial-retained-rig", update);
+  }, []);
+  const fresh = snapshots?.hasFreshPicture(paneId) ?? false;
+  const preparing = lifecycle?.pictureMount(paneId) === "background";
+  const required =
+    !mounted ||
+    !fresh ||
+    preparing ||
+    focused ||
+    (!rig && (visible || interactive)) ||
+    rig?.reveal.includes(paneId);
+  const hidden = !required;
+  const mode = rig?.mode ?? "activity";
+  return (
+    <div
+      className="h-full w-full"
+      data-spatial-retained-mode={mode}
+      data-spatial-retained-hidden={String(hidden)}
+      style={mode === "content-visibility" && hidden ? { contentVisibility: "hidden" } : undefined}
+    >
+      <Activity mode={mode === "activity" && hidden ? "hidden" : "visible"}>{children}</Activity>
+    </div>
+  );
+}
+
+const PaneBody = memo(function PaneBody({
   thread,
   paneId,
   focused,
@@ -499,6 +566,7 @@ function PaneScrollState({
     const element = root.current;
     return () => {
       if (!element || !restored.current) return;
+      restored.current = false;
       positions.current = [
         ...element.querySelectorAll<HTMLElement>(
           ".messages-timeline-scroll, [data-tool-group-scroll]",

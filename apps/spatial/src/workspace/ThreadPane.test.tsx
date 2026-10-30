@@ -21,6 +21,7 @@ import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
 import { PaneSnapshotContext, type RequestPaneSnapshot } from "./useSavedPanePictures";
 
 const state = vi.hoisted(() => ({
+  revision: 0,
   mounted: true,
   interactive: false,
   composerVersion: 0,
@@ -66,23 +67,37 @@ vi.mock("./paneLifecycle", async () => {
   const { createContext } = await import("react");
   return { PaneLifecycleContext: createContext(null), usePaneMounted: () => state.mounted };
 });
-vi.mock("@t3tools/web/src/state/entities", () => ({
-  useThreadShell: () => ({
-    updatedAt: state.shellUpdatedAt,
-    runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
-  }),
-  useThreadProjection: (ref: ScopedThreadRef | null) => {
-    state.projectionSubscribed = ref !== null;
-    return ref === null || state.projection === null
-      ? null
-      : { projection: { updatedAt: DateTime.makeUnsafe(state.projection.updatedAt) } };
-  },
-  useThreadHistory: (ref: ScopedThreadRef | null) => {
-    state.historySubscribed = ref !== null;
-    return { loading: state.historyLoading };
-  },
-  useThreadStatus: (ref: ScopedThreadRef | null) => (ref === null ? "empty" : state.status),
-}));
+vi.mock("@t3tools/web/src/state/entities", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useThreadShell: () => {
+      useSyncExternalStore(
+        (listener) => {
+          state.listeners.add(listener);
+          return () => {
+            state.listeners.delete(listener);
+          };
+        },
+        () => state.revision,
+      );
+      return {
+        updatedAt: state.shellUpdatedAt,
+        runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
+      };
+    },
+    useThreadProjection: (ref: ScopedThreadRef | null) => {
+      state.projectionSubscribed = ref !== null;
+      return ref === null || state.projection === null
+        ? null
+        : { projection: { updatedAt: DateTime.makeUnsafe(state.projection.updatedAt) } };
+    },
+    useThreadHistory: (ref: ScopedThreadRef | null) => {
+      state.historySubscribed = ref !== null;
+      return { loading: state.historyLoading };
+    },
+    useThreadStatus: (ref: ScopedThreadRef | null) => (ref === null ? "empty" : state.status),
+  };
+});
 vi.mock("./useSavedPanePictures", async () => {
   const { createContext } = await import("react");
   return {
@@ -206,6 +221,7 @@ let appSuppressed: boolean;
 let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
 let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
 let snapshots: {
+  hasFreshPicture: (paneId: string) => boolean;
   geometryVersion: number;
   request: RequestPaneSnapshot;
   invalidate: (paneId: string) => void;
@@ -229,6 +245,7 @@ async function render(
   settledVisible = visible,
 ) {
   await act(async () => {
+    state.revision++;
     for (const listener of state.listeners) listener();
     root.render(
       <SpatialWorkspaceActiveContext value={workspaceActive}>
@@ -307,6 +324,7 @@ beforeEach(() => {
   });
   liveProducer = false;
   snapshots = {
+    hasFreshPicture: () => true,
     geometryVersion: 0,
     request: requestSnapshot,
     invalidate: invalidateSnapshot,
@@ -329,6 +347,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 it.each([
@@ -1322,4 +1341,44 @@ it("finishes preparation after one idle slice even with little time remaining", 
   await render(true);
   expect(state.engineReady).toBe(true);
   expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+});
+
+it("disconnects a retained Activity subtree and restores its DOM, draft and panel state on reveal", async () => {
+  vi.stubEnv("VITE_SPATIAL_ACTIVITY", "1");
+  live();
+  state.interactive = true;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(32));
+  const editor = container.querySelector("textarea")!;
+  editor.value = "Saved retained draft";
+  const scroller = container.querySelector<HTMLElement>(".messages-timeline-scroll")!;
+  Object.defineProperties(scroller, {
+    scrollHeight: { value: 1000 },
+    clientHeight: { value: 200 },
+  });
+  scroller.scrollTop = 350;
+  await act(() => container.querySelector("button")!.click());
+  const subscriptions = state.listeners.size;
+  expect(subscriptions).toBeGreaterThan(0);
+  state.interactive = false;
+  await render(false);
+  expect(container.querySelector('[data-spatial-retained-hidden="true"]')).not.toBeNull();
+  expect(state.listeners.size).toBe(0);
+  scroller.scrollTop = 0;
+  state.interactive = true;
+  await render(true);
+  expect(state.listeners.size).toBe(subscriptions);
+  expect(container.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("Saved retained draft");
+  expect(scroller.scrollTop).toBe(350);
+  expect(container.querySelector("button")!.textContent).toBe("Open panel");
+});
+
+it("keeps a dirty retained pane active until a current picture exists", async () => {
+  vi.stubEnv("VITE_SPATIAL_ACTIVITY", "1");
+  live();
+  snapshots.hasFreshPicture = () => false;
+  await render(false);
+  expect(container.querySelector('[data-spatial-retained-hidden="false"]')).not.toBeNull();
+  expect(state.listeners.size).toBeGreaterThan(0);
 });
