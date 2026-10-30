@@ -85,23 +85,6 @@ export function createPaneLifecycleStore(
     const ids = new Set(visible);
     if (!focused) return ids;
     ids.add(focused);
-    const center = panes.get(focused);
-    if (!center) return ids;
-    const positions = [...panes.values()];
-    for (const [axis, direction] of [
-      ["slot", -1],
-      ["slot", 1],
-      ["plane", -1],
-      ["plane", 1],
-    ] as const) {
-      const other = axis === "slot" ? "plane" : "slot";
-      const neighbour = positions
-        .filter(
-          (pane) => pane[other] === center[other] && (pane[axis] - center[axis]) * direction > 0,
-        )
-        .sort((a, b) => Math.abs(a[axis] - center[axis]) - Math.abs(b[axis] - center[axis]))[0];
-      if (neighbour) ids.add(neighbour.paneId);
-    }
     return ids;
   };
   const reconcile = () => {

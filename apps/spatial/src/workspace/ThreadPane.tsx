@@ -106,16 +106,17 @@ function usePaneContent(
   onContentReadyChange: (ready: boolean) => void;
 } {
   const lifecycle = use(PaneLifecycleContext);
-  const mounted = usePaneMounted(paneId, visible);
+  const mounted = usePaneMounted(paneId, settledVisible);
   const shell = useThreadShell(thread);
-  const projection = useThreadProjection(mounted ? thread : null)?.projection ?? null;
-  const history = useThreadHistory(mounted ? thread : null);
+  const [contentMounted, setContentMounted] = useState(false);
+  const renderContent = mounted && contentMounted;
+  const projection = useThreadProjection(renderContent ? thread : null)?.projection ?? null;
+  const history = useThreadHistory(renderContent ? thread : null);
   const updatedAt = shell?.updatedAt ?? null;
   const projectionUpdatedAt = projection ? DateTime.formatIso(projection.updatedAt) : null;
   const status = useThreadStatus(mounted ? thread : null);
-  const [contentMounted, setContentMounted] = useState(false);
-  const contentAvailable = focused || projection !== null || status === "deleted";
-  const renderContent = mounted && contentMounted;
+  const contentAvailable =
+    focused || status === "live" || status === "cached" || status === "deleted";
   useEffect(() => {
     if (!mounted) setContentMounted(false);
     else if (contentAvailable && !contentMounted) {
@@ -163,7 +164,7 @@ function usePaneContent(
   const pictureTheme = usePanePictureTheme();
   const running = threadRuntimeIsActive(shell?.runtime);
   const [contentRevision, setContentRevision] = useState({ updatedAt, projectionUpdatedAt });
-  const nextProjectionUpdatedAt = mounted
+  const nextProjectionUpdatedAt = renderContent
     ? projectionUpdatedAt
     : contentRevision.projectionUpdatedAt;
   if (

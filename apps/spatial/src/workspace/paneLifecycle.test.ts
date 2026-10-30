@@ -24,15 +24,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("retains visible panes and navigation neighbours through a forty-pane tour", () => {
+it("retains only settled visible panes and focus through a forty-pane tour", () => {
   const store = make();
   store.setPictures(() => true);
   store.setVisible("p20", true);
   for (let i = 1; i < 39; i++) {
     store.setFocus(`p${i}`);
-    expect(mounted(store)).toEqual(
-      [...new Set([i - 1, i, i + 1, 20])].sort((a, b) => a - b).map((i) => `p${i}`),
-    );
+    expect(mounted(store)).toEqual([...new Set([i, 20])].sort((a, b) => a - b).map((i) => `p${i}`));
   }
 });
 
@@ -42,7 +40,7 @@ it("mounts cold destinations and newly visible content during motion", () => {
   store.setMoving(true);
   store.setFocus("p30");
   store.setVisible("p27", true);
-  expect(mounted(store)).toEqual(["p27", "p29", "p30", "p31"]);
+  expect(mounted(store)).toEqual(["p27", "p30"]);
 });
 
 it("keeps departure mounted until its current capture is available", () => {
@@ -59,15 +57,15 @@ it("keeps departure mounted until its current capture is available", () => {
   expect(store.isMounted("p0")).toBe(false);
 });
 
-it("prepares vertical neighbours as well as horizontal neighbours", () => {
+it("does not mount speculative vertical or horizontal neighbours", () => {
   const store = createPaneLifecycleStore(
     [...panes, { paneId: "up", slot: 0, plane: -2 }, { paneId: "down", slot: 0, plane: 3 }],
     "p0",
   );
   stores.push(store);
-  expect(store.isMounted("up")).toBe(true);
-  expect(store.isMounted("down")).toBe(true);
-  expect(mounted(store)).toEqual(["p0", "p1"]);
+  expect(store.isMounted("up")).toBe(false);
+  expect(store.isMounted("down")).toBe(false);
+  expect(mounted(store)).toEqual(["p0"]);
 });
 
 it("serializes required admissions by destination then distance, reprioritizing pending work", async () => {

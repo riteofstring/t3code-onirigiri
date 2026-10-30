@@ -40,6 +40,8 @@ const state = vi.hoisted(() => ({
   composerMounted: true,
   hasChatView: true,
   suspended: false,
+  projectionSubscribed: false,
+  historySubscribed: false,
   engineReady: false,
   engineRevision: "",
   engineRevisions: [] as string[],
@@ -69,11 +71,16 @@ vi.mock("@t3tools/web/src/state/entities", () => ({
     updatedAt: state.shellUpdatedAt,
     runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
   }),
-  useThreadProjection: (ref: ScopedThreadRef | null) =>
-    ref === null || state.projection === null
+  useThreadProjection: (ref: ScopedThreadRef | null) => {
+    state.projectionSubscribed = ref !== null;
+    return ref === null || state.projection === null
       ? null
-      : { projection: { updatedAt: DateTime.makeUnsafe(state.projection.updatedAt) } },
-  useThreadHistory: () => ({ loading: state.historyLoading }),
+      : { projection: { updatedAt: DateTime.makeUnsafe(state.projection.updatedAt) } };
+  },
+  useThreadHistory: (ref: ScopedThreadRef | null) => {
+    state.historySubscribed = ref !== null;
+    return { loading: state.historyLoading };
+  },
   useThreadStatus: (ref: ScopedThreadRef | null) => (ref === null ? "empty" : state.status),
 }));
 vi.mock("./useSavedPanePictures", async () => {
@@ -1332,4 +1339,19 @@ it.each([false, true])("restores the timeline after content release, at end: %s"
   await render(true);
   await act(() => vi.advanceTimersByTimeAsync(64));
   expect(restored.scrollTop).toBe(atEnd ? 1000 : 320);
+});
+
+it("admits a nonfocused pane from readiness metadata before subscribing to heavy content", async () => {
+  await render(false, false);
+  expect(state.projectionSubscribed).toBe(false);
+  expect(state.historySubscribed).toBe(false);
+  live();
+  await render(false);
+  expect(container.querySelector("textarea")).not.toBeNull();
+  expect(state.projectionSubscribed).toBe(true);
+  expect(state.historySubscribed).toBe(true);
+  state.mounted = false;
+  await render(false);
+  expect(state.projectionSubscribed).toBe(false);
+  expect(state.historySubscribed).toBe(false);
 });
