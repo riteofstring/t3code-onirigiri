@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
+import { registerPaneComposer } from "./paneComposerRelay";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
@@ -126,6 +128,73 @@ it("leaves the overlay on Escape while respecting composition", async () => {
     });
     expect(document.activeElement).not.toBe(editor);
   } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("never queues unavailable Enter and relays only to the scoped destination", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const overlay = createRef<PersistentComposerHandle>();
+  const a = { environmentId: "send-a" as EnvironmentId, threadId: "same" as ThreadId };
+  const b = { environmentId: "send-b" as EnvironmentId, threadId: "same" as ThreadId };
+  const refA = scopeThreadRef(a.environmentId, a.threadId);
+  const refB = scopeThreadRef(b.environmentId, b.threadId);
+  useComposerDraftStore.getState().setPrompt(refA, "first");
+  useComposerDraftStore.getState().setPrompt(refB, "second");
+  const turns: string[] = [];
+  let busy = false;
+  const fixture = {
+    current: {
+      getSendDisabledReason: () => (busy ? "Sending" : null),
+      submit: () => {
+        if (busy) return;
+        busy = true;
+        turns.push(useComposerDraftStore.getState().getComposerDraft(refB)!.prompt);
+      },
+    } as ChatComposerHandle,
+  };
+  const unregister = registerPaneComposer("send-b", scopedThreadKey(refB), fixture);
+  const enter = (element: HTMLElement, composing = false) =>
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+        isComposing: composing,
+      }),
+    );
+  try {
+    await act(async () => root.render(<PersistentComposer ref={overlay} />));
+    const element = container.querySelector<HTMLElement>(".tiptap")!;
+    await act(async () => {
+      overlay.current!.bind("send-a", a, false);
+      enter(element);
+    });
+    expect(container.textContent).toContain("Preparing");
+    expect(turns).toEqual([]);
+    await act(async () => {
+      overlay.current!.bind("send-b", b, false);
+      enter(element, true);
+    });
+    expect(turns).toEqual([]);
+    await act(async () => {
+      overlay.current!.flush();
+      (
+        element as HTMLElement & { editor: { commands: { insertContent: (text: string) => void } } }
+      ).editor.commands.insertContent(" fresh");
+      enter(element);
+      enter(element);
+    });
+    expect(turns).toEqual(["second fresh"]);
+    expect(useComposerDraftStore.getState().getComposerDraft(refA)!.prompt).toBe("first");
+    expect(container.textContent).toContain("Sending");
+  } finally {
+    unregister();
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();

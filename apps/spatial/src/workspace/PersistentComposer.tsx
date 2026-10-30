@@ -6,8 +6,9 @@ import {
   type ComposerPromptEditorHandle,
 } from "@t3tools/web/src/components/ComposerPromptEditor";
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
-import { useCallback, useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 
+import { getPaneComposer } from "./paneComposerRelay";
 import { retainOverlayComposerFocus } from "./retainOverlayComposerFocus";
 
 import type { ThreadPaneData } from "./useWorkspacePanes";
@@ -32,6 +33,13 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
       return retainOverlayComposerFocus(root.current, () => editor.current?.focus());
   }, []);
   const destination = useRef<string | null>(null);
+  const boundThreadKey = useRef<string | null>(null);
+  const [sendReason, setSendReason] = useState<string | null>(null);
+  const getDestinationHandle = () => {
+    const paneId = destination.current;
+    const key = boundThreadKey.current;
+    return paneId && key ? getPaneComposer(paneId, key) : null;
+  };
   const pending = useRef<{ paneId: string; thread: ThreadPaneData; value: string } | null>(null);
   const flush = useCallback(() => {
     const next = pending.current;
@@ -63,6 +71,8 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         if (editor.current.isComposing?.()) return false;
         pending.current = { paneId, thread, value };
         destination.current = paneId;
+        boundThreadKey.current = scopedThreadKey(threadRef);
+        setSendReason(null);
         setCoveredComposerOwner(scopedThreadKey(threadRef));
         root.current.dataset.composerDestination = paneId;
         root.current.hidden = false;
@@ -109,6 +119,25 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
           event.target.blur();
           return;
         }
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.stopPropagation();
+          if (
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229 ||
+            editor.current?.isComposing?.()
+          )
+            return;
+          event.preventDefault();
+          if (!flush()) {
+            setSendReason("Preparing");
+            return;
+          }
+          const handle = getDestinationHandle();
+          const reason = handle ? handle.getSendDisabledReason() : "Preparing";
+          setSendReason(reason);
+          if (!reason) handle?.submit();
+          return;
+        }
         if (!event.altKey && !event.metaKey && !event.ctrlKey && !flush()) {
           event.preventDefault();
           event.stopPropagation();
@@ -131,8 +160,9 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
           placeholder="Message"
           onChange={() => {}}
           onPaste={(event) => event.preventDefault()}
-          onCommandKeyDown={(key) => key === "Enter"}
+          onCommandKeyDown={(key, event) => key === "Enter" && !event.shiftKey}
         />
+        {sendReason ? <div role="status">{sendReason}</div> : null}
       </div>
     </div>
   );

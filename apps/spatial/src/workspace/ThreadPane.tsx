@@ -1,3 +1,4 @@
+import { registerPaneComposer } from "./paneComposerRelay";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   CoveredComposerContext,
@@ -276,7 +277,11 @@ export const ThreadPane = memo(function ThreadPane({
     covered,
   );
 
-  const paneComposerRef = usePaneComposerHandle(active);
+  const paneComposerRef = usePaneComposerHandle(
+    active,
+    paneId,
+    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
+  );
 
   const contentRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, liveVisible, contentRef);
@@ -400,6 +405,7 @@ export const ThreadPane = memo(function ThreadPane({
               ref={contentRef}
               onKeyDownCapture={leaveComposerOnEscape}
               className="spatial-thread-pane h-full w-full"
+              data-spatial-pane-id={paneId}
               data-spatial-thread={thread.threadId}
               data-spatial-active={String(active)}
               data-spatial-preparing={preparing ? "" : undefined}
@@ -418,7 +424,11 @@ export const ThreadPane = memo(function ThreadPane({
   );
 });
 
-function usePaneComposerHandle(active: boolean): ComposerHandleRef {
+function usePaneComposerHandle(
+  active: boolean,
+  paneId: string,
+  threadKey: string,
+): ComposerHandleRef {
   const appComposerRef = useComposerHandleContext();
   const [pane] = useState(() => {
     let handle: ChatComposerHandle | null = null;
@@ -446,6 +456,10 @@ function usePaneComposerHandle(active: boolean): ComposerHandleRef {
   useLayoutEffect(() => {
     if (active && appComposerRef) return pane.connect(appComposerRef);
   }, [active, appComposerRef, pane]);
+  useLayoutEffect(
+    () => registerPaneComposer(paneId, threadKey, pane.ref),
+    [paneId, threadKey, pane],
+  );
   return pane.ref;
 }
 
