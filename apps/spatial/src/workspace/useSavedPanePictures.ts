@@ -42,7 +42,7 @@ function contentKey(content: PaneContentRevision): string {
 }
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
-  return source === "capture" ? revision : `${revision}|responsive-css-5`;
+  return source === "capture" ? revision : `${revision}|native-worker-6`;
 }
 
 function paneHasCommittedContent(
@@ -494,6 +494,7 @@ export function useSavedPanePictures(
       element: HTMLElement,
       canStart: () => boolean,
       waitToDraw: () => Promise<boolean>,
+      signal: AbortSignal,
     ) => {
       const startedAt = performance.now();
       const revision = () => expectedRevision(paneId, contentRevisionsRef.current);
@@ -534,12 +535,13 @@ export function useSavedPanePictures(
         element,
         canSnapshot,
         async () => (await waitToDraw()) && canSnapshot(),
+        signal,
       ).catch(() => null);
       if (!snapshot) {
         if (current() && canSnapshot()) onSnapshotFailure(paneId, startedAt);
         return;
       }
-      if (!current()) return;
+      if (!current() || !canSnapshot() || signal.aborted) return;
       const picture = {
         recordKey: record,
         paneId,
@@ -675,6 +677,7 @@ export function createSnapshotQueue() {
     element: HTMLElement,
     canStart: () => boolean,
     waitToDraw: () => Promise<boolean>,
+    signal: AbortSignal,
   ) => Promise<void>;
   const pending = new Map<
     string,
@@ -697,18 +700,20 @@ export function createSnapshotQueue() {
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
+  let activeCapture: AbortController | null = null;
   const pointers = new Set<number>();
   const noteInput = (event?: Event) => {
-    if (
+    if (event?.type === "blur" && event.target !== window) return;
+    const navigation =
       event instanceof KeyboardEvent &&
       event.altKey &&
       !event.ctrlKey &&
       !event.metaKey &&
-      event.key.startsWith("Arrow")
-    )
-      return;
-    if (event?.type === "blur" && event.target !== window) return;
-    lastInput = performance.now();
+      event.key.startsWith("Arrow");
+    if (!navigation) lastInput = performance.now();
+    activeCapture?.abort();
+    continuation?.cancel();
+    continuation = null;
     if (event?.type === "pointerdown") pointers.add((event as PointerEvent).pointerId);
     else if (
       event?.type === "pointerup" ||
@@ -717,10 +722,14 @@ export function createSnapshotQueue() {
     )
       pointers.delete((event as PointerEvent).pointerId);
     else if (event?.type === "blur") pointers.clear();
+    cancelScheduled();
     if (event) next();
   };
   const inputEvents = [
     "keydown",
+    "beforeinput",
+    "input",
+    "compositionstart",
     "pointerdown",
     "pointerup",
     "pointercancel",
@@ -822,12 +831,15 @@ export function createSnapshotQueue() {
         return;
       }
       drawing = true;
+      const controller = new AbortController();
+      activeCapture = controller;
       const background = request.background && owner === "background";
       let deferred = false;
       let dropped = false;
       const canStart = () => {
         if (mountOf(paneId) === null) dropped = true;
         else if (
+          controller.signal.aborted ||
           !enabled ||
           moving ||
           pointers.size > 0 ||
@@ -837,7 +849,7 @@ export function createSnapshotQueue() {
         return !deferred && !dropped && draw === current;
       };
       const waitToDraw = () => {
-        if (draw !== current) return Promise.resolve(false);
+        if (draw !== current || controller.signal.aborted) return Promise.resolve(false);
         return new Promise<boolean>((resolve) => {
           continuation = {
             paneId,
@@ -855,10 +867,12 @@ export function createSnapshotQueue() {
           next();
         });
       };
-      void current(paneId, request.element, canStart, waitToDraw)
+      void current(paneId, request.element, canStart, waitToDraw, controller.signal)
         .catch(() => {})
         .finally(() => {
           drawing = false;
+          if (activeCapture === controller) activeCapture = null;
+          if (controller.signal.aborted) deferred = true;
           if (draw === current && !pending.has(paneId) && !dropped) {
             if (deferred) pending.set(paneId, request);
             else if (request.element.isConnected && needsPicture(paneId)) {
@@ -902,6 +916,7 @@ export function createSnapshotQueue() {
     next();
     return () => {
       if (draw !== nextDraw) return;
+      activeCapture?.abort();
       draw = null;
       pending.clear();
       pointers.clear();
@@ -917,6 +932,11 @@ export function createSnapshotQueue() {
     if (enabled === nextEnabled && moving === nextMoving) return;
     enabled = nextEnabled;
     moving = nextMoving;
+    if (!enabled || moving) {
+      activeCapture?.abort();
+      continuation?.cancel();
+      continuation = null;
+    }
     cancelScheduled();
     next();
   };

@@ -627,7 +627,7 @@ it("keeps the last completed picture through streaming and saves the completed t
   await act(() => drawPicture(pane, completed));
   expect(store.writes).toHaveLength(2);
   expect(store.writes[1]).toMatchObject({
-    revision: `u2|dark|dark|${fontRevision}|chat-chrome-2|responsive-css-5`,
+    revision: `u2|dark|dark|${fontRevision}|chat-chrome-2|native-worker-6`,
     image: completed,
   });
 });
@@ -657,7 +657,7 @@ it("refreshes pictures when the palette changes within the same appearance", asy
   await act(() => drawPicture(pane, new Blob(["iris"])));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(store.writes[2]?.revision).toBe(
-    `u1|iris|dark|${fontRevision}|chat-chrome-2|responsive-css-5`,
+    `u1|iris|dark|${fontRevision}|chat-chrome-2|native-worker-6`,
   );
 });
 
@@ -676,7 +676,7 @@ it("waits for committed detail to catch up with shell metadata before saving a p
   await advance(3500);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.revision).toBe(
-    `u2|dark|dark|${fontRevision}|chat-chrome-2|responsive-css-5`,
+    `u2|dark|dark|${fontRevision}|chat-chrome-2|native-worker-6`,
   );
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
@@ -1233,7 +1233,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   store.saved.set(
     paneId,
     savedPicture({
-      revision: `${contentRevision}|responsive-css-5`,
+      revision: `${contentRevision}|native-worker-6`,
       image: old,
       source: "snapshot",
     }),
@@ -1268,7 +1268,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   expect(pictureImageFor(paneId)).not.toBe(old);
 });
 
-it("keeps an immutable picture that finishes encoding after input and pane eviction", async () => {
+it("rejects a picture that finishes encoding after input and pane eviction", async () => {
   const encoding = pendingPicture();
   snapshot.mockReturnValueOnce(encoding.promise);
   await mount();
@@ -1286,9 +1286,9 @@ it("keeps an immutable picture that finishes encoding after input and pane evict
   await act(async () => {
     encoding.resolve(image);
   });
-  expect(store.writes).toHaveLength(1);
-  expect(pictureImageFor(paneId)).toBe(image);
-  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(store.writes).toHaveLength(0);
+  expect(pictureImageFor(paneId)).not.toBe(image);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
   await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
 });

@@ -1,413 +1,210 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-
-import { snapshotPanePicture, type PanePictureSnapshot } from "./panePictureSnapshot";
+import { captureOnirigiriPanePicture } from "@riteofstring/onirigiri";
+import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createSnapshotQueue } from "./useSavedPanePictures";
 
+vi.mock("@riteofstring/onirigiri", () => ({ captureOnirigiriPanePicture: vi.fn() }));
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({ useTheme: vi.fn() }));
 vi.mock("@t3tools/web/src/hooks/useSettings", () => ({ useClientSettings: vi.fn() }));
 vi.mock("@t3tools/web/src/state/entities", () => ({ useThreadShells: vi.fn() }));
 vi.mock("./useWorkspacePanes", () => ({ threadPaneId: vi.fn() }));
-
-const images: HTMLImageElement[] = [];
-const drawImage = vi.fn();
-const scale = vi.fn();
-const picture = new Blob(["saved pixels"]);
-let idleBudget = 50;
+const native = vi.mocked(captureOnirigiriPanePicture);
+const picture = { image: new Blob(["native pixels"]), cssSize: { width: 400, height: 600 } };
 let dispose: (() => void) | undefined;
-
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
-    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => idleBudget }), 1),
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
   );
-  vi.stubGlobal("cancelIdleCallback", (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
-  vi.stubGlobal("Image", function () {
-    const image = document.createElement("img");
-    images.push(image);
-    return image;
-  });
-  vi.stubGlobal(
-    "CSSStyleSheet",
-    class {
-      cssRules = [];
-      replaceSync() {}
-    },
-  );
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-    drawImage,
-    scale,
-  } as unknown as ReturnType<HTMLCanvasElement["getContext"]>);
-  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) =>
-    callback(picture),
-  );
+  vi.stubGlobal("cancelIdleCallback", clearTimeout);
+  native.mockResolvedValue(picture);
 });
-
-afterEach(async () => {
+afterEach(() => {
   dispose?.();
-  await vi.advanceTimersByTimeAsync(0);
   dispose = undefined;
   document.body.replaceChildren();
-  images.length = 0;
-  idleBudget = 50;
-  drawImage.mockClear();
-  scale.mockClear();
-  vi.restoreAllMocks();
+  vi.resetAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-
-function createPane() {
+function pane() {
   const element = document.createElement("div");
-  element.textContent = "Retained snapshot content";
-  Object.defineProperties(element, {
-    offsetWidth: { value: 400, configurable: true },
-    offsetHeight: { value: 600, configurable: true },
-  });
+  element.innerHTML =
+    '<div contenteditable="true">draft</div><div style="overflow:auto">scrolled content</div>';
+  element.lastElementChild!.scrollTop = 150;
   document.body.append(element);
   return element;
 }
-
-async function beginPicture() {
-  const element = createPane();
+it("passes the original edited and scrolled DOM to native capture without cloning", async () => {
+  const element = pane();
   const clone = vi.spyOn(element, "cloneNode");
-  const completed: (PanePictureSnapshot | null)[] = [];
-  const queue = createSnapshotQueue();
-  const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(
-    async (_id, source, canStart, waitToDraw) => {
-      completed.push(
-        await snapshotPanePicture(source, () => source.isConnected && canStart(), waitToDraw),
+  const signal = new AbortController().signal;
+  expect(
+    await snapshotPanePicture(
+      element,
+      () => true,
+      async () => true,
+      signal,
+    ),
+  ).toEqual(picture);
+  expect(native).toHaveBeenCalledWith(element, signal);
+  expect(element.firstElementChild!.textContent).toBe("draft");
+  expect(element.lastElementChild!.scrollTop).toBe(150);
+  expect(clone).not.toHaveBeenCalled();
+});
+it("leaves unsupported capture without substitute pixels", async () => {
+  native.mockResolvedValue(null);
+  expect(
+    await snapshotPanePicture(
+      pane(),
+      () => true,
+      async () => true,
+    ),
+  ).toBeNull();
+});
+it.each(["revision", "abort", "detach"])(
+  "discards a completed capture after %s",
+  async (change) => {
+    const element = pane();
+    let finish!: (value: typeof picture) => void;
+    native.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let current = true;
+    const controller = new AbortController();
+    const result = snapshotPanePicture(
+      element,
+      () => current,
+      async () => true,
+      controller.signal,
+    );
+    await Promise.resolve();
+    if (change === "revision") current = false;
+    if (change === "abort") controller.abort();
+    if (change === "detach") element.remove();
+    finish(picture);
+    expect(await result).toBeNull();
+  },
+);
+it("does not start native work after cancelled phase admission or for live producers", async () => {
+  const element = pane();
+  expect(
+    await snapshotPanePicture(
+      element,
+      () => true,
+      async () => false,
+    ),
+  ).toBeNull();
+  element.append(document.createElement("canvas"));
+  expect(
+    await snapshotPanePicture(
+      element,
+      () => true,
+      async () => true,
+    ),
+  ).toBeNull();
+  expect(native).not.toHaveBeenCalled();
+});
+it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion", "disable"])(
+  "cancels in-flight work on %s and keeps captures serial",
+  async (input) => {
+    const queue = createSnapshotQueue();
+    const active: AbortSignal[] = [];
+    const finishes: (() => void)[] = [];
+    const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(
+      async (_id, _element, _can, _wait, signal) => {
+        active.push(signal);
+        await new Promise<void>((resolve) => finishes.push(resolve));
+      },
+    );
+    dispose = queue.setDraw(
+      draw,
+      () => false,
+      () => false,
+    );
+    queue.request("first", pane());
+    queue.request("second", pane());
+    await vi.advanceTimersByTimeAsync(300);
+    expect(active).toHaveLength(1);
+    if (input === "motion") queue.setActivity(true, true);
+    else if (input === "disable") queue.setActivity(false, false);
+    else
+      window.dispatchEvent(
+        input === "keydown"
+          ? new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true })
+          : new Event(input),
       );
-    },
-  );
+    expect(active[0]!.aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(active).toHaveLength(1);
+    finishes[0]!();
+    queue.setActivity(true, false);
+    if (input === "pointerdown") window.dispatchEvent(new Event("pointerup"));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(active).toHaveLength(2);
+    finishes[1]!();
+  },
+);
+it("starts a missing visible picture within the half-second route interval", async () => {
+  const queue = createSnapshotQueue();
+  const draw = vi.fn(async () => {});
   dispose = queue.setDraw(
     draw,
     () => false,
     () => false,
   );
-  queue.request("first", element);
-  await vi.advanceTimersByTimeAsync(450);
-  expect(images).toHaveLength(1);
-  expect(clone).toHaveBeenCalledOnce();
-  expect(drawImage).not.toHaveBeenCalled();
-  return { element, image: images[0]!, clone, completed, queue, draw };
-}
-
-it.each([false, true])(
-  "retains the loaded SVG through motion and waits for idle before drawing; detached: %s",
-  async (detached) => {
-    const f = await beginPicture();
-    window.dispatchEvent(new Event("keydown"));
-    f.queue.setActivity(true, true);
-    if (detached) f.element.remove();
-    f.image.dispatchEvent(new Event("load"));
-    f.queue.request("second", f.element);
-    await vi.advanceTimersByTimeAsync(500);
-    expect(drawImage).not.toHaveBeenCalled();
-    expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
-    expect(f.completed).toEqual([]);
-    expect(f.image.getAttribute("src")).toContain("data:image/svg+xml");
-    expect(f.draw).toHaveBeenCalledOnce();
-
-    idleBudget = 0;
-    f.queue.setActivity(true, false);
-    await vi.advanceTimersByTimeAsync(450);
-    expect(drawImage).not.toHaveBeenCalled();
-    idleBudget = 50;
-    await vi.advanceTimersByTimeAsync(1);
-    expect(f.completed).toEqual([{ image: picture, cssSize: { width: 400, height: 600 } }]);
-    expect(drawImage).toHaveBeenCalledOnce();
-    expect(HTMLCanvasElement.prototype.toBlob).toHaveBeenCalledOnce();
-    expect(f.clone).toHaveBeenCalledOnce();
-    expect(f.draw).toHaveBeenCalledOnce();
-    expect(f.image.hasAttribute("src")).toBe(false);
-  },
-);
-
-it("resumes a loaded SVG after the workspace is enabled and recent input becomes quiet", async () => {
-  const f = await beginPicture();
-  f.queue.setActivity(false, false);
-  f.image.dispatchEvent(new Event("load"));
-  await vi.advanceTimersByTimeAsync(1000);
-  expect(drawImage).not.toHaveBeenCalled();
-
-  window.dispatchEvent(new Event("pointerdown"));
-  window.dispatchEvent(new Event("pointerup"));
-  f.queue.setActivity(true, false);
-  await vi.advanceTimersByTimeAsync(249);
-  expect(drawImage).not.toHaveBeenCalled();
-  await vi.advanceTimersByTimeAsync(2);
-  expect(f.completed).toEqual([{ image: picture, cssSize: { width: 400, height: 600 } }]);
-  expect(f.clone).toHaveBeenCalledOnce();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true }));
+  queue.request("first", pane());
+  await vi.advanceTimersByTimeAsync(300);
+  expect(draw).toHaveBeenCalledOnce();
 });
 
-it("keeps the serialized CSS size through delayed desktop admission and later resize", async () => {
-  const pixels = new Uint8Array([137, 80, 78, 71]);
-  const rasterize = vi.fn().mockResolvedValue(pixels);
-  vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
-  vi.stubGlobal("devicePixelRatio", 2);
-  const element = createPane();
-  const editor = document.createElement("div");
-  editor.dataset.testid = "composer-editor";
-  editor.textContent = "Unsent private draft";
-  element.append(editor);
-  let admit!: (value: boolean) => void;
-  const admission = new Promise<boolean>((resolve) => {
-    admit = resolve;
+it("cancels scheduled phase admission without starting another capture early", async () => {
+  const idle = new Map<number, IdleRequestCallback>();
+  let serial = 0;
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) => {
+    idle.set(++serial, callback);
+    return serial;
   });
-  const result = snapshotPanePicture(
-    element,
-    () => element.isConnected,
-    () => admission,
-  );
-  await vi.advanceTimersByTimeAsync(40);
-  expect(rasterize).not.toHaveBeenCalled();
-  expect(images).toEqual([]);
-
-  Object.defineProperties(element, {
-    offsetWidth: { value: 900 },
-    offsetHeight: { value: 1000 },
+  vi.stubGlobal("cancelIdleCallback", (id: number) => idle.delete(id));
+  const flush = () => {
+    const callbacks = [...idle.values()];
+    idle.clear();
+    for (const callback of callbacks) callback({ didTimeout: false, timeRemaining: () => 50 });
+  };
+  const queue = createSnapshotQueue();
+  let finish!: () => void;
+  const admissions: boolean[] = [];
+  const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(async (_id, _source, _can, wait) => {
+    admissions.push(await wait());
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
   });
-  element.remove();
-  admit(true);
-  const image = await result;
-  expect(image?.cssSize).toEqual({ width: 400, height: 600 });
-  expect(image?.image.type).toBe("image/png");
-  expect(image?.image.size).toBe(pixels.byteLength);
-  expect(rasterize).toHaveBeenCalledOnce();
-  const input = rasterize.mock.calls[0]![0];
-  const svg = new DOMParser().parseFromString(
-    input.open + decodeURIComponent(input.styles) + input.content,
-    "image/svg+xml",
-  );
-  expect(svg.querySelector("parsererror")).toBeNull();
-  expect(svg.documentElement.getAttribute("width")).toBe("400");
-  expect(svg.documentElement.getAttribute("height")).toBe("600");
-  expect(svg.documentElement.textContent).toContain("Retained snapshot content");
-  expect(svg.documentElement.textContent).toContain("Unsent private draft");
-  expect(input).toMatchObject({ width: 400, height: 600, scale: 2 });
-  expect(images).toEqual([]);
-  expect(drawImage).not.toHaveBeenCalled();
-  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
-});
-
-it("does not dispatch or draw when desktop capture admission is revoked", async () => {
-  const rasterize = vi.fn();
-  vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
-  const result = snapshotPanePicture(
-    createPane(),
-    () => true,
-    async () => false,
-  );
-  await vi.advanceTimersByTimeAsync(40);
-  expect(await result).toBeNull();
-  expect(rasterize).not.toHaveBeenCalled();
-  expect(images).toEqual([]);
-  expect(drawImage).not.toHaveBeenCalled();
-});
-
-it.each(["unavailable", "empty", "rejected", "thrown"])(
-  "keeps the original foreground raster when desktop is %s",
-  async (failure) => {
-    const rasterize = vi.fn(() => {
-      if (failure === "thrown") throw new Error("raster service unavailable");
-      if (failure === "rejected") return Promise.reject(new Error("raster service stopped"));
-      return Promise.resolve(failure === "empty" ? new Uint8Array() : null);
-    });
-    vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
-    const element = createPane();
-    const clone = vi.spyOn(element, "cloneNode");
-    const result = snapshotPanePicture(
-      element,
-      () => true,
-      async () => true,
-    );
-    await vi.advanceTimersByTimeAsync(40);
-    expect(images).toHaveLength(1);
-    expect(drawImage).not.toHaveBeenCalled();
-    vi.stubGlobal("devicePixelRatio", 2);
-    images[0]!.dispatchEvent(new Event("load"));
-    expect(await result).toEqual({ image: picture, cssSize: { width: 400, height: 600 } });
-    expect(rasterize).toHaveBeenCalledOnce();
-    expect(clone).toHaveBeenCalledOnce();
-    expect(drawImage).toHaveBeenCalledWith(images[0], 0, 0, 400, 600);
-    expect(scale).toHaveBeenCalledWith(2, 2);
-    expect(HTMLCanvasElement.prototype.toBlob).toHaveBeenCalledOnce();
-    expect(images[0]!.hasAttribute("src")).toBe(false);
-  },
-);
-
-it("checks admission again before drawing a failed desktop raster locally", async () => {
-  const rasterize = vi.fn().mockResolvedValue(null);
-  vi.stubGlobal("desktopBridge", { rasterizePanePicture: rasterize });
-  let admitted = true;
-  const result = snapshotPanePicture(
-    createPane(),
-    () => true,
-    async () => admitted,
-  );
-  await vi.advanceTimersByTimeAsync(40);
-  expect(images).toHaveLength(1);
-  admitted = false;
-  images[0]!.dispatchEvent(new Event("load"));
-  expect(await result).toBeNull();
-  expect(rasterize).toHaveBeenCalledOnce();
-  expect(drawImage).not.toHaveBeenCalled();
-  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
-  expect(images[0]!.hasAttribute("src")).toBe(false);
-});
-
-it("settles and releases a loaded SVG when the queue is disposed while awaiting admission", async () => {
-  const f = await beginPicture();
-  f.queue.setActivity(true, true);
-  f.image.dispatchEvent(new Event("load"));
-  await vi.advanceTimersByTimeAsync(1);
-  expect(f.completed).toEqual([]);
-  expect(f.image.hasAttribute("src")).toBe(true);
-
-  dispose!();
-  dispose = undefined;
-  await vi.advanceTimersByTimeAsync(0);
-  expect(f.completed).toEqual([null]);
-  expect(f.image.hasAttribute("src")).toBe(false);
-  expect(drawImage).not.toHaveBeenCalled();
-  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled();
-  expect(vi.getTimerCount()).toBe(0);
-});
-
-it.each([false, true])(
-  "retains captured CSS dimensions through browser encoding; encoding failed: %s",
-  async (failed) => {
-    vi.stubGlobal("devicePixelRatio", 2);
-    let finish!: BlobCallback;
-    let canvas!: HTMLCanvasElement;
-    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(function (
-      this: HTMLCanvasElement,
-      callback,
-    ) {
-      canvas = this;
-      finish = callback;
-    });
-    const element = createPane();
-    const result = snapshotPanePicture(
-      element,
-      () => true,
-      async () => true,
-    );
-    await vi.advanceTimersByTimeAsync(40);
-    expect(images).toHaveLength(1);
-    const svg = new DOMParser().parseFromString(
-      decodeURIComponent(images[0]!.src.split(",")[1]!),
-      "image/svg+xml",
-    );
-    expect(svg.documentElement.getAttribute("width")).toBe("400");
-    expect(svg.documentElement.getAttribute("height")).toBe("600");
-    Object.defineProperties(element, {
-      offsetWidth: { value: 900, configurable: true },
-      offsetHeight: { value: 1000, configurable: true },
-    });
-    images[0]!.dispatchEvent(new Event("load"));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(drawImage).toHaveBeenCalledWith(images[0], 0, 0, 400, 600);
-    expect(canvas.width).toBe(800);
-    expect(canvas.height).toBe(1200);
-    Object.defineProperties(element, {
-      offsetWidth: { value: 200 },
-      offsetHeight: { value: 300 },
-    });
-    finish(failed ? null : picture);
-    expect(await result).toEqual(
-      failed ? null : { image: picture, cssSize: { width: 400, height: 600 } },
-    );
-    expect(canvas.width).toBe(0);
-    expect(canvas.height).toBe(0);
-    expect(images[0]!.hasAttribute("src")).toBe(false);
-  },
-);
-
-it.each([
-  { width: 400, height: 600 },
-  { width: 2000, height: 1500 },
-])("draws a $width x $height pane at the device pixel ratio", async ({ width, height }) => {
-  Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
-  try {
-    const element = createPane();
-    Object.defineProperties(element, {
-      offsetWidth: { value: width },
-      offsetHeight: { value: height },
-    });
-    const result = snapshotPanePicture(
-      element,
-      () => true,
-      async () => true,
-    );
-    await vi.advanceTimersByTimeAsync(100);
-    images[0]!.dispatchEvent(new Event("load"));
-    expect(await result).toEqual({ image: picture, cssSize: { width, height } });
-    expect(scale).toHaveBeenCalledWith(2, 2);
-  } finally {
-    delete (window as { devicePixelRatio?: number }).devicePixelRatio;
-  }
-});
-
-it("pictures a view in use before earlier background preparation that is equally due", async () => {
-  const queue = createSnapshotQueue();
-  const drawn: string[] = [];
   dispose = queue.setDraw(
-    async (paneId) => {
-      drawn.push(paneId);
-    },
-    () => true,
-    () => true,
-    (paneId) => (paneId === "prepared" ? "background" : "ordinary"),
-  );
-  queue.request("prepared", createPane());
-  queue.request("seen", createPane());
-  idleBudget = 5;
-  await vi.advanceTimersByTimeAsync(3500);
-  expect(drawn[0]).toBe("seen");
-});
-
-it("pictures the due view nearest the focused pane first", async () => {
-  const queue = createSnapshotQueue();
-  const drawn: string[] = [];
-  dispose = queue.setDraw(
-    async (paneId) => {
-      drawn.push(paneId);
-    },
-    (paneId) => !drawn.includes(paneId),
+    draw,
+    () => false,
     () => false,
   );
-  const at = (left: number) => {
-    const pane = createPane();
-    pane.getBoundingClientRect = () => new DOMRect(left, 0, 400, window.innerHeight);
-    return pane;
-  };
-  queue.request("far", at(window.innerWidth * 3));
-  queue.request("near", at(window.innerWidth / 2 - 200));
-  queue.request("beside", at(window.innerWidth));
-  await vi.advanceTimersByTimeAsync(3500);
-  expect(drawn).toEqual(["near", "beside", "far"]);
-});
-
-it("keeps covered content measurable until the asynchronous picture finishes", async () => {
-  const host = document.createElement("div");
-  host.className = "onirigiri-pane__live-content";
-  document.body.append(host);
-  const element = createPane();
-  host.append(element);
-  const completed: (PanePictureSnapshot | null)[] = [];
-  void snapshotPanePicture(
-    element,
-    () => true,
-    async () => true,
-  ).then((result) => completed.push(result));
-  await vi.advanceTimersByTimeAsync(100);
-  expect(images).toHaveLength(1);
-  expect(completed).toEqual([]);
-  expect(host.hasAttribute("data-spatial-snapshot")).toBe(true);
-  images[0]!.dispatchEvent(new Event("load"));
+  queue.request("first", pane());
+  queue.request("second", pane());
+  await vi.advanceTimersByTimeAsync(300);
+  flush();
+  expect(draw).toHaveBeenCalledOnce();
+  window.dispatchEvent(new Event("input"));
+  await Promise.resolve();
+  expect(admissions).toEqual([false]);
+  expect(idle.size).toBe(0);
+  await vi.advanceTimersByTimeAsync(300);
+  flush();
+  expect(draw).toHaveBeenCalledOnce();
+  finish();
   await vi.advanceTimersByTimeAsync(0);
-  expect(completed[0]?.image).toBe(picture);
-  expect(host.hasAttribute("data-spatial-snapshot")).toBe(false);
+  flush();
+  expect(draw).toHaveBeenCalledTimes(2);
+  dispose();
 });
