@@ -82,7 +82,7 @@ it("keeps document work out of intent and flushes it before the first key or at 
         .getState()
         .setPrompt(scopeThreadRef(thread.environmentId, thread.threadId), "settled");
       expect(handle.current!.bind("second", thread, false)).toBe(true);
-      expect(editor.textContent).toBe("destination");
+      expect(editor.textContent).toBe("settled");
       handle.current!.frame(
         { paneId: "second", x: 0, y: 0, width: 800, height: 600, scale: 1 },
         false,
@@ -195,6 +195,49 @@ it("never queues unavailable Enter and relays only to the scoped destination", a
     expect(container.textContent).toContain("Sending");
   } finally {
     unregister();
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reflects external clears and restoration synchronously without resetting self-authored caret", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const overlay = createRef<PersistentComposerHandle>();
+  const thread = { environmentId: "external" as EnvironmentId, threadId: "draft" as ThreadId };
+  const target = scopeThreadRef(thread.environmentId, thread.threadId);
+  const store = useComposerDraftStore.getState();
+  store.setPrompt(target, "original");
+  try {
+    await act(async () => root.render(<PersistentComposer ref={overlay} />));
+    const element = container.querySelector<
+      HTMLElement & {
+        editor: {
+          commands: {
+            insertContent: (text: string) => void;
+            setTextSelection: (position: number) => void;
+          };
+        };
+      }
+    >(".tiptap")!;
+    await act(async () => {
+      overlay.current!.bind("external", thread, false);
+      overlay.current!.flush();
+      element.editor.commands.setTextSelection(1);
+      element.editor.commands.insertContent("a");
+      element.editor.commands.insertContent("b");
+      expect(element.textContent).toBe("aboriginal");
+      store.clearComposerContent(target);
+      expect(element.textContent).toBe("");
+      store.setPrompt(target, "restored");
+      expect(element.textContent).toBe("restored");
+      element.editor.commands.insertContent("!");
+      expect(store.getComposerDraft(target)!.prompt).toBe("restored!");
+    });
+  } finally {
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();

@@ -34,6 +34,8 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   }, []);
   const destination = useRef<string | null>(null);
   const boundThreadKey = useRef<string | null>(null);
+  const boundThread = useRef<ThreadPaneData | null>(null);
+  const lastValue = useRef("");
   const [sendReason, setSendReason] = useState<string | null>(null);
   const getDestinationHandle = () => {
     const paneId = destination.current;
@@ -47,11 +49,33 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
     if (!editor.current?.bindDraft) return false;
     const threadRef = scopeThreadRef(next.thread.environmentId, next.thread.threadId);
     const bound = editor.current.bindDraft(next.value, Number.POSITIVE_INFINITY, (value) => {
+      lastValue.current = value;
       useComposerDraftStore.getState().setPrompt(threadRef, value);
     });
-    if (bound) pending.current = null;
+    if (bound) {
+      lastValue.current = next.value;
+      pending.current = null;
+    }
     return bound;
   }, []);
+  useEffect(
+    () =>
+      useComposerDraftStore.subscribe((state) => {
+        const key = boundThreadKey.current;
+        const thread = boundThread.current;
+        const paneId = destination.current;
+        if (!key || !thread || !paneId) return;
+        const value = state.draftsByThreadKey[key]?.prompt ?? "";
+        if (pending.current) {
+          pending.current.value = value;
+          return;
+        }
+        if (value === lastValue.current) return;
+        pending.current = { paneId, thread, value };
+        if (!editor.current?.isComposing?.()) flush();
+      }),
+    [flush],
+  );
   useImperativeHandle(
     ref,
     () => ({
@@ -72,6 +96,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         pending.current = { paneId, thread, value };
         destination.current = paneId;
         boundThreadKey.current = scopedThreadKey(threadRef);
+        boundThread.current = thread;
         setSendReason(null);
         setCoveredComposerOwner(scopedThreadKey(threadRef));
         root.current.dataset.composerDestination = paneId;
@@ -100,6 +125,9 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
       hide() {
         if (root.current) root.current.hidden = true;
         destination.current = null;
+        boundThreadKey.current = null;
+        boundThread.current = null;
+        pending.current = null;
         setCoveredComposerOwner(null);
       },
     }),
@@ -108,6 +136,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   return (
     <div
       ref={root}
+      onCompositionEndCapture={() => queueMicrotask(() => flush())}
       onKeyDownCapture={(event) => {
         if (
           event.key === "Escape" &&
