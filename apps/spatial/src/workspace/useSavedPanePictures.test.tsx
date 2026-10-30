@@ -1015,9 +1015,8 @@ it("captures first pixels between ordinary navigation inputs, once motion has st
   await advance(550);
   expect(snapshot).not.toHaveBeenCalled();
   hook.setCaptureActivity(true, false);
-  await advance(240);
-  expect(snapshot).not.toHaveBeenCalled();
   await advance(20);
+  expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   window.dispatchEvent(new Event("keydown"));
   expect(store.writes).toHaveLength(1);
@@ -1066,7 +1065,7 @@ it.each(["longtask", "long-animation-frame"])(
     await advance(240);
     expect(drawn).toEqual([]);
     await advance(30);
-    expect(drawn).toEqual([visible, neighbour, paneId]);
+    expect(drawn).toEqual([visible, paneId, neighbour]);
     for (const id of [paneId, neighbour, visible]) expect(hook.hasFreshPicture(id)).toBe(true);
   },
 );
@@ -1097,36 +1096,23 @@ it("releases an abandoned drawing even when idle headroom is exhausted", async (
   expect(store.writes).toHaveLength(0);
 });
 
-it.each([
-  { covered: false, quietMs: 250 },
-  { covered: true, quietMs: 250 },
-])(
-  "waits through programmatic navigation before capturing a covered=$covered pane",
-  async ({ covered, quietMs }) => {
+it.each([false, true])(
+  "captures promptly after uncover with previous pixels: %s",
+  async (covered) => {
     await mount();
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-    const cover = new Blob(["cover"]);
-    if (covered) {
-      await act(() => drawPicture(pane, cover));
-      hook.paneSnapshots.invalidate(paneId);
-    }
+    if (covered) await act(() => drawPicture(pane, new Blob(["previous"])));
     await advance(5000);
-    const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
-    for (let step = 0; step < 3; step++) {
-      hook.setCaptureActivity(true, true);
-      await advance(100);
-      hook.setCaptureActivity(true, false);
-      await advance(200);
-      expect(snapshot).not.toHaveBeenCalled();
-    }
-    expect(pictureImageFor(paneId)).toBeNull();
-    await advance(quietMs - 201);
+    hook.setCaptureActivity(true, true);
+    hook.paneSnapshots.invalidate(paneId, true);
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true }));
+    await advance(100);
     expect(snapshot).not.toHaveBeenCalled();
-    await advance(2);
+    hook.setCaptureActivity(true, false);
+    await advance(10);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(hook.hasFreshPicture(paneId)).toBe(true);
-    expect(store.writes).toHaveLength(covered ? 2 : 1);
   },
 );
 
@@ -1171,8 +1157,6 @@ it("requeues a first picture interrupted by camera motion before cloning", async
   expect(store.writes).toHaveLength(0);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.setCaptureActivity(true, false);
-  await advance(240);
-  expect(snapshot).toHaveBeenCalledOnce();
   await advance(20);
   expect(snapshot).toHaveBeenCalledTimes(2);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -2195,7 +2179,7 @@ it.each(["longtask", "long-animation-frame"])(
   },
 );
 
-it("recaptures an active pane after 250 ms quiet from its last visual change", async () => {
+it("recaptures committed visible changes without a fixed quiet embargo", async () => {
   await mount();
   const element = { isConnected: true } as HTMLElement;
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
@@ -2207,9 +2191,7 @@ it("recaptures an active pane after 250 ms quiet from its last visual change", a
   await advance(150);
   hook.paneSnapshots.invalidate(paneId, true);
   hook.paneSnapshots.request(paneId, element);
-  await advance(240);
-  expect(snapshot).toHaveBeenCalledOnce();
-  await advance(20);
-  expect(snapshot).toHaveBeenCalledTimes(2);
+  await advance(10);
+  expect(snapshot).toHaveBeenCalledTimes(3);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });

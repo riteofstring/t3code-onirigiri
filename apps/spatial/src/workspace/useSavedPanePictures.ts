@@ -757,6 +757,14 @@ export function createSnapshotQueue() {
   let lastInput = performance.now();
   const pointers = new Set<number>();
   const noteInput = (event?: Event) => {
+    if (
+      event instanceof KeyboardEvent &&
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      event.key.startsWith("Arrow")
+    )
+      return;
     if (event?.type === "blur" && event.target !== window) return;
     lastInput = performance.now();
     if (event?.type === "pointerdown") pointers.add((event as PointerEvent).pointerId);
@@ -843,7 +851,7 @@ export function createSnapshotQueue() {
       }
       const dueRequests = [...pending].filter((candidate) => due(candidate) <= now);
       const priority = ([paneId, request]: (typeof dueRequests)[number]) =>
-        hasCover(paneId) ? 2 : request.background ? 1 : 0;
+        request.background ? 2 : hasCover(paneId) ? 1 : 0;
       const [paneId, request] = dueRequests.length
         ? dueRequests.sort(
             (a, b) =>
@@ -927,7 +935,8 @@ export function createSnapshotQueue() {
     if (mountOf(paneId) === null) return;
     pending.set(paneId, {
       element,
-      after: performance.now() + FIRST_PICTURE_INPUT_QUIET_MS,
+      after:
+        performance.now() + (mountOf(paneId) === "background" ? FIRST_PICTURE_INPUT_QUIET_MS : 0),
       retryAfter: SNAPSHOT_RETRY_MS,
       background: mountOf(paneId) === "background",
     });
@@ -964,7 +973,6 @@ export function createSnapshotQueue() {
   };
   const setActivity = (nextEnabled: boolean, nextMoving: boolean) => {
     if (enabled === nextEnabled && moving === nextMoving) return;
-    noteInput();
     enabled = nextEnabled;
     moving = nextMoving;
     cancelScheduled();

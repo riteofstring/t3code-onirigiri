@@ -471,7 +471,6 @@ it("retains the editor while a reconnect delays readiness and cancels the pendin
   expect(container.querySelector("[data-spatial-preparing]")).not.toBeNull();
   state.status = "live";
   await render(true, false);
-  await act(() => vi.advanceTimersByTimeAsync(16));
   state.status = "synchronizing";
   await render(true);
   expect(requestSnapshot).not.toHaveBeenCalled();
@@ -580,7 +579,7 @@ it("requests replacement pixels after a resize without remounting live content",
 });
 
 it.each(["wheel", "scroll"])(
-  "requests a picture refresh after %s input while the pane is active",
+  "preserves its picture after %s without a scroll offset change",
   async (event) => {
     live();
     state.interactive = true;
@@ -589,8 +588,8 @@ it.each(["wheel", "scroll"])(
     requestSnapshot.mockClear();
     invalidateSnapshot.mockClear();
     await act(() => editor.dispatchEvent(new Event(event, { bubbles: true })));
-    expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
-    expect(requestSnapshot).toHaveBeenCalled();
+    expect(invalidateSnapshot).not.toHaveBeenCalled();
+    expect(requestSnapshot).not.toHaveBeenCalled();
 
     await render(true);
     requestSnapshot.mockClear();
@@ -1042,7 +1041,11 @@ it("preserves an acknowledged scroll revision after its content is remounted", a
   state.interactive = true;
   await render(true);
   const before = state.engineRevision;
-  await act(() => container.querySelector("textarea")!.dispatchEvent(new Event("scroll")));
+  await act(() => {
+    const editor = container.querySelector("textarea")!;
+    editor.scrollTop = 120;
+    editor.dispatchEvent(new Event("scroll"));
+  });
   expect(state.engineRevision).not.toBe(before);
   state.mounted = false;
   await render(false);

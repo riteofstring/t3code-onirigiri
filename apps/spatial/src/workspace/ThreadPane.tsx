@@ -199,13 +199,16 @@ function usePaneContent(
 
   useEffect(() => {
     if (!renderContent || !synced || !contentReady) return;
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => setSettled(true));
-    });
+    let idle: number;
+    const prepare = () => {
+      idle = requestIdleCallback((deadline) => {
+        if (deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) prepare();
+        else setSettled(true);
+      });
+    };
+    prepare();
     return () => {
-      cancelAnimationFrame(first);
-      cancelAnimationFrame(second);
+      cancelIdleCallback(idle);
       setSettled(false);
     };
   }, [contentReady, renderContent, synced]);
@@ -331,6 +334,7 @@ export const ThreadPane = memo(function ThreadPane({
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
   const producerInspected = useRef(false);
+  const scrollOffsets = useRef(new WeakMap<HTMLElement, string>());
   useLayoutEffect(() => {
     const element = contentRef.current;
     if (!element || !snapshots) return;
@@ -352,8 +356,21 @@ export const ThreadPane = memo(function ThreadPane({
       [...record.addedNodes, ...record.removedNodes].some(
         (node) => node instanceof Element && hasLivePaneProducer(node),
       );
-    if (picturable !== null) snapshotPrepared.current = true;
-    const invalidate = () => {
+    if (picturable !== null && !snapshotPrepared.current) {
+      for (const scroller of element.querySelectorAll<HTMLElement>(
+        '.messages-timeline-scroll, [data-tool-group-scroll], [data-testid="composer-editor"]',
+      ))
+        scrollOffsets.current.set(scroller, `${scroller.scrollLeft}|${scroller.scrollTop}`);
+      snapshotPrepared.current = true;
+    }
+    const invalidate = (event?: Event) => {
+      if (event?.type === "scroll" && event.target instanceof HTMLElement) {
+        const target = event.target;
+        const next = `${target.scrollLeft}|${target.scrollTop}`;
+        const previous = scrollOffsets.current.get(target) ?? "0|0";
+        scrollOffsets.current.set(target, next);
+        if (next === previous) return;
+      }
       if (!snapshotPrepared.current) return;
       if (active && picturable !== null) snapshots?.invalidate(paneId, true);
       else snapshots?.invalidate(paneId);
@@ -406,7 +423,7 @@ export const ThreadPane = memo(function ThreadPane({
       childList: true,
       subtree: true,
     });
-    const events = ["wheel", "scroll", "pointerdown", "input", "drop", "load"] as const;
+    const events = ["scroll", "input", "drop", "load"] as const;
     for (const event of events)
       element.addEventListener(event, invalidate, { capture: true, passive: true });
     return () => {
