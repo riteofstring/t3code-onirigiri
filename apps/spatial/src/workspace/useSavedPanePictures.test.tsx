@@ -2373,3 +2373,22 @@ it.each(["longtask", "long-animation-frame"])(
     expect(snapshot).toHaveBeenCalledOnce();
   },
 );
+
+it("recaptures an active pane after 250 ms quiet from its last visual change", async () => {
+  await mount();
+  const element = { isConnected: true } as HTMLElement;
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, element);
+  await advance(260);
+  expect(snapshot).toHaveBeenCalledOnce();
+  hook.paneSnapshots.invalidate(paneId, true);
+  hook.paneSnapshots.request(paneId, element);
+  await advance(150);
+  hook.paneSnapshots.invalidate(paneId, true);
+  hook.paneSnapshots.request(paneId, element);
+  await advance(240);
+  expect(snapshot).toHaveBeenCalledOnce();
+  await advance(20);
+  expect(snapshot).toHaveBeenCalledTimes(2);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+});

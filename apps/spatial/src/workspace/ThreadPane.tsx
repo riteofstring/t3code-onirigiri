@@ -319,7 +319,7 @@ export const ThreadPane = memo(function ThreadPane({
       // Active DOM changes need acknowledgement without waking the engine on every scroll.
       if (active && picturable !== null) snapshots?.invalidate(paneId, true);
       else snapshots?.invalidate(paneId);
-      if (active || picturable === null || !snapshots) return;
+      if (picturable === null || !snapshots) return;
       setVisualRevision(snapshots.request(paneId, element));
     };
     const contentChanged = (records: MutationRecord[]) => {

@@ -27,11 +27,7 @@ import {
 import type { PictureMount } from "./paneLifecycle";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
-import {
-  BACKGROUND_PICTURE_QUIET_MS,
-  PICTURE_IDLE_BUDGET_MS,
-  observePicturePressure,
-} from "./panePictureIdle";
+import { BACKGROUND_PICTURE_QUIET_MS, PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { threadPaneId } from "./useWorkspacePanes";
 
 interface PaneContentRevision {
@@ -711,7 +707,7 @@ export function useSavedPanePictures(
 }
 
 const SNAPSHOT_INPUT_QUIET_MS = 3000;
-const FIRST_PICTURE_INPUT_QUIET_MS = 400;
+const FIRST_PICTURE_INPUT_QUIET_MS = 250;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
 function distanceFromCenter(element: HTMLElement) {
@@ -750,7 +746,6 @@ export function createSnapshotQueue() {
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
-  let busyUntil = 0;
   const pointers = new Set<number>();
   const noteInput = (event?: Event) => {
     if (event?.type === "blur" && event.target !== window) return;
@@ -778,7 +773,7 @@ export function createSnapshotQueue() {
     background
       ? BACKGROUND_PICTURE_QUIET_MS
       : hasCover(paneId)
-        ? SNAPSHOT_INPUT_QUIET_MS
+        ? FIRST_PICTURE_INPUT_QUIET_MS
         : FIRST_PICTURE_INPUT_QUIET_MS;
   const cancelScheduled = () => {
     if (idle !== null) cancelIdleCallback(idle);
@@ -814,11 +809,7 @@ export function createSnapshotQueue() {
       }
       const now = performance.now();
       const due = ([paneId, request]: [string, { after: number; background: boolean }]) =>
-        Math.max(
-          lastInput + quietTime(paneId, request.background),
-          request.after,
-          request.background ? busyUntil : 0,
-        );
+        Math.max(lastInput + quietTime(paneId, request.background), request.after);
       if (continuation) {
         const resumeAt = lastInput + quietTime(continuation.paneId, continuation.background);
         if (
@@ -935,7 +926,7 @@ export function createSnapshotQueue() {
     if (mountOf(paneId) === null) return;
     pending.set(paneId, {
       element,
-      after: Math.min(pending.get(paneId)?.after ?? Infinity, performance.now()),
+      after: performance.now() + FIRST_PICTURE_INPUT_QUIET_MS,
       retryAfter: SNAPSHOT_INPUT_QUIET_MS,
       background: mountOf(paneId) === "background",
     });
@@ -956,13 +947,8 @@ export function createSnapshotQueue() {
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });
     }
-    const stopObservingPressure = observePicturePressure((finishedAt) => {
-      busyUntil = Math.max(busyUntil, finishedAt + BACKGROUND_PICTURE_QUIET_MS);
-      next();
-    });
     next();
     return () => {
-      stopObservingPressure();
       if (draw !== nextDraw) return;
       draw = null;
       pending.clear();

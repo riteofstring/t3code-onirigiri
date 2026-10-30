@@ -572,7 +572,7 @@ it("requests replacement pixels after a resize without remounting live content",
 });
 
 it.each(["wheel", "scroll"])(
-  "defers a picture refresh after %s input until departure and reuses an unchanged visit",
+  "requests a picture refresh after %s input while the pane is active",
   async (event) => {
     live();
     state.interactive = true;
@@ -580,13 +580,7 @@ it.each(["wheel", "scroll"])(
     const editor = container.querySelector("textarea")!;
     requestSnapshot.mockClear();
     invalidateSnapshot.mockClear();
-    const revision = state.engineRevision;
     await act(() => editor.dispatchEvent(new Event(event, { bubbles: true })));
-    await act(() => vi.advanceTimersByTimeAsync(4000));
-    expect(requestSnapshot).not.toHaveBeenCalled();
-    expect(state.engineRevision).toBe(revision);
-    await render(false);
-    expect(state.engineRevision).not.toBe(revision);
     expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
     expect(requestSnapshot).toHaveBeenCalled();
 
@@ -661,7 +655,7 @@ it("reuses pictures through composer navigation and refreshes changed styles", a
   expect(requestSnapshot).toHaveBeenCalled();
 });
 
-it("refreshes a scrolled descendant on departure without predicting its keydown", async () => {
+it("refreshes a scrolled descendant at rest without predicting its keydown", async () => {
   live();
   state.interactive = true;
   await render(true);
@@ -681,12 +675,12 @@ it("refreshes a scrolled descendant on departure without predicting its keydown"
   expect(panel.scrollTop).toBe(120);
   expect(invalidateSnapshot).toHaveBeenCalledOnce();
   expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
-  expect(requestSnapshot).not.toHaveBeenCalled();
-  expect(state.engineRevision).toBe(revision);
+  expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(state.engineRevision).not.toBe(revision);
 
   await render(false);
   expect(state.engineRevision).not.toBe(revision);
-  expect(requestSnapshot).toHaveBeenCalledOnce();
+  expect(requestSnapshot).toHaveBeenCalled();
   expect(requestSnapshot).toHaveReturnedWith(1);
   expect(container.querySelector("aside")).toBe(panel);
   expect(panel.scrollTop).toBe(120);
@@ -1034,13 +1028,13 @@ it("returns from a covered eviction before a replacement composer is available",
   expect(appComposerRef.current?.isModelPickerOpen()).toBe(true);
 });
 
-it("publishes a pending scroll revision after its content is remounted", async () => {
+it("preserves an acknowledged scroll revision after its content is remounted", async () => {
   live();
   state.interactive = true;
   await render(true);
   const before = state.engineRevision;
   await act(() => container.querySelector("textarea")!.dispatchEvent(new Event("scroll")));
-  expect(state.engineRevision).toBe(before);
+  expect(state.engineRevision).not.toBe(before);
   state.mounted = false;
   await render(false);
   expect(container.querySelector("textarea")).toBeNull();
