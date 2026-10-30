@@ -148,9 +148,10 @@ it("never queues unavailable Enter and relays only to the scoped destination", a
   useComposerDraftStore.getState().setPrompt(refB, "second");
   const turns: string[] = [];
   let busy = false;
+  let loading = true;
   const fixture = {
     current: {
-      getSendDisabledReason: () => (busy ? "Sending" : null),
+      getSendDisabledReason: () => (loading ? "Messages loading" : busy ? "Sending" : null),
       submit: () => {
         if (busy) return;
         busy = true;
@@ -179,6 +180,12 @@ it("never queues unavailable Enter and relays only to the scoped destination", a
     expect(turns).toEqual([]);
     await act(async () => {
       overlay.current!.bind("send-b", b, false);
+      enter(element);
+    });
+    expect(container.textContent).toContain("Messages loading");
+    expect(turns).toEqual([]);
+    loading = false;
+    await act(async () => {
       enter(element, true);
     });
     expect(turns).toEqual([]);
@@ -193,6 +200,12 @@ it("never queues unavailable Enter and relays only to the scoped destination", a
     expect(turns).toEqual(["second fresh"]);
     expect(useComposerDraftStore.getState().getComposerDraft(refA)!.prompt).toBe("first");
     expect(container.textContent).toContain("Sending");
+    await act(async () => {
+      overlay.current!.bind("send-b", a, false);
+      enter(element);
+    });
+    expect(turns).toEqual(["second fresh"]);
+    expect(container.textContent).toContain("Preparing");
   } finally {
     unregister();
     await act(async () => root.unmount());
@@ -380,6 +393,40 @@ it("aligns only to the editor and yields to stock pending-answer input", async (
     container.remove();
     pane.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("defers external rebinding until composition ends", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const overlay = createRef<PersistentComposerHandle>();
+  const thread = { environmentId: "composing" as EnvironmentId, threadId: "draft" as ThreadId };
+  const target = scopeThreadRef(thread.environmentId, thread.threadId);
+  useComposerDraftStore.getState().setPrompt(target, "before");
+  try {
+    await act(async () => root.render(<PersistentComposer ref={overlay} />));
+    const element = container.querySelector<
+      HTMLElement & { editor: { view: { composing: boolean } } }
+    >(".tiptap")!;
+    await act(async () => {
+      overlay.current!.bind("composing", thread, false);
+      overlay.current!.flush();
+    });
+    const composing = vi.spyOn(element.editor.view, "composing", "get").mockReturnValue(true);
+    await act(async () => {
+      useComposerDraftStore.getState().setPrompt(target, "external");
+      expect(element.textContent).toBe("before");
+      composing.mockReturnValue(false);
+      element.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    });
+    expect(element.textContent).toBe("external");
+  } finally {
+    vi.restoreAllMocks();
+    await act(async () => root.unmount());
+    container.remove();
     vi.unstubAllGlobals();
   }
 });
