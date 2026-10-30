@@ -122,15 +122,11 @@ function usePaneContent(
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
       let idle: number | null = null;
-      let cancelAdmission: (() => void) | undefined;
-      const required = () => focused || settledVisible || !lifecycle?.currentPicture(paneId);
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
         idle = null;
-        cancelAdmission?.();
-        cancelAdmission = undefined;
         if (lifecycle?.isMoving()) {
-          if (required()) cancelAdmission = lifecycle.requestAdmission(paneId, required, show);
+          return;
         } else if (focused || visible) show();
         else
           idle = requestIdleCallback((deadline) => {
@@ -143,7 +139,6 @@ function usePaneContent(
       prepare();
       return () => {
         unsubscribe?.();
-        cancelAdmission?.();
         if (idle !== null) cancelIdleCallback(idle);
       };
     }

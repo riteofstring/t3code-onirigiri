@@ -2,7 +2,7 @@
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { act, Profiler } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -854,7 +854,7 @@ it.each(["route", "timeline", "suspended content"])(
   },
 );
 
-it("prepares a newly visible view during motion without waiting for idle", async () => {
+it("defers a newly visible view until motion stops", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
@@ -862,7 +862,7 @@ it("prepares a newly visible view during motion without waiting for idle", async
   live();
   vi.stubGlobal("requestIdleCallback", () => 99);
   await render(false, false, true);
-  expect(container.querySelector("textarea")).not.toBeNull();
+  expect(container.querySelector("textarea")).toBeNull();
   await act(() => lifecycle!.setMoving(false));
   expect(container.querySelector("textarea")).not.toBeNull();
 });
@@ -1231,7 +1231,7 @@ it("focuses the stock composer after an adapter-approved editing navigation", as
   expect(state.composerActions).toEqual([0]);
 });
 
-it("keeps current-picture transit content dormant, then admits it when retargeted", async () => {
+it("keeps transit content dormant until rest and then retains its editor", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
@@ -1241,6 +1241,8 @@ it("keeps current-picture transit content dormant, then admits it when retargete
   await render(false, false, true, false);
   expect(container.querySelector("textarea")).toBeNull();
   await render(false, false, true, true);
+  expect(container.querySelector("textarea")).toBeNull();
+  await act(() => lifecycle!.setMoving(false));
   expect(container.querySelector("textarea")).not.toBeNull();
   const editor = container.querySelector("textarea")!;
   editor.value = "retained draft";
@@ -1249,7 +1251,7 @@ it("keeps current-picture transit content dormant, then admits it when retargete
   expect(editor.value).toBe("retained draft");
 });
 
-it("admits a transit pane when its current picture becomes stale during motion", async () => {
+it("does not mount a stale transit pane until motion stops", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
@@ -1266,53 +1268,9 @@ it("admits a transit pane when its current picture becomes stale during motion",
       () => true,
     ),
   );
+  expect(container.querySelector("textarea")).toBeNull();
+  await act(() => lifecycle!.setMoving(false));
   expect(container.querySelector("textarea")).not.toBeNull();
-});
-
-it("commits one required motion-time chat at a time with the destination first", async () => {
-  const { createPaneLifecycleStore } =
-    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
-  const panes = [0, 1, 2].map((slot) => ({ paneId: `p${slot}`, plane: 0, slot }));
-  lifecycle = createPaneLifecycleStore(panes, "p2");
-  lifecycle.setPictures(() => false);
-  lifecycle.setMoving(true);
-  live();
-  const commits: string[][] = [];
-  await act(async () => {
-    root.render(
-      <PaneLifecycleContext value={lifecycle}>
-        <Profiler
-          id="admissions"
-          onRender={() => {
-            commits.push(
-              [...container.querySelectorAll("textarea")].map((editor) =>
-                editor.closest("[data-test-pane]")!.getAttribute("data-test-pane")!,
-              ),
-            );
-          }}
-        >
-          {[0, 1, 2].map((slot) => (
-            <div key={slot} data-test-pane={`p${slot}`}>
-              <ThreadPane
-                paneId={`p${slot}`}
-                thread={thread}
-                focused={slot === 2}
-                visible
-                settledVisible
-                onNavigateAway={onNavigateAway}
-              />
-            </div>
-          ))}
-        </Profiler>
-      </PaneLifecycleContext>,
-    );
-  });
-  const additions = commits
-    .map((ids, index) =>
-      ids.filter((id) => !commits.slice(0, index).some((earlier) => earlier.includes(id))),
-    )
-    .filter((ids) => ids.length);
-  expect(additions).toEqual([["p2"], ["p1"], ["p0"]]);
 });
 
 it.each([false, true])("restores the timeline after content release, at end: %s", async (atEnd) => {

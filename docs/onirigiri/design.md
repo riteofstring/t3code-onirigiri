@@ -87,46 +87,20 @@ that span files and are easy to break without noticing.
 
 `paneLifecycle.ts` decides which thread panes mount a live ChatView; mounting is the expensive step.
 
-- About eight views stay warm. Visible views are never evicted, and views the user has seen stay
-  mounted while their turn runs, while they host a live producer, or until their prepared content
-  has a usable picture in the current layout mode. The warm target may be exceeded during a cold
-  traversal: preserving already prepared content avoids loading it again on the return trip without
-  forcing capture into navigation. A usable older cover permits eviction while its replacement is
-  pending. Capture failures retain the view through the existing retry schedule.
-- The focused pane mounts first once focus and visibility have been quiet briefly. No new mounts
-  are admitted during camera motion, though a transition admitted just before may still commit: a
-  saved picture or the thread card covers the destination and the view mounts after the final
-  frame. Visible peers then mount one at a time, each after the previous one commits.
-- Neighbours, the next one in the direction of travel first, and unviewed running threads use spare
-  slots only while the page is idle and input has been quiet. Navigation cancels speculative work
-  that has not started.
-- Leaving overview releases excess views one commit at a time during idle input, instead of
-  unmounting them all on the last frame.
-- Panes without a picture share one extra mount slot to be pictured: untried panes first, visited
-  ones before untouched ones, then the oldest attempt. A mount made only to picture a pane is
-  admitted after three seconds without input or camera motion, when a browser idle callback has
-  spare time. A held pointer pauses preparation until release. This extra slot is only for passive
-  preparation; visited content awaiting its first picture uses the retention rule above. A
-  reservation interrupted by input,
-  motion or covering keeps its place without counting as a failure; a real failure waits minutes
-  before a retry; a deliberate revisit takes the pane over.
-- Mount changes reach panes as transitions (`usePaneMounted`), allowing React to prioritize input;
-  synchronous layout and rasterization still have a cost.
-- The lifecycle and snapshot queue share the passive quiet-period and idle-budget policy. Both
-  track input, held pointers and motion; the lifecycle also interrupts a picture reservation.
-  The queue asks the lifecycle whether a pane is mounted only to be pictured, holds that drawing
-  to the same three quiet seconds, and drops it once
-  the lifecycle has released the mount, even while React is still unmounting the view.
-- Passive mounts, content reveals and drawings require browser idle time without a forced timeout.
-  Where supported, long-task and long-animation-frame notifications postpone speculative work for
-  three seconds after the latest busy period. They also cover pressure from preparation itself,
-  preventing repeated expensive pictures from running back to back. Visible destinations and needed
-  first covers retain priority. These signals approximate browser responsiveness, not system CPU/GPU
-  utilization, and need no continuous polling. Browsers without those observers still use idle
-  deadlines and the interaction gates.
-  Pressure never resets an unsuccessful reservation's failure backoff: preparation can itself
-  produce a long frame, so treating every pressure report as an interruption would retry broken
-  panes indefinitely. A reservation that cannot finish within its existing lifetime is released.
+- Loaded trees remain mounted across focus and visibility changes. The prior 32-tree retention cap
+  bounds the ordinary mounted set; eviction is least recently visible or focused, protects the whole
+  visible set and dirty panes without a current picture, and runs only after the 500 ms quiet tail.
+  This count bounds retained trees, not measured per-tree heap usage. The retained-peer rig measures
+  heap growth and store-driven work before this experiment can be treated as a memory guarantee.
+- Motion admits no new trees and releases none. Retained destinations reveal their existing DOM at
+  rest. Cold destinations still pay stock ChatView admission cost and remain subject to the same
+  acceptance limits.
+- Spare slots fill nearest-first, one mount per browser idle opportunity after quiet. A prepared
+  picture does not exclude its unloaded tree from this fill. Preparation waits for the admitted
+  content and its picture before filling another slot; input cancels pending speculative work.
+- Offscreen retained content uses the engine's hidden runtime and content visibility containment
+  to exclude layout and paint. Its React subscriptions remain attached; hiding does not suspend
+  store updates. Current pictures cover motion; a dirty pane without current pixels remains live.
 
 ## Pictures
 

@@ -2,6 +2,9 @@ import { createContext, startTransition, use, useEffect, useState } from "react"
 
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 
+const MAX_MOUNTED = 32;
+const QUIET_MS = 500;
+
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 const STORED_PICTURES_WAIT_MS = 2000;
@@ -17,11 +20,16 @@ export type PictureMount = "background" | "ordinary" | null;
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
   focusedPaneId: string | null,
+  maxMounted = MAX_MOUNTED,
 ) {
   let panes = new Map(initialPanes.map((pane) => [pane.paneId, pane]));
   let focused = focusedPaneId && panes.has(focusedPaneId) ? focusedPaneId : null;
   const mounted = new Set<string>(focused ? [focused] : []);
   const visible = new Set<string>();
+  const loaded = new Set<string>();
+  const recent = new Map<string, number>();
+  let visit = 0;
+  let quietSince = performance.now();
   const visited = new Set<string>();
   const listeners = new Map<string, Set<() => void>>();
   const motionListeners = new Set<() => void>();
@@ -38,25 +46,6 @@ export function createPaneLifecycleStore(
   let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
   let capturing: { paneId: string; since: number } | null = null;
   let disposed = false;
-  const admissions = new Map<string, { required: () => boolean; show: () => void }>();
-  let admitting: string | null = null;
-  let admissionScheduled = false;
-  const drainAdmissions = () => {
-    if (admissionScheduled || disposed) return;
-    admissionScheduled = true;
-    queueMicrotask(() => {
-      admissionScheduled = false;
-      if (disposed || admitting !== null) return;
-      const next = [...admissions.keys()]
-        .filter((id) => panes.has(id) && admissions.get(id)!.required())
-        .sort(
-          (a, b) => Number(b === focused) - Number(a === focused) || distance(a) - distance(b),
-        )[0];
-      if (!next) return;
-      admitting = next;
-      admissions.get(next)!.show();
-    });
-  };
 
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
@@ -68,12 +57,9 @@ export function createPaneLifecycleStore(
     }
   };
   const unmount = (paneId: string) => {
+    loaded.delete(paneId);
+    recent.delete(paneId);
     if (mounted.delete(paneId)) notify(paneId);
-    if (admitting === paneId) {
-      admitting = null;
-      admissions.delete(paneId);
-      drainAdmissions();
-    }
   };
   const cancel = () => {
     if (timer !== null) clearTimeout(timer);
@@ -89,16 +75,19 @@ export function createPaneLifecycleStore(
   };
   const reconcile = () => {
     const keep = retained();
+    if (moving || pointers.size > 0) return;
     for (const id of keep) if (panes.has(id)) mount(id);
-    for (const id of mounted)
+    if (performance.now() - quietSince < QUIET_MS) return;
+    for (const id of [...mounted].sort((a, b) => (recent.get(a) ?? 0) - (recent.get(b) ?? 0))) {
+      if (mounted.size <= Math.max(maxMounted, keep.size)) break;
       if (!keep.has(id) && id !== capturing?.paneId && hasPicture(id)) unmount(id);
+    }
   };
   const release = (retry: boolean) => {
     if (!capturing) return;
     const { paneId } = capturing;
     capturing = null;
     if (hasPicture(paneId) || retry) retryAt.delete(paneId);
-    if (!retained().has(paneId) && hasPicture(paneId)) unmount(paneId);
   };
   const distance = (paneId: string) => {
     const center = focused ? panes.get(focused) : undefined;
@@ -112,8 +101,7 @@ export function createPaneLifecycleStore(
       .filter(
         (id) =>
           !mounted.has(id) &&
-          !hasPicture(id) &&
-          canPicture(id, visited.has(id)) &&
+          (hasPicture(id) || canPicture(id, visited.has(id))) &&
           (retryAt.get(id) ?? 0) <= performance.now(),
       )
       .sort(
@@ -127,16 +115,26 @@ export function createPaneLifecycleStore(
     if (disposed) return;
     reconcile();
     if (moving || pointers.size > 0) return;
+    const quietRemaining = QUIET_MS - (performance.now() - quietSince);
+    if (quietRemaining > 0) {
+      timer = setTimeout(schedule, quietRemaining);
+      return;
+    }
     if (focused && panes.has(focused)) mount(focused);
     if (!backgroundPictures || !picturesReady) return;
     if (capturing) {
-      if (hasPicture(capturing.paneId) || !panes.has(capturing.paneId)) release(false);
+      if (
+        (loaded.has(capturing.paneId) && hasPicture(capturing.paneId)) ||
+        !panes.has(capturing.paneId)
+      )
+        release(false);
       else if (performance.now() - capturing.since >= PICTURE_TIMEOUT_MS) release(false);
       else {
         timer = setTimeout(schedule, 100);
         return;
       }
     }
+    if (mounted.size >= maxMounted) return;
     const paneId = nextPicture();
     if (!paneId) {
       const retry = Math.min(
@@ -150,7 +148,7 @@ export function createPaneLifecycleStore(
     }
     idle = requestIdleCallback((deadline) => {
       idle = null;
-      if (moving || pointers.size > 0) return;
+      if (moving || pointers.size > 0 || performance.now() - quietSince < QUIET_MS) return;
       if (deadline.didTimeout || deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) {
         timer = setTimeout(schedule, 100);
         return;
@@ -168,6 +166,7 @@ export function createPaneLifecycleStore(
     else if (event.type === "blur") pointers.clear();
     else if (["pointerup", "pointercancel", "lostpointercapture"].includes(event.type))
       pointers.delete((event as PointerEvent).pointerId);
+    quietSince = performance.now();
     cancel();
     release(true);
     for (const listener of motionListeners) listener();
@@ -190,18 +189,8 @@ export function createPaneLifecycleStore(
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving || pointers.size > 0,
     currentPicture: (paneId: string) => hasPicture(paneId),
-    requestAdmission: (paneId: string, required: () => boolean, show: () => void) => {
-      admissions.set(paneId, { required, show });
-      drainAdmissions();
-      return () => {
-        if (admitting !== paneId) admissions.delete(paneId);
-        drainAdmissions();
-      };
-    },
     contentMounted: (paneId: string) => {
-      admissions.delete(paneId);
-      if (admitting === paneId) admitting = null;
-      drainAdmissions();
+      loaded.add(paneId);
     },
     pictureMount: (paneId: string): PictureMount =>
       !mounted.has(paneId) ? null : capturing?.paneId === paneId ? "background" : "ordinary",
@@ -228,6 +217,7 @@ export function createPaneLifecycleStore(
     setMoving: (next: boolean) => {
       if (moving === next) return;
       moving = next;
+      quietSince = performance.now();
       if (moving) {
         cancel();
         release(true);
@@ -235,11 +225,11 @@ export function createPaneLifecycleStore(
         schedule();
       }
       for (const listener of motionListeners) listener();
-      drainAdmissions();
     },
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
       focused = paneId;
+      if (paneId) recent.set(paneId, ++visit);
       if (capturing?.paneId === focused) {
         capturing = null;
         retryAt.delete(paneId!);
@@ -281,18 +271,17 @@ export function createPaneLifecycleStore(
         }, STORED_PICTURES_WAIT_MS);
       schedule();
       for (const listener of motionListeners) listener();
-      drainAdmissions();
     },
     setVisible: (paneId: string, isVisible: boolean) => {
       if (isVisible) {
         visible.add(paneId);
+        recent.set(paneId, ++visit);
         visited.add(paneId);
       } else visible.delete(paneId);
       schedule();
     },
     dispose: () => {
       disposed = true;
-      admissions.clear();
       cancel();
       if (storedTimer !== null) clearTimeout(storedTimer);
       for (const type of inputEvents)
