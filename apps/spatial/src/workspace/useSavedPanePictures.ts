@@ -814,7 +814,7 @@ export function createSnapshotQueue() {
           request.background ? busyUntil : 0,
         );
       if (continuation) {
-        const resumeAt = due([continuation.paneId, { ...continuation, after: 0 }]);
+        const resumeAt = lastInput + quietTime(continuation.paneId, continuation.background);
         if (
           continuation.background &&
           [...pending].some((candidate) => !candidate[1].background && due(candidate) <= resumeAt)
@@ -883,7 +883,6 @@ export function createSnapshotQueue() {
           !enabled ||
           moving ||
           pointers.size > 0 ||
-          (background && performance.now() < busyUntil) ||
           performance.now() - lastInput < quietTime(paneId, background)
         )
           deferred = true;

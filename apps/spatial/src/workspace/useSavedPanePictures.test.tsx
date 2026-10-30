@@ -2315,3 +2315,23 @@ it("does not persist a snapshot completed after leaving its display density", as
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(pictureImageFor(paneId)).not.toBe(image);
 });
+
+it.each(["longtask", "long-animation-frame"])(
+  "finishes an admitted background picture after its own %s work without restarting the quiet wait",
+  async (type) => {
+    const busy = simulatePicturePressure();
+    backgroundPanes.add(paneId);
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    snapshot.mockImplementationOnce(async (_element, canSnapshot, waitToDraw) => {
+      busy(type);
+      if (!canSnapshot() || !(await waitToDraw!()) || !canSnapshot()) return null;
+      return { image: new Blob(["snapshot"]), cssSize: { width: 400, height: 580 } };
+    });
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+    await advance(3100);
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(store.writes).toHaveLength(1);
+    expect(snapshot).toHaveBeenCalledOnce();
+  },
+);

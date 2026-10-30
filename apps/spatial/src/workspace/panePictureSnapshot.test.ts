@@ -389,3 +389,25 @@ it("pictures the due view nearest the focused pane first", async () => {
   await vi.advanceTimersByTimeAsync(3500);
   expect(drawn).toEqual(["near", "beside", "far"]);
 });
+
+it("keeps covered content measurable until the asynchronous picture finishes", async () => {
+  const host = document.createElement("div");
+  host.className = "onirigiri-pane__live-content";
+  document.body.append(host);
+  const element = createPane();
+  host.append(element);
+  const completed: (PanePictureSnapshot | null)[] = [];
+  void snapshotPanePicture(
+    element,
+    () => true,
+    async () => true,
+  ).then((result) => completed.push(result));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(images).toHaveLength(1);
+  expect(completed).toEqual([]);
+  expect(host.hasAttribute("data-spatial-snapshot")).toBe(true);
+  images[0]!.dispatchEvent(new Event("load"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(completed[0]?.image).toBe(picture);
+  expect(host.hasAttribute("data-spatial-snapshot")).toBe(false);
+});

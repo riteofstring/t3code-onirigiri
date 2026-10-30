@@ -361,7 +361,7 @@ export async function snapshotPanePicture(
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
     if (!element.isConnected || !canSnapshot() || hasLivePaneProducer(element)) return null;
-    return drawPanePicture(element, canSnapshot, waitToDraw);
+    return await drawPanePicture(element, canSnapshot, waitToDraw);
   } finally {
     if (host) delete host.dataset.spatialSnapshot;
   }
