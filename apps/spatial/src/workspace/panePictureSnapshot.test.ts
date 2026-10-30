@@ -225,3 +225,29 @@ it("never captures a subtree hidden by Activity", async () => {
   ).toBeNull();
   expect(native).not.toHaveBeenCalled();
 });
+
+it.each([true, false])(
+  "pauses queued captures and restores the previous enabled state (%s)",
+  async (enabled) => {
+    const queue = createSnapshotQueue();
+    const draw = vi.fn(async () => {});
+    dispose = queue.setDraw(
+      draw,
+      () => false,
+      () => false,
+    );
+    queue.setActivity(enabled, false);
+    const resume = queue.pause();
+    queue.request("first", pane());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(draw).not.toHaveBeenCalled();
+    resume();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(draw).toHaveBeenCalledTimes(enabled ? 1 : 0);
+    if (!enabled) {
+      queue.setActivity(true, false);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(draw).toHaveBeenCalledOnce();
+    }
+  },
+);

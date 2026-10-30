@@ -956,5 +956,10 @@ export function createSnapshotQueue() {
     cancelScheduled();
     next();
   };
-  return { request, setDraw, setActivity };
+  const pause = () => {
+    const previous = { enabled, moving };
+    setActivity(false, moving);
+    return () => setActivity(previous.enabled, previous.moving);
+  };
+  return { request, setDraw, setActivity, pause };
 }
