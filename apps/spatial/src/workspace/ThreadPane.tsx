@@ -286,6 +286,7 @@ export const ThreadPane = memo(function ThreadPane({
   const paneComposerRef = usePaneComposerHandle(active);
 
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollPositions = useRef<{ top: number; atEnd: boolean }[]>([]);
   const activity = usePaneActivity(active, liveVisible, contentRef);
 
   const focusOnArrival = useRef(false);
@@ -452,7 +453,11 @@ export const ThreadPane = memo(function ThreadPane({
             }
           >
             <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+              {mounted ? (
+                <PaneScrollState positions={scrollPositions} ready={!preparing}>
+                  <PaneRouter router={router} threadPath={threadPath} />
+                </PaneScrollState>
+              ) : null}
             </ChatViewContentReadyProvider>
           </div>
         </ComposerHandleContext>
@@ -460,6 +465,50 @@ export const ThreadPane = memo(function ThreadPane({
     </ChatPaneControlsContext>
   );
 });
+
+function PaneScrollState({
+  positions,
+  ready,
+  children,
+}: {
+  positions: React.RefObject<{ top: number; atEnd: boolean }[]>;
+  ready: boolean;
+  children: React.ReactNode;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const restored = useRef(false);
+  useLayoutEffect(() => {
+    if (!ready || restored.current || !root.current) return;
+    const scrollers = root.current.querySelectorAll<HTMLElement>(
+      ".messages-timeline-scroll, [data-tool-group-scroll]",
+    );
+    scrollers.forEach((element, index) => {
+      const saved = positions.current[index];
+      if (saved)
+        element.scrollTop = saved.atEnd ? element.scrollHeight - element.clientHeight : saved.top;
+    });
+    restored.current = true;
+  }, [positions, ready]);
+  useLayoutEffect(() => {
+    const element = root.current;
+    return () => {
+      if (!element || !restored.current) return;
+      positions.current = [
+        ...element.querySelectorAll<HTMLElement>(
+          ".messages-timeline-scroll, [data-tool-group-scroll]",
+        ),
+      ].map((scroller) => ({
+        top: scroller.scrollTop,
+        atEnd: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1,
+      }));
+    };
+  }, [positions]);
+  return (
+    <div ref={root} className="h-full w-full">
+      {children}
+    </div>
+  );
+}
 
 function usePaneComposerHandle(active: boolean): ComposerHandleRef {
   const appComposerRef = useComposerHandleContext();

@@ -153,6 +153,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
         {state.showClock ? <Clock /> : null}
         {state.suspended ? <ChatViewPendingContent /> : null}
         <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
+        <div className="messages-timeline-scroll" />
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
         <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
         {panel.present ? <aside aria-label="Thread panel">{panel.value}</aside> : null}
@@ -1302,4 +1303,30 @@ it("commits one required motion-time chat at a time with the destination first",
     )
     .filter((ids) => ids.length);
   expect(additions).toEqual([["p2"], ["p1"], ["p0"]]);
+});
+
+it.each([false, true])("restores the timeline after content release, at end: %s", async (atEnd) => {
+  live();
+  await render(true);
+  const scroller = container.querySelector<HTMLElement>(".messages-timeline-scroll")!;
+  Object.defineProperties(scroller, {
+    scrollHeight: { value: 1000 },
+    clientHeight: { value: 200 },
+  });
+  scroller.scrollTop = atEnd ? 800 : 320;
+  state.mounted = false;
+  await render(false);
+  expect(container.querySelector(".messages-timeline-scroll")).toBeNull();
+  state.mounted = true;
+  state.timelineReady = false;
+  await render(true);
+  const restored = container.querySelector<HTMLElement>(".messages-timeline-scroll")!;
+  Object.defineProperties(restored, {
+    scrollHeight: { value: 1200 },
+    clientHeight: { value: 200 },
+  });
+  state.timelineReady = true;
+  await render(true);
+  await act(() => vi.advanceTimersByTimeAsync(64));
+  expect(restored.scrollTop).toBe(atEnd ? 1000 : 320);
 });

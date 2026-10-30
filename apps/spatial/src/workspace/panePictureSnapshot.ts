@@ -381,9 +381,6 @@ async function drawPanePicture(
   const definitions = copySvgReferences(element, clone);
   for (const root of [clone, definitions]) {
     for (const node of root.querySelectorAll("script, iframe, video, canvas")) node.remove();
-    for (const editor of root.querySelectorAll('[data-testid="composer-editor"]')) {
-      editor.replaceChildren(document.createElement("p"));
-    }
   }
   const wrapper = document.documentElement.cloneNode(false) as HTMLElement;
   wrapper.style.cssText = `${inheritedStyles(element)};width:${width}px;height:${height}px;overflow:hidden`;

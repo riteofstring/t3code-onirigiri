@@ -184,7 +184,7 @@ it("keeps the serialized CSS size through delayed desktop admission and later re
   expect(svg.documentElement.getAttribute("width")).toBe("400");
   expect(svg.documentElement.getAttribute("height")).toBe("600");
   expect(svg.documentElement.textContent).toContain("Retained snapshot content");
-  expect(svg.documentElement.textContent).not.toContain("Unsent private draft");
+  expect(svg.documentElement.textContent).toContain("Unsent private draft");
   expect(input).toMatchObject({ width: 400, height: 600, scale: 2 });
   expect(images).toEqual([]);
   expect(drawImage).not.toHaveBeenCalled();
