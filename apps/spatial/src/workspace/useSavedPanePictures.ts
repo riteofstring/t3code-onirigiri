@@ -181,7 +181,6 @@ export function useSavedPanePictures(
   useLayoutEffect(() => {
     pictureMountRef.current = pictureMount;
   }, [pictureMount]);
-  const lastValidPictures = useRef(new Map<string, SavedPanePicture>());
   const [stageViewport, setStageViewport] = useState({ width: 0, height: 0, compact: false });
   const [geometryVersion, setGeometryVersion] = useState(0);
   const defaultRowHeightRef = useRef(defaultRowHeight);
@@ -415,24 +414,7 @@ export function useSavedPanePictures(
     [contentRevisions, pictureMatchesVisualRevision, recordKey, saved],
   );
 
-  const [coverVersion, setCoverVersion] = useState(0);
   const [pictureUrls] = useState(createPanePictureUrls);
-  const validatedCoverFor = useCallback(
-    (paneId: string): SavedPanePicture | null => {
-      const key = recordKey(paneId);
-      if (key === null || liveProducersRef.current.get(paneId) === "live") return null;
-      const picture = lastValidPictures.current.get(key);
-      const content = contentRevisionsRef.current.get(paneId);
-      return picture &&
-        content &&
-        savedRef.current?.get(key) === picture &&
-        picture.revision === pictureRevision(contentKey(content), picture.source) &&
-        pictureMatchesVisualRevision(paneId, picture.image)
-        ? picture
-        : null;
-    },
-    [pictureMatchesVisualRevision, recordKey],
-  );
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       if (!enabled) return null;
@@ -446,55 +428,28 @@ export function useSavedPanePictures(
         pictureMatchesVisualRevision(paneId, picture.image)
           ? picture
           : null;
-      return fresh ?? validatedCoverFor(paneId);
+      return fresh;
     },
-    // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again, and observer geometry selects another record; a replaced cover already changes `saved`.
-    [
-      coverVersion,
-      enabled,
-      geometryVersion,
-      pictureMatchesVisualRevision,
-      recordKey,
-      saved,
-      validatedCoverFor,
-    ],
+    [enabled, geometryVersion, pictureMatchesVisualRevision, recordKey, saved],
   );
   useLayoutEffect(() => {
     if (!enabled) return;
-    for (const [key, picture] of lastValidPictures.current) {
-      if (
-        liveProducersRef.current.get(picture.paneId) === "live" ||
-        !saved?.has(key) ||
-        !contentRevisions.has(picture.paneId)
-      ) {
-        lastValidPictures.current.delete(key);
-      }
-    }
-    let coverAppeared = false;
     pictureUrls.retain(
       new Set(
         [...contentRevisions.keys()].flatMap((paneId) => {
           const picture = freshPictureFor(paneId);
-          if (picture && !lastValidPictures.current.has(picture.recordKey)) coverAppeared = true;
-          if (picture) lastValidPictures.current.set(picture.recordKey, picture);
-          const cover = picture ?? validatedCoverFor(paneId);
-          return cover ? [cover.image] : [];
+          return picture ? [picture.image] : [];
         }),
       ),
     );
-    // oxlint-disable-next-line react/set-state-in-effect -- Covers validate against observer geometry, which is known only after layout.
-    if (coverAppeared) setCoverVersion((version) => version + 1);
   }, [
     contentRevisions,
     enabled,
     freshPictureFor,
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Observer geometry changes require fresh validation before retaining covers.
     geometryVersion,
     pictureUrls,
     liveProducers,
     saved,
-    updateLiveProducers,
-    validatedCoverFor,
   ]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
@@ -525,7 +480,6 @@ export function useSavedPanePictures(
     (picture: SavedPanePicture, revision: number) => {
       const { paneId } = picture;
       pictureVisualRevisions.current.set(picture.image, revision);
-      lastValidPictures.current.set(picture.recordKey, picture);
       updateSaved(new Map(savedRef.current ?? []).set(picture.recordKey, picture));
       return savePanePicture(
         picture,
@@ -675,9 +629,6 @@ export function useSavedPanePictures(
         else next.delete(paneId);
         updateLiveProducers(next);
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
-        for (const [key, picture] of lastValidPictures.current) {
-          if (picture.paneId === paneId) lastValidPictures.current.delete(key);
-        }
         const pictures = new Map(savedRef.current);
         for (const [key, picture] of pictures) {
           if (picture.paneId === paneId) pictures.delete(key);

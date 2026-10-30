@@ -759,6 +759,10 @@ it.each(["null", "error"])(
       plane: 0,
       slot,
     }));
+    for (const paneId of ["thread:e:t0", "thread:e:t1"]) {
+      markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+      await act(() => drawPicture({ paneId } as WorkspacePane, new Blob(["current"])));
+    }
     const lifecycle = createPaneLifecycleStore(panes, "thread:e:t0");
     snapshotFailures.mockImplementation((id, startedAt) => lifecycle.pictureFailed(id, startedAt));
     const nearest = { isConnected: true } as HTMLElement;
