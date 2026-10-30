@@ -29,6 +29,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   const root = useRef<HTMLDivElement>(null);
   const editor = useRef<ComposerPromptEditorHandle>(null);
   const surface = useRef<HTMLDivElement>(null);
+  const yielded = useRef(false);
   useEffect(() => {
     if (root.current)
       return retainOverlayComposerFocus(root.current, () => editor.current?.focus());
@@ -47,6 +48,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   useEffect(() => {
     let observed: HTMLElement | null = null;
     let frame: number | null = null;
+    const mode = new MutationObserver(() => schedule());
     const resize =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => schedule());
     const measure = () => {
@@ -56,8 +58,26 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
       const region = paneId && key ? getPaneComposerEditor(paneId, key) : null;
       if (region !== observed) {
         resize?.disconnect();
+        mode.disconnect();
         observed = region;
-        if (region) resize?.observe(region);
+        if (region) {
+          resize?.observe(region);
+          mode.observe(region, {
+            attributes: true,
+            attributeFilter: ["data-composer-input-owner"],
+          });
+        }
+      }
+      const stockInput = region?.dataset.composerInputOwner === "stock";
+      const wasYielded = yielded.current;
+      yielded.current = stockInput;
+      if (root.current && key) {
+        root.current.hidden = stockInput;
+        setCoveredComposerOwner(stockInput ? null : key);
+        if (stockInput && root.current.contains(document.activeElement))
+          region?.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
+        else if (wasYielded && !stockInput && region?.contains(document.activeElement))
+          editor.current?.focus();
       }
       const element = surface.current;
       const pane = region?.closest<HTMLElement>("[data-spatial-pane-id]");
@@ -88,6 +108,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
     return () => {
       unsubscribe();
       resize?.disconnect();
+      mode.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
       refreshRegion.current = () => {};
     };
@@ -131,11 +152,17 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
     () => ({
       bind(paneId, thread, focus) {
         if (!root.current || !editor.current?.bindDraft) return false;
-        if (destination.current === paneId) {
+        if (
+          destination.current === paneId &&
+          boundThreadKey.current ===
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId))
+        ) {
           setCoveredComposerOwner(
-            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
+            yielded.current
+              ? null
+              : scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
           );
-          if (focus) editor.current.focus();
+          if (focus && !yielded.current) editor.current.focus();
           return true;
         }
         const threadRef = scopeThreadRef(thread.environmentId, thread.threadId);
@@ -151,8 +178,17 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         refreshRegion.current();
         setCoveredComposerOwner(scopedThreadKey(threadRef));
         root.current.dataset.composerDestination = paneId;
-        root.current.hidden = false;
-        if (focus) editor.current.focus();
+        yielded.current =
+          getPaneComposerEditor(paneId, scopedThreadKey(threadRef))?.dataset.composerInputOwner ===
+          "stock";
+        root.current.hidden = yielded.current;
+        if (yielded.current) {
+          setCoveredComposerOwner(null);
+          if (focus)
+            getPaneComposerEditor(paneId, scopedThreadKey(threadRef))
+              ?.querySelector<HTMLElement>("[contenteditable=true]")
+              ?.focus();
+        } else if (focus) editor.current.focus();
         return true;
       },
       flush,
@@ -169,7 +205,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
           flush();
           refreshRegion.current();
         }
-        element.hidden = false;
+        element.hidden = yielded.current;
         element.style.left = `${frame.x}px`;
         element.style.top = `${frame.y}px`;
         element.style.width = `${frame.width}px`;

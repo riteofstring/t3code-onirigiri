@@ -306,3 +306,80 @@ it("keeps text paste native and captures file paste at the originating pane", as
     vi.unstubAllGlobals();
   }
 });
+
+it("aligns only to the editor and yields to stock pending-answer input", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callbacks.set(++nextFrame, callback);
+    return nextFrame;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => callbacks.delete(id));
+  const paint = () => {
+    const pending = [...callbacks.values()];
+    callbacks.clear();
+    for (const callback of pending) callback(0);
+  };
+  const container = document.createElement("div");
+  const pane = document.createElement("div");
+  pane.dataset.spatialPaneId = "region";
+  const region = document.createElement("div");
+  region.dataset.paneComposerEditor = "";
+  const stockEditor = document.createElement("div");
+  stockEditor.setAttribute("contenteditable", "true");
+  region.append(stockEditor);
+  const send = document.createElement("button");
+  const sent = vi.fn();
+  send.addEventListener("click", sent);
+  pane.append(region, send);
+  document.body.append(container, pane);
+  vi.spyOn(pane, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 800, 600));
+  vi.spyOn(region, "getBoundingClientRect").mockReturnValue(new DOMRect(180, 520, 640, 60));
+  const root = createRoot(container);
+  const overlay = createRef<PersistentComposerHandle>();
+  const thread = { environmentId: "region" as EnvironmentId, threadId: "draft" as ThreadId };
+  const unregister = registerPaneComposer(
+    "region",
+    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
+    { current: null },
+    { current: pane },
+  );
+  try {
+    await act(async () => root.render(<PersistentComposer ref={overlay} />));
+    await act(async () => {
+      overlay.current!.bind("region", thread, true);
+      overlay.current!.frame(
+        { paneId: "region", x: 0, y: 0, width: 800, height: 600, scale: 1 },
+        false,
+      );
+      paint();
+    });
+    const surface = container.querySelector<HTMLElement>('[data-aligned="true"]')!;
+    expect(surface.style.left).toBe("10%");
+    expect(surface.style.top).toBe("70%");
+    expect(surface.style.width).toBe("80%");
+    expect(surface.style.height).toBe("10%");
+    send.click();
+    expect(sent).toHaveBeenCalledOnce();
+    await act(async () => {
+      region.dataset.composerInputOwner = "stock";
+    });
+    await act(async () => paint());
+    expect(container.querySelector<HTMLElement>("[data-persistent-composer]")!.hidden).toBe(true);
+    expect(document.activeElement).toBe(stockEditor);
+    await act(async () => {
+      delete region.dataset.composerInputOwner;
+    });
+    await act(async () => paint());
+    expect(container.querySelector<HTMLElement>("[data-persistent-composer]")!.hidden).toBe(false);
+    expect(document.activeElement).toBe(container.querySelector(".tiptap"));
+  } finally {
+    unregister();
+    await act(async () => root.unmount());
+    container.remove();
+    pane.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});

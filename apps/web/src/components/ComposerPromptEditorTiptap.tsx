@@ -177,6 +177,7 @@ export interface ComposerPromptEditorProps {
   /** Reads suggestion state at paste time, including Escape dismissal. */
   isPathQueryActive?: () => boolean;
   containerClassName?: string;
+  stockInput?: boolean;
   className?: string;
   placeholderClassName?: string;
   onChange: (
@@ -843,7 +844,7 @@ const ComposerUndoGroupingExtension = Extension.create<
 });
 
 function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
-  const covered = useContext(CoveredComposerContext);
+  const covered = useContext(CoveredComposerContext) && !props.stockInput;
   const {
     value,
     cursor,
@@ -1897,6 +1898,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         <ComposerCitationCommentContext value={citationCommentActions}>
           <div
             data-pane-composer-editor={props.imperativeBinding ? undefined : ""}
+            data-composer-input-owner={props.stockInput ? "stock" : undefined}
             inert={covered}
             style={covered ? { visibility: "hidden" } : undefined}
             className={cn(

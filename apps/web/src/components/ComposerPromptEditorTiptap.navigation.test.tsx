@@ -200,11 +200,12 @@ it("preserves the covered document and layout until ownership returns", async ()
   document.body.append(host);
   const root = createRoot(host);
   const handle = createRef<ComposerPromptEditorHandle>();
-  const render = (value: string, covered: boolean) =>
+  const render = (value: string, covered: boolean, stockInput = false) =>
     root.render(
       <CoveredComposerContext value={covered}>
         <ComposerPromptEditor
           editorRef={handle}
+          stockInput={stockInput}
           value={value}
           cursor={value.length}
           richTextEnabled
@@ -232,6 +233,10 @@ it("preserves the covered document and layout until ownership returns", async ()
     expect(editor.textContent).toBe("overlay key two");
     expect(region.hasAttribute("inert")).toBe(false);
     expect(region.style.visibility).toBe("");
+    await act(async () => render("pending answer", true, true));
+    expect(editor.textContent).toBe("pending answer");
+    expect(region.hasAttribute("inert")).toBe(false);
+    expect(region.dataset.composerInputOwner).toBe("stock");
   } finally {
     await act(async () => root.unmount());
     host.remove();
