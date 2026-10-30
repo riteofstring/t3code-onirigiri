@@ -69,6 +69,8 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 
+import { installComposerNavigation } from "./composerNavigation";
+
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
 const COMPACT_STAGE_WIDTH = 640;
@@ -80,8 +82,8 @@ function whileEditing(key: string) {
 function optionWhileEditing(key: string) {
   return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: false, whileEditing: true };
 }
-function shiftOptionWhileEditing(key: string) {
-  return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: true, whileEditing: true };
+function shiftOption(key: string) {
+  return { altKey: true, ctrlKey: false, key, metaKey: false, shiftKey: true, whileEditing: false };
 }
 const NAVIGATION = new Set([
   "focusDown",
@@ -105,19 +107,23 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
       .filter((action) => !NAVIGATION.has(action))
       .map((action) => [action, []]),
   ),
-  focusDown: [...defaultOnirigiriShortcuts.focusDown, shiftOptionWhileEditing("ArrowDown")],
+  focusDown: [...defaultOnirigiriShortcuts.focusDown, shiftOption("ArrowDown")],
   movePaneDown: editingArrows(defaultOnirigiriShortcuts.movePaneDown),
-  focusLeft: [...defaultOnirigiriShortcuts.focusLeft, shiftOptionWhileEditing("ArrowLeft")],
+  focusLeft: [...defaultOnirigiriShortcuts.focusLeft, shiftOption("ArrowLeft")],
   movePaneLeft: editingArrows(defaultOnirigiriShortcuts.movePaneLeft),
-  focusRight: [...defaultOnirigiriShortcuts.focusRight, shiftOptionWhileEditing("ArrowRight")],
+  focusRight: [...defaultOnirigiriShortcuts.focusRight, shiftOption("ArrowRight")],
   movePaneRight: editingArrows(defaultOnirigiriShortcuts.movePaneRight),
-  focusUp: [...defaultOnirigiriShortcuts.focusUp, shiftOptionWhileEditing("ArrowUp")],
+  focusUp: [...defaultOnirigiriShortcuts.focusUp, shiftOption("ArrowUp")],
   movePaneUp: editingArrows(defaultOnirigiriShortcuts.movePaneUp),
   toggleOverview: [optionWhileEditing("o"), whileEditing("o")],
 };
 const BROWSER_SHORTCUTS = (
   Object.keys(defaultOnirigiriShortcuts) as OnirigiriShortcutAction[]
-).flatMap((action) => getOnirigiriShortcutBindings(action, SHORTCUTS));
+).flatMap((action) =>
+  getOnirigiriShortcutBindings(action, SHORTCUTS).map((binding) =>
+    action.startsWith("focus") && binding.shiftKey ? { ...binding, whileEditing: true } : binding,
+  ),
+);
 const ROUTE_SETTLE_MS = 450;
 
 function withoutPane(paneIds: ReadonlySet<string>, paneId: string) {
@@ -187,6 +193,18 @@ function SpatialWorkspaceView({
     return savedLayout ? reconcilePaneLayout(layout, savedLayout) : layout;
   }, [gridAxes, initialPanes, paneDefaults, savedLayout]);
   const workspaceRef = useRef<OnirigiriWorkspaceHandle>(null);
+  useEffect(() => {
+    if (!active) return;
+    return installComposerNavigation({
+      enabled: (editor) =>
+        editor.closest('[data-onirigiri-workspace-id="onirigiri-t3"]') !== null &&
+        !editor.closest("[inert]") &&
+        editor.closest<HTMLElement>('[data-onirigiri-slot="pane"]')?.dataset.onirigiriPaneId ===
+          workspaceRef.current?.getSnapshot().focusedPaneId &&
+        !document.querySelector("dialog[open], [role='dialog'][aria-modal='true']"),
+      navigate: (direction) => workspaceRef.current?.focus(direction),
+    });
+  }, [active]);
   const changePreferences = useCallback(
     (change: Partial<WorkspacePreferences>) => {
       const workspace = workspaceRef.current;

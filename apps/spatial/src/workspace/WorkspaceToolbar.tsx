@@ -69,16 +69,16 @@ export function WorkspaceToolbar({
     (binding) => binding.key === "ArrowLeft",
   );
   const editingFocusBinding = getOnirigiriShortcutBindings("focusLeft", shortcuts).find(
-    (binding) => binding.key === "ArrowLeft" && binding.whileEditing,
+    (binding) => binding.key === "ArrowLeft" && binding.shiftKey,
   );
   const overviewBinding = getOnirigiriShortcutBindings("toggleOverview", shortcuts).find(
     (binding) => binding.whileEditing && !binding.ctrlKey,
   );
   const hint = [
     focusBinding &&
-      `${formatOnirigiriShortcut(focusBinding).keys.slice(0, -1).join(" + ")} + arrows to navigate outside text fields`,
+      `${formatOnirigiriShortcut(focusBinding).keys.slice(0, -1).join(" + ")} + arrows to navigate (in the composer, at the text edge)`,
     editingFocusBinding &&
-      `${formatOnirigiriShortcut(editingFocusBinding).keys.slice(0, -1).join(" + ")} + arrows while typing`,
+      `${formatOnirigiriShortcut(editingFocusBinding).keys.slice(0, -1).join(" + ")} + arrows while typing (with no selection)`,
     moveBinding &&
       `${formatOnirigiriShortcut(moveBinding).keys.slice(0, -1).join(" + ")} + arrows to move panes`,
     overviewBinding && `${formatOnirigiriShortcut(overviewBinding).label} for overview`,

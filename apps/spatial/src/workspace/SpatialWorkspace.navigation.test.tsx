@@ -441,6 +441,35 @@ it("routes guest keys through the engine and returns keyboard focus to the desti
   expect((document.activeElement as HTMLElement).dataset.onirigiriPaneId).toBe("thread:e:origin");
 });
 
+it("preserves Shift+Option navigation from an editing browser guest", async () => {
+  fixture.panes = [pane("origin", 0, 0), pane("right", 0, 1)];
+  await render();
+  const slot = host.querySelector<HTMLElement>(
+    '[data-onirigiri-pane-id="thread:e:origin"] [data-browser-keyboard-slot]',
+  )!;
+  const input: DesktopPreviewHostKey = {
+    key: "ArrowRight",
+    code: "ArrowRight",
+    altKey: true,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: true,
+    repeat: false,
+    isComposing: false,
+    keyCode: 0,
+    altGraph: false,
+    editing: true,
+  };
+  expect(
+    matchesPreviewHostShortcut(input, fixture.browserProjection!.keyboard!.shortcuts, "MacIntel"),
+  ).toBe(true);
+  const event = new KeyboardEvent("keydown", { ...input, bubbles: true, cancelable: true });
+  await act(() => fixture.browserProjection!.keyboard!.keyDown(slot, event));
+  await act(() => vi.advanceTimersByTime(120));
+  expect(event.defaultPrevented).toBe(true);
+  expect(status()).toContain("right");
+});
+
 it("admits exactly the configured engine chords, including editable targets and macOS Option keys", async () => {
   await render();
   const shortcuts = fixture.browserProjection!.keyboard!.shortcuts;
@@ -478,7 +507,15 @@ it("admits exactly the configured engine chords, including editable targets and 
         const target = editing ? host.querySelector("textarea")! : workspace();
         await act(() => target.dispatchEvent(event));
         expect(
-          matchesPreviewHostShortcut(input, shortcuts, name),
+          matchesPreviewHostShortcut(
+            input,
+            shortcuts.map((binding) =>
+              binding.shiftKey && binding.key.startsWith("Arrow")
+                ? { ...binding, whileEditing: false }
+                : binding,
+            ),
+            name,
+          ),
           `${name}: ${JSON.stringify(input)}`,
         ).toBe(event.defaultPrevented);
       }

@@ -16,6 +16,7 @@ import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatCo
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
+import { COMPOSER_NAVIGATION } from "./composerNavigation";
 import { PaneLifecycleContext, type PaneLifecycleStore } from "./paneLifecycle";
 import { PaneSnapshotContext, type RequestPaneSnapshot } from "./useSavedPanePictures";
 
@@ -1204,6 +1205,16 @@ it("focuses the stock composer on keyboard navigation arrival and cancels on poi
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true })),
   );
   await act(() => window.dispatchEvent(new Event("pointerdown")));
+  state.interactive = true;
+  await render(true, false, true);
+  expect(state.composerActions).toEqual([0]);
+});
+
+it("focuses the stock composer after an adapter-approved editing navigation", async () => {
+  live();
+  await render(true, false, true);
+  await act(() => window.dispatchEvent(new Event(COMPOSER_NAVIGATION)));
+  expect(state.composerActions).toEqual([]);
   state.interactive = true;
   await render(true, false, true);
   expect(state.composerActions).toEqual([0]);

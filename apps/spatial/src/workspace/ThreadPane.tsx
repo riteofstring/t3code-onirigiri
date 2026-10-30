@@ -1,3 +1,4 @@
+import { COMPOSER_NAVIGATION } from "./composerNavigation";
 import { observePaneVisualChanges } from "./paneVisualChanges";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
@@ -298,7 +299,7 @@ export const ThreadPane = memo(function ThreadPane({
         !event.ctrlKey &&
         !event.metaKey &&
         event.key.startsWith("Arrow") &&
-        (!editing || event.shiftKey)
+        !editing
       )
         focusOnArrival.current = true;
       else if (event.key === "Tab" || event.key === "Escape") focusOnArrival.current = false;
@@ -306,9 +307,14 @@ export const ThreadPane = memo(function ThreadPane({
     const cancel = () => {
       focusOnArrival.current = false;
     };
+    const composerNavigation = () => {
+      focusOnArrival.current = true;
+    };
+    window.addEventListener(COMPOSER_NAVIGATION, composerNavigation);
     window.addEventListener("keydown", key, true);
     window.addEventListener("pointerdown", cancel, true);
     return () => {
+      window.removeEventListener(COMPOSER_NAVIGATION, composerNavigation);
       window.removeEventListener("keydown", key, true);
       window.removeEventListener("pointerdown", cancel, true);
     };
