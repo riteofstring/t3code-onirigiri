@@ -1,3 +1,4 @@
+import { observePaneVisualChanges } from "./paneVisualChanges";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -332,6 +333,11 @@ export const ThreadPane = memo(function ThreadPane({
       if (records.some(producerChanged)) inspectProducer();
       if (contentChanged(records)) invalidate();
     });
+    const stopFlushing = observePaneVisualChanges(paneId, () => {
+      const records = observer.takeRecords();
+      if (records.some(producerChanged)) inspectProducer();
+      if (contentChanged(records)) invalidate();
+    });
     observer.observe(element, {
       attributes: true,
       attributeOldValue: true,
@@ -348,6 +354,7 @@ export const ThreadPane = memo(function ThreadPane({
         if (pending.some(producerChanged)) inspectProducer();
         if (snapshotPrepared.current && contentChanged(pending)) snapshots?.invalidate(paneId);
       }
+      stopFlushing();
       observer.disconnect();
       for (const event of events) element.removeEventListener(event, invalidate, true);
     };

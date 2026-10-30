@@ -1,3 +1,4 @@
+import { observePaneVisualChanges } from "./paneVisualChanges";
 // @vitest-environment jsdom
 
 import type {
@@ -1946,7 +1947,7 @@ it.each([false, true])(
     expect(presentationAt("resize")).toBe("dom");
     expect(presentationAt("rest")).toBe("dom");
     await setCompact(!compact);
-    expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
+    expect(presentationAt("motion")).toBe("dom");
     await setCompact(compact);
     expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
   },
@@ -1960,37 +1961,27 @@ it("keeps an offscreen saved cover stable until the pane becomes visible", async
   }
   expect(presentationAt("rest")).toBe("dom");
   expect(presentationAt("resize")).toBe("dom");
-  expect(presentationAt("rest", true, false)).toEqual({ kind: "placeholder" });
-  expect(presentationAt("rest", false, true)).toBe("dom");
-  expect(presentationAt("resize", false, true)).toBe("dom");
+  expect(presentationAt("rest", true, false)).toBe("dom");
+  expect(presentationAt("rest", false, true)).toEqual({ kind: "placeholder" });
+  expect(presentationAt("resize", false, true)).toEqual({ kind: "placeholder" });
   store.runtimeStatus = "running";
   await act(() => renderer!.update(<Probe />));
   expect(presentationAt("rest", false)).toEqual({ kind: "placeholder" });
   expect(presentationAt("motion", false)).toEqual({ kind: "placeholder" });
 });
 
-it("uses cards for missing pictures and producers without forcing live content", async () => {
+it("keeps changed mounted content live on the first motion frame, flushing pending mutations", async () => {
   await mount();
-  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  expect(presentationAt("rest", false)).toEqual({ kind: "placeholder" });
+  expect(presentationAt("motion")).toBe("dom");
+  expect(presentationAt("rest", true, false)).toBe("dom");
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   await act(() => drawPicture(pane, new Blob(["first picture"])));
-  expect(pictureImageFor(paneId)).not.toBeNull();
   expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  store.runtimeStatus = "running";
-  await act(() => renderer!.update(<Probe />));
-  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  store.runtimeStatus = null;
-  await act(() => renderer!.update(<Probe />));
-  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  await act(() => {
-    hook.paneSnapshots.setLiveProducer(paneId, true);
-  });
-  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  await act(() => {
-    hook.paneSnapshots.setLiveProducer(paneId, false);
-  });
-  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
+  const stop = observePaneVisualChanges(paneId, () => hook.paneSnapshots.invalidate(paneId, true));
+  await act(() => expect(presentationAt("motion")).toBe("dom"));
+  stop();
+  expect(presentationAt("rest")).toBe("dom");
+  expect(presentationAt("resize", true, false)).toBe("dom");
 });
 
 it("does not display a picture saved without its layout mode", async () => {

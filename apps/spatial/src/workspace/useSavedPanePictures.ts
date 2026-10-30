@@ -1,3 +1,4 @@
+import { flushPaneVisualChanges } from "./paneVisualChanges";
 import type { OnirigiriLayout, PanePresentationResolver } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import {
@@ -452,13 +453,6 @@ export function useSavedPanePictures(
     // oxlint-disable-next-line react/memo-dependencies -- Placeholders rendered before a cover became valid must render again, and observer geometry selects another record; a replaced cover already changes `saved`.
     [coverVersion, enabled, geometryVersion, recordKey, saved, validatedCoverFor],
   );
-  const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane, { phase, focused }) => {
-      if (!enabled || pane.surfaceKind !== "thread") return "dom";
-      return focused && (phase === "rest" || phase === "resize") ? "dom" : { kind: "placeholder" };
-    },
-    [enabled],
-  );
   useLayoutEffect(() => {
     if (!enabled) return;
     for (const [key, picture] of lastValidPictures.current) {
@@ -504,6 +498,18 @@ export function useSavedPanePictures(
     },
     // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
     [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
+  );
+  const getPanePresentation = useCallback<PanePresentationResolver>(
+    (pane, { phase, visible }) => {
+      if (!enabled || pane.surfaceKind !== "thread") return "dom";
+      if (visible && (phase === "rest" || phase === "resize")) return "dom";
+      if (phase === "motion" || phase === "overview-motion") {
+        flushPaneVisualChanges(pane.paneId);
+        if (pictureMount(pane.paneId) !== null && !hasFreshPicture(pane.paneId)) return "dom";
+      }
+      return { kind: "placeholder" };
+    },
+    [enabled, hasFreshPicture, pictureMount],
   );
   const pictureForRef = useRef(pictureFor);
   useLayoutEffect(() => {
