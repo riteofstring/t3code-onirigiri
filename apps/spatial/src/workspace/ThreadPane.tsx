@@ -50,6 +50,7 @@ import {
   usePanelNavigationSuppression,
 } from "@t3tools/web/src/panelAnimations";
 
+import { afterUsablePaint } from "./afterUsablePaint";
 import { retainComposerFocusIntent } from "./composerFocusIntent";
 import { usePaneActivity } from "./paneActivity";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
@@ -102,6 +103,7 @@ function usePaneContent(
   visible: boolean,
   focused: boolean,
   visualRevision: number,
+  covered: boolean,
 ): {
   mounted: boolean;
   preparing: boolean;
@@ -124,11 +126,15 @@ function usePaneContent(
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
       let idle: number | null = null;
+      let cancelPaint: (() => void) | null = null;
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
+        cancelPaint?.();
+        cancelPaint = null;
         idle = null;
         if (lifecycle?.isMoving()) return;
-        if (focused || visible) show();
+        if (focused && covered) cancelPaint = afterUsablePaint(show);
+        else if (focused || visible) show();
         else
           idle = requestIdleCallback((deadline) => {
             idle = null;
@@ -140,10 +146,11 @@ function usePaneContent(
       prepare();
       return () => {
         unsubscribe?.();
+        cancelPaint?.();
         if (idle !== null) cancelIdleCallback(idle);
       };
     }
-  }, [contentAvailable, contentMounted, focused, lifecycle, mounted, visible]);
+  }, [contentAvailable, contentMounted, covered, focused, lifecycle, mounted, visible]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = threadRuntimeIsActive(shell?.runtime);
@@ -266,6 +273,7 @@ export const ThreadPane = memo(function ThreadPane({
     visible,
     focused,
     visualRevision,
+    covered,
   );
 
   const paneComposerRef = usePaneComposerHandle(active);
