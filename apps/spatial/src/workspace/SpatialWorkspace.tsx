@@ -482,20 +482,58 @@ function SpatialWorkspaceView({
         event.target instanceof Element
           ? event.target.closest('[data-onirigiri-slot="pane"]')
           : null;
+      if (!navigating && !composerOrigin && !clickedPane) return;
       persistentComposer.current?.bind(
         paneId,
         data,
         Boolean(navigating || composerOrigin || clickedPane),
       );
     };
+    let pendingCompositionNavigation: (() => void) | null = null;
     const captureIntent = (event: Event) => {
-      if (event instanceof KeyboardEvent && !event.altKey) bindIntent(event);
-      else queueMicrotask(() => bindIntent(event));
+      const key = event instanceof KeyboardEvent ? event : null;
+      if (key?.key === "Tab" || key?.key === "Escape") {
+        pendingCompositionNavigation = null;
+        return;
+      }
+      const navigation = key
+        ? key.altKey && key.key.startsWith("Arrow")
+        : event.type === "pointerdown";
+      if (navigation && persistentComposer.current?.isComposing()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const target = event.target;
+        const replay = key
+          ? new KeyboardEvent("keydown", {
+              key: key.key,
+              code: key.code,
+              altKey: key.altKey,
+              ctrlKey: key.ctrlKey,
+              metaKey: key.metaKey,
+              shiftKey: key.shiftKey,
+              bubbles: true,
+              cancelable: true,
+            })
+          : new PointerEvent("pointerdown", event as PointerEvent);
+        pendingCompositionNavigation = () => target?.dispatchEvent(replay);
+        return;
+      }
+      if (key && !key.altKey) {
+        bindIntent(event);
+        persistentComposer.current?.flush();
+      } else queueMicrotask(() => bindIntent(event));
     };
+    const compositionEnd = () => {
+      const navigate = pendingCompositionNavigation;
+      pendingCompositionNavigation = null;
+      if (navigate) queueMicrotask(navigate);
+    };
+    window.addEventListener("compositionend", compositionEnd);
     window.addEventListener("keydown", captureIntent, true);
     window.addEventListener("pointerdown", captureIntent, true);
     window.addEventListener("click", captureIntent, true);
     return () => {
+      window.removeEventListener("compositionend", compositionEnd);
       window.removeEventListener("keydown", captureIntent, true);
       window.removeEventListener("pointerdown", captureIntent, true);
       window.removeEventListener("click", captureIntent, true);

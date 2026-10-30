@@ -116,6 +116,7 @@ import { didComposerSelectionChangeVisibly } from "./composerSelection";
 import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 
 export interface ComposerPromptEditorHandle {
+  isComposing?: () => boolean;
   bindDraft?: (
     value: string,
     cursor: number,
@@ -901,8 +902,8 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const editorHolder = useRef<TiptapEditor | null>(null);
 
   useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
+    if (!props.imperativeBinding) onChangeRef.current = onChange;
+  }, [onChange, props.imperativeBinding]);
   useEffect(() => {
     onVisibleSelectionChangeRef.current = onVisibleSelectionChange;
   }, [onVisibleSelectionChange]);
@@ -922,8 +923,8 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     skillsRef.current = skills;
   }, [skills]);
   useLayoutEffect(() => {
-    latestValueRef.current = value;
-  }, [value]);
+    if (!props.imperativeBinding) latestValueRef.current = value;
+  }, [value, props.imperativeBinding]);
 
   const skillLabelFor = useCallback((name: string): SkillMeta => {
     const normalized = name.startsWith("$") ? name.slice(1) : name;
@@ -1730,6 +1731,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   useImperativeHandle(
     editorRef,
     () => ({
+      isComposing: () => editor?.view.composing ?? false,
       bindDraft: (nextValue, nextCursor, nextOnChange) => {
         if (!editor || editor.view.composing) return false;
         const cursor = clampEditorCursor(nextValue, nextCursor);

@@ -5,7 +5,7 @@ import {
   type ComposerPromptEditorHandle,
 } from "@t3tools/web/src/components/ComposerPromptEditor";
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
-import { useImperativeHandle, useRef, type Ref } from "react";
+import { useCallback, useImperativeHandle, useRef, type Ref } from "react";
 
 import type { ThreadPaneData } from "./useWorkspacePanes";
 
@@ -13,6 +13,8 @@ export interface PersistentComposerHandle {
   bind: (paneId: string, thread: ThreadPaneData, focus: boolean) => boolean;
   frame: (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => void;
   hide: () => void;
+  flush: () => boolean;
+  isComposing: () => boolean;
 }
 
 const EMPTY_CONTEXT = new Map();
@@ -22,6 +24,18 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   const root = useRef<HTMLDivElement>(null);
   const editor = useRef<ComposerPromptEditorHandle>(null);
   const destination = useRef<string | null>(null);
+  const pending = useRef<{ paneId: string; thread: ThreadPaneData; value: string } | null>(null);
+  const flush = useCallback(() => {
+    const next = pending.current;
+    if (!next) return true;
+    if (!editor.current?.bindDraft) return false;
+    const threadRef = scopeThreadRef(next.thread.environmentId, next.thread.threadId);
+    const bound = editor.current.bindDraft(next.value, Number.POSITIVE_INFINITY, (value) => {
+      useComposerDraftStore.getState().setPrompt(threadRef, value);
+    });
+    if (bound) pending.current = null;
+    return bound;
+  }, []);
   useImperativeHandle(
     ref,
     () => ({
@@ -35,16 +49,16 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         const draft =
           useComposerDraftStore.getState().draftsByThreadKey[scopedThreadKey(threadRef)];
         const value = draft?.prompt ?? "";
-        const bound = editor.current.bindDraft(value, Number.POSITIVE_INFINITY, (next) => {
-          useComposerDraftStore.getState().setPrompt(threadRef, next);
-        });
-        if (!bound) return false;
+        if (editor.current.isComposing?.()) return false;
+        pending.current = { paneId, thread, value };
         destination.current = paneId;
         root.current.dataset.composerDestination = paneId;
         root.current.hidden = false;
         if (focus) editor.current.focus();
         return true;
       },
+      flush,
+      isComposing: () => editor.current?.isComposing?.() ?? false,
       frame(frame, moving) {
         const element = root.current;
         if (!element) return;
@@ -52,6 +66,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
           element.hidden = true;
           return;
         }
+        if (!moving) flush();
         element.hidden = false;
         element.style.left = `${frame.x}px`;
         element.style.top = `${frame.y}px`;
@@ -63,11 +78,17 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         if (root.current) root.current.hidden = true;
       },
     }),
-    [],
+    [flush],
   );
   return (
     <div
       ref={root}
+      onKeyDownCapture={(event) => {
+        if (!event.altKey && !event.metaKey && !event.ctrlKey && !flush()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       hidden
       className="group pointer-events-none absolute z-20 overflow-hidden"
       data-persistent-composer=""
