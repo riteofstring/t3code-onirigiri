@@ -1485,6 +1485,11 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 // --------------------------------------------------------------------------
 
 export interface ChatComposerHandle {
+  submit: (
+    dispatchMode?: ComposerDispatchMode,
+    submissionIntent?: ComposerSubmissionIntent,
+  ) => void;
+  getSendDisabledReason: () => string | null;
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   /** Expand the desktop composer at the timeline end without taking focus. */
@@ -4282,6 +4287,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   };
   const submitComposerStable = useStableCallback(submitComposer);
+  const [, refreshRelaySubmission] = useState(0);
+  const getSendDisabledReasonStable = useStableCallback(() => {
+    if (sendDisabledReason) return sendDisabledReason;
+    if (noProviderAvailable) return "Enable a provider in Settings to send a message";
+    if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
+      return "Sending is unavailable in this environment";
+    if ((pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0)
+      return "Still compressing a pasted image";
+    if (pendingDraftWork.has(attachmentTargetKey))
+      return "Still bringing attached context into this message";
+    return null;
+  });
+  const submitRelay = useStableCallback(
+    (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => {
+      // The imperative caller may have written the destination draft in this same event.
+      // Commit its store snapshot before using render-derived validation and send context.
+      const draft = getComposerDraft(composerDraftTarget);
+      if (!activePendingProgress && draft) promptRef.current = draft.prompt;
+      const attachments = getComposerDraft(attachmentDraftTarget);
+      if (attachments) {
+        composerImagesRef.current = attachments.images;
+        composerFilesRef.current = attachments.files;
+      }
+      if (draft) composerTerminalContextsRef.current = draft.terminalContexts;
+      flushSync(() => refreshRelaySubmission((version) => version + 1));
+      submitComposerStable(undefined, dispatchMode, submissionIntent);
+    },
+  );
   const handleSubmitMessage = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     submitComposer(
@@ -6353,6 +6386,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useImperativeHandle(
     composerRef,
     () => ({
+      submit: submitRelay,
+      getSendDisabledReason: getSendDisabledReasonStable,
       focusAtEnd: () => {
         composerEditorRef.current?.focusAtEnd();
       },
@@ -6573,6 +6608,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
     }),
     [
+      submitRelay,
+      getSendDisabledReasonStable,
       activeThread,
       addComposerAttachments,
       foldPastedText,
