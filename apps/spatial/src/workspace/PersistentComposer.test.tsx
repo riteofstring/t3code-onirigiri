@@ -243,3 +243,66 @@ it("reflects external clears and restoration synchronously without resetting sel
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps text paste native and captures file paste at the originating pane", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const overlay = createRef<PersistentComposerHandle>();
+  const a = { environmentId: "paste-a" as EnvironmentId, threadId: "same" as ThreadId };
+  const b = { environmentId: "paste-b" as EnvironmentId, threadId: "same" as ThreadId };
+  const refA = scopeThreadRef(a.environmentId, a.threadId);
+  const refB = scopeThreadRef(b.environmentId, b.threadId);
+  let finish: () => void = () => {};
+  const fixture = {
+    current: {
+      addDroppedFiles: (files: File[]) => {
+        finish = () =>
+          useComposerDraftStore.getState().setPrompt(refA, `prepared ${files[0]!.name}`);
+      },
+    } as ChatComposerHandle,
+  };
+  const paste = (element: HTMLElement, files: File[]) => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        files,
+        getData: () => "native text",
+        types: files.length ? ["Files"] : ["text/plain"],
+      },
+    });
+    element.dispatchEvent(event);
+    return event;
+  };
+  let unregister = () => {};
+  try {
+    await act(async () => root.render(<PersistentComposer ref={overlay} />));
+    const element = container.querySelector<HTMLElement>(".tiptap")!;
+    await act(async () => {
+      overlay.current!.bind("paste-a", a, false);
+      overlay.current!.flush();
+      expect(paste(element, []).defaultPrevented).toBe(true);
+      expect(useComposerDraftStore.getState().getComposerDraft(refA)!.prompt).toBe("native text");
+      paste(element, [new File(["pixels"], "first.png", { type: "image/png" })]);
+    });
+    expect(container.textContent).toContain("Preparing");
+    unregister = registerPaneComposer("paste-a", scopedThreadKey(refA), fixture);
+    await act(async () => {
+      paste(element, [new File(["pixels"], "origin.png", { type: "image/png" })]);
+      overlay.current!.bind("paste-b", b, false);
+      overlay.current!.flush();
+      finish();
+    });
+    expect(useComposerDraftStore.getState().getComposerDraft(refA)!.prompt).toBe(
+      "prepared origin.png",
+    );
+    expect(useComposerDraftStore.getState().getComposerDraft(refB)?.prompt ?? "").toBe("");
+    expect(element.textContent).toBe("");
+  } finally {
+    unregister();
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

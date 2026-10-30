@@ -245,11 +245,27 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
           disabled={false}
           placeholder="Message"
           onChange={() => {}}
-          onPaste={(event) => event.preventDefault()}
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.files);
+            if (files.length === 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const handle = getDestinationHandle();
+            if (!handle) {
+              setSendReason("Preparing");
+              return;
+            }
+            setSendReason(null);
+            handle.addDroppedFiles(files);
+          }}
           onCommandKeyDown={(key, event) => key === "Enter" && !event.shiftKey}
         />
-        {sendReason ? <div role="status">{sendReason}</div> : null}
       </div>
+      {sendReason ? (
+        <div role="status" className="absolute inset-x-3 bottom-0 bg-background text-sm">
+          {sendReason}
+        </div>
+      ) : null}
     </div>
   );
 }
