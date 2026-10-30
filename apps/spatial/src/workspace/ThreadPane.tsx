@@ -268,7 +268,17 @@ export const ThreadPane = memo(function ThreadPane({
   const focusOnArrival = useRef(false);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (event.altKey && event.key.startsWith("Arrow")) focusOnArrival.current = true;
+      const editing =
+        event.target instanceof Element &&
+        event.target.closest('[contenteditable="true"], input, textarea, select');
+      if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.key.startsWith("Arrow") &&
+        (!editing || event.shiftKey)
+      )
+        focusOnArrival.current = true;
       else if (event.key === "Tab" || event.key === "Escape") focusOnArrival.current = false;
     };
     const cancel = () => {
