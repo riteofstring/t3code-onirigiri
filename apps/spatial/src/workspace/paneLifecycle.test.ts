@@ -120,3 +120,66 @@ it("backs off failed captures while letting other panes get pictures", () => {
   expect(mounted(store)).toEqual(["p0", "p2"]);
   expect(store.isMounted("p1")).toBe(false);
 });
+
+it("waits through short focus stops before replenishing a stale cover once at idle", () => {
+  const store = make();
+  const fresh = new Set(panes.map((p) => p.paneId));
+  fresh.delete("p20");
+  store.setPictures(
+    (id) => fresh.has(id),
+    true,
+    () => true,
+    () => true,
+  );
+  store.setBackgroundPictures(true);
+  const refreshes: string[] = [];
+  store.subscribe("p20", () => {
+    if (store.isMounted("p20")) refreshes.push("p20");
+  });
+  for (const pane of panes.slice(1, 13)) {
+    store.setMoving(true);
+    store.setFocus(pane.paneId);
+    vi.advanceTimersByTime(400);
+    store.setMoving(false);
+    vi.advanceTimersByTime(700);
+    expect(mounted(store)).toEqual([pane.paneId]);
+  }
+  expect(refreshes).toEqual([]);
+  vi.advanceTimersByTime(3000);
+  expect(mounted(store)).toEqual(["p12", "p20"]);
+  expect(refreshes).toEqual(["p20"]);
+  fresh.add("p20");
+  store.setPictures((id) => fresh.has(id));
+  vi.advanceTimersByTime(10_000);
+  expect(mounted(store)).toEqual(["p12"]);
+  expect(refreshes).toEqual(["p20"]);
+});
+
+it("replaces a stale cover promptly after a resize without focus navigation", () => {
+  const store = make();
+  const fresh = new Set(panes.map((p) => p.paneId));
+  store.setPictures(
+    (id) => fresh.has(id),
+    true,
+    () => true,
+    () => true,
+  );
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(5000);
+  window.dispatchEvent(new Event("pointerdown"));
+  fresh.delete("p1");
+  store.setPictures(
+    (id) => fresh.has(id),
+    true,
+    () => true,
+    () => true,
+  );
+  vi.advanceTimersByTime(1500);
+  expect(mounted(store)).toEqual(["p0"]);
+  window.dispatchEvent(new Event("pointerup"));
+  vi.advanceTimersByTime(450);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  fresh.add("p1");
+  store.setPictures((id) => fresh.has(id));
+  expect(mounted(store)).toEqual(["p0"]);
+});

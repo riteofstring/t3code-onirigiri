@@ -821,6 +821,53 @@ it.each(["null", "error"])(
   },
 );
 
+it("retries a transient first picture failure at idle without focus intervention or retained DOM", async () => {
+  store.threadIds = ["t0", "t1", "t2"];
+  currentLayout = layout(400);
+  store.saved.set("thread:e:t0", savedPicture({ paneId: "thread:e:t0" }));
+  await mount();
+  const panes = store.threadIds.map((id, slot) => ({ paneId: `thread:e:${id}`, plane: 0, slot }));
+  const lifecycle = createPaneLifecycleStore(panes, "thread:e:t0");
+  backgroundLifecycle = lifecycle;
+  snapshotFailures.mockImplementation((id, startedAt) => lifecycle.pictureFailed(id, startedAt));
+  let attempts = 0;
+  const failedElement = { isConnected: true } as HTMLElement;
+  snapshot.mockImplementation(async (element, canSnapshot) => {
+    if (!canSnapshot()) return null;
+    if (element === failedElement && ++attempts === 1) return null;
+    return { image: new Blob(["recovered"]), cssSize: { width: 400, height: 580 } };
+  });
+  const owners: string[][] = [];
+  for (const { paneId: id } of panes)
+    lifecycle.subscribe(id, () => {
+      const mounted = lifecycle.isMounted(id);
+      owners.push(panes.filter((p) => lifecycle.isMounted(p.paneId)).map((p) => p.paneId));
+      markPaneSynced(id, mounted ? { updatedAt: store.updatedAt, theme: appearance } : null);
+      if (mounted && !hook.hasFreshPicture(id))
+        hook.paneSnapshots.request(
+          id,
+          id === "thread:e:t1" ? failedElement : ({ isConnected: true } as HTMLElement),
+        );
+    });
+  lifecycle.setPictures((id) => hook.hasFreshPicture(id));
+  lifecycle.setBackgroundPictures(true);
+  await advance(20_000);
+  expect(attempts).toBe(1);
+  expect(lifecycle.isMounted("thread:e:t1")).toBe(false);
+  expect(hook.hasFreshPicture("thread:e:t1")).toBe(false);
+  expect(hook.hasFreshPicture("thread:e:t2")).toBe(true);
+  await advance(290_000);
+  await advance(1000);
+  expect(attempts).toBe(2);
+  expect(hook.hasFreshPicture("thread:e:t1")).toBe(true);
+  expect(lifecycle.isMounted("thread:e:t1")).toBe(false);
+  expect(owners.every((ids) => ids.includes("thread:e:t0") && ids.length <= 2)).toBe(true);
+  expect(panes.filter((p) => lifecycle.isMounted(p.paneId)).map((p) => p.paneId)).toEqual([
+    "thread:e:t0",
+  ]);
+  lifecycle.dispose();
+});
+
 it("reports the capture start time when a pending snapshot later fails", async () => {
   const pending = pendingPicture();
   let startedAt = -1;

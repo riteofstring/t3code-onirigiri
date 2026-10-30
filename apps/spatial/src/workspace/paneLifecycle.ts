@@ -39,6 +39,7 @@ export function createPaneLifecycleStore(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let idle: number | null = null;
   let lastInput = performance.now();
+  let lastFocus = -Infinity;
   let busyUntil = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
   let hasCover: (paneId: string) => boolean = () => false;
@@ -118,7 +119,12 @@ export function createPaneLifecycleStore(
       return;
     }
     const quiet = hasCover(paneId) ? INPUT_QUIET_MS : BACKGROUND_PICTURE_QUIET_MS;
-    const wait = Math.max(lastInput + quiet, hasCover(paneId) ? 0 : busyUntil) - performance.now();
+    const wait =
+      Math.max(
+        lastInput + quiet,
+        lastFocus + BACKGROUND_PICTURE_QUIET_MS,
+        hasCover(paneId) ? 0 : busyUntil,
+      ) - performance.now();
     if (wait > 0) {
       timer = setTimeout(schedule, wait);
       return;
@@ -205,6 +211,7 @@ export function createPaneLifecycleStore(
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
       focused = paneId;
+      lastFocus = performance.now();
       if (capturing?.paneId === focused) {
         capturing = null;
         retryAt.delete(paneId!);
