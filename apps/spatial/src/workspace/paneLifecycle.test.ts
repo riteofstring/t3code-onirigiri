@@ -92,3 +92,11 @@ it("protects the entire visible set when it exceeds the retained cap", () => {
   vi.advanceTimersByTime(1000);
   expect(mounted(store)).toEqual(["p0", "p1", "p2", "p3"]);
 });
+
+it("fills the nearest spare tree even when a farther tree lacks a picture", () => {
+  const store = make();
+  store.setPictures((id) => id === "p0" || id === "p1");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(501);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+});

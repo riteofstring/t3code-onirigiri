@@ -107,8 +107,8 @@ export function createPaneLifecycleStore(
       .sort(
         (a, b) =>
           Number(visible.has(b)) - Number(visible.has(a)) ||
-          Number(hasCover(a)) - Number(hasCover(b)) ||
-          distance(a) - distance(b),
+          distance(a) - distance(b) ||
+          Number(hasCover(a)) - Number(hasCover(b)),
       )[0];
   const schedule = () => {
     cancel();
