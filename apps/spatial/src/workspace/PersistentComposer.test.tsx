@@ -93,3 +93,41 @@ it("keeps document work out of intent and flushes it before the first key or at 
     vi.unstubAllGlobals();
   }
 });
+
+it("leaves the overlay on Escape while respecting composition", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const handle = createRef<PersistentComposerHandle>();
+  const thread = {
+    environmentId: "overlay-escape" as EnvironmentId,
+    threadId: "draft" as ThreadId,
+  };
+  try {
+    await act(async () => root.render(<PersistentComposer ref={handle} />));
+    await act(async () => {
+      handle.current!.bind("escape", thread, true);
+      handle.current!.frame(
+        { paneId: "escape", x: 0, y: 0, width: 800, height: 600, scale: 1 },
+        false,
+      );
+    });
+    const editor = container.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
+    editor.focus();
+    await act(async () => {
+      editor.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true }),
+      );
+    });
+    expect(document.activeElement).toBe(editor);
+    await act(async () => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.activeElement).not.toBe(editor);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

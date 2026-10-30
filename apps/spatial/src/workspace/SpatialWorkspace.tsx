@@ -486,7 +486,7 @@ function SpatialWorkspaceView({
       persistentComposer.current?.bind(
         paneId,
         data,
-        Boolean(navigating || composerOrigin || clickedPane),
+        Boolean(navigating || (composerOrigin && !clickedPane)),
       );
     };
     let pendingCompositionNavigation: (() => void) | null = null;

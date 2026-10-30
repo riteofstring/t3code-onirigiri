@@ -8,6 +8,8 @@ import {
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
 import { useCallback, useEffect, useImperativeHandle, useRef, type Ref } from "react";
 
+import { retainOverlayComposerFocus } from "./retainOverlayComposerFocus";
+
 import type { ThreadPaneData } from "./useWorkspacePanes";
 
 export interface PersistentComposerHandle {
@@ -25,6 +27,10 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   useEffect(() => () => setCoveredComposerOwner(null), []);
   const root = useRef<HTMLDivElement>(null);
   const editor = useRef<ComposerPromptEditorHandle>(null);
+  useEffect(() => {
+    if (root.current)
+      return retainOverlayComposerFocus(root.current, () => editor.current?.focus());
+  }, []);
   const destination = useRef<string | null>(null);
   const pending = useRef<{ paneId: string; thread: ThreadPaneData; value: string } | null>(null);
   const flush = useCallback(() => {
@@ -93,6 +99,16 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
     <div
       ref={root}
       onKeyDownCapture={(event) => {
+        if (
+          event.key === "Escape" &&
+          !event.nativeEvent.isComposing &&
+          event.target instanceof HTMLElement &&
+          !event.target.hasAttribute("aria-controls")
+        ) {
+          event.preventDefault();
+          event.target.blur();
+          return;
+        }
         if (!event.altKey && !event.metaKey && !event.ctrlKey && !flush()) {
           event.preventDefault();
           event.stopPropagation();

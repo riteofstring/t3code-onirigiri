@@ -476,12 +476,14 @@ it("admits exactly the configured engine chords, including editable targets and 
           cancelable: true,
         });
         Object.defineProperty(event, "keyCode", { value: input.keyCode });
-        const target = editing ? host.querySelector("textarea")! : workspace();
+        const target = editing ? document.createElement("textarea") : workspace();
+        if (editing) workspace().append(target);
         await act(() => target.dispatchEvent(event));
         expect(
           matchesPreviewHostShortcut(input, shortcuts, name),
           `${name}: ${JSON.stringify(input)}`,
         ).toBe(event.defaultPrevented);
+        if (editing) target.remove();
       }
     }
   }
