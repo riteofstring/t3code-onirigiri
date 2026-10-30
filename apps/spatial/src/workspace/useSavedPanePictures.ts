@@ -629,8 +629,7 @@ export function useSavedPanePictures(
                 !pictureMatchesVisualRevision(paneId, previous.image)
               );
             },
-            // A picture saved at another size shows the pane at its old size, so only a
-            // picture at the current geometry earns the longer quiet wait.
+            // Missing pictures at the current geometry precede refreshes.
             (paneId) => {
               const key = recordKey(paneId);
               return key !== null && savedRef.current?.has(key) === true;
@@ -706,7 +705,7 @@ export function useSavedPanePictures(
   };
 }
 
-const SNAPSHOT_INPUT_QUIET_MS = 3000;
+const SNAPSHOT_RETRY_MS = 3000;
 const FIRST_PICTURE_INPUT_QUIET_MS = 250;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
@@ -919,7 +918,7 @@ export function createSnapshotQueue() {
     pending.set(paneId, {
       element,
       after: performance.now() + FIRST_PICTURE_INPUT_QUIET_MS,
-      retryAfter: SNAPSHOT_INPUT_QUIET_MS,
+      retryAfter: SNAPSHOT_RETRY_MS,
       background: mountOf(paneId) === "background",
     });
     if (timer !== null) clearTimeout(timer);

@@ -326,7 +326,6 @@ export const ThreadPane = memo(function ThreadPane({
     if (picturable !== null) snapshotPrepared.current = true;
     const invalidate = () => {
       if (!snapshotPrepared.current) return;
-      // Active DOM changes need acknowledgement without waking the engine on every scroll.
       if (active && picturable !== null) snapshots?.invalidate(paneId, true);
       else snapshots?.invalidate(paneId);
       if (picturable === null || !snapshots) return;
