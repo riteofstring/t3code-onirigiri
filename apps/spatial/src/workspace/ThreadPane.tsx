@@ -200,14 +200,7 @@ function usePaneContent(
 
   useEffect(() => {
     if (!renderContent || !synced || !contentReady) return;
-    let idle: number;
-    const prepare = () => {
-      idle = requestIdleCallback((deadline) => {
-        if (deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) prepare();
-        else setSettled(true);
-      });
-    };
-    prepare();
+    const idle = requestIdleCallback(() => setSettled(true));
     return () => {
       cancelIdleCallback(idle);
       setSettled(false);

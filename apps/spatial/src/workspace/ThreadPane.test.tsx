@@ -1355,3 +1355,13 @@ it("admits a nonfocused pane from readiness metadata before subscribing to heavy
   expect(state.projectionSubscribed).toBe(false);
   expect(state.historySubscribed).toBe(false);
 });
+
+it("finishes preparation after one idle slice even with little time remaining", async () => {
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 1 }), 0),
+  );
+  live();
+  await render(true);
+  expect(state.engineReady).toBe(true);
+  expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+});
