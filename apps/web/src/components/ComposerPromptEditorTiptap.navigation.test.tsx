@@ -124,3 +124,72 @@ it("leaves literal Markdown navigation to the browser in plain mode", async () =
   });
   expect(serializeEditorDoc(editor.state.doc).value).toBe(draft.replace("> **", "> **x"));
 });
+
+it("atomically binds long and short drafts with valid selections and fresh undo history", async () => {
+  const handle = createRef<ComposerPromptEditorHandle>();
+  const outgoing = vi.fn();
+  const incoming = vi.fn();
+  await act(async () =>
+    root.render(
+      <ComposerPromptEditor
+        editorRef={handle}
+        imperativeBinding
+        value=""
+        cursor={0}
+        richTextEnabled
+        contextRecords={new Map()}
+        skills={[]}
+        disabled={false}
+        placeholder=""
+        onChange={outgoing}
+        onPaste={() => {}}
+      />,
+    ),
+  );
+  const editor = container.querySelector<HTMLElement & { editor: Editor }>(".tiptap")!.editor;
+  const long = Array.from(
+    { length: 60 },
+    (_, n) => `> **Paragraph ${n}** with [link](https://example.com)`,
+  ).join("\n\n");
+  for (const value of [long, "short", long, ""]) {
+    await act(async () => {
+      expect(handle.current?.bindDraft?.(value, Infinity, incoming)).toBe(true);
+      expect(handle.current?.readSnapshot().value).toBe(value);
+      expect(editor.state.selection.$from.doc).toBe(editor.state.doc);
+      expect(editor.state.selection.from).toBeLessThanOrEqual(editor.state.doc.content.size);
+      expect(editor.commands.undo()).toBe(false);
+      editor.commands.insertContent("x");
+      expect(handle.current?.readSnapshot().value).toBe(`${value}x`);
+    });
+  }
+  expect(outgoing).not.toHaveBeenCalled();
+  expect(incoming).toHaveBeenCalled();
+});
+
+it("preserves the outgoing binding while composition is active", async () => {
+  const handle = createRef<ComposerPromptEditorHandle>();
+  await act(async () =>
+    root.render(
+      <ComposerPromptEditor
+        editorRef={handle}
+        imperativeBinding
+        value=""
+        cursor={0}
+        contextRecords={new Map()}
+        skills={[]}
+        disabled={false}
+        placeholder=""
+        onChange={() => {}}
+        onPaste={() => {}}
+      />,
+    ),
+  );
+  const editor = container.querySelector<HTMLElement & { editor: Editor }>(".tiptap")!.editor;
+  await act(async () => {
+    handle.current?.bindDraft?.("outgoing", Infinity, () => {});
+    editor.view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    expect(handle.current?.bindDraft?.("incoming", Infinity, () => {})).toBe(false);
+    expect(handle.current?.readSnapshot().value).toBe("outgoing");
+    editor.view.dom.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  });
+});

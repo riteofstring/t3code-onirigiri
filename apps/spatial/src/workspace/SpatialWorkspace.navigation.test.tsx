@@ -59,6 +59,7 @@ vi.mock("./useToolPanes", () => {
 });
 vi.mock("./SpatialSurfaceProvider", async () => (await import("./workspaceTestMocks")).controller);
 vi.mock("./useSavedPanePictures", async () => (await import("./workspaceTestMocks")).savedPictures);
+vi.mock("./PersistentComposer", () => ({ PersistentComposer: () => null }));
 vi.mock("./ToolPaneView", () => ({ ToolPaneView: () => null }));
 vi.mock("./SpatialSurfaceHost", () => ({
   SpatialSurfaceHost: ({ children }: { children: ReactNode }) => children,

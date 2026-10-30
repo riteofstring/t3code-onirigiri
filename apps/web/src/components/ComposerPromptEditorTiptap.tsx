@@ -11,13 +11,7 @@ import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tip
 import StarterKit from "@tiptap/starter-kit";
 import { type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { newlineInCode, splitBlockKeepMarks } from "@tiptap/pm/commands";
-import {
-  type EditorState,
-  NodeSelection,
-  Plugin,
-  PluginKey,
-  TextSelection,
-} from "@tiptap/pm/state";
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { NodeType, ResolvedPos } from "@tiptap/pm/model";
 import type {
@@ -122,6 +116,11 @@ import { didComposerSelectionChangeVisibly } from "./composerSelection";
 import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 
 export interface ComposerPromptEditorHandle {
+  bindDraft?: (
+    value: string,
+    cursor: number,
+    onChange: ComposerPromptEditorProps["onChange"],
+  ) => boolean;
   focus: () => void;
   focusAt: (cursor: number) => void;
   focusAtEnd: () => void;
@@ -145,6 +144,7 @@ export interface ComposerPromptEditorHandle {
 export interface ComposerPromptEditorProps {
   value: string;
   cursor: number;
+  imperativeBinding?: boolean;
   /**
    * Render Markdown styling (bold, italic, code, strike, task checkboxes).
    * Off renders the same Tiptap engine as plain text: every marker stays a
@@ -1015,7 +1015,11 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       // A selection-only update while a newer prompt waits to be applied (a chip
       // was just inserted through the store) would report stale text and clobber
       // the prompt. Let the controlled rewrite land instead.
-      if (previousSnapshot.value === nextValue && nextValue !== latestValueRef.current) {
+      if (
+        !props.imperativeBinding &&
+        previousSnapshot.value === nextValue &&
+        nextValue !== latestValueRef.current
+      ) {
         return;
       }
       snapshotRef.current = {
@@ -1036,7 +1040,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         isCollapsedCursorAdjacentToInlineToken(nextValue, nextCursor, "right");
       onChangeRef.current(nextValue, nextCursor, nextExpandedCursor, suppressTrigger, contextIds);
     },
-    [clampEditorCursor, literalText],
+    [clampEditorCursor, literalText, props.imperativeBinding],
   );
 
   const editorAttributes = useMemo(
@@ -1605,7 +1609,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
 
   // Controlled value/cursor from the store (history recall, chip insertion…).
   useLayoutEffect(() => {
-    if (!editor) return;
+    if (!editor || props.imperativeBinding) return;
     const initialSelection = !hasAppliedControlledSelectionRef.current;
     hasAppliedControlledSelectionRef.current = true;
     const normalizedCursor = clampEditorCursor(value, cursor);
@@ -1673,6 +1677,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       isApplyingControlledUpdateRef.current = false;
     });
   }, [
+    props.imperativeBinding,
     clampEditorCursor,
     cursor,
     editor,
@@ -1725,6 +1730,45 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   useImperativeHandle(
     editorRef,
     () => ({
+      bindDraft: (nextValue, nextCursor, nextOnChange) => {
+        if (!editor || editor.view.composing) return false;
+        const cursor = clampEditorCursor(nextValue, nextCursor);
+        const doc = editor.schema.nodeFromJSON(
+          buildDocJson(nextValue, skillLabelFor, { styling: richText, literalText }),
+        );
+        const map = serializeEditorDoc(doc);
+        const selection = TextSelection.create(doc, flatToPm(map, collapsedToFlat(map, cursor)));
+        const state = EditorState.create({
+          schema: editor.schema,
+          doc,
+          selection,
+          plugins: editor.state.plugins,
+        });
+        isApplyingControlledUpdateRef.current = true;
+        try {
+          snapshotRef.current = {
+            value: nextValue,
+            cursor,
+            expandedCursor: expandEditorCursor(nextValue, cursor),
+            contextIds: literalText ? [] : collectInlineContextIds(nextValue),
+          };
+          selectionRangeRef.current = {
+            start: snapshotRef.current.expandedCursor,
+            end: snapshotRef.current.expandedCursor,
+          };
+          hasAppliedControlledSelectionRef.current = true;
+          latestValueRef.current = nextValue;
+          onChangeRef.current = nextOnChange;
+          citationRequestRef.current = null;
+          citationDraftRef.current = null;
+          setOpenCitation(null);
+          editor.view.updateState(state);
+          setIsEmpty(nextValue.length === 0);
+        } finally {
+          isApplyingControlledUpdateRef.current = false;
+        }
+        return true;
+      },
       focus: () => {
         focusAt(snapshotRef.current.cursor);
       },
@@ -1798,7 +1842,16 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           : edgeRect.bottom - caretRect.bottom < threshold;
       },
     }),
-    [editor, focusAt, literalText, readSnapshot],
+    [
+      editor,
+      focusAt,
+      literalText,
+      readSnapshot,
+      clampEditorCursor,
+      expandEditorCursor,
+      richText,
+      skillLabelFor,
+    ],
   );
 
   const handleCopyCut = useCallback(
