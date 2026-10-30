@@ -264,6 +264,7 @@ export const ThreadPane = memo(function ThreadPane({
   const contentRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, liveVisible, contentRef);
 
+  const lifecycle = use(PaneLifecycleContext);
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
   const producerInspected = useRef(false);
@@ -305,7 +306,9 @@ export const ThreadPane = memo(function ThreadPane({
           return true;
         if (
           target === element &&
-          (attributeName === "data-spatial-active" || attributeName === "data-spatial-preparing")
+          (attributeName === "data-spatial-active" ||
+            attributeName === "data-spatial-preparing" ||
+            attributeName === "data-spatial-capturing")
         )
           return false;
         let seen = attributes.get(target);
@@ -377,6 +380,9 @@ export const ThreadPane = memo(function ThreadPane({
             data-spatial-thread={thread.threadId}
             data-spatial-active={String(active)}
             data-spatial-preparing={preparing ? "" : undefined}
+            data-spatial-capturing={
+              mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
+            }
           >
             <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
               {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
