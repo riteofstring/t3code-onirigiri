@@ -26,24 +26,14 @@ export async function snapshotPanePicture(
   waitToDraw: () => Promise<boolean>,
   signal: AbortSignal = new AbortController().signal,
 ): Promise<PanePictureSnapshot | null> {
-  const hidden = () =>
-    !!element.closest(
-      '[data-spatial-retained-mode="activity"][data-spatial-retained-hidden="true"]',
-    );
-  if (
-    signal.aborted ||
-    !element.isConnected ||
-    hidden() ||
-    !canSnapshot() ||
-    hasLivePaneProducer(element)
-  )
+  if (signal.aborted || !element.isConnected || !canSnapshot() || hasLivePaneProducer(element))
     return null;
-  if (!(await waitToDraw()) || signal.aborted || hidden() || !canSnapshot()) return null;
+  if (!(await waitToDraw()) || signal.aborted || !canSnapshot()) return null;
   const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
   if (host) host.dataset.spatialSnapshot = "";
   try {
     const picture = await captureOnirigiriPanePicture(element, signal);
-    return !signal.aborted && element.isConnected && !hidden() && canSnapshot() ? picture : null;
+    return !signal.aborted && element.isConnected && canSnapshot() ? picture : null;
   } finally {
     if (host) delete host.dataset.spatialSnapshot;
   }

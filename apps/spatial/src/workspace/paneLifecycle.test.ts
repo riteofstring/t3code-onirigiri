@@ -24,16 +24,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("retains loaded panes through a tour and evicts the least recent only after the quiet tail", () => {
+it("retains loaded panes through a tour and evicts the farthest clean trees only after the quiet tail", () => {
   const store = make();
   store.setPictures(() => true);
   store.setVisible("p20", true);
   for (let i = 1; i < 39; i++) store.setFocus(`p${i}`);
   expect(mounted(store)).toHaveLength(39);
   vi.advanceTimersByTime(501);
-  expect(mounted(store)).toHaveLength(32);
+  expect(mounted(store)).toHaveLength(10);
   expect(store.isMounted("p20")).toBe(true);
   expect(store.isMounted("p38")).toBe(true);
+  expect(mounted(store)).toEqual(["p20", ...Array.from({ length: 9 }, (_, i) => `p${30 + i}`)]);
   expect(store.isMounted("p0")).toBe(false);
 });
 
@@ -99,4 +100,13 @@ it("fills the nearest spare tree even when a farther tree lacks a picture", () =
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(501);
   expect(mounted(store)).toEqual(["p0", "p1"]);
+});
+
+it("keeps dirty mounted panes beyond ten until their pictures become current", () => {
+  const store = make();
+  for (let i = 1; i < 15; i++) store.setFocus(`p${i}`);
+  vi.advanceTimersByTime(501);
+  expect(mounted(store)).toHaveLength(15);
+  store.setPictures(() => true);
+  expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${5 + i}`));
 });

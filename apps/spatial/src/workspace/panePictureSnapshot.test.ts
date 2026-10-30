@@ -209,23 +209,6 @@ it("cancels scheduled phase admission without starting another capture early", a
   dispose();
 });
 
-it("never captures a subtree hidden by Activity", async () => {
-  const element = pane();
-  const retained = document.createElement("div");
-  retained.dataset.spatialRetainedMode = "activity";
-  retained.dataset.spatialRetainedHidden = "true";
-  element.before(retained);
-  retained.append(element);
-  expect(
-    await snapshotPanePicture(
-      element,
-      () => true,
-      async () => true,
-    ),
-  ).toBeNull();
-  expect(native).not.toHaveBeenCalled();
-});
-
 it.each([true, false])(
   "pauses queued captures and restores the previous enabled state (%s)",
   async (enabled) => {

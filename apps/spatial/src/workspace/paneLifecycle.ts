@@ -2,7 +2,7 @@ import { createContext, startTransition, use, useEffect, useState } from "react"
 
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 
-const MAX_MOUNTED = 32;
+const MAX_MOUNTED = 10;
 const QUIET_MS = 500;
 
 const PICTURE_TIMEOUT_MS = 10_000;
@@ -27,8 +27,6 @@ export function createPaneLifecycleStore(
   const mounted = new Set<string>(focused ? [focused] : []);
   const visible = new Set<string>();
   const loaded = new Set<string>();
-  const recent = new Map<string, number>();
-  let visit = 0;
   let quietSince = performance.now();
   const visited = new Set<string>();
   const listeners = new Map<string, Set<() => void>>();
@@ -58,7 +56,6 @@ export function createPaneLifecycleStore(
   };
   const unmount = (paneId: string) => {
     loaded.delete(paneId);
-    recent.delete(paneId);
     if (mounted.delete(paneId)) notify(paneId);
   };
   const cancel = () => {
@@ -78,7 +75,7 @@ export function createPaneLifecycleStore(
     if (moving || pointers.size > 0) return;
     for (const id of keep) if (panes.has(id)) mount(id);
     if (performance.now() - quietSince < QUIET_MS) return;
-    for (const id of [...mounted].sort((a, b) => (recent.get(a) ?? 0) - (recent.get(b) ?? 0))) {
+    for (const id of [...mounted].sort((a, b) => distance(b) - distance(a))) {
       if (mounted.size <= Math.max(maxMounted, keep.size)) break;
       if (!keep.has(id) && id !== capturing?.paneId && hasPicture(id)) unmount(id);
     }
@@ -229,7 +226,6 @@ export function createPaneLifecycleStore(
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
       focused = paneId;
-      if (paneId) recent.set(paneId, ++visit);
       if (capturing?.paneId === focused) {
         capturing = null;
         retryAt.delete(paneId!);
@@ -275,7 +271,6 @@ export function createPaneLifecycleStore(
     setVisible: (paneId: string, isVisible: boolean) => {
       if (isVisible) {
         visible.add(paneId);
-        recent.set(paneId, ++visit);
         visited.add(paneId);
       } else visible.delete(paneId);
       schedule();
