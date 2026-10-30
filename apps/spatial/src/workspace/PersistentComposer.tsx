@@ -1,3 +1,4 @@
+import { setCoveredComposerOwner } from "@t3tools/web/src/components/coveredComposer";
 import type { WorkspaceFocusedPaneFrame } from "@riteofstring/onirigiri";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -5,7 +6,7 @@ import {
   type ComposerPromptEditorHandle,
 } from "@t3tools/web/src/components/ComposerPromptEditor";
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
-import { useCallback, useImperativeHandle, useRef, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, type Ref } from "react";
 
 import type { ThreadPaneData } from "./useWorkspacePanes";
 
@@ -21,6 +22,7 @@ const EMPTY_CONTEXT = new Map();
 const EMPTY_SKILLS: [] = [];
 
 export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle> }) {
+  useEffect(() => () => setCoveredComposerOwner(null), []);
   const root = useRef<HTMLDivElement>(null);
   const editor = useRef<ComposerPromptEditorHandle>(null);
   const destination = useRef<string | null>(null);
@@ -42,6 +44,9 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
       bind(paneId, thread, focus) {
         if (!root.current || !editor.current?.bindDraft) return false;
         if (destination.current === paneId) {
+          setCoveredComposerOwner(
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
+          );
           if (focus) editor.current.focus();
           return true;
         }
@@ -52,6 +57,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         if (editor.current.isComposing?.()) return false;
         pending.current = { paneId, thread, value };
         destination.current = paneId;
+        setCoveredComposerOwner(scopedThreadKey(threadRef));
         root.current.dataset.composerDestination = paneId;
         root.current.hidden = false;
         if (focus) editor.current.focus();
@@ -64,6 +70,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         if (!element) return;
         if (!frame || destination.current !== frame.paneId) {
           element.hidden = true;
+          setCoveredComposerOwner(null);
           return;
         }
         if (!moving) flush();
@@ -76,6 +83,8 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
       },
       hide() {
         if (root.current) root.current.hidden = true;
+        destination.current = null;
+        setCoveredComposerOwner(null);
       },
     }),
     [flush],

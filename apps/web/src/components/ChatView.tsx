@@ -1,3 +1,4 @@
+import { CoveredComposerContext } from "./coveredComposer";
 import { useDraftHeroLayoutTransition } from "./chat/useDraftHeroLayoutTransition";
 import { readLayoutRect, readLayoutScale } from "./chat/layoutGeometry";
 import { useActiveChatViewEffect, useChatViewActivity } from "./chatViewActivity";
@@ -166,6 +167,7 @@ import {
   memo,
   type SetStateAction,
   useCallback,
+  useContext,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -1435,6 +1437,7 @@ function makeModelDisabledReason(
 }
 
 export default function ChatView(props: ChatViewProps) {
+  const coveredComposer = useContext(CoveredComposerContext);
   const surfaceNavigation = useSurfaceNavigation();
   const hasSurfaceNavigation = useHasSurfaceNavigation();
   const {
@@ -11164,7 +11167,7 @@ export default function ChatView(props: ChatViewProps) {
             {/* Input bar — centered for an empty draft, docked after sending. */}
             <div
               ref={setComposerOverlayElement}
-              inert={isRevertingCheckpoint}
+              inert={isRevertingCheckpoint || coveredComposer}
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState

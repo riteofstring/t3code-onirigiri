@@ -1,3 +1,4 @@
+import { CoveredComposerContext } from "./coveredComposer";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import {
   Extension,
@@ -35,6 +36,7 @@ import {
   useEffectEvent,
   useImperativeHandle,
   useLayoutEffect,
+  useContext,
   useMemo,
   useRef,
   useState,
@@ -841,6 +843,7 @@ const ComposerUndoGroupingExtension = Extension.create<
 });
 
 function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
+  const covered = useContext(CoveredComposerContext);
   const {
     value,
     cursor,
@@ -1610,7 +1613,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
 
   // Controlled value/cursor from the store (history recall, chip insertion…).
   useLayoutEffect(() => {
-    if (!editor || props.imperativeBinding) return;
+    if (!editor || props.imperativeBinding || covered) return;
     const initialSelection = !hasAppliedControlledSelectionRef.current;
     hasAppliedControlledSelectionRef.current = true;
     const normalizedCursor = clampEditorCursor(value, cursor);
@@ -1679,6 +1682,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     });
   }, [
     props.imperativeBinding,
+    covered,
     clampEditorCursor,
     cursor,
     editor,

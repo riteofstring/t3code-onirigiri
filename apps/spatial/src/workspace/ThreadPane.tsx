@@ -1,3 +1,8 @@
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import {
+  CoveredComposerContext,
+  useCoveredComposer,
+} from "@t3tools/web/src/components/coveredComposer";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -233,6 +238,9 @@ export const ThreadPane = memo(function ThreadPane({
   onClosePane?: (paneId: string) => void;
   onToggleMaximized?: (paneId: string) => void;
 }) {
+  const covered = useCoveredComposer(
+    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
+  );
   const paneControls = useMemo(
     () =>
       onAddPane && onClosePane && onToggleMaximized
@@ -376,27 +384,29 @@ export const ThreadPane = memo(function ThreadPane({
   );
 
   return (
-    <ChatPaneControlsContext value={paneControls}>
-      <ChatViewActivityContext value={activity}>
-        <ComposerHandleContext value={paneComposerRef}>
-          <div
-            ref={contentRef}
-            onKeyDownCapture={leaveComposerOnEscape}
-            className="spatial-thread-pane h-full w-full"
-            data-spatial-thread={thread.threadId}
-            data-spatial-active={String(active)}
-            data-spatial-preparing={preparing ? "" : undefined}
-            data-spatial-capturing={
-              mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
-            }
-          >
-            <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
-            </ChatViewContentReadyProvider>
-          </div>
-        </ComposerHandleContext>
-      </ChatViewActivityContext>
-    </ChatPaneControlsContext>
+    <CoveredComposerContext value={covered}>
+      <ChatPaneControlsContext value={paneControls}>
+        <ChatViewActivityContext value={activity}>
+          <ComposerHandleContext value={paneComposerRef}>
+            <div
+              ref={contentRef}
+              onKeyDownCapture={leaveComposerOnEscape}
+              className="spatial-thread-pane h-full w-full"
+              data-spatial-thread={thread.threadId}
+              data-spatial-active={String(active)}
+              data-spatial-preparing={preparing ? "" : undefined}
+              data-spatial-capturing={
+                mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
+              }
+            >
+              <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
+                {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+              </ChatViewContentReadyProvider>
+            </div>
+          </ComposerHandleContext>
+        </ChatViewActivityContext>
+      </ChatPaneControlsContext>
+    </CoveredComposerContext>
   );
 });
 

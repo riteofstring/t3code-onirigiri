@@ -193,3 +193,42 @@ it("preserves the outgoing binding while composition is active", async () => {
     editor.view.dom.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   });
 });
+
+it("preserves the covered document and layout until ownership returns", async () => {
+  const { CoveredComposerContext } = await import("./coveredComposer");
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const handle = createRef<ComposerPromptEditorHandle>();
+  const render = (value: string, covered: boolean) =>
+    root.render(
+      <CoveredComposerContext value={covered}>
+        <ComposerPromptEditor
+          editorRef={handle}
+          value={value}
+          cursor={value.length}
+          richTextEnabled
+          contextRecords={new Map()}
+          skills={[]}
+          disabled={false}
+          placeholder="Message"
+          onChange={() => {}}
+          onPaste={() => {}}
+          onCommandKeyDown={() => false}
+        />
+      </CoveredComposerContext>,
+    );
+  try {
+    await act(async () => render("original", false));
+    const editor = host.querySelector(".tiptap")!;
+    await act(async () => render("overlay key one", true));
+    await act(async () => render("overlay key two", true));
+    expect(host.querySelector(".tiptap")).toBe(editor);
+    expect(editor.textContent).toBe("original");
+    await act(async () => render("overlay key two", false));
+    expect(editor.textContent).toBe("overlay key two");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
