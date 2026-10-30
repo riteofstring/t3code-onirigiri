@@ -59,7 +59,6 @@ vi.mock("./useToolPanes", () => {
 });
 vi.mock("./SpatialSurfaceProvider", async () => (await import("./workspaceTestMocks")).controller);
 vi.mock("./useSavedPanePictures", async () => (await import("./workspaceTestMocks")).savedPictures);
-vi.mock("./PersistentComposer", () => ({ PersistentComposer: () => null }));
 vi.mock("./ToolPaneView", () => ({ ToolPaneView: () => null }));
 vi.mock("./SpatialSurfaceHost", () => ({
   SpatialSurfaceHost: ({ children }: { children: ReactNode }) => children,
@@ -476,14 +475,12 @@ it("admits exactly the configured engine chords, including editable targets and 
           cancelable: true,
         });
         Object.defineProperty(event, "keyCode", { value: input.keyCode });
-        const target = editing ? document.createElement("textarea") : workspace();
-        if (editing) workspace().append(target);
+        const target = editing ? host.querySelector("textarea")! : workspace();
         await act(() => target.dispatchEvent(event));
         expect(
           matchesPreviewHostShortcut(input, shortcuts, name),
           `${name}: ${JSON.stringify(input)}`,
         ).toBe(event.defaultPrevented);
-        if (editing) target.remove();
       }
     }
   }

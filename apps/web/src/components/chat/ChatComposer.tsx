@@ -1,4 +1,3 @@
-import { CoveredComposerContext } from "../coveredComposer";
 import { readLayoutRect, readLayoutScale } from "./layoutGeometry";
 import { useActiveChatViewEffect, useChatViewActivity } from "../chatViewActivity";
 import { useComposerSyncPhase } from "../chatViewContentReady";
@@ -74,7 +73,6 @@ import {
   type ComponentProps,
   type ReactNode,
   useCallback,
-  useContext,
   useEffect,
   useEffectEvent,
   useId,
@@ -217,7 +215,6 @@ import {
   shouldUseRestingComposerLayout,
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
-import { insertPreparedAttachmentReferences } from "./preparedAttachmentReferences";
 import {
   type ComposerCitationCommentRequest,
   type ComposerPromptEditorHandle,
@@ -1487,11 +1484,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 // --------------------------------------------------------------------------
 
 export interface ChatComposerHandle {
-  submit: (
-    dispatchMode?: ComposerDispatchMode,
-    submissionIntent?: ComposerSubmissionIntent,
-  ) => void;
-  getSendDisabledReason: () => string | null;
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   /** Expand the desktop composer at the timeline end without taking focus. */
@@ -1904,7 +1896,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
-  const coveredComposer = useContext(CoveredComposerContext);
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   // Live target key, for async flows that must notice a thread switch that
   // happened while they awaited.
@@ -4290,34 +4281,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   };
   const submitComposerStable = useStableCallback(submitComposer);
-  const [, refreshRelaySubmission] = useState(0);
-  const getSendDisabledReasonStable = useStableCallback(() => {
-    if (sendDisabledReason) return sendDisabledReason;
-    if (noProviderAvailable) return "Enable a provider in Settings to send a message";
-    if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
-      return "Sending is unavailable in this environment";
-    if ((pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0)
-      return "Still compressing a pasted image";
-    if (pendingDraftWork.has(attachmentTargetKey))
-      return "Still bringing attached context into this message";
-    return null;
-  });
-  const submitRelay = useStableCallback(
-    (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => {
-      // The imperative caller may have written the destination draft in this same event.
-      // Commit its store snapshot before using render-derived validation and send context.
-      const draft = getComposerDraft(composerDraftTarget);
-      if (!activePendingProgress && draft) promptRef.current = draft.prompt;
-      const attachments = getComposerDraft(attachmentDraftTarget);
-      if (attachments) {
-        composerImagesRef.current = attachments.images;
-        composerFilesRef.current = attachments.files;
-      }
-      if (draft) composerTerminalContextsRef.current = draft.terminalContexts;
-      flushSync(() => refreshRelaySubmission((version) => version + 1));
-      submitComposerStable(undefined, dispatchMode, submissionIntent);
-    },
-  );
   const handleSubmitMessage = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     submitComposer(
@@ -5912,12 +5875,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const storedImages = nextImages.filter((image) => storedImageIds.has(image.id));
       if (storedImages.length > 0 && imageAttachmentsGetChips) {
         insertedAny =
-          insertPreparedAttachmentReferences({
-            target: composerDraftTarget,
-            currentTargetKey: composerDraftTargetKeyRef.current,
-            references: storedImages.map(imageContextReference),
-            insertAtCaret: insertAttachmentReferences,
-          }) || insertedAny;
+          insertAttachmentReferences(storedImages.map(imageContextReference)) || insertedAny;
       }
       // Only failures are reported here. Success must not pass `null`: by
       // now other work (a failed send, an overlapping paste) may have set a
@@ -5954,16 +5912,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // Question answers carry attachments beside the answer, never as chips. Falling back to
     // the thread prompt here would hide the file behind a reference the question never shows.
     if (questionAttachmentTarget) return false;
-    if (coveredComposer) {
-      insertPreparedAttachmentReferences({
-        target: composerDraftTarget,
-        currentTargetKey: composerDraftTargetKeyRef.current,
-        references,
-      });
-      if (composerDraftTargetKeyRef.current === composerTargetKey(composerDraftTarget))
-        promptRef.current = getComposerDraft(composerDraftTarget)?.prompt ?? "";
-      return true;
-    }
     if (selection) {
       const edit = inlineContextReferenceReplacement(promptRef.current, selection, references);
       return applyPromptReplacement(edit.start, edit.end, edit.text);
@@ -6399,8 +6347,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useImperativeHandle(
     composerRef,
     () => ({
-      submit: submitRelay,
-      getSendDisabledReason: getSendDisabledReasonStable,
       focusAtEnd: () => {
         composerEditorRef.current?.focusAtEnd();
       },
@@ -6621,8 +6567,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
     }),
     [
-      submitRelay,
-      getSendDisabledReasonStable,
       activeThread,
       addComposerAttachments,
       foldPastedText,
@@ -7502,7 +7446,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerContextActionsContext value={composerContextActions}>
                   <ComposerPromptEditor
                     ariaLabel="Message"
-                    stockInput={activePendingProgress !== null || isComposerApprovalState}
                     suggestionListId={composerSuggestionListId}
                     activeSuggestionId={
                       composerSuggestionListVisible && activeComposerMenuItem

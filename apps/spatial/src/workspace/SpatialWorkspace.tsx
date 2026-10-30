@@ -35,8 +35,6 @@ import {
 import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 
-import { PersistentComposer, type PersistentComposerHandle } from "./PersistentComposer";
-
 import { ToolPaneView } from "./ToolPaneView";
 import { SpatialSurfaceHost } from "./SpatialSurfaceHost";
 import { useSpatialController } from "./SpatialSurfaceProvider";
@@ -107,25 +105,13 @@ const SHORTCUTS: OnirigiriShortcutBindings = {
       .filter((action) => !NAVIGATION.has(action))
       .map((action) => [action, []]),
   ),
-  focusDown: [
-    ...editingArrows(defaultOnirigiriShortcuts.focusDown),
-    shiftOptionWhileEditing("ArrowDown"),
-  ],
+  focusDown: [...defaultOnirigiriShortcuts.focusDown, shiftOptionWhileEditing("ArrowDown")],
   movePaneDown: editingArrows(defaultOnirigiriShortcuts.movePaneDown),
-  focusLeft: [
-    ...editingArrows(defaultOnirigiriShortcuts.focusLeft),
-    shiftOptionWhileEditing("ArrowLeft"),
-  ],
+  focusLeft: [...defaultOnirigiriShortcuts.focusLeft, shiftOptionWhileEditing("ArrowLeft")],
   movePaneLeft: editingArrows(defaultOnirigiriShortcuts.movePaneLeft),
-  focusRight: [
-    ...editingArrows(defaultOnirigiriShortcuts.focusRight),
-    shiftOptionWhileEditing("ArrowRight"),
-  ],
+  focusRight: [...defaultOnirigiriShortcuts.focusRight, shiftOptionWhileEditing("ArrowRight")],
   movePaneRight: editingArrows(defaultOnirigiriShortcuts.movePaneRight),
-  focusUp: [
-    ...editingArrows(defaultOnirigiriShortcuts.focusUp),
-    shiftOptionWhileEditing("ArrowUp"),
-  ],
+  focusUp: [...defaultOnirigiriShortcuts.focusUp, shiftOptionWhileEditing("ArrowUp")],
   movePaneUp: editingArrows(defaultOnirigiriShortcuts.movePaneUp),
   toggleOverview: [optionWhileEditing("o"), whileEditing("o")],
 };
@@ -171,7 +157,6 @@ function SpatialWorkspaceView({
   layoutMode: WorkspaceLayoutMode;
   onLayoutModeChange: (mode: WorkspaceLayoutMode) => void;
 }) {
-  const persistentComposer = useRef<PersistentComposerHandle>(null);
   const alwaysLive = import.meta.env.MODE === "all-live";
   const router = useRouter();
   const { controller: toolController, bindWorkspace } = useSpatialController();
@@ -469,98 +454,12 @@ function SpatialWorkspaceView({
     [],
   );
   useEffect(() => {
-    const bindIntent = (event: Event) => {
-      if (!active || fullScreenPhaseRef.current !== null) return;
-      const snapshot = workspaceRef.current?.getSnapshot();
-      const paneId = snapshot?.focusedPaneId;
-      const data = paneId ? paneData.get(paneId) : null;
-      if (!paneId || !data || snapshot?.presentationMode === "overview") return;
-      const key = event instanceof KeyboardEvent ? event : null;
-      const navigating = key?.altKey && key.key.startsWith("Arrow");
-      const composerOrigin = document.activeElement?.closest('[data-testid="composer-editor"]');
-      const clickedPane =
-        event.target instanceof Element
-          ? event.target.closest('[data-onirigiri-slot="pane"]')
-          : null;
-      if (!navigating && !composerOrigin && !clickedPane) return;
-      persistentComposer.current?.bind(
-        paneId,
-        data,
-        Boolean(navigating || (composerOrigin && !clickedPane)),
-      );
-    };
-    let pendingCompositionNavigation: (() => void) | null = null;
-    const captureIntent = (event: Event) => {
-      const key = event instanceof KeyboardEvent ? event : null;
-      if (key?.key === "Tab" || key?.key === "Escape") {
-        pendingCompositionNavigation = null;
-        return;
-      }
-      const navigation = key
-        ? key.altKey && key.key.startsWith("Arrow")
-        : event.type === "pointerdown";
-      if (navigation && persistentComposer.current?.isComposing()) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const target = event.target;
-        const replay = key
-          ? new KeyboardEvent("keydown", {
-              key: key.key,
-              code: key.code,
-              altKey: key.altKey,
-              ctrlKey: key.ctrlKey,
-              metaKey: key.metaKey,
-              shiftKey: key.shiftKey,
-              bubbles: true,
-              cancelable: true,
-            })
-          : new PointerEvent("pointerdown", event as PointerEvent);
-        pendingCompositionNavigation = () => target?.dispatchEvent(replay);
-        return;
-      }
-      if (key && !key.altKey) {
-        bindIntent(event);
-        persistentComposer.current?.flush();
-      } else queueMicrotask(() => bindIntent(event));
-    };
-    const compositionEnd = () => {
-      const navigate = pendingCompositionNavigation;
-      pendingCompositionNavigation = null;
-      if (navigate) queueMicrotask(navigate);
-    };
-    window.addEventListener("compositionend", compositionEnd);
-    window.addEventListener("keydown", captureIntent, true);
-    window.addEventListener("pointerdown", captureIntent, true);
-    window.addEventListener("click", captureIntent, true);
-    return () => {
-      window.removeEventListener("compositionend", compositionEnd);
-      window.removeEventListener("keydown", captureIntent, true);
-      window.removeEventListener("pointerdown", captureIntent, true);
-      window.removeEventListener("click", captureIntent, true);
-    };
-  }, [active, paneData]);
-  useEffect(() => {
-    if (!active || overview || fullScreenPhase !== null) persistentComposer.current?.hide();
-  }, [active, overview, fullScreenPhase]);
-
-  useEffect(() => {
     if (!active) useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
     return () => useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
   }, [active]);
 
   const onFocusedPaneFrame = useCallback(
     (frame: WorkspaceFocusedPaneFrame | null, moving: boolean) => {
-      const composerThread = frame ? paneData.get(frame.paneId) : null;
-      if (
-        activeRef.current &&
-        fullScreenPhaseRef.current === null &&
-        composerThread &&
-        frame &&
-        workspaceRef.current?.getSnapshot().presentationMode !== "overview"
-      ) {
-        persistentComposer.current?.bind(frame.paneId, composerThread, false);
-        persistentComposer.current?.frame(frame, moving);
-      } else persistentComposer.current?.hide();
       syncMaximized();
       setCaptureActivity(
         !alwaysLive && activeRef.current && fullScreenPhaseRef.current === null,
@@ -1003,7 +902,6 @@ function SpatialWorkspaceView({
             </PaneLifecycleContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
-        <PersistentComposer ref={persistentComposer} />
         <FullScreenBorder ref={fullScreenBorderRef} />
       </div>
     </WorkspaceTooltips>

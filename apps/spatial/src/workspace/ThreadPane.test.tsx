@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { setCoveredComposerOwner } from "@t3tools/web/src/components/coveredComposer";
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -311,7 +309,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(() => root.unmount());
-  setCoveredComposerOwner(null);
   lifecycle?.dispose();
   container.remove();
   vi.restoreAllMocks();
@@ -1188,26 +1185,4 @@ it("retains the presented editor while earlier history loads and waits for its f
   expect(state.engineReady).toBe(true);
   expect(requestSnapshot).toHaveBeenCalledOnce();
   expect(container.querySelector("textarea")).toBe(editor);
-});
-
-it("keeps history out of the first usable overlay paint and cancels it on reversal", async () => {
-  const { createPaneLifecycleStore } =
-    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
-  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-  lifecycle.setMoving(true);
-  setCoveredComposerOwner(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)));
-  live();
-  await render(true, false);
-  expect(container.querySelector("textarea")).toBeNull();
-  await act(() => lifecycle!.setMoving(false));
-  await act(() => vi.advanceTimersByTimeAsync(16));
-  expect(container.querySelector("textarea")).toBeNull();
-  await act(() => lifecycle!.setMoving(true));
-  await act(() => vi.advanceTimersByTimeAsync(100));
-  expect(container.querySelector("textarea")).toBeNull();
-  await act(() => lifecycle!.setMoving(false));
-  await act(() => vi.advanceTimersByTimeAsync(32));
-  expect(container.querySelector("textarea")).toBeNull();
-  await act(() => vi.advanceTimersByTimeAsync(1));
-  expect(container.querySelector("textarea")).not.toBeNull();
 });

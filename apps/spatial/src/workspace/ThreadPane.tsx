@@ -1,9 +1,3 @@
-import { registerPaneComposer, notifyPaneComposer } from "./paneComposerRelay";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import {
-  CoveredComposerContext,
-  useCoveredComposer,
-} from "@t3tools/web/src/components/coveredComposer";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -51,8 +45,6 @@ import {
   usePanelNavigationSuppression,
 } from "@t3tools/web/src/panelAnimations";
 
-import { afterUsablePaint } from "./afterUsablePaint";
-import { retainComposerFocusIntent } from "./composerFocusIntent";
 import { usePaneActivity } from "./paneActivity";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
@@ -104,7 +96,6 @@ function usePaneContent(
   visible: boolean,
   focused: boolean,
   visualRevision: number,
-  covered: boolean,
 ): {
   mounted: boolean;
   preparing: boolean;
@@ -127,15 +118,11 @@ function usePaneContent(
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
       let idle: number | null = null;
-      let cancelPaint: (() => void) | null = null;
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
-        cancelPaint?.();
-        cancelPaint = null;
         idle = null;
         if (lifecycle?.isMoving()) return;
-        if (focused && covered) cancelPaint = afterUsablePaint(show);
-        else if (focused || visible) show();
+        if (focused || visible) show();
         else
           idle = requestIdleCallback((deadline) => {
             idle = null;
@@ -147,11 +134,10 @@ function usePaneContent(
       prepare();
       return () => {
         unsubscribe?.();
-        cancelPaint?.();
         if (idle !== null) cancelIdleCallback(idle);
       };
     }
-  }, [contentAvailable, contentMounted, covered, focused, lifecycle, mounted, visible]);
+  }, [contentAvailable, contentMounted, focused, lifecycle, mounted, visible]);
   const synced = status === "live" || status === "deleted";
   const pictureTheme = usePanePictureTheme();
   const running = threadRuntimeIsActive(shell?.runtime);
@@ -246,9 +232,6 @@ export const ThreadPane = memo(function ThreadPane({
   onClosePane?: (paneId: string) => void;
   onToggleMaximized?: (paneId: string) => void;
 }) {
-  const covered = useCoveredComposer(
-    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
-  );
   const paneControls = useMemo(
     () =>
       onAddPane && onClosePane && onToggleMaximized
@@ -274,23 +257,12 @@ export const ThreadPane = memo(function ThreadPane({
     visible,
     focused,
     visualRevision,
-    covered,
   );
+
+  const paneComposerRef = usePaneComposerHandle(active);
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const paneComposerRef = usePaneComposerHandle(
-    active,
-    paneId,
-    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.threadId)),
-    contentRef,
-  );
-
   const activity = usePaneActivity(active, liveVisible, contentRef);
-
-  useEffect(() => {
-    if (!focused || !workspaceActive || !contentRef.current) return;
-    return retainComposerFocusIntent(contentRef.current, () => paneComposerRef.current);
-  }, [focused, workspaceActive, paneComposerRef]);
 
   const lifecycle = use(PaneLifecycleContext);
   const snapshots = use(PaneSnapshotContext);
@@ -398,39 +370,31 @@ export const ThreadPane = memo(function ThreadPane({
   );
 
   return (
-    <CoveredComposerContext value={covered}>
-      <ChatPaneControlsContext value={paneControls}>
-        <ChatViewActivityContext value={activity}>
-          <ComposerHandleContext value={paneComposerRef}>
-            <div
-              ref={contentRef}
-              onKeyDownCapture={leaveComposerOnEscape}
-              className="spatial-thread-pane h-full w-full"
-              data-spatial-pane-id={paneId}
-              data-spatial-thread={thread.threadId}
-              data-spatial-active={String(active)}
-              data-spatial-preparing={preparing ? "" : undefined}
-              data-spatial-capturing={
-                mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
-              }
-            >
-              <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-                {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
-              </ChatViewContentReadyProvider>
-            </div>
-          </ComposerHandleContext>
-        </ChatViewActivityContext>
-      </ChatPaneControlsContext>
-    </CoveredComposerContext>
+    <ChatPaneControlsContext value={paneControls}>
+      <ChatViewActivityContext value={activity}>
+        <ComposerHandleContext value={paneComposerRef}>
+          <div
+            ref={contentRef}
+            onKeyDownCapture={leaveComposerOnEscape}
+            className="spatial-thread-pane h-full w-full"
+            data-spatial-thread={thread.threadId}
+            data-spatial-active={String(active)}
+            data-spatial-preparing={preparing ? "" : undefined}
+            data-spatial-capturing={
+              mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
+            }
+          >
+            <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
+              {mounted ? <PaneRouter router={router} threadPath={threadPath} /> : null}
+            </ChatViewContentReadyProvider>
+          </div>
+        </ComposerHandleContext>
+      </ChatViewActivityContext>
+    </ChatPaneControlsContext>
   );
 });
 
-function usePaneComposerHandle(
-  active: boolean,
-  paneId: string,
-  threadKey: string,
-  root: { current: HTMLElement | null },
-): ComposerHandleRef {
+function usePaneComposerHandle(active: boolean): ComposerHandleRef {
   const appComposerRef = useComposerHandleContext();
   const [pane] = useState(() => {
     let handle: ChatComposerHandle | null = null;
@@ -443,7 +407,6 @@ function usePaneComposerHandle(
         set current(next: ChatComposerHandle | null) {
           if (connected && connected.current === handle) connected.current = next;
           handle = next;
-          notifyPaneComposer();
         },
       },
       connect(app: ComposerHandleRef) {
@@ -459,10 +422,6 @@ function usePaneComposerHandle(
   useLayoutEffect(() => {
     if (active && appComposerRef) return pane.connect(appComposerRef);
   }, [active, appComposerRef, pane]);
-  useLayoutEffect(
-    () => registerPaneComposer(paneId, threadKey, pane.ref, root),
-    [paneId, threadKey, pane, root],
-  );
   return pane.ref;
 }
 
