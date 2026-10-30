@@ -1896,6 +1896,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       <ComposerContextRecordsContext value={contextRecords}>
         <ComposerCitationCommentContext value={citationCommentActions}>
           <div
+            data-pane-composer-editor={props.imperativeBinding ? undefined : ""}
+            inert={covered}
+            style={covered ? { visibility: "hidden" } : undefined}
             className={cn(
               "relative flow-root font-(family-name:--font-composer,var(--font-sans)) text-(length:--font-size-prompt,var(--text-sm)) max-sm:pointer-coarse:text-(length:--font-size-prompt-touch)",
               containerClassName,

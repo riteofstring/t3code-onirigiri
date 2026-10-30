@@ -8,7 +8,7 @@ import {
 import { useComposerDraftStore } from "@t3tools/web/src/composerDraftStore";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 
-import { getPaneComposer } from "./paneComposerRelay";
+import { getPaneComposer, getPaneComposerEditor, subscribePaneComposer } from "./paneComposerRelay";
 import { retainOverlayComposerFocus } from "./retainOverlayComposerFocus";
 
 import type { ThreadPaneData } from "./useWorkspacePanes";
@@ -28,6 +28,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
   useEffect(() => () => setCoveredComposerOwner(null), []);
   const root = useRef<HTMLDivElement>(null);
   const editor = useRef<ComposerPromptEditorHandle>(null);
+  const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (root.current)
       return retainOverlayComposerFocus(root.current, () => editor.current?.focus());
@@ -42,6 +43,55 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
     const key = boundThreadKey.current;
     return paneId && key ? getPaneComposer(paneId, key) : null;
   };
+  const refreshRegion = useRef<() => void>(() => {});
+  useEffect(() => {
+    let observed: HTMLElement | null = null;
+    let frame: number | null = null;
+    const resize =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => schedule());
+    const measure = () => {
+      frame = null;
+      const paneId = destination.current;
+      const key = boundThreadKey.current;
+      const region = paneId && key ? getPaneComposerEditor(paneId, key) : null;
+      if (region !== observed) {
+        resize?.disconnect();
+        observed = region;
+        if (region) resize?.observe(region);
+      }
+      const element = surface.current;
+      const pane = region?.closest<HTMLElement>("[data-spatial-pane-id]");
+      if (!region || !pane || !element) {
+        if (element) {
+          element.removeAttribute("style");
+          delete element.dataset.aligned;
+        }
+        return;
+      }
+      const box = region.getBoundingClientRect();
+      const parent = pane.getBoundingClientRect();
+      if (!parent.width || !parent.height || !box.width || !box.height) return;
+      element.dataset.aligned = "true";
+      element.style.left = `${(100 * (box.left - parent.left)) / parent.width}%`;
+      element.style.top = `${(100 * (box.top - parent.top)) / parent.height}%`;
+      element.style.width = `${(100 * box.width) / parent.width}%`;
+      element.style.height = `${(100 * box.height) / parent.height}%`;
+      element.style.bottom = "auto";
+      element.style.right = "auto";
+    };
+    const schedule = () => {
+      if (frame === null) frame = requestAnimationFrame(measure);
+    };
+    refreshRegion.current = schedule;
+    const unsubscribe = subscribePaneComposer(schedule);
+    schedule();
+    return () => {
+      unsubscribe();
+      resize?.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+      refreshRegion.current = () => {};
+    };
+  }, []);
   const pending = useRef<{ paneId: string; thread: ThreadPaneData; value: string } | null>(null);
   const flush = useCallback(() => {
     const next = pending.current;
@@ -98,6 +148,7 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
         boundThreadKey.current = scopedThreadKey(threadRef);
         boundThread.current = thread;
         setSendReason(null);
+        refreshRegion.current();
         setCoveredComposerOwner(scopedThreadKey(threadRef));
         root.current.dataset.composerDestination = paneId;
         root.current.hidden = false;
@@ -114,7 +165,10 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
           setCoveredComposerOwner(null);
           return;
         }
-        if (!moving) flush();
+        if (!moving) {
+          flush();
+          refreshRegion.current();
+        }
         element.hidden = false;
         element.style.left = `${frame.x}px`;
         element.style.top = `${frame.y}px`;
@@ -176,7 +230,10 @@ export function PersistentComposer({ ref }: { ref: Ref<PersistentComposerHandle>
       className="group pointer-events-none absolute z-20 overflow-hidden"
       data-persistent-composer=""
     >
-      <div className="pointer-events-auto group-data-[moving=true]:pointer-events-none absolute inset-x-3 bottom-3 max-h-[70%] overflow-y-auto rounded-xl border bg-background p-4 shadow-sm">
+      <div
+        ref={surface}
+        className="pointer-events-auto group-data-[moving=true]:pointer-events-none absolute inset-x-3 bottom-3 max-h-[70%] overflow-y-auto rounded-xl border bg-background p-4 shadow-sm data-[aligned=true]:rounded-none data-[aligned=true]:border-0 data-[aligned=true]:p-0 data-[aligned=true]:shadow-none"
+      >
         <ComposerPromptEditor
           editorRef={editor}
           imperativeBinding

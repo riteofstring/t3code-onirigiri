@@ -225,8 +225,13 @@ it("preserves the covered document and layout until ownership returns", async ()
     await act(async () => render("overlay key two", true));
     expect(host.querySelector(".tiptap")).toBe(editor);
     expect(editor.textContent).toBe("original");
+    const region = editor.closest<HTMLElement>("[data-pane-composer-editor]")!;
+    expect(region.hasAttribute("inert")).toBe(true);
+    expect(region.style.visibility).toBe("hidden");
     await act(async () => render("overlay key two", false));
     expect(editor.textContent).toBe("overlay key two");
+    expect(region.hasAttribute("inert")).toBe(false);
+    expect(region.style.visibility).toBe("");
   } finally {
     await act(async () => root.unmount());
     host.remove();
