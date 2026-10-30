@@ -1,3 +1,4 @@
+import { CoveredComposerContext } from "../coveredComposer";
 import { readLayoutRect, readLayoutScale } from "./layoutGeometry";
 import { useActiveChatViewEffect, useChatViewActivity } from "../chatViewActivity";
 import { useComposerSyncPhase } from "../chatViewContentReady";
@@ -73,6 +74,7 @@ import {
   type ComponentProps,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useEffectEvent,
   useId,
@@ -1902,6 +1904,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
+  const coveredComposer = useContext(CoveredComposerContext);
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   // Live target key, for async flows that must notice a thread switch that
   // happened while they awaited.
@@ -5951,6 +5954,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // Question answers carry attachments beside the answer, never as chips. Falling back to
     // the thread prompt here would hide the file behind a reference the question never shows.
     if (questionAttachmentTarget) return false;
+    if (coveredComposer) {
+      insertPreparedAttachmentReferences({
+        target: composerDraftTarget,
+        currentTargetKey: composerDraftTargetKeyRef.current,
+        references,
+      });
+      if (composerDraftTargetKeyRef.current === composerTargetKey(composerDraftTarget))
+        promptRef.current = getComposerDraft(composerDraftTarget)?.prompt ?? "";
+      return true;
+    }
     if (selection) {
       const edit = inlineContextReferenceReplacement(promptRef.current, selection, references);
       return applyPromptReplacement(edit.start, edit.end, edit.text);

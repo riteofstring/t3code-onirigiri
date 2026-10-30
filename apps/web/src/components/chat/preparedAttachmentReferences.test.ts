@@ -52,3 +52,20 @@ describe("prepared attachment references", () => {
     expect(insertAtCaret).not.toHaveBeenCalled();
   });
 });
+
+it("appends covered-editor chips to the latest draft without reading its stale caret", () => {
+  const store = useComposerDraftStore.getState();
+  store.setPrompt(source, "typed before the pane rendered");
+  store.setPrompt(destination, "other environment");
+  expect(
+    insertPreparedAttachmentReferences({
+      target: source,
+      currentTargetKey: composerTargetKey(source),
+      references,
+    }),
+  ).toBe(true);
+  const prompt = store.getComposerDraft(source)!.prompt;
+  expect(stripInlineContextReferences(prompt).trim()).toBe("typed before the pane rendered");
+  expect(collectInlineContextIds(prompt)).toEqual(["image_prepared"]);
+  expect(store.getComposerDraft(destination)!.prompt).toBe("other environment");
+});
