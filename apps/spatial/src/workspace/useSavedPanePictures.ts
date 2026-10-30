@@ -472,10 +472,6 @@ export function useSavedPanePictures(
     },
     [enabled, hasFreshPicture, pictureMount],
   );
-  const pictureForRef = useRef(pictureFor);
-  useLayoutEffect(() => {
-    pictureForRef.current = pictureFor;
-  }, [pictureFor]);
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
       const { paneId } = picture;
@@ -598,12 +594,7 @@ export function useSavedPanePictures(
               const key = recordKey(paneId);
               return key !== null && savedRef.current?.has(key) === true;
             },
-            (paneId) => {
-              const mount = pictureMountRef.current(paneId);
-              return mount === "background" && pictureForRef.current(paneId) !== null
-                ? "ordinary"
-                : mount;
-            },
+            (paneId) => pictureMountRef.current(paneId),
           )
         : undefined,
     [enabled, pictureMatchesVisualRevision, recordKey, snapshots],
@@ -691,7 +682,7 @@ export function createSnapshotQueue() {
   >();
   let draw: Draw | null = null;
   let needsPicture: (paneId: string) => boolean = () => false;
-  let hasCover: (paneId: string) => boolean = () => false;
+  let hasSavedPixels: (paneId: string) => boolean = () => false;
   let mountOf: (paneId: string) => PictureMount = () => "ordinary";
   let enabled = true;
   let moving = false;
@@ -802,7 +793,7 @@ export function createSnapshotQueue() {
       }
       const dueRequests = [...pending].filter((candidate) => due(candidate) <= now);
       const priority = ([paneId, request]: (typeof dueRequests)[number]) =>
-        request.background ? 2 : hasCover(paneId) ? 1 : 0;
+        request.background ? 2 : hasSavedPixels(paneId) ? 1 : 0;
       const [paneId, request] = dueRequests.length
         ? dueRequests.sort(
             (a, b) =>
@@ -898,12 +889,12 @@ export function createSnapshotQueue() {
   const setDraw = (
     nextDraw: Draw,
     nextNeedsPicture: (paneId: string) => boolean,
-    nextHasCover: (paneId: string) => boolean,
+    nextHasSavedPixels: (paneId: string) => boolean,
     nextMountOf: (paneId: string) => PictureMount = () => "ordinary",
   ) => {
     draw = nextDraw;
     needsPicture = nextNeedsPicture;
-    hasCover = nextHasCover;
+    hasSavedPixels = nextHasSavedPixels;
     mountOf = nextMountOf;
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });

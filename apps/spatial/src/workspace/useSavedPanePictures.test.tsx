@@ -1554,28 +1554,31 @@ it("retains an unpublished refresh across content release and an ordinary remoun
 it.each([
   ["threads", "stage"],
   ["stage", "threads"],
-])("shows a stored picture that loaded before the %s and the %s", async (first, second) => {
-  const image = new Blob(["stored"]);
-  store.saved.set(paneId, savedPicture({ image }));
-  store.threadIds = [];
-  await mount({ resizeStage: false });
-  expect(hook.picturesLoaded).toBe(true);
-  expect(shownPicture).toBeNull();
-  const arrive = (prerequisite: string) =>
-    act(() => {
-      if (prerequisite === "stage") resize(800, 600);
-      else {
-        store.threadIds = ["t1"];
-        renderer!.update(<Probe />);
-      }
-    });
-  await arrive(first);
-  expect(shownPicture).toBeNull();
-  await arrive(second);
-  expect(shownPicture).toBeNull();
-  expect(snapshot).not.toHaveBeenCalled();
-  expect(store.writes).toHaveLength(0);
-});
+])(
+  "rejects unvalidated stored pixels after both the %s and the %s arrive",
+  async (first, second) => {
+    const image = new Blob(["stored"]);
+    store.saved.set(paneId, savedPicture({ image }));
+    store.threadIds = [];
+    await mount({ resizeStage: false });
+    expect(hook.picturesLoaded).toBe(true);
+    expect(shownPicture).toBeNull();
+    const arrive = (prerequisite: string) =>
+      act(() => {
+        if (prerequisite === "stage") resize(800, 600);
+        else {
+          store.threadIds = ["t1"];
+          renderer!.update(<Probe />);
+        }
+      });
+    await arrive(first);
+    expect(shownPicture).toBeNull();
+    await arrive(second);
+    expect(shownPicture).toBeNull();
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(store.writes).toHaveLength(0);
+  },
+);
 
 it("keeps a picture for each stage size and selects the stored one on return without redrawing", async () => {
   const image = new Blob(["stored"]);
@@ -1740,7 +1743,7 @@ it("keeps pictures deleted by a live producer out of a load that finishes later"
   expect(shownPicture).toBeNull();
 });
 
-it("restores a stored compact picture only in compact layout", async () => {
+it("recaptures stored compact pixels before presenting them", async () => {
   const image = new Blob(["compact"]);
   store.saved.set(
     paneId,
@@ -1748,6 +1751,11 @@ it("restores a stored compact picture only in compact layout", async () => {
   );
   await mount({ compact: true });
   expect(shownPicture).toBeNull();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const current = new Blob(["restored compact view"]);
+  await act(() => drawPicture(pane, current));
+  expect(shownPicture).toBe(current);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
   await setCompact(false);
   expect(shownPicture).toBeNull();
 });
