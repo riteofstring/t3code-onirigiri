@@ -822,7 +822,7 @@ it.each(["null", "error"])(
   },
 );
 
-it("retries a transient first picture failure at idle without focus intervention or retained DOM", async () => {
+it("retries a transient first picture failure at idle without discarding the uncaptured view", async () => {
   store.threadIds = ["t0", "t1", "t2"];
   currentLayout = layout(400);
   store.saved.set("thread:e:t0", savedPicture({ paneId: "thread:e:t0" }));
@@ -850,22 +850,22 @@ it("retries a transient first picture failure at idle without focus intervention
           id === "thread:e:t1" ? failedElement : ({ isConnected: true } as HTMLElement),
         );
     });
+  for (const { paneId: id } of panes) {
+    if (!lifecycle.isMounted(id)) continue;
+    markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
+    hook.paneSnapshots.request(
+      id,
+      id === "thread:e:t1" ? failedElement : ({ isConnected: true } as HTMLElement),
+    );
+  }
   lifecycle.setPictures((id) => hook.hasFreshPicture(id));
   lifecycle.setBackgroundPictures(true);
   await advance(20_000);
-  expect(attempts).toBe(1);
-  expect(lifecycle.isMounted("thread:e:t1")).toBe(false);
-  expect(hook.hasFreshPicture("thread:e:t1")).toBe(false);
-  expect(hook.hasFreshPicture("thread:e:t2")).toBe(true);
-  await advance(290_000);
-  await advance(1000);
   expect(attempts).toBe(2);
   expect(hook.hasFreshPicture("thread:e:t1")).toBe(true);
-  expect(lifecycle.isMounted("thread:e:t1")).toBe(false);
-  expect(owners.every((ids) => ids.includes("thread:e:t0") && ids.length <= 2)).toBe(true);
-  expect(panes.filter((p) => lifecycle.isMounted(p.paneId)).map((p) => p.paneId)).toEqual([
-    "thread:e:t0",
-  ]);
+  expect(hook.hasFreshPicture("thread:e:t2")).toBe(true);
+  expect(lifecycle.isMounted("thread:e:t1")).toBe(true);
+  expect(owners.every((ids) => ids.includes("thread:e:t0"))).toBe(true);
   lifecycle.dispose();
 });
 
@@ -988,7 +988,7 @@ it("keeps a decoded cover through resize and navigation until replacement pixels
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   window.dispatchEvent(new Event("keydown"));
-  await advance(399);
+  await advance(249);
   expect(snapshot).not.toHaveBeenCalled();
   expect(shownPicture).toBe(image);
   await advance(10);
@@ -1035,7 +1035,7 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
       expect(hook.pictureFor(paneId)?.image).toBe(old);
     }
     window.dispatchEvent(new Event(end));
-    await advance(399);
+    await advance(249);
     expect(snapshot).not.toHaveBeenCalled();
     await advance(10);
     expect(snapshot).toHaveBeenCalledOnce();
@@ -1051,7 +1051,7 @@ it("lets a newly opened workspace settle even when the page has been open a whil
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await advance(399);
+  await advance(249);
   expect(snapshot).not.toHaveBeenCalled();
   await advance(2);
   expect(store.writes).toHaveLength(1);
@@ -1066,7 +1066,7 @@ it("captures first pixels between ordinary navigation inputs, once motion has st
   await advance(550);
   expect(snapshot).not.toHaveBeenCalled();
   hook.setCaptureActivity(true, false);
-  await advance(390);
+  await advance(240);
   expect(snapshot).not.toHaveBeenCalled();
   await advance(20);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -1092,97 +1092,35 @@ it("refreshes a covered background pane after resize with limited idle headroom"
 });
 
 it.each(["longtask", "long-animation-frame"])(
-  "refreshes a covered background pane during sustained %s pressure and defers its first picture",
+  "fills visible missing pictures before neighbours and refreshes despite %s pressure",
   async (type) => {
     const busy = simulatePicturePressure();
-    const uncovered = "thread:e:t2";
-    const old = new Blob(["old pixels"]);
-    store.threadIds = ["t1", "t2"];
+    store.threadIds = ["t1", "t2", "t3"];
     currentLayout = layout(400);
-    store.saved.set(paneId, savedPicture({ image: old }));
-    backgroundPanes.add(paneId);
-    backgroundPanes.add(uncovered);
-    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
-      setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
-    );
+    store.saved.set(paneId, savedPicture());
     await mount();
-    await advance(10);
-    expect(hook.pictureFor(paneId)?.image).toBe(old);
-    await act(() => hook.onLayoutChange(layout(500)));
-    for (const id of [paneId, uncovered]) {
-      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
-      hook.paneSnapshots.request(id, { isConnected: true } as HTMLElement);
+    const visible = "thread:e:t2",
+      neighbour = "thread:e:t3";
+    backgroundPanes.add(neighbour);
+    hook.paneSnapshots.invalidate(paneId, true);
+    const drawn: string[] = [];
+    snapshot.mockImplementation(async (element, canSnapshot) => {
+      if (!canSnapshot()) return null;
+      drawn.push(element.id);
+      return { image: new Blob([element.id]), cssSize: { width: 400, height: 580 } };
+    });
+    for (const id of [paneId, neighbour, visible]) {
+      const revision = hook.paneSnapshots.request(id, { id, isConnected: true } as HTMLElement);
+      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance }, revision);
     }
-    for (let i = 0; i < 5; i++) {
-      busy(type);
-      await advance(1000);
-    }
-    expect(pictureMount(paneId)).toBe("background");
-    expect(hook.hasFreshPicture(paneId)).toBe(true);
-    expect(hook.pictureFor(paneId)?.image).toBe(store.writes[0]?.image);
-    expect(hook.pictureFor(paneId)?.image).not.toBe(old);
-    expect(store.writes).toHaveLength(1);
-    expect(store.writes[0]?.paneId).toBe(paneId);
-    expect(store.writes[0]?.geometryRevision).toBe(geometry(500));
-    expect(hook.pictureFor(uncovered)).toBeNull();
-    await advance(1990);
-    expect(hook.pictureFor(uncovered)).toBeNull();
-    expect(store.writes).toHaveLength(1);
-    await advance(30);
-    expect(hook.hasFreshPicture(uncovered)).toBe(true);
-    expect(store.writes).toHaveLength(2);
-    expect(store.writes[1]?.paneId).toBe(uncovered);
-    expect(store.writes[1]?.geometryRevision).toBe(geometry(500));
-  },
-);
-
-it.each(["longtask", "long-animation-frame"])(
-  "defers background drawing after %s pressure while a needed first cover can finish",
-  async (type) => {
-    const busy = simulatePicturePressure();
-    store.threadIds = ["t1", "t2"];
-    currentLayout = layout(400);
-    await mount();
-    const other = "thread:e:t2";
-    backgroundPanes.add(paneId);
-    for (const id of [paneId, other]) {
-      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance });
-      hook.paneSnapshots.request(id, { isConnected: true } as HTMLElement);
-    }
-    await advance(450);
-    expect(hook.hasFreshPicture(other)).toBe(true);
-    await advance(2000);
     busy(type);
-    await advance(2500);
-    expect(hook.hasFreshPicture(paneId)).toBe(false);
-    expect(snapshot).toHaveBeenCalledOnce();
-    await advance(600);
-    expect(hook.hasFreshPicture(paneId)).toBe(true);
-    expect(snapshot).toHaveBeenCalledTimes(2);
+    await advance(240);
+    expect(drawn).toEqual([]);
+    await advance(30);
+    expect(drawn).toEqual([visible, neighbour, paneId]);
+    for (const id of [paneId, neighbour, visible]) expect(hook.hasFreshPicture(id)).toBe(true);
   },
 );
-
-it("draws a background-only picture after three quiet seconds while first covers keep the short gate", async () => {
-  store.threadIds = ["t1", "t2"];
-  currentLayout = layout(400);
-  await mount();
-  const other = "thread:e:t2";
-  backgroundPanes.add(paneId);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-  markPaneSynced(other, { updatedAt: store.updatedAt, theme: appearance });
-  window.dispatchEvent(new Event("keydown"));
-  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  hook.paneSnapshots.request(other, { isConnected: true } as HTMLElement);
-  await advance(450);
-  expect(snapshot).toHaveBeenCalledOnce();
-  expect(hook.hasFreshPicture(other)).toBe(true);
-  expect(hook.hasFreshPicture(paneId)).toBe(false);
-  await advance(2400);
-  expect(snapshot).toHaveBeenCalledOnce();
-  await advance(300);
-  expect(snapshot).toHaveBeenCalledTimes(2);
-  expect(hook.hasFreshPicture(paneId)).toBe(true);
-});
 
 it("releases an abandoned drawing even when idle headroom is exhausted", async () => {
   await mount();
@@ -1210,47 +1148,9 @@ it("releases an abandoned drawing even when idle headroom is exhausted", async (
   expect(store.writes).toHaveLength(0);
 });
 
-it("lets an interrupted background drawing yield to a first cover and finish after its own quiet period", async () => {
-  store.threadIds = ["t1", "t2"];
-  currentLayout = layout(400);
-  const drawn: string[] = [];
-  snapshot.mockImplementation(async (element, canSnapshot, waitToDraw) => {
-    const id = (element as unknown as { id: string }).id;
-    if (id === "background" && drawn.length === 0) {
-      drawn.push("background-clone");
-      window.dispatchEvent(new Event("keydown"));
-      if (!(await waitToDraw!())) return null;
-    }
-    if (!canSnapshot()) return null;
-    drawn.push(id);
-    return { image: new Blob([id]), cssSize: { width: 400, height: 580 } };
-  });
-  await mount();
-  const other = "thread:e:t2";
-  backgroundPanes.add(paneId);
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-  markPaneSynced(other, { updatedAt: store.updatedAt, theme: appearance });
-  hook.paneSnapshots.request(paneId, {
-    id: "background",
-    isConnected: true,
-  } as unknown as HTMLElement);
-  await advance(3100);
-  expect(drawn).toEqual(["background-clone"]);
-  hook.paneSnapshots.request(other, { id: "first", isConnected: true } as unknown as HTMLElement);
-  await advance(500);
-  expect(drawn).toEqual(["background-clone", "first"]);
-  expect(hook.hasFreshPicture(other)).toBe(true);
-  expect(snapshotFailures).not.toHaveBeenCalled();
-  await advance(2000);
-  expect(drawn).toEqual(["background-clone", "first"]);
-  await advance(1000);
-  expect(drawn).toEqual(["background-clone", "first", "background"]);
-  expect(hook.hasFreshPicture(paneId)).toBe(true);
-});
-
 it.each([
-  { covered: false, quietMs: 400 },
-  { covered: true, quietMs: 3000 },
+  { covered: false, quietMs: 250 },
+  { covered: true, quietMs: 250 },
 ])(
   "waits through programmatic navigation before capturing a covered=$covered pane",
   async ({ covered, quietMs }) => {
@@ -1281,7 +1181,7 @@ it.each([
   },
 );
 
-it("keeps refresh work deferred when a usable cover already exists", async () => {
+it("refreshes a usable cover between navigation inputs with 250 ms quiet", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   const cover = new Blob(["cover"]);
@@ -1293,8 +1193,8 @@ it("keeps refresh work deferred when a usable cover already exists", async () =>
     window.dispatchEvent(new Event("keydown"));
     await advance(900);
   }
-  expect(snapshot).not.toHaveBeenCalled();
-  expect(pictureImageFor(paneId)).toBe(cover);
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(pictureImageFor(paneId)).not.toBe(cover);
   expect(presentationAt("rest", false)).toEqual({ kind: "placeholder" });
   await advance(3000);
   expect(snapshot).toHaveBeenCalledOnce();
@@ -1322,7 +1222,7 @@ it("requeues a first picture interrupted by camera motion before cloning", async
   expect(store.writes).toHaveLength(0);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.setCaptureActivity(true, false);
-  await advance(390);
+  await advance(240);
   expect(snapshot).toHaveBeenCalledOnce();
   await advance(20);
   expect(snapshot).toHaveBeenCalledTimes(2);
@@ -1382,7 +1282,7 @@ it.each(["keydown", "pointerdown", "wheel"])(
     await advance(250);
     window.dispatchEvent(new Event(type));
     if (type === "pointerdown") window.dispatchEvent(new Event("pointerup"));
-    await advance(399);
+    await advance(249);
     expect(snapshot).toHaveBeenCalledOnce();
     await advance(2);
     expect(snapshot).toHaveBeenCalledTimes(2);
@@ -1623,7 +1523,7 @@ it("refreshes a saved native picture after local scrolling while retaining its c
   await advance(3500);
   expect(store.writes).toHaveLength(0);
   markPaneSynced(paneId, content, revision);
-  await advance(3500);
+  await advance(10_000);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(store.writes.at(-1)?.source).toBe("snapshot");
   expect(pictureImageFor(paneId)).not.toBe(old);
@@ -1679,7 +1579,7 @@ it("does not acknowledge an outstanding content transition through an active DOM
   await advance(3500);
   expect(store.writes).toHaveLength(0);
   markPaneSynced(paneId, content, revision);
-  await advance(3500);
+  await advance(10_000);
   expect(store.writes).toHaveLength(1);
 });
 
@@ -1728,7 +1628,7 @@ it("retains an unpublished refresh across content release and an ordinary remoun
   expect(hook.pictureFor(paneId)?.image).toBe(original);
   const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
   markPaneSynced(paneId, content, revision);
-  await advance(3500);
+  await advance(10_000);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(pictureImageFor(paneId)).not.toBe(original);
 });
@@ -2118,7 +2018,7 @@ it("backs off failed replacements and stops retrying when the producer returns",
   const other = "thread:e:t2";
   markPaneSynced(other, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(other, { isConnected: true } as HTMLElement);
-  await advance(100);
+  await advance(300);
   expect(hook.hasFreshPicture(other)).toBe(true);
   await act(() => {
     hook.paneSnapshots.setLiveProducer(paneId, true);

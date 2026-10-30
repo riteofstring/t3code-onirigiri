@@ -27,7 +27,7 @@ import {
 import type { PictureMount } from "./paneLifecycle";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
-import { BACKGROUND_PICTURE_QUIET_MS, PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
+import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { threadPaneId } from "./useWorkspacePanes";
 
 interface PaneContentRevision {
@@ -769,12 +769,7 @@ export function createSnapshotQueue() {
     "wheel",
     "blur",
   ] as const;
-  const quietTime = (paneId: string, background: boolean) =>
-    background
-      ? BACKGROUND_PICTURE_QUIET_MS
-      : hasCover(paneId)
-        ? FIRST_PICTURE_INPUT_QUIET_MS
-        : FIRST_PICTURE_INPUT_QUIET_MS;
+  const quietTime = () => FIRST_PICTURE_INPUT_QUIET_MS;
   const cancelScheduled = () => {
     if (idle !== null) cancelIdleCallback(idle);
     if (timer !== null) clearTimeout(timer);
@@ -808,10 +803,10 @@ export function createSnapshotQueue() {
         return;
       }
       const now = performance.now();
-      const due = ([paneId, request]: [string, { after: number; background: boolean }]) =>
-        Math.max(lastInput + quietTime(paneId, request.background), request.after);
+      const due = ([_paneId, request]: [string, { after: number; background: boolean }]) =>
+        Math.max(lastInput + quietTime(), request.after);
       if (continuation) {
-        const resumeAt = lastInput + quietTime(continuation.paneId, continuation.background);
+        const resumeAt = lastInput + quietTime();
         if (
           continuation.background &&
           [...pending].some((candidate) => !candidate[1].background && due(candidate) <= resumeAt)
@@ -837,21 +832,18 @@ export function createSnapshotQueue() {
         resume.resolve(true);
         return;
       }
-      // A view in use pictures before background preparation whenever it is due, and
-      // the due view nearest the focused pane goes first.
-      const ordinaryDue = [...pending].filter(
-        (candidate) => !candidate[1].background && due(candidate) <= now,
-      );
-      const [paneId, request] =
-        ordinaryDue.length === 1
-          ? ordinaryDue[0]!
-          : ordinaryDue.length > 1
-            ? ordinaryDue
-                .map((candidate) => [candidate, distanceFromCenter(candidate[1].element)] as const)
-                .reduce((first, candidate) => (candidate[1] < first[1] ? candidate : first))[0]
-            : [...pending].reduce((first, candidate) =>
-                due(candidate) < due(first) ? candidate : first,
-              );
+      const dueRequests = [...pending].filter((candidate) => due(candidate) <= now);
+      const priority = ([paneId, request]: (typeof dueRequests)[number]) =>
+        hasCover(paneId) ? 2 : request.background ? 1 : 0;
+      const [paneId, request] = dueRequests.length
+        ? dueRequests.sort(
+            (a, b) =>
+              priority(a) - priority(b) ||
+              distanceFromCenter(a[1].element) - distanceFromCenter(b[1].element),
+          )[0]!
+        : [...pending].reduce((first, candidate) =>
+            due(candidate) < due(first) ? candidate : first,
+          );
       const wait = due([paneId, request]) - now;
       if (wait > 0) {
         timer = setTimeout(() => {
@@ -880,7 +872,7 @@ export function createSnapshotQueue() {
           !enabled ||
           moving ||
           pointers.size > 0 ||
-          performance.now() - lastInput < quietTime(paneId, background)
+          performance.now() - lastInput < quietTime()
         )
           deferred = true;
         return !deferred && !dropped && draw === current;

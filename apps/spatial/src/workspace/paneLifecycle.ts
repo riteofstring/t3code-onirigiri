@@ -1,12 +1,7 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
-import {
-  BACKGROUND_PICTURE_QUIET_MS,
-  PICTURE_IDLE_BUDGET_MS,
-  observePicturePressure,
-} from "./panePictureIdle";
+import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 
-const INPUT_QUIET_MS = 400;
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 const STORED_PICTURES_WAIT_MS = 2000;
@@ -38,9 +33,6 @@ export function createPaneLifecycleStore(
   let storedTimer: ReturnType<typeof setTimeout> | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let idle: number | null = null;
-  let lastInput = performance.now();
-  let lastFocus = -Infinity;
-  let busyUntil = 0;
   let hasPicture: (paneId: string) => boolean = () => false;
   let hasCover: (paneId: string) => boolean = () => false;
   let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
@@ -119,8 +111,8 @@ export function createPaneLifecycleStore(
       )
       .sort(
         (a, b) =>
-          Number(hasCover(b)) - Number(hasCover(a)) ||
           Number(visible.has(b)) - Number(visible.has(a)) ||
+          Number(hasCover(a)) - Number(hasCover(b)) ||
           distance(a) - distance(b),
       )[0];
   const schedule = () => {
@@ -149,17 +141,6 @@ export function createPaneLifecycleStore(
         timer = setTimeout(schedule, retry - performance.now());
       return;
     }
-    const quiet = hasCover(paneId) ? INPUT_QUIET_MS : BACKGROUND_PICTURE_QUIET_MS;
-    const wait =
-      Math.max(
-        lastInput + quiet,
-        lastFocus + BACKGROUND_PICTURE_QUIET_MS,
-        hasCover(paneId) ? 0 : busyUntil,
-      ) - performance.now();
-    if (wait > 0) {
-      timer = setTimeout(schedule, wait);
-      return;
-    }
     idle = requestIdleCallback((deadline) => {
       idle = null;
       if (moving || pointers.size > 0) return;
@@ -176,7 +157,6 @@ export function createPaneLifecycleStore(
   };
   const noteInput = (event: Event) => {
     if (event.type === "blur" && event.target !== window) return;
-    lastInput = performance.now();
     if (event.type === "pointerdown") pointers.add((event as PointerEvent).pointerId);
     else if (event.type === "blur") pointers.clear();
     else if (["pointerup", "pointercancel", "lostpointercapture"].includes(event.type))
@@ -197,10 +177,6 @@ export function createPaneLifecycleStore(
   ] as const;
   for (const type of inputEvents)
     window.addEventListener(type, noteInput, { capture: true, passive: true });
-  const stopPressure = observePicturePressure((finishedAt) => {
-    busyUntil = Math.max(busyUntil, finishedAt + BACKGROUND_PICTURE_QUIET_MS);
-    schedule();
-  });
 
   reconcile();
   return {
@@ -235,7 +211,6 @@ export function createPaneLifecycleStore(
         cancel();
         release(true);
       } else {
-        lastInput = performance.now();
         schedule();
       }
       for (const listener of motionListeners) listener();
@@ -243,13 +218,11 @@ export function createPaneLifecycleStore(
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
       focused = paneId;
-      lastFocus = performance.now();
       if (capturing?.paneId === focused) {
         capturing = null;
         retryAt.delete(paneId!);
       }
       reconcile();
-      lastInput = performance.now();
       schedule();
     },
     setPanes: (next: readonly PanePosition[]) => {
@@ -296,7 +269,6 @@ export function createPaneLifecycleStore(
     dispose: () => {
       disposed = true;
       cancel();
-      stopPressure();
       if (storedTimer !== null) clearTimeout(storedTimer);
       for (const type of inputEvents)
         window.removeEventListener(type, noteInput, { capture: true });

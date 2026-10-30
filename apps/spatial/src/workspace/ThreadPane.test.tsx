@@ -1180,3 +1180,24 @@ it("retains the presented editor while earlier history loads and waits for its f
   expect(requestSnapshot).toHaveBeenCalledOnce();
   expect(container.querySelector("textarea")).toBe(editor);
 });
+
+it("focuses the stock composer on keyboard navigation arrival and cancels on pointer intent", async () => {
+  live();
+  await render(true, false, true);
+  await act(() =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true })),
+  );
+  expect(state.composerActions).toEqual([]);
+  state.interactive = true;
+  await render(true, false, true);
+  expect(state.composerActions).toEqual([0]);
+  state.interactive = false;
+  await render(true, false, true);
+  await act(() =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true })),
+  );
+  await act(() => window.dispatchEvent(new Event("pointerdown")));
+  state.interactive = true;
+  await render(true, false, true);
+  expect(state.composerActions).toEqual([0]);
+});
