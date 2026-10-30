@@ -45,6 +45,7 @@ import {
   usePanelNavigationSuppression,
 } from "@t3tools/web/src/panelAnimations";
 
+import { retainEarlyComposerInput } from "./earlyComposerInput";
 import { usePaneActivity } from "./paneActivity";
 import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
@@ -263,6 +264,11 @@ export const ThreadPane = memo(function ThreadPane({
 
   const contentRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, liveVisible, contentRef);
+
+  useEffect(() => {
+    if (!focused || !workspaceActive || !contentRef.current) return;
+    return retainEarlyComposerInput(contentRef.current, () => paneComposerRef.current);
+  }, [focused, workspaceActive, paneComposerRef]);
 
   const lifecycle = use(PaneLifecycleContext);
   const snapshots = use(PaneSnapshotContext);
