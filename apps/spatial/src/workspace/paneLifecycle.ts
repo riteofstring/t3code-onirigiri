@@ -1,4 +1,4 @@
-import { createContext, use, useEffect, useState } from "react";
+import { createContext, startTransition, use, useEffect, useState } from "react";
 
 import {
   BACKGROUND_PICTURE_QUIET_MS,
@@ -53,7 +53,7 @@ export function createPaneLifecycleStore(
   const mount = (paneId: string) => {
     if (!mounted.has(paneId)) {
       mounted.add(paneId);
-      notify(paneId);
+      startTransition(() => notify(paneId));
     }
   };
   const unmount = (paneId: string) => {
@@ -65,12 +65,41 @@ export function createPaneLifecycleStore(
     timer = null;
     idle = null;
   };
+  const retained = () => {
+    const ids = new Set(visible);
+    if (!focused) return ids;
+    ids.add(focused);
+    const center = panes.get(focused);
+    if (!center) return ids;
+    const positions = [...panes.values()];
+    for (const [axis, direction] of [
+      ["slot", -1],
+      ["slot", 1],
+      ["plane", -1],
+      ["plane", 1],
+    ] as const) {
+      const other = axis === "slot" ? "plane" : "slot";
+      const neighbour = positions
+        .filter(
+          (pane) => pane[other] === center[other] && (pane[axis] - center[axis]) * direction > 0,
+        )
+        .sort((a, b) => Math.abs(a[axis] - center[axis]) - Math.abs(b[axis] - center[axis]))[0];
+      if (neighbour) ids.add(neighbour.paneId);
+    }
+    return ids;
+  };
+  const reconcile = () => {
+    const keep = retained();
+    for (const id of keep) if (panes.has(id)) mount(id);
+    for (const id of mounted)
+      if (!keep.has(id) && id !== capturing?.paneId && hasPicture(id)) unmount(id);
+  };
   const release = (retry: boolean) => {
     if (!capturing) return;
     const { paneId } = capturing;
     capturing = null;
     if (hasPicture(paneId) || retry) retryAt.delete(paneId);
-    if (paneId !== focused) unmount(paneId);
+    if (!retained().has(paneId) && hasPicture(paneId)) unmount(paneId);
   };
   const distance = (paneId: string) => {
     const center = focused ? panes.get(focused) : undefined;
@@ -96,7 +125,9 @@ export function createPaneLifecycleStore(
       )[0];
   const schedule = () => {
     cancel();
-    if (disposed || moving || pointers.size > 0) return;
+    if (disposed) return;
+    reconcile();
+    if (moving || pointers.size > 0) return;
     if (focused && panes.has(focused)) mount(focused);
     if (!backgroundPictures || !picturesReady) return;
     if (capturing) {
@@ -171,6 +202,7 @@ export function createPaneLifecycleStore(
     schedule();
   });
 
+  reconcile();
   return {
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving || pointers.size > 0,
@@ -216,7 +248,7 @@ export function createPaneLifecycleStore(
         capturing = null;
         retryAt.delete(paneId!);
       }
-      for (const id of mounted) if (id !== focused && id !== capturing?.paneId) unmount(id);
+      reconcile();
       lastInput = performance.now();
       schedule();
     },

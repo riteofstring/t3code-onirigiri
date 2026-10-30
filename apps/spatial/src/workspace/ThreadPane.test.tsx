@@ -832,7 +832,7 @@ it.each(["route", "timeline", "suspended content"])(
     state.timelineReady = pending !== "timeline";
     state.suspended = pending === "suspended content";
     await render(true, false, true);
-    expect(container.querySelector("textarea")).toBeNull();
+    expect(state.engineReady).toBe(false);
     await act(() => lifecycle!.setMoving(false));
     await act(() => vi.advanceTimersByTimeAsync(100));
     expect(state.engineReady).toBe(false);
@@ -846,7 +846,7 @@ it.each(["route", "timeline", "suspended content"])(
   },
 );
 
-it("holds a visible prepared view through motion and renders at rest without waiting for idle", async () => {
+it("prepares a newly visible view during motion without waiting for idle", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
@@ -854,7 +854,7 @@ it("holds a visible prepared view through motion and renders at rest without wai
   live();
   vi.stubGlobal("requestIdleCallback", () => 99);
   await render(false, false, true);
-  expect(container.querySelector("textarea")).toBeNull();
+  expect(container.querySelector("textarea")).not.toBeNull();
   await act(() => lifecycle!.setMoving(false));
   expect(container.querySelector("textarea")).not.toBeNull();
 });

@@ -122,8 +122,8 @@ function usePaneContent(
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
         idle = null;
-        if (lifecycle?.isMoving()) return;
         if (focused || visible) show();
+        else if (lifecycle?.isMoving()) return;
         else
           idle = requestIdleCallback((deadline) => {
             idle = null;
@@ -264,6 +264,29 @@ export const ThreadPane = memo(function ThreadPane({
 
   const contentRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, liveVisible, contentRef);
+
+  const focusOnArrival = useRef(false);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.altKey && event.key.startsWith("Arrow")) focusOnArrival.current = true;
+      else if (event.key === "Tab" || event.key === "Escape") focusOnArrival.current = false;
+    };
+    const cancel = () => {
+      focusOnArrival.current = false;
+    };
+    window.addEventListener("keydown", key, true);
+    window.addEventListener("pointerdown", cancel, true);
+    return () => {
+      window.removeEventListener("keydown", key, true);
+      window.removeEventListener("pointerdown", cancel, true);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (active && mounted && focusOnArrival.current && paneComposerRef.current) {
+      focusOnArrival.current = false;
+      paneComposerRef.current.focusAtEnd();
+    }
+  }, [active, mounted, paneComposerRef]);
 
   const lifecycle = use(PaneLifecycleContext);
   const snapshots = use(PaneSnapshotContext);
