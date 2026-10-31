@@ -23,6 +23,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { ChatViewActivityContext } from "@t3tools/web/src/components/chatViewActivity";
@@ -268,10 +269,15 @@ const PaneBody = memo(function PaneBody({
         : null,
     [maximized, onAddPane, onClosePane, onToggleMaximized, paneId],
   );
+  const lifecycle = use(PaneLifecycleContext);
+  const presentedCameraMoving = useSyncExternalStore(
+    lifecycle?.subscribeMotion ?? (() => () => {}),
+    lifecycle?.isCameraMoving ?? (() => false),
+  );
   const interactive = useOnirigiriPaneInteractive();
   const workspaceActive = use(SpatialWorkspaceActiveContext);
   const liveVisible = workspaceActive && interactive;
-  const active = focused && liveVisible;
+  const active = focused && liveVisible && !presentedCameraMoving;
   const threadPath = `/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [visualRevision, setVisualRevision] = useState(0);
@@ -328,7 +334,6 @@ const PaneBody = memo(function PaneBody({
     }
   }, [active, mounted, paneComposerRef]);
 
-  const lifecycle = use(PaneLifecycleContext);
   const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
   const producerInspected = useRef(false);

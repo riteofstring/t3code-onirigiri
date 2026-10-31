@@ -192,6 +192,7 @@ export function createPaneLifecycleStore(
   return {
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving || pointers.size > 0,
+    isCameraMoving: () => moving,
     currentPicture: (paneId: string) => hasPicture(paneId),
     contentMounted: (paneId: string) => {
       loaded.add(paneId);

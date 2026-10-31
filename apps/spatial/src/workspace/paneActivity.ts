@@ -1,5 +1,5 @@
 import type { ChatViewActivity } from "@t3tools/web/src/components/chatViewActivity";
-import { useEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useState, type RefObject } from "react";
 
 function createPaneActivity(initial: boolean, initiallyVisible: boolean) {
   let active = initial;
@@ -29,7 +29,7 @@ export function usePaneActivity(
   root: RefObject<HTMLElement | null>,
 ) {
   const [activity] = useState(() => createPaneActivity(active, visible));
-  useEffect(() => {
+  useLayoutEffect(() => {
     activity.set(active, visible);
     const focused = document.activeElement;
     if (!active && focused instanceof HTMLElement) {
