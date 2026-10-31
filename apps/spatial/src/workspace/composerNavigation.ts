@@ -40,7 +40,17 @@ function atBoundary(editor: HTMLElement, range: Range, start: boolean): boolean 
 
 function emptyEditorCaret(editor: HTMLElement): Range | null {
   const range = editor.ownerDocument.createRange();
-  range.setStart(editor.firstElementChild ?? editor, 0);
+  const paragraph = editor.firstChild;
+  if (
+    paragraph !== null &&
+    (editor.childNodes.length !== 1 ||
+      !(paragraph instanceof HTMLElement) ||
+      paragraph.tagName !== "P" ||
+      paragraph.getAttribute("contenteditable") === "false" ||
+      paragraph.hasAttribute("data-node-view-wrapper"))
+  )
+    return null;
+  range.setStart(paragraph ?? editor, 0);
   return atBoundary(editor, range, false) ? range : null;
 }
 
@@ -76,6 +86,8 @@ export function installComposerNavigation({
       event.keyCode === 229 ||
       event.getModifierState("AltGraph") ||
       composing.has(editor) ||
+      (selection !== null && !selection.isCollapsed) ||
+      (selection?.rangeCount ?? 0) > 1 ||
       !range ||
       !range.collapsed;
     if (native) return;

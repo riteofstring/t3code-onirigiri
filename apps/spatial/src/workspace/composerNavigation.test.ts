@@ -130,3 +130,41 @@ it("leaves unrelated inputs and modified chords to their owner", () => {
   expect(key().defaultPrevented).toBe(false);
   expect(navigate).not.toHaveBeenCalled();
 });
+
+it("does not replace a noncollapsed selection outside an empty composer", () => {
+  const outside = document.createElement("div");
+  outside.textContent = "Selected content";
+  document.body.append(outside);
+  caret(outside.firstChild!, 0, 8);
+  expect(key("ArrowRight").defaultPrevented).toBe(false);
+  expect(key("ArrowLeft", { shiftKey: true }).defaultPrevented).toBe(false);
+  expect(navigate).not.toHaveBeenCalled();
+  outside.remove();
+});
+
+it("does not call block atoms or leading text an empty ProseMirror document", () => {
+  getSelection()!.removeAllRanges();
+  for (const content of [
+    '<img src="atom.png">',
+    '<div contenteditable="false" data-node-view-wrapper=""></div>',
+    '<p contenteditable="false"></p>',
+    'text<p><br class="ProseMirror-trailingBreak"></p>',
+    '<p><span contenteditable="false"></span></p>',
+    '<p></p><p><br class="ProseMirror-trailingBreak"></p>',
+  ]) {
+    editor.innerHTML = content;
+    expect(key("ArrowRight").defaultPrevented).toBe(false);
+  }
+  expect(navigate).not.toHaveBeenCalled();
+});
+
+it("keeps IME and composition guards when an empty editor has a stale selection", () => {
+  getSelection()!.removeAllRanges();
+  for (const extra of [{ isComposing: true }, { keyCode: 229 }, { modifierAltGraph: true }])
+    expect(key("ArrowRight", extra).defaultPrevented).toBe(false);
+  editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  expect(key("ArrowRight").defaultPrevented).toBe(false);
+  editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  expect(key("ArrowRight").defaultPrevented).toBe(true);
+  expect(navigate).toHaveBeenCalledOnce();
+});
