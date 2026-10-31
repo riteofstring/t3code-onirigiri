@@ -38,6 +38,12 @@ function atBoundary(editor: HTMLElement, range: Range, start: boolean): boolean 
   return true;
 }
 
+function emptyEditorCaret(editor: HTMLElement): Range | null {
+  const range = editor.ownerDocument.createRange();
+  range.setStart(editor.firstElementChild ?? editor, 0);
+  return atBoundary(editor, range, false) ? range : null;
+}
+
 export function installComposerNavigation({
   enabled,
   navigate,
@@ -62,15 +68,16 @@ export function installComposerNavigation({
         : null;
     if (!editor || !enabled(editor) || event.defaultPrevented) return;
     const selection = editor.ownerDocument.getSelection();
-    const range = selection?.rangeCount === 1 ? selection.getRangeAt(0) : null;
+    const selected = selection?.rangeCount === 1 ? selection.getRangeAt(0) : null;
+    const range =
+      selected && editor.contains(selected.startContainer) ? selected : emptyEditorCaret(editor);
     const native =
       event.isComposing ||
       event.keyCode === 229 ||
       event.getModifierState("AltGraph") ||
       composing.has(editor) ||
       !range ||
-      !range.collapsed ||
-      !editor.contains(range.startContainer);
+      !range.collapsed;
     if (native) return;
     const direction = directions[event.key as keyof typeof directions];
     if (!event.shiftKey && !atBoundary(editor, range, direction === "left" || direction === "up"))

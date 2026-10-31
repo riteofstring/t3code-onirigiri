@@ -49,6 +49,29 @@ it("navigates repeatedly from an empty focused stock composer and signals arriva
   expect(intent).toHaveBeenCalledTimes(5);
   window.removeEventListener(COMPOSER_NAVIGATION, intent);
 });
+it("navigates from an empty composer before its selection reaches the editor", () => {
+  const outside = document.createElement("div");
+  document.body.append(outside);
+  caret(outside, 0);
+  expect(key("ArrowRight").defaultPrevented).toBe(true);
+  expect(navigate).toHaveBeenCalledWith("right");
+  getSelection()!.removeAllRanges();
+  expect(key("ArrowLeft").defaultPrevented).toBe(true);
+  expect(navigate).toHaveBeenCalledWith("left");
+  outside.remove();
+});
+it("leaves a filled composer to the editor while its selection is elsewhere", () => {
+  const outside = document.createElement("div");
+  document.body.append(outside);
+  for (const content of ["<p>alpha</p>", "<p><br></p><p><br></p>"]) {
+    editor.innerHTML = content;
+    caret(outside, 0);
+    for (const arrow of ["ArrowLeft", "ArrowRight"])
+      expect(key(arrow).defaultPrevented).toBe(false);
+  }
+  expect(navigate).not.toHaveBeenCalled();
+  outside.remove();
+});
 it("preserves native middle movement and only exits at the document's directional boundary", () => {
   editor.innerHTML = "<p>alpha bravo</p><p>charlie delta</p>";
   const first = editor.firstChild!.firstChild!,
