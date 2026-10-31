@@ -131,7 +131,6 @@ export function createPaneLifecycleStore(
         return;
       }
     }
-    if (mounted.size >= maxMounted) return;
     const paneId = nextPicture();
     if (!paneId) {
       const retry = Math.min(
@@ -149,6 +148,14 @@ export function createPaneLifecycleStore(
       if (deadline.didTimeout || deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) {
         timer = setTimeout(schedule, 100);
         return;
+      }
+      if (mounted.size >= maxMounted) {
+        const keep = retained();
+        const farthest = [...mounted]
+          .filter((id) => !keep.has(id) && hasPicture(id))
+          .sort((a, b) => distance(b) - distance(a))[0];
+        if (!farthest || distance(farthest) <= distance(paneId)) return;
+        unmount(farthest);
       }
       const since = performance.now();
       capturing = { paneId, since };

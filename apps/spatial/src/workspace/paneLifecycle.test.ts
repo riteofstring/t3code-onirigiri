@@ -110,3 +110,19 @@ it("keeps dirty mounted panes beyond ten until their pictures become current", (
   store.setPictures(() => true);
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${5 + i}`));
 });
+
+it("replaces distant clean trees with nearest neighbours after a focus jump", () => {
+  const store = make();
+  store.setPictures(() => true);
+  for (let i = 1; i < 40; i++) store.setFocus(`p${i}`);
+  vi.advanceTimersByTime(501);
+  expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${30 + i}`));
+  store.setFocus("p0");
+  store.setBackgroundPictures(true);
+  for (let i = 1; i < 10; i++) {
+    vi.advanceTimersByTime(101);
+    store.contentMounted(`p${i}`);
+  }
+  vi.advanceTimersByTime(101);
+  expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}`));
+});
