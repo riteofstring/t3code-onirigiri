@@ -513,6 +513,15 @@ const PaneBody = memo(function PaneBody({
         if (seen.has(attributeName)) return false;
         seen.add(attributeName);
         const currentValue = target.getAttribute(attributeName);
+        if (attributeName === "style" && target.matches("input, textarea, [contenteditable]")) {
+          const pictureStyle = (value: string | null) =>
+            (value ?? "")
+              .split(";")
+              .map((property) => property.trim())
+              .filter((property) => property && !/^caret-color\s*:/.test(property))
+              .join(";");
+          return pictureStyle(oldValue) !== pictureStyle(currentValue);
+        }
         if (attributeName === "class" && target.matches('[data-testid="composer-editor"]')) {
           const pictureClasses = (value: string | null) =>
             (value ?? "")

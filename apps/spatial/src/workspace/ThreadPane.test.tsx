@@ -702,6 +702,29 @@ it("reuses pictures through composer navigation and refreshes changed styles", a
   expect(requestSnapshot).toHaveBeenCalled();
 });
 
+it("keeps the current picture when only input caret visibility changes", async () => {
+  live();
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  const input = document.createElement("input");
+  input.hidden = true;
+  input.style.width = "1px";
+  await act(async () => editor.parentElement!.append(input));
+  requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
+  for (const element of [editor, input]) {
+    await act(async () => element.style.setProperty("caret-color", "transparent", "important"));
+    await act(async () => element.style.removeProperty("caret-color"));
+  }
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  await act(async () => editor.style.setProperty("font-size", "20px"));
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
+  expect(requestSnapshot).toHaveBeenCalled();
+});
+
 it("refreshes a scrolled descendant at rest without predicting its keydown", async () => {
   live();
   state.interactive = true;
