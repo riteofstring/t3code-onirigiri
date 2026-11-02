@@ -3,6 +3,7 @@ import { act, StrictMode, Suspense, use, useState, type ReactNode } from "react"
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
+import { ChatViewHostContext } from "./chatViewHost";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import type { ThreadSyncPhase } from "../threadSync";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
@@ -234,4 +235,27 @@ it("allows unavailable-environment UI without treating it as a resolved checkout
   expect(container.querySelector('[aria-busy="false"]')).toBeNull();
   await act(() => root.render(<Host threadKey="one" checkoutReady phase={null} />));
   expect(container.querySelector('[aria-busy="false"]')).not.toBeNull();
+});
+
+it("reports the stock composer ready while the host defers its timeline, without reporting the complete view ready", async () => {
+  const composer = vi.fn();
+  const content = vi.fn();
+  await act(async () =>
+    root.render(
+      <ChatViewHostContext
+        value={{ deferTimeline: true, timelineFallback: null, onComposerReady: composer }}
+      >
+        <ChatViewContentReadyProvider onReadyChange={content}>
+          <Content
+            threadKey="input-first"
+            checkoutReady={true}
+            timelineReady={false}
+            phase={null}
+          />
+        </ChatViewContentReadyProvider>
+      </ChatViewHostContext>,
+    ),
+  );
+  expect(composer).toHaveBeenLastCalledWith(true);
+  expect(content).toHaveBeenLastCalledWith(false);
 });

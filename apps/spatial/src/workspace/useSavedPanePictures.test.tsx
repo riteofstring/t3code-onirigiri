@@ -147,6 +147,7 @@ let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 let defaultRowHeight: number | "viewport" = "viewport";
 let picturesEnabled = true;
+let motionDecision: string | null | undefined;
 const getLayout = () => currentLayout;
 const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 const backgroundPanes = new Set<string>();
@@ -166,6 +167,7 @@ function Probe() {
     defaultRowHeight,
     pictureMount,
     picturesEnabled,
+    () => motionDecision,
   );
   const { pictureFor } = value;
   const shown = useMemo(() => pictureFor(paneId)?.image ?? null, [pictureFor]);
@@ -320,6 +322,7 @@ afterEach(async () => {
   currentLayout = layout(400);
   defaultRowHeight = "viewport";
   picturesEnabled = true;
+  motionDecision = undefined;
   markPaneSynced(paneId, null);
   backgroundPanes.clear();
   backgroundLifecycle?.dispose();
@@ -2207,3 +2210,27 @@ it("recaptures committed visible changes without a fixed quiet embargo", async (
   expect(snapshot).toHaveBeenCalledTimes(3);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
+
+it.each(["motion", "overview-motion", "resize"] as const)(
+  "honors the latched removal decision during %s, then returns live at rest",
+  async (phase) => {
+    await mount();
+    motionDecision = "local-ui-interaction";
+    expect(presentationAt(phase)).toBe("dom");
+    motionDecision = null;
+    expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
+    expect(presentationAt("rest")).toBe("dom");
+    expect(
+      hook.getPanePresentation(
+        { ...threadPane, surfaceKind: "terminal" },
+        {
+          phase,
+          focused: true,
+          maximized: false,
+          visible: true,
+          capabilities: { canCapture: true, hasVideo: false },
+        },
+      ),
+    ).toBe("dom");
+  },
+);

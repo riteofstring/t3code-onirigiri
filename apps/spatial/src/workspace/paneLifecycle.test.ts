@@ -17,6 +17,10 @@ beforeEach(() => {
     setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
   );
   vi.stubGlobal("cancelIdleCallback", clearTimeout);
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+    setTimeout(() => callback(performance.now()), 16),
+  );
+  vi.stubGlobal("cancelAnimationFrame", clearTimeout);
 });
 afterEach(() => {
   for (const store of stores.splice(0)) store.dispose();
@@ -125,4 +129,137 @@ it("replaces distant clean trees with nearest neighbours after a focus jump", ()
   }
   vi.advanceTimersByTime(101);
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}`));
+});
+
+it("removes eligible chat DOM after a covered frame, then admits focused and peer composers before timelines", () => {
+  const store = make();
+  store.setVisible("p0", true);
+  store.setVisible("p1", true);
+  store.setPictures(() => true);
+  store.registerChat("p0", () => null);
+  store.registerChat("p1", () => null);
+  store.setMoving(true);
+  expect(store.isMounted("p0")).toBe(true);
+  vi.advanceTimersByTime(16);
+  expect(store.isMounted("p0")).toBe(true);
+  vi.advanceTimersByTime(16);
+  expect(mounted(store)).toEqual([]);
+  store.setMoving(false);
+  expect(mounted(store)).toEqual(["p0"]);
+  expect(store.timelineDeferred("p0")).toBe(true);
+  store.composerReady("p0");
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  vi.advanceTimersByTime(100);
+  expect(store.timelineDeferred("p0")).toBe(true);
+  store.composerReady("p1");
+  vi.advanceTimersByTime(16);
+  expect(store.timelineDeferred("p1")).toBe(true);
+  vi.advanceTimersByTime(16);
+  expect(store.timelineDeferred("p0")).toBe(false);
+  expect(store.timelineDeferred("p1")).toBe(false);
+  expect(store.measurements().moves[0]).toMatchObject({ removed: ["p0", "p1"], latched: [] });
+});
+
+it.each([
+  "pending-approval",
+  "pending-question",
+  "in-progress-turn",
+  "local-ui-interaction",
+  "no-current-picture",
+  "picture-not-decoded",
+])("latches %s for the entire move", (reason) => {
+  const store = make();
+  store.setPictures(() => true);
+  let risk: string | null = reason;
+  const inspect = vi.fn(() => risk);
+  store.registerChat("p0", inspect);
+  store.setMoving(true);
+  risk = null;
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0")).toBe(true);
+  expect(inspect).toHaveBeenCalledOnce();
+  expect(store.motionDecision("p0")).toBe(reason);
+  expect(store.measurements().moves[0]?.latched).toEqual([{ paneId: "p0", reason }]);
+  store.setMoving(false);
+  store.setMoving(true);
+  vi.advanceTimersByTime(32);
+  expect(store.isMounted("p0")).toBe(false);
+});
+
+it("cancels removal on a short reversal and releases no timeline during a second move", () => {
+  const store = make();
+  store.setVisible("p0", true);
+  store.registerChat("p0", () => null);
+  store.setMoving(true);
+  vi.advanceTimersByTime(16);
+  store.setMoving(false);
+  vi.advanceTimersByTime(16);
+  expect(store.isMounted("p0")).toBe(true);
+  store.setMoving(true);
+  vi.advanceTimersByTime(32);
+  store.setMoving(false);
+  store.composerReady("p0");
+  vi.advanceTimersByTime(16);
+  store.setMoving(true);
+  vi.advanceTimersByTime(16);
+  expect(store.timelineDeferred("p0")).toBe(true);
+});
+
+it("keeps background picture preparation behind the visible arrival and mounts its full timeline", () => {
+  const store = make();
+  store.setFocus("p2");
+  store.setFocus("p0");
+  store.setVisible("p0", true);
+  store.setVisible("p1", true);
+  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, () => null);
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  vi.advanceTimersByTime(32);
+  store.setMoving(false);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p2")).toBe(false);
+  store.composerReady("p0");
+  store.composerReady("p1");
+  vi.advanceTimersByTime(33);
+  expect(store.isMounted("p2")).toBe(true);
+  expect(store.timelineDeferred("p2")).toBe(false);
+});
+
+it("stages a cold visible chat behind the focused composer", () => {
+  const store = make();
+  store.registerChat("p0", () => null);
+  store.registerChat("p1", () => null);
+  store.setMoving(true);
+  store.setVisible("p1", true);
+  vi.advanceTimersByTime(32);
+  store.setMoving(false);
+  expect(mounted(store)).toEqual(["p0"]);
+  store.composerReady("p0");
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  expect(store.timelineDeferred("p1")).toBe(true);
+  vi.advanceTimersByTime(100);
+  expect(store.timelineDeferred("p0")).toBe(true);
+  store.composerReady("p1");
+  vi.advanceTimersByTime(32);
+  expect(store.timelineDeferred("p0")).toBe(false);
+  expect(store.timelineDeferred("p1")).toBe(false);
+});
+
+it("does not wait for a pending composer that leaves the destination", () => {
+  const store = make();
+  for (const id of ["p0", "p1"]) {
+    store.registerChat(id, () => null);
+    store.setVisible(id, true);
+  }
+  store.setMoving(true);
+  vi.advanceTimersByTime(32);
+  store.setMoving(false);
+  store.composerReady("p0");
+  store.setMoving(true);
+  store.setVisible("p1", false);
+  store.setMoving(false);
+  vi.advanceTimersByTime(32);
+  expect(store.timelineDeferred("p0")).toBe(false);
 });

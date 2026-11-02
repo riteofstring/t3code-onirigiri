@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
+import { ChatViewHostContext } from "./chatViewHost";
 import type { ThreadSyncPhase } from "../threadSync";
 
 const ChatViewContentReadyContext = createContext<{
@@ -69,6 +70,7 @@ export function useChatViewContentReady(
   composerMounted = true,
 ) {
   const report = useContext(ChatViewContentReadyContext)?.report;
+  const host = useContext(ChatViewHostContext);
   const [checkoutReadyFor, setCheckoutReadyFor] = useState<string | null>(null);
   const [composer, setComposer] = useState<{ threadKey: string; ready: boolean } | null>(null);
 
@@ -85,10 +87,15 @@ export function useChatViewContentReady(
     },
     [threadKey],
   );
-  const ready =
-    timelineReady &&
+  const composerReady =
     (environmentUnavailable || checkoutReadyFor === threadKey || checkoutReady) &&
     (!composerMounted || (composer?.threadKey === threadKey && composer.ready));
+  const ready = timelineReady && composerReady;
+  const reportComposer = host?.onComposerReady;
+  useLayoutEffect(() => {
+    reportComposer?.(composerReady);
+    return () => reportComposer?.(false);
+  }, [composerReady, reportComposer]);
 
   useLayoutEffect(() => {
     report?.(ready);

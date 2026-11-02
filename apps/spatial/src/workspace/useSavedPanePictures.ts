@@ -64,6 +64,7 @@ export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => numb
 interface PaneSnapshots {
   hasFreshPicture: (paneId: string) => boolean;
   geometryVersion: number;
+  timelinePicture: (paneId: string) => { url: string; width: number; height: number } | null;
   request: RequestPaneSnapshot;
   invalidate: (paneId: string, committed?: boolean) => void;
   setLiveProducer: (paneId: string, present: boolean) => number;
@@ -121,6 +122,7 @@ export function useSavedPanePictures(
   defaultRowHeight: number | "viewport" = "viewport",
   pictureMount: (paneId: string) => PictureMount = () => "ordinary",
   enabled = true,
+  motionDecision?: (paneId: string) => string | null | undefined,
 ): {
   getPanePresentation: PanePresentationResolver;
   onLayoutChange: (layout: OnirigiriLayout) => void;
@@ -470,14 +472,20 @@ export function useSavedPanePictures(
   const getPanePresentation = useCallback<PanePresentationResolver>(
     (pane, { phase, visible }) => {
       if (!enabled || pane.surfaceKind !== "thread") return "dom";
-      if (visible && (phase === "rest" || phase === "resize")) return "dom";
-      if (phase === "motion" || phase === "overview-motion") {
+      if (
+        visible &&
+        (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
+      )
+        return "dom";
+      if (phase === "motion" || phase === "overview-motion" || phase === "resize") {
+        const decision = motionDecision?.(pane.paneId);
+        if (decision !== undefined) return decision === null ? { kind: "placeholder" } : "dom";
         flushPaneVisualChanges(pane.paneId);
         if (pictureMount(pane.paneId) !== null && !hasFreshPicture(pane.paneId)) return "dom";
       }
       return { kind: "placeholder" };
     },
-    [enabled, hasFreshPicture, pictureMount],
+    [enabled, hasFreshPicture, pictureMount, motionDecision],
   );
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
@@ -612,6 +620,11 @@ export function useSavedPanePictures(
     () => ({
       geometryVersion,
       hasFreshPicture,
+      timelinePicture: (paneId) => {
+        const picture = pictureFor(paneId);
+        const url = picture && pictureUrls.preparedUrl(picture.image);
+        return picture && url ? { url, ...picture.cssSize } : null;
+      },
       invalidate: (paneId, committed = false) => {
         if (!enabled) return;
         const previous = visualRevision(paneId);
@@ -651,6 +664,8 @@ export function useSavedPanePictures(
       enabled,
       geometryVersion,
       hasFreshPicture,
+      pictureFor,
+      pictureUrls,
       snapshots,
       updateLiveProducers,
       updateSaved,

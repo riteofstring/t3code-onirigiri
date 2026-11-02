@@ -1,5 +1,5 @@
 import { COMPOSER_NAVIGATION } from "./composerNavigation";
-import { observePaneVisualChanges } from "./paneVisualChanges";
+import { flushPaneVisualChanges, observePaneVisualChanges } from "./paneVisualChanges";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -15,6 +15,7 @@ import {
 } from "@tanstack/react-router";
 import {
   createContext,
+  useCallback,
   memo,
   startTransition,
   use,
@@ -26,6 +27,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import { ChatViewHostContext } from "@t3tools/web/src/components/chatViewHost";
 import { ChatViewActivityContext } from "@t3tools/web/src/components/chatViewActivity";
 import { ChatViewContentReadyProvider } from "@t3tools/web/src/components/chatViewContentReady";
 import type { ChatComposerHandle } from "@t3tools/web/src/components/chat/ChatComposer";
@@ -100,6 +102,7 @@ function usePaneContent(
   settledVisible: boolean,
   focused: boolean,
   visualRevision: number,
+  composerReady: boolean,
 ): {
   mounted: boolean;
   preparing: boolean;
@@ -190,7 +193,7 @@ function usePaneContent(
   }, [projectionUpdatedAt, paneId, pictureTheme, prepared, visualRevision]);
 
   useOnirigiriPaneContentReady(
-    renderContent && presented,
+    renderContent && (composerReady || presented),
     `${revision}|${presented && !prepared}|${visualRevision}`,
   );
 
@@ -281,6 +284,14 @@ const PaneBody = memo(function PaneBody({
   const threadPath = `/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
   const [router] = useState(() => createPaneRouter(threadPath));
   const [visualRevision, setVisualRevision] = useState(0);
+  const [composerReady, setComposerReady] = useState(false);
+  const deferred = useSyncExternalStore(
+    useCallback(
+      (notify) => lifecycle?.subscribe(paneId, notify) ?? (() => {}),
+      [lifecycle, paneId],
+    ),
+    () => lifecycle?.timelineDeferred(paneId) ?? false,
+  );
   const { mounted, preparing, picturable, onContentReadyChange } = usePaneContent(
     paneId,
     thread,
@@ -288,15 +299,61 @@ const PaneBody = memo(function PaneBody({
     settledVisible,
     focused,
     visualRevision,
+    composerReady,
   );
 
   const paneComposerRef = usePaneComposerHandle(active);
 
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollPositions = useRef<{ top: number; atEnd: boolean }[]>([]);
+  const saveScroll = useRef<(() => void) | null>(null);
+  const localStateAtRisk = useRef(false);
+  const shell = useThreadShell(thread);
+  const snapshots = use(PaneSnapshotContext);
+  const motionState = useRef<() => string | null>(() => "not-ready");
+  motionState.current = () => {
+    if (threadRuntimeIsActive(shell?.runtime)) return "in-progress-turn";
+    if (shell?.hasPendingApprovals || shell?.pendingSubagentRequest === "approval")
+      return "pending-approval";
+    if (shell?.hasPendingUserInput || shell?.pendingSubagentRequest === "user_input")
+      return "pending-question";
+    flushPaneVisualChanges(paneId);
+    if (localStateAtRisk.current) return "local-ui-interaction";
+    if (!mounted || preparing) return "not-ready";
+    if (!snapshots?.hasFreshPicture(paneId)) return "no-current-picture";
+    if (!snapshots.timelinePicture(paneId)) return "picture-not-decoded";
+    saveScroll.current?.();
+    const element = contentRef.current;
+    if (element?.contains(document.activeElement))
+      element.closest<HTMLElement>('[data-onirigiri-slot="pane"]')?.focus({ preventScroll: true });
+    return null;
+  };
+  useLayoutEffect(
+    () => lifecycle?.registerChat?.(paneId, () => motionState.current()),
+    [lifecycle, paneId],
+  );
+  useLayoutEffect(() => {
+    if (!interactive || !mounted || (!composerReady && preparing)) return;
+    const editor = contentRef.current?.querySelector<HTMLElement>(
+      '[data-testid="composer-editor"]',
+    );
+    if (editor && (!editor.isContentEditable || editor.closest("[inert]"))) return;
+    if (editor) lifecycle?.recordReady?.(paneId, "composerTypeableAt");
+    lifecycle?.composerReady?.(paneId);
+    if (!preparing) lifecycle?.recordReady?.(paneId, "timelineInteractiveAt");
+  }, [composerReady, interactive, lifecycle, mounted, paneId, preparing]);
+  const host = useMemo(
+    () => ({
+      deferTimeline: deferred,
+      timelineFallback: preparing ? <TimelinePicture paneId={paneId} /> : null,
+      onComposerReady: setComposerReady,
+    }),
+    [deferred, paneId, preparing],
+  );
   const activity = usePaneActivity(active, liveVisible, contentRef);
 
   const focusOnArrival = useRef(false);
+  const arrivalText = useRef("");
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const editing =
@@ -327,14 +384,69 @@ const PaneBody = memo(function PaneBody({
       window.removeEventListener("pointerdown", cancel, true);
     };
   }, []);
+  useEffect(() => {
+    if (!lifecycle || !focused || !workspaceActive) return;
+    const capture = (event: KeyboardEvent) => {
+      if (
+        lifecycle.isCameraMoving() ||
+        (!focusOnArrival.current && mounted && composerReady && interactive) ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.isComposing ||
+        (event.target instanceof Element &&
+          event.target.closest('input, textarea, select, [contenteditable="true"]') &&
+          !event.target.closest("[inert]"))
+      )
+        return;
+      if ([...event.key].length === 1) arrivalText.current += event.key;
+      else if (event.key === "Enter" && arrivalText.current) arrivalText.current += "\n";
+      else if (event.key === "Backspace" && arrivalText.current)
+        arrivalText.current = [...arrivalText.current].slice(0, -1).join("");
+      else return;
+      focusOnArrival.current = true;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      localStateAtRisk.current = true;
+      if (
+        active &&
+        composerReady &&
+        paneComposerRef.current?.insertTextAtEnd(arrivalText.current)
+      ) {
+        arrivalText.current = "";
+        focusOnArrival.current = false;
+      }
+    };
+    window.addEventListener("keydown", capture, true);
+    return () => window.removeEventListener("keydown", capture, true);
+  }, [
+    active,
+    composerReady,
+    focused,
+    interactive,
+    lifecycle,
+    mounted,
+    paneComposerRef,
+    workspaceActive,
+  ]);
   useLayoutEffect(() => {
-    if (active && mounted && focusOnArrival.current && paneComposerRef.current) {
+    if (
+      active &&
+      mounted &&
+      (composerReady || !lifecycle) &&
+      (focusOnArrival.current || arrivalText.current) &&
+      paneComposerRef.current
+    ) {
+      if (arrivalText.current) {
+        if (!paneComposerRef.current.insertTextAtEnd(arrivalText.current)) return;
+        arrivalText.current = "";
+      }
       focusOnArrival.current = false;
       paneComposerRef.current.focusAtEnd();
     }
-  }, [active, mounted, paneComposerRef]);
+  }, [active, composerReady, lifecycle, mounted, paneComposerRef]);
 
-  const snapshots = use(PaneSnapshotContext);
   const snapshotPrepared = useRef(false);
   const producerInspected = useRef(false);
   const scrollOffsets = useRef(new WeakMap<HTMLElement, string>());
@@ -367,6 +479,7 @@ const PaneBody = memo(function PaneBody({
       snapshotPrepared.current = true;
     }
     const invalidate = (event?: Event) => {
+      if (lifecycle && !lifecycle.isMounted(paneId)) return;
       if (event?.type === "scroll" && event.target instanceof HTMLElement) {
         const target = event.target;
         const next = `${target.scrollLeft}|${target.scrollTop}`;
@@ -390,6 +503,8 @@ const PaneBody = memo(function PaneBody({
           target === element &&
           (attributeName === "data-spatial-active" ||
             attributeName === "data-spatial-preparing" ||
+            attributeName === "data-spatial-composer-ready" ||
+            attributeName === "data-spatial-timeline-ready" ||
             attributeName === "data-spatial-capturing")
         )
           return false;
@@ -410,14 +525,26 @@ const PaneBody = memo(function PaneBody({
         return oldValue !== currentValue;
       });
     };
-    const observer = new MutationObserver((records) => {
+    const inspectChanges = (records: MutationRecord[]) => {
+      if (lifecycle && !lifecycle.isMounted(paneId)) return;
+      if (
+        snapshotPrepared.current &&
+        records.some(
+          (record) =>
+            record.type === "attributes" &&
+            ["aria-expanded", "data-user-message-collapsed", "open"].includes(
+              record.attributeName ?? "",
+            ) &&
+            record.oldValue !== (record.target as Element).getAttribute(record.attributeName!),
+        )
+      )
+        localStateAtRisk.current = true;
       if (records.some(producerChanged)) inspectProducer();
       if (contentChanged(records)) invalidate();
-    });
+    };
+    const observer = new MutationObserver(inspectChanges);
     const stopFlushing = observePaneVisualChanges(paneId, () => {
-      const records = observer.takeRecords();
-      if (records.some(producerChanged)) inspectProducer();
-      if (contentChanged(records)) invalidate();
+      inspectChanges(observer.takeRecords());
     });
     observer.observe(element, {
       attributes: true,
@@ -431,7 +558,7 @@ const PaneBody = memo(function PaneBody({
       element.addEventListener(event, invalidate, { capture: true, passive: true });
     return () => {
       const pending = observer.takeRecords();
-      if (element.childElementCount > 0) {
+      if (element.childElementCount > 0 && (!lifecycle || lifecycle.isMounted(paneId))) {
         if (pending.some(producerChanged)) inspectProducer();
         if (snapshotPrepared.current && contentChanged(pending)) snapshots?.invalidate(paneId);
       }
@@ -439,7 +566,7 @@ const PaneBody = memo(function PaneBody({
       observer.disconnect();
       for (const event of events) element.removeEventListener(event, invalidate, true);
     };
-  }, [active, mounted, paneId, picturable, snapshots]);
+  }, [active, lifecycle, mounted, paneId, picturable, snapshots]);
   useEffect(() => {
     if (picturable !== null && contentRef.current && snapshots) {
       setVisualRevision(snapshots.request(paneId, contentRef.current));
@@ -463,22 +590,48 @@ const PaneBody = memo(function PaneBody({
         <ComposerHandleContext value={paneComposerRef}>
           <div
             ref={contentRef}
-            onKeyDownCapture={leaveComposerOnEscape}
+            onPointerDownCapture={() => {
+              localStateAtRisk.current = true;
+            }}
+            onInputCapture={() => {
+              localStateAtRisk.current = true;
+            }}
+            onDropCapture={() => {
+              localStateAtRisk.current = true;
+            }}
+            onPasteCapture={() => {
+              localStateAtRisk.current = true;
+            }}
+            onClickCapture={() => {
+              localStateAtRisk.current = true;
+            }}
+            onKeyDownCapture={(event) => {
+              if (
+                !event.altKey &&
+                !["Escape", "Tab", "Shift", "Control", "Meta", "Alt"].includes(event.key)
+              )
+                localStateAtRisk.current = true;
+              leaveComposerOnEscape(event);
+            }}
             className="spatial-thread-pane h-full w-full"
             data-spatial-thread={thread.threadId}
+            data-spatial-composer-ready={String(composerReady)}
+            data-spatial-timeline-ready={String(mounted && !preparing)}
             data-spatial-active={String(active)}
             data-spatial-preparing={preparing ? "" : undefined}
             data-spatial-capturing={
               mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
             }
           >
-            <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
-              {mounted ? (
-                <PaneScrollState positions={scrollPositions} ready={!preparing}>
-                  <PaneRouter router={router} threadPath={threadPath} />
-                </PaneScrollState>
-              ) : null}
-            </ChatViewContentReadyProvider>
+            <ChatViewHostContext value={lifecycle ? host : null}>
+              <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
+                {mounted ? (
+                  <PaneScrollState positions={scrollPositions} save={saveScroll} ready={!preparing}>
+                    <PaneRouter router={router} threadPath={threadPath} />
+                  </PaneScrollState>
+                ) : null}
+              </ChatViewContentReadyProvider>
+            </ChatViewHostContext>
           </div>
         </ComposerHandleContext>
       </ChatViewActivityContext>
@@ -486,12 +639,50 @@ const PaneBody = memo(function PaneBody({
   );
 });
 
+function TimelinePicture({ paneId }: { paneId: string }) {
+  const snapshots = use(PaneSnapshotContext);
+  const [picture] = useState(() => snapshots?.timelinePicture(paneId));
+  const ref = useRef<HTMLDivElement>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  useLayoutEffect(() => {
+    const element = ref.current;
+    const pane = element?.closest<HTMLElement>(".spatial-thread-pane");
+    if (!element || !pane) return;
+    const box = element.getBoundingClientRect();
+    const root = pane.getBoundingClientRect();
+    const scale = root.width / pane.offsetWidth || 1;
+    setOffset({ x: (root.left - box.left) / scale, y: (root.top - box.top) / scale });
+  }, [picture?.url]);
+  return picture ? (
+    <div
+      ref={ref}
+      className="absolute inset-0 z-10 overflow-hidden bg-background"
+      aria-hidden="true"
+    >
+      <img
+        src={picture.url}
+        alt=""
+        style={{
+          position: "absolute",
+          left: offset.x,
+          top: offset.y,
+          width: picture.width,
+          height: picture.height,
+          maxWidth: "none",
+        }}
+      />
+    </div>
+  ) : null;
+}
+
 function PaneScrollState({
   positions,
+  save,
   ready,
   children,
 }: {
   positions: React.RefObject<{ top: number; atEnd: boolean }[]>;
+  save: React.RefObject<(() => void) | null>;
   ready: boolean;
   children: React.ReactNode;
 }) {
@@ -511,9 +702,8 @@ function PaneScrollState({
   }, [positions, ready]);
   useLayoutEffect(() => {
     const element = root.current;
-    return () => {
+    const remember = () => {
       if (!element || !restored.current) return;
-      restored.current = false;
       positions.current = [
         ...element.querySelectorAll<HTMLElement>(
           ".messages-timeline-scroll, [data-tool-group-scroll]",
@@ -523,7 +713,13 @@ function PaneScrollState({
         atEnd: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1,
       }));
     };
-  }, [positions]);
+    save.current = remember;
+    return () => {
+      remember();
+      restored.current = false;
+      save.current = null;
+    };
+  }, [positions, save]);
   return (
     <div ref={root} className="h-full w-full">
       {children}

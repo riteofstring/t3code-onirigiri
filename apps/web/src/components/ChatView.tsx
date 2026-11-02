@@ -2,6 +2,7 @@ import { useDraftHeroLayoutTransition } from "./chat/useDraftHeroLayoutTransitio
 import { readLayoutRect, readLayoutScale } from "./chat/layoutGeometry";
 import { useActiveChatViewEffect, useChatViewActivity } from "./chatViewActivity";
 import { useChatViewContentGated, useChatViewContentReady } from "./chatViewContentReady";
+import { ChatViewHostContext, DeferredChatTimeline } from "./chatViewHost";
 import { useChatViewVcsStatus } from "./chatViewVcsStatus";
 import { ThreadSurfaceContent } from "./ThreadSurfaceContent";
 import type { PersistentTerminalLaunchContext } from "./PersistentThreadTerminalPanel";
@@ -165,6 +166,7 @@ import {
   Fragment,
   memo,
   type SetStateAction,
+  use,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -1435,6 +1437,8 @@ function makeModelDisabledReason(
 }
 
 export default function ChatView(props: ChatViewProps) {
+  const spatialHost = use(ChatViewHostContext);
+  const Timeline = spatialHost?.deferTimeline ? DeferredChatTimeline : MessagesTimeline;
   const surfaceNavigation = useSurfaceNavigation();
   const hasSurfaceNavigation = useHasSurfaceNavigation();
   const {
@@ -11008,7 +11012,7 @@ export default function ChatView(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col bg-background">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
+              <Timeline
                 {...(onComposerSyncReadyChange ? { onReadyChange: onTimelineReadyChange } : {})}
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
                 citationHistoryLoading={threadDetailLoading}
@@ -11136,6 +11140,7 @@ export default function ChatView(props: ChatViewProps) {
                   ? {}
                   : { historyControls: threadHistoryControls })}
               />
+              {spatialHost?.timelineFallback}
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && !isThreadFindActive && (

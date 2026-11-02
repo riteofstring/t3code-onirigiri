@@ -31,6 +31,8 @@ const state = vi.hoisted(() => ({
   shellUpdatedAt: "2026-10-15T12:00:00.000Z",
   runtimeStatus: null as ThreadRuntimeSummary["status"] | null,
   historyLoading: false,
+  pendingApproval: false,
+  pendingQuestion: false,
   projection: null as { updatedAt: string } | null,
   status: "synchronizing" as "synchronizing" | "live" | "deleted",
   panelDurationMs: 200,
@@ -82,6 +84,8 @@ vi.mock("@t3tools/web/src/state/entities", async () => {
       );
       return {
         updatedAt: state.shellUpdatedAt,
+        hasPendingApprovals: state.pendingApproval,
+        hasPendingUserInput: state.pendingQuestion,
         runtime: state.runtimeStatus ? { status: state.runtimeStatus } : null,
       };
     },
@@ -146,6 +150,12 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
       () =>
         ({
           isModelPickerOpen: () => version % 2 === 1,
+          insertTextAtEnd: (text: string) => {
+            const editor = document.querySelector<HTMLTextAreaElement>('[aria-label="Draft"]');
+            if (!editor) return false;
+            editor.value += text;
+            return true;
+          },
           focusAtEnd: () => {
             state.composerActions.push(version);
           },
@@ -223,6 +233,7 @@ let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
 let snapshots: {
   hasFreshPicture: (paneId: string) => boolean;
   geometryVersion: number;
+  timelinePicture: () => { url: string; width: number; height: number } | null;
   request: RequestPaneSnapshot;
   invalidate: (paneId: string) => void;
   setLiveProducer: (paneId: string, present: boolean) => number;
@@ -303,6 +314,8 @@ beforeEach(() => {
   state.shellUpdatedAt = "2026-10-15T12:00:00.000Z";
   state.runtimeStatus = null;
   state.historyLoading = false;
+  state.pendingApproval = false;
+  state.pendingQuestion = false;
   state.projection = null;
   state.status = "synchronizing";
   state.panelDurationMs = 200;
@@ -326,6 +339,7 @@ beforeEach(() => {
   snapshots = {
     hasFreshPicture: () => true,
     geometryVersion: 0,
+    timelinePicture: () => null,
     request: requestSnapshot,
     invalidate: invalidateSnapshot,
     setLiveProducer: (_paneId, present) => {
@@ -847,7 +861,7 @@ it.each([
 );
 
 it.each(["route", "timeline", "suspended content"])(
-  "keeps an arriving chat covered until %s is ready",
+  "exposes an arriving composer independently of pending %s",
   async (pending) => {
     const { createPaneLifecycleStore } =
       await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
@@ -862,7 +876,8 @@ it.each(["route", "timeline", "suspended content"])(
     expect(state.engineReady).toBe(false);
     await act(() => lifecycle!.setMoving(false));
     await act(() => vi.advanceTimersByTimeAsync(100));
-    expect(state.engineReady).toBe(false);
+    expect(state.engineReady).toBe(pending !== "route");
+    expect(requestSnapshot).not.toHaveBeenCalled();
     state.hasChatView = true;
     state.timelineReady = true;
     state.suspended = false;
@@ -1406,3 +1421,90 @@ it("keeps immediate composer activity with a null lifecycle", async () => {
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
   expect(state.activeKeys).toBe(1);
 });
+
+it.each(["input", "pointerdown", "click", "keydown", "drop", "paste", "expansion"])(
+  "keeps local %s state live, including queued descendant mutations",
+  async (signal) => {
+    const { createPaneLifecycleStore } =
+      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+    lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+    const registration = vi.spyOn(lifecycle, "registerChat");
+    snapshots.timelinePicture = () => ({ url: "blob:current", width: 800, height: 600 });
+    live();
+    await render(true);
+    const inspect = registration.mock.calls.at(-1)![1];
+    expect(inspect()).toBeNull();
+    await act(() => {
+      const editor = container.querySelector("textarea")!;
+      if (signal === "expansion") {
+        const child = container.querySelector(".messages-timeline-scroll")!;
+        child.setAttribute("aria-expanded", "true");
+      } else {
+        editor.dispatchEvent(
+          signal === "keydown"
+            ? new KeyboardEvent("keydown", { key: "a", bubbles: true })
+            : new Event(signal, { bubbles: true }),
+        );
+      }
+      expect(inspect()).toBe("local-ui-interaction");
+    });
+  },
+);
+
+it.each(["approval", "question"])("keeps a pending %s live", async (kind) => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  const registration = vi.spyOn(lifecycle, "registerChat");
+  state.pendingApproval = kind === "approval";
+  state.pendingQuestion = kind === "question";
+  live();
+  await render(true);
+  expect(registration.mock.calls.at(-1)![1]()).toBe(`pending-${kind}`);
+});
+
+it.each(["live", "deleted"] as const)(
+  "only releases a missing composer after the %s view is ready",
+  async (status) => {
+    const { createPaneLifecycleStore } =
+      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+    lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+    const ready = vi.spyOn(lifecycle, "composerReady");
+    live();
+    state.status = status;
+    state.hasChatView = false;
+    state.interactive = true;
+    await render(true);
+    expect(ready).toHaveBeenCalledTimes(status === "deleted" ? 1 : 0);
+  },
+);
+
+it.each([true, false])(
+  "retains first-stop typing with keyboard intent %s until the stock composer can accept it",
+  async (keyboardIntent) => {
+    const { createPaneLifecycleStore } =
+      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+    lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+    live();
+    state.mounted = false;
+    await render(true, false, true);
+    if (keyboardIntent) await act(() => window.dispatchEvent(new Event(COMPOSER_NAVIGATION)));
+    for (const key of ["x", "y", "Backspace", "z"]) {
+      const event = new KeyboardEvent("keydown", { key, cancelable: true });
+      await act(() => window.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(true);
+    }
+    state.mounted = true;
+    state.checkoutReady = false;
+    state.interactive = true;
+    await render(true, false, true);
+    expect(state.composerActions).toEqual([]);
+    expect(container.querySelector("textarea")?.value).toBe("");
+    state.checkoutReady = true;
+    await render(true, false, true);
+    expect(container.querySelector("textarea")?.value).toBe("xz");
+    expect(state.composerActions).toEqual([0]);
+    await render(true, false, true);
+    expect(container.querySelector("textarea")?.value).toBe("xz");
+  },
+);

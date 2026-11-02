@@ -15,7 +15,15 @@ import {
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -256,6 +264,14 @@ function SpatialWorkspaceView({
     (paneId: string) => (lifecycle ? lifecycle.pictureMount(paneId) : "ordinary"),
     [lifecycle],
   );
+  const cameraMoving = useSyncExternalStore(
+    lifecycle?.subscribeMotion ?? (() => () => {}),
+    lifecycle?.isCameraMoving ?? (() => false),
+  );
+  const motionDecision = useCallback(
+    (id: string) => lifecycle?.motionDecision(id),
+    [lifecycle, cameraMoving],
+  );
   const {
     getPanePresentation,
     onLayoutChange: onPictureLayoutChange,
@@ -275,6 +291,7 @@ function SpatialWorkspaceView({
     preferences.rowHeight,
     pictureMount,
     !alwaysLive,
+    motionDecision,
   );
   const {
     requested: fullScreenRequested,
