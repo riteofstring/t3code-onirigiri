@@ -147,7 +147,10 @@ export function createPaneLifecycleStore(
       arrivalFrame = requestAnimationFrame(() => {
         arrivalFrame = null;
         if (moving || pendingComposers.size > 0) return;
-        for (const id of mounted) if (deferred.delete(id)) notify(id);
+        const next = [...mounted]
+          .filter((id) => deferred.has(id))
+          .sort((a, b) => distance(a) - distance(b))[0];
+        if (next !== undefined && deferred.delete(next)) notify(next);
         schedule();
       });
     });
