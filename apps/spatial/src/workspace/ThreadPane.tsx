@@ -319,10 +319,9 @@ const PaneBody = memo(function PaneBody({
       return "pending-question";
     flushPaneVisualChanges(paneId);
     if (localStateAtRisk.current) return "local-ui-interaction";
-    if (!mounted || preparing) return "not-ready";
-    if (!snapshots?.hasFreshPicture(paneId)) return "no-current-picture";
+    if (!snapshots?.hasFreshPicture(paneId)) return mounted ? "no-current-picture" : "not-ready";
     if (!snapshots.timelinePicture(paneId)) return "picture-not-decoded";
-    saveScroll.current?.();
+    if (!preparing) saveScroll.current?.();
     const element = contentRef.current;
     if (element?.contains(document.activeElement))
       element.closest<HTMLElement>('[data-onirigiri-slot="pane"]')?.focus({ preventScroll: true });
@@ -497,17 +496,15 @@ const PaneBody = memo(function PaneBody({
       const attributes = new Map<Element, Set<string>>();
       return records.some((record) => {
         const { target, type, attributeName, oldValue } = record;
+        const node = target instanceof Element ? target : target.parentElement;
+        if (!node?.closest('[data-chat-composer-surface="true"]'))
+          return (
+            type === "attributes" &&
+            ["aria-expanded", "data-user-message-collapsed", "open"].includes(attributeName ?? "") &&
+            oldValue !== node?.getAttribute(attributeName!)
+          );
         if (type !== "attributes" || !(target instanceof Element) || attributeName === null)
           return true;
-        if (
-          target === element &&
-          (attributeName === "data-spatial-active" ||
-            attributeName === "data-spatial-preparing" ||
-            attributeName === "data-spatial-composer-ready" ||
-            attributeName === "data-spatial-timeline-ready" ||
-            attributeName === "data-spatial-capturing")
-        )
-          return false;
         let seen = attributes.get(target);
         if (!seen) attributes.set(target, (seen = new Set()));
         if (seen.has(attributeName)) return false;

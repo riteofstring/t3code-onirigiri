@@ -72,6 +72,15 @@ interface PaneSnapshots {
 
 export const PaneSnapshotContext = createContext<PaneSnapshots | null>(null);
 
+
+const OTHER_PANES_KEY = "onirigiri.otherPanes";
+const otherPanePictures = (() => {
+  if (typeof window === "undefined") return false;
+  const requested = new URLSearchParams(window.location.search).get("otherPanes");
+  if (requested === "pictures" || requested === "live")
+    window.localStorage.setItem(OTHER_PANES_KEY, requested);
+  return window.localStorage.getItem(OTHER_PANES_KEY) === "pictures";
+})();
 export function usePanePictureTheme(): string {
   const { theme, resolvedTheme, themeHalves } = useTheme();
   const fonts = useClientSettings((settings) =>
@@ -203,6 +212,9 @@ export function useSavedPanePictures(
         if (!current) return;
         const deleted = deletedWhileLoading.current;
         deletedWhileLoading.current = null;
+        for (const picture of pictures.values())
+          if (!visualRevisions.current.has(picture.paneId))
+            pictureVisualRevisions.current.set(picture.image, 0);
         updateSaved(
           new Map([
             ...[...pictures].filter(([, picture]) => !deleted?.has(picture.paneId)),
@@ -471,7 +483,9 @@ export function useSavedPanePictures(
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
     (pane, { phase, visible }) => {
-      if (!enabled || pane.surfaceKind !== "thread") return "dom";
+      if (!enabled) return "dom";
+      if (pane.surfaceKind !== "thread")
+        return otherPanePictures && phase !== "rest" ? { kind: "texture" } : "dom";
       if (
         visible &&
         (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
