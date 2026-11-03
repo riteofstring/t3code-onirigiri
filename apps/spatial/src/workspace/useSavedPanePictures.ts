@@ -63,6 +63,7 @@ export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => numb
 
 interface PaneSnapshots {
   hasFreshPicture: (paneId: string) => boolean;
+  pictureMiss: (paneId: string) => string | null;
   geometryVersion: number;
   timelinePicture: (paneId: string) => { url: string; width: number; height: number } | null;
   request: RequestPaneSnapshot;
@@ -418,21 +419,29 @@ export function useSavedPanePictures(
     runningPanesRef.current = runningPanes;
   }, [contentRevisions, runningPanes]);
 
-  const freshPictureFor = useCallback(
-    (paneId: string): SavedPanePicture | null => {
-      if (liveProducersRef.current.get(paneId) === "live") return null;
+  const pictureMiss = useCallback(
+    (paneId: string): string | null => {
+      if (liveProducersRef.current.get(paneId) === "live") return "live-producer";
       const key = recordKey(paneId);
+      if (key === null) return "no-key";
+      const picture = saved?.get(key);
+      if (!picture) return saved ? "not-saved" : "not-loaded";
       const content = contentRevisions.get(paneId);
-      const picture = key === null ? undefined : saved?.get(key);
-      if (!picture || !content) return null;
-      if (
-        picture.revision !== pictureRevision(contentKey(content), picture.source) ||
-        !pictureMatchesVisualRevision(paneId, picture.image)
-      )
-        return null;
-      return picture;
+      if (!content) return "no-content";
+      if (picture.revision !== pictureRevision(contentKey(content), picture.source))
+        return "content-changed";
+      if (!pictureMatchesVisualRevision(paneId, picture.image)) return "visual-changed";
+      return null;
     },
     [contentRevisions, pictureMatchesVisualRevision, recordKey, saved],
+  );
+  const freshPictureFor = useCallback(
+    (paneId: string): SavedPanePicture | null => {
+      if (pictureMiss(paneId) !== null) return null;
+      const key = recordKey(paneId);
+      return (key !== null && saved?.get(key)) || null;
+    },
+    [pictureMiss, recordKey, saved],
   );
 
   const [pictureUrls] = useState(createPanePictureUrls);
@@ -634,6 +643,7 @@ export function useSavedPanePictures(
     () => ({
       geometryVersion,
       hasFreshPicture,
+      pictureMiss,
       timelinePicture: (paneId) => {
         const picture = pictureFor(paneId);
         const url = picture && pictureUrls.preparedUrl(picture.image);
@@ -678,6 +688,7 @@ export function useSavedPanePictures(
       enabled,
       geometryVersion,
       hasFreshPicture,
+      pictureMiss,
       pictureFor,
       pictureUrls,
       snapshots,

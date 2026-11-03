@@ -232,6 +232,7 @@ let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
 let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
 let snapshots: {
   hasFreshPicture: (paneId: string) => boolean;
+  pictureMiss: (paneId: string) => string | null;
   geometryVersion: number;
   timelinePicture: () => { url: string; width: number; height: number } | null;
   request: RequestPaneSnapshot;
@@ -338,6 +339,7 @@ beforeEach(() => {
   liveProducer = false;
   snapshots = {
     hasFreshPicture: () => true,
+    pictureMiss: () => null,
     geometryVersion: 0,
     timelinePicture: () => null,
     request: requestSnapshot,

@@ -95,6 +95,11 @@ const PaneRouter = memo(function PaneRouter({
   );
 });
 
+const REST_DWELL_MS =
+  typeof window === "undefined"
+    ? 0
+    : Number(new URLSearchParams(window.location.search).get("restDwell")) || 0;
+
 function usePaneContent(
   paneId: string,
   thread: ThreadPaneThread,
@@ -126,12 +131,17 @@ function usePaneContent(
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
       let idle: number | null = null;
+      let dwell: ReturnType<typeof setTimeout> | null = null;
       const prepare = () => {
         if (idle !== null) cancelIdleCallback(idle);
-        idle = null;
+        if (dwell !== null) clearTimeout(dwell);
+        idle = dwell = null;
         if (lifecycle?.isMoving()) {
           return;
-        } else if (focused || visible) show();
+        } else if (focused || visible) {
+          if (REST_DWELL_MS > 0) dwell = setTimeout(show, REST_DWELL_MS);
+          else show();
+        }
         else
           idle = requestIdleCallback((deadline) => {
             idle = null;
@@ -144,6 +154,7 @@ function usePaneContent(
       return () => {
         unsubscribe?.();
         if (idle !== null) cancelIdleCallback(idle);
+        if (dwell !== null) clearTimeout(dwell);
       };
     }
   }, [
@@ -322,7 +333,8 @@ const PaneBody = memo(function PaneBody({
     flushPaneVisualChanges(paneId);
     if (localStateAtRisk.current) return "local-ui-interaction";
     if (maximizedRef.current) return "full-screen";
-    if (!snapshots?.hasFreshPicture(paneId)) return mounted ? "no-current-picture" : "not-ready";
+    if (!snapshots?.hasFreshPicture(paneId))
+      return mounted ? `no-current-picture:${snapshots?.pictureMiss(paneId)}` : "not-ready";
     if (!snapshots.timelinePicture(paneId)) return "picture-not-decoded";
     if (!preparing) saveScroll.current?.();
     const element = contentRef.current;
