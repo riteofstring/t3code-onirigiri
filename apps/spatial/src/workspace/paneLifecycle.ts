@@ -53,6 +53,7 @@ export function createPaneLifecycleStore(
   let arrivalFrame: number | null = null;
   let removalFrame: number | null = null;
   let moving = false;
+  let keepNeighbours = false;
   let backgroundPictures = false;
   let picturesReady = true;
   let storedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,6 +95,8 @@ export function createPaneLifecycleStore(
     const ids = new Set(visible);
     if (!focused) return ids;
     ids.add(focused);
+    if (keepNeighbours)
+      for (const id of panes.keys()) if ([1, 1000].includes(distance(id))) ids.add(id);
     return ids;
   };
   const reconcile = () => {
@@ -344,6 +347,11 @@ export function createPaneLifecycleStore(
         schedule();
       }
       for (const listener of motionListeners) listener();
+    },
+    setKeepNeighbours: (next: boolean) => {
+      if (keepNeighbours === next) return;
+      keepNeighbours = next;
+      reconcile();
     },
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;

@@ -482,8 +482,8 @@ export function useSavedPanePictures(
     [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane, { phase, visible }) => {
-      if (!enabled) return "dom";
+    (pane, { phase, visible, maximized }) => {
+      if (!enabled || maximized) return "dom";
       if (pane.surfaceKind !== "thread")
         return otherPanePictures && phase !== "rest" ? { kind: "texture" } : "dom";
       if (

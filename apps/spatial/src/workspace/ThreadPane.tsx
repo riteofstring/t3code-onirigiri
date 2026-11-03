@@ -310,6 +310,8 @@ const PaneBody = memo(function PaneBody({
   const localStateAtRisk = useRef(false);
   const shell = useThreadShell(thread);
   const snapshots = use(PaneSnapshotContext);
+  const maximizedRef = useRef(maximized);
+  maximizedRef.current = maximized;
   const motionState = useRef<() => string | null>(() => "not-ready");
   motionState.current = () => {
     if (threadRuntimeIsActive(shell?.runtime)) return "in-progress-turn";
@@ -319,6 +321,7 @@ const PaneBody = memo(function PaneBody({
       return "pending-question";
     flushPaneVisualChanges(paneId);
     if (localStateAtRisk.current) return "local-ui-interaction";
+    if (maximizedRef.current) return "full-screen";
     if (!snapshots?.hasFreshPicture(paneId)) return mounted ? "no-current-picture" : "not-ready";
     if (!snapshots.timelinePicture(paneId)) return "picture-not-decoded";
     if (!preparing) saveScroll.current?.();

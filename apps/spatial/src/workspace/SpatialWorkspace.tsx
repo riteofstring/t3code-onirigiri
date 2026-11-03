@@ -456,6 +456,7 @@ function SpatialWorkspaceView({
       (id) => pictureFor(id) !== null,
     );
   }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture, pictureFor]);
+  useEffect(() => lifecycle?.setKeepNeighbours(fullScreen), [fullScreen, lifecycle]);
   const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
