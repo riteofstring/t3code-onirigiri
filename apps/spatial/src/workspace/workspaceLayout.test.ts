@@ -57,6 +57,28 @@ it("retains manual sizes when membership changes and applies the row default to 
   expect(Object.values(boxes()).map((box) => box.height)).toEqual([500, 500, 500]);
 });
 
+it("gives a pane added to a resized row that row's height", () => {
+  const panes = [pane("resized", 0, 0), pane("other", 1, 0)];
+  const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
+  const engine = new OnirigiriLayoutEngine(scene);
+  const store = new OnirigiriLayoutStore(engine, scene, cursor);
+  store.resizePaneRow("resized", 300);
+  const next = createWorkspaceScene({
+    gridAxes: "spatial",
+    panes: [pane("resized", 0, 0), pane("added", 0, 1), pane("other", 1, 0)],
+  });
+  store.restoreLayout(
+    reconcilePaneLayout(
+      serializeWorkspaceLayout(next.scene, next.cursor),
+      serializeWorkspaceLayout(engine.toScene(), store.getSnapshot().cursor),
+    ),
+    { keepPresentation: true },
+  );
+  const boxes = Object.fromEntries(engine.paneWorldBoxes(viewport).map((box) => [box.paneId, box]));
+  expect(boxes.added?.height).toBe(300);
+  expect(boxes.other?.height).not.toBe(300);
+});
+
 it("preserves the split proportions of surviving panes when another pane is removed", () => {
   const panes = [
     { ...pane("upper", 0, 0), columnId: "stack", weight: 1 },

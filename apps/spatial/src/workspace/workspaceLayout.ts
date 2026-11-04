@@ -94,7 +94,20 @@ export function reconcilePaneLayout(
       for (let suffix = 1; columnIds.has(columnId); suffix += 1)
         columnId = `spatial:${cell.paneId}:${suffix}`;
       columnIds.add(columnId);
-      const added = { ...source, columnId, cells: [{ ...cell }], planeIndex, slotIndex };
+      const reference = [anchor, ...columns].find(
+        (column) =>
+          column?.planeIndex === planeIndex &&
+          column.cells.length === 1 &&
+          column.cells[0]!.heightPx !== undefined,
+      );
+      const heightPx = cell.heightPx ?? reference?.cells[0]!.heightPx;
+      const added = {
+        ...source,
+        columnId,
+        cells: [heightPx === undefined ? { ...cell } : { ...cell, heightPx }],
+        planeIndex,
+        slotIndex,
+      };
       columns.push(added);
       ownerByPane.set(cell.paneId, added);
     }
