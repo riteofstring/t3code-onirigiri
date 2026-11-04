@@ -113,6 +113,7 @@ function usePaneContent(
   onContentReadyChange: (ready: boolean) => void;
 } {
   const lifecycle = use(PaneLifecycleContext);
+  const snapshots = use(PaneSnapshotContext);
   const mounted = usePaneMounted(paneId, settledVisible);
   const shell = useThreadShell(thread);
   const [contentMounted, setContentMounted] = useState(false);
@@ -137,7 +138,7 @@ function usePaneContent(
         if (lifecycle?.isMoving()) {
           return;
         } else if (focused || visible) {
-          if (focused) show();
+          if (focused || !snapshots?.hasFreshPicture(paneId)) show();
           else dwell = setTimeout(show, NEIGHBOUR_MOUNT_DELAY_MS);
         }
         else
@@ -163,6 +164,7 @@ function usePaneContent(
     mounted,
     paneId,
     settledVisible,
+    snapshots,
     visible,
   ]);
   useEffect(() => {
