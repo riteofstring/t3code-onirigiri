@@ -268,8 +268,19 @@ function SpatialWorkspaceView({
     lifecycle?.subscribeMotion ?? (() => () => {}),
     lifecycle?.isCameraMoving ?? (() => false),
   );
+  const [interacted, setInteracted] = useState(false);
+  useEffect(() => {
+    if (interacted) return;
+    const done = () => setInteracted(true);
+    const types = ["pointerdown", "keydown", "wheel"] as const;
+    for (const type of types)
+      window.addEventListener(type, done, { capture: true, passive: true });
+    return () => {
+      for (const type of types) window.removeEventListener(type, done, { capture: true });
+    };
+  }, [interacted]);
   const [hasMoved, setHasMoved] = useState(false);
-  if (cameraMoving && !hasMoved) setHasMoved(true);
+  if (cameraMoving && interacted && !hasMoved) setHasMoved(true);
   const motionDecision = useCallback(
     (id: string) => lifecycle?.motionDecision(id),
     [lifecycle, cameraMoving],

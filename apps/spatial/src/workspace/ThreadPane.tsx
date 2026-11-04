@@ -203,8 +203,12 @@ function usePaneContent(
     return () => markPaneSynced(paneId, null);
   }, [projectionUpdatedAt, paneId, pictureTheme, prepared, visualRevision]);
 
+  const [composerShown, setComposerShown] = useState(false);
+  if (composerShown && !renderContent) setComposerShown(false);
+  else if (!composerShown && renderContent && composerReady) setComposerShown(true);
+
   useOnirigiriPaneContentReady(
-    renderContent && (composerReady || presented),
+    renderContent && (composerShown || presented),
     `${revision}|${presented && !prepared}|${visualRevision}`,
   );
 

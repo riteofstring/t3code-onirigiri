@@ -646,7 +646,9 @@ export function useSavedPanePictures(
       pictureMiss,
       timelinePicture: (paneId) => {
         const picture = pictureFor(paneId);
-        const url = picture && pictureUrls.preparedUrl(picture.image);
+        const url =
+          picture &&
+          (pictureUrls.preparedUrl(picture.image) ?? pictureUrls.urlFor(picture.image));
         return picture && url ? { url, ...picture.cssSize } : null;
       },
       invalidate: (paneId, committed = false) => {
