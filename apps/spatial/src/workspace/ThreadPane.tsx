@@ -96,6 +96,7 @@ const PaneRouter = memo(function PaneRouter({
 });
 
 const NEIGHBOUR_MOUNT_DELAY_MS = 300;
+const PICTURE_FADE_MS = 100;
 
 function usePaneContent(
   paneId: string,
@@ -353,13 +354,26 @@ const PaneBody = memo(function PaneBody({
     lifecycle?.composerReady?.(paneId);
     if (!preparing) lifecycle?.recordReady?.(paneId, "timelineInteractiveAt");
   }, [composerReady, interactive, lifecycle, mounted, paneId, preparing]);
+  const [pictureLeaving, setPictureLeaving] = useState(false);
+  const wasPreparing = useRef(preparing);
+  useLayoutEffect(() => {
+    const finished = wasPreparing.current && !preparing;
+    wasPreparing.current = preparing;
+    if (!finished) return;
+    setPictureLeaving(true);
+    const timer = setTimeout(() => setPictureLeaving(false), PICTURE_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [preparing]);
   const host = useMemo(
     () => ({
       deferTimeline: deferred,
-      timelineFallback: preparing ? <TimelinePicture paneId={paneId} /> : null,
+      timelineFallback:
+        preparing || pictureLeaving ? (
+          <TimelinePicture paneId={paneId} leaving={!preparing} />
+        ) : null,
       onComposerReady: setComposerReady,
     }),
-    [deferred, paneId, preparing],
+    [deferred, paneId, pictureLeaving, preparing],
   );
   const activity = usePaneActivity(active, liveVisible, contentRef);
 
@@ -657,7 +671,7 @@ const PaneBody = memo(function PaneBody({
   );
 });
 
-function TimelinePicture({ paneId }: { paneId: string }) {
+function TimelinePicture({ paneId, leaving }: { paneId: string; leaving: boolean }) {
   const snapshots = use(PaneSnapshotContext);
   const [picture] = useState(() => snapshots?.timelinePicture(paneId));
   const ref = useRef<HTMLDivElement>(null);
@@ -675,6 +689,11 @@ function TimelinePicture({ paneId }: { paneId: string }) {
     <div
       ref={ref}
       className="absolute inset-0 z-10 overflow-hidden bg-background"
+      style={{
+        opacity: leaving ? 0 : 1,
+        transition: `opacity ${PICTURE_FADE_MS}ms linear`,
+        pointerEvents: leaving ? "none" : undefined,
+      }}
       aria-hidden="true"
     >
       <img
