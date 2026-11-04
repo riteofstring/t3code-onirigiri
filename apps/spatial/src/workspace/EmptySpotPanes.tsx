@@ -148,6 +148,82 @@ function findSpot(
   );
 }
 
+const PROBE_PX = 24;
+
+function gridSpots(
+  stage: HTMLElement,
+  layout: OnirigiriLayout | null,
+  allowNewRows: boolean,
+): EmptySpot[] {
+  const world = stage.querySelector<HTMLElement>('[data-onirigiri-slot="stage"]');
+  if (!world || !layout) return [];
+  const bounds = world.getBoundingClientRect();
+  const probes: [number, number][] = [];
+  for (const element of stage.querySelectorAll<HTMLElement>('[data-onirigiri-slot="pane"]')) {
+    const box = element.getBoundingClientRect();
+    if (box.right < bounds.left || box.left > bounds.right) continue;
+    const middleX = (box.left + box.right) / 2;
+    const middleY = (box.top + box.bottom) / 2;
+    probes.push([box.left - PROBE_PX, middleY], [box.right + PROBE_PX, middleY]);
+    if (allowNewRows) probes.push([middleX, box.top - PROBE_PX], [middleX, box.bottom + PROBE_PX]);
+  }
+  const seen = new Set<string>();
+  const spots: EmptySpot[] = [];
+  for (const [x, y] of probes) {
+    const found = findSpot(stage, layout, allowNewRows, x, y);
+    if (!found) continue;
+    const key = `${found.placement.newPlane}|${found.placement.plane}|${found.placement.slot}|${Math.round(found.left)}|${Math.round(found.top)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    spots.push(found);
+  }
+  return spots;
+}
+
+export function useGridSpots(
+  stage: HTMLElement | null,
+  enabled: boolean,
+  allowNewRows: boolean,
+  getLayout: () => OnirigiriLayout | null,
+  revision: unknown,
+): readonly EmptySpot[] {
+  const [spots, setSpots] = useState<readonly EmptySpot[]>([]);
+  const getLayoutRef = useRef(getLayout);
+  getLayoutRef.current = getLayout;
+  useEffect(() => {
+    if (!stage || !enabled) {
+      setSpots([]);
+      return;
+    }
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setSpots(gridSpots(stage, getLayoutRef.current(), allowNewRows)));
+    });
+    const resize = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setSpots(gridSpots(stage, getLayoutRef.current(), allowNewRows)));
+    });
+    resize.observe(stage);
+    return () => {
+      cancelAnimationFrame(frame);
+      resize.disconnect();
+    };
+  }, [allowNewRows, enabled, revision, stage]);
+  return enabled ? spots : [];
+}
+
+export function GridSpots({ spots, hovered }: { spots: readonly EmptySpot[]; hovered: EmptySpot | null }) {
+  return spots.map((spot) =>
+    hovered && hovered.left === spot.left && hovered.top === spot.top ? null : (
+      <div
+        key={`${spot.placement.newPlane}|${spot.placement.plane}|${spot.placement.slot}|${spot.left}|${spot.top}`}
+        aria-hidden="true"
+        className="pointer-events-none absolute z-10 rounded-lg border border-dashed border-foreground/[0.07]"
+        style={{ left: spot.left, top: spot.top, width: spot.width, height: spot.height }}
+      />
+    ),
+  );
+}
+
 export function useEmptySpotPanes(
   stage: HTMLElement | null,
   enabled: boolean,

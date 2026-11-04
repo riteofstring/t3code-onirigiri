@@ -313,6 +313,28 @@ export function WorkspaceToolbar({
               </svg>
             </Button>
             <Button
+              aria-label={preferences.showGrid ? "Hide grid" : "Show grid"}
+              aria-pressed={preferences.showGrid}
+              tooltip={
+                preferences.showGrid
+                  ? "Hide the empty pane slots"
+                  : "Show the empty pane slots around your panes"
+              }
+              onClick={() => onPreferencesChange({ showGrid: !preferences.showGrid })}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeDasharray="2 1.5"
+              >
+                <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                <path d="M8 5.5v5M5.5 8h5" strokeDasharray="none" />
+              </svg>
+            </Button>
+            <Button
               aria-label={layoutMode === "strip" ? "Switch to 2D layout" : "Switch to strip layout"}
               tooltip={
                 layoutMode === "strip"

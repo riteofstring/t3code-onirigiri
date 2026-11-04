@@ -33,6 +33,7 @@ export interface WorkspacePreferences {
   rowHeight: number | "viewport";
   navigationBar: boolean;
   maximizeAll: boolean;
+  showGrid: boolean;
 }
 
 const defaults: WorkspacePreferences = {
@@ -40,6 +41,7 @@ const defaults: WorkspacePreferences = {
   rowHeight: "viewport",
   navigationBar: false,
   maximizeAll: false,
+  showGrid: true,
 };
 
 function readPreferences(): WorkspacePreferences {
@@ -50,6 +52,7 @@ function readPreferences(): WorkspacePreferences {
     const height = "rowHeight" in value ? value.rowHeight : null;
     const navigationBar = "navigationBar" in value ? value.navigationBar : null;
     const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
+    const showGrid = "showGrid" in value ? value.showGrid : null;
     return {
       overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
@@ -58,6 +61,7 @@ function readPreferences(): WorkspacePreferences {
           : "viewport",
       navigationBar: navigationBar === true,
       maximizeAll: maximizeAll === true,
+      showGrid: showGrid !== false,
     };
   } catch {
     return defaults;

@@ -83,7 +83,13 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 import { DraftPane } from "./DraftPane";
-import { EmptySpotOutline, useEmptySpotPanes, type EmptySpot } from "./EmptySpotPanes";
+import {
+  EmptySpotOutline,
+  GridSpots,
+  useEmptySpotPanes,
+  useGridSpots,
+  type EmptySpot,
+} from "./EmptySpotPanes";
 
 import { installComposerNavigation } from "./composerNavigation";
 
@@ -371,11 +377,13 @@ function SpatialWorkspaceView({
       layoutPersistence.flush();
     };
   }, [layoutPersistence]);
+  const [layoutRevision, setLayoutRevision] = useState(0);
   const onLayoutChange = useCallback<NonNullable<OnirigiriWorkspaceProps["onLayoutChange"]>>(
     (layout, metadata) => {
       layoutPersistence.save(layout);
       if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
       lastLayoutRevisionRef.current = metadata.layoutRevision;
+      setLayoutRevision(metadata.layoutRevision);
       setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
       syncMaximized();
       onPictureLayoutChange(layout);
@@ -1034,6 +1042,13 @@ function SpatialWorkspaceView({
     getLayout,
     addPaneAt,
   );
+  const gridSpots = useGridSpots(
+    stageElement,
+    preferences.showGrid && active && !overview && !cameraMoving && maximizedPaneId === null,
+    layoutMode !== "strip",
+    getLayout,
+    `${layoutRevision}|${panes?.length ?? 0}|${focusedPaneIdRef.current}`,
+  );
 
   return (
     <WorkspaceTooltips>
@@ -1105,6 +1120,7 @@ function SpatialWorkspaceView({
             </PaneLifecycleContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
+        <GridSpots spots={gridSpots} hovered={emptySpot} />
         <EmptySpotOutline spot={emptySpot} />
         <FullScreenBorder ref={fullScreenBorderRef} />
       </div>
