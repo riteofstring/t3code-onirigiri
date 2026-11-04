@@ -62,6 +62,8 @@ import {
   createPaneLayoutPersistence,
   reconcilePaneLayout,
   threadLayoutPositions,
+  placePane,
+  type PanePlacement,
 } from "./workspaceLayout";
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { SavedPanePicture } from "./SavedPanePicture";
@@ -81,7 +83,7 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 import { DraftPane } from "./DraftPane";
-import { EmptySpotOutline, useEmptySpotPanes } from "./EmptySpotPanes";
+import { EmptySpotOutline, useEmptySpotPanes, type EmptySpot } from "./EmptySpotPanes";
 
 import { installComposerNavigation } from "./composerNavigation";
 
@@ -479,7 +481,10 @@ function SpatialWorkspaceView({
         row: focused?.planeIndex ?? 0,
         split: 0,
       });
-      workspace.restoreLayout(reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId), {
+      const reconciled = reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId);
+      const placement = added ? pendingPlacementRef.current.get(added) : undefined;
+      if (added) pendingPlacementRef.current.delete(added);
+      workspace.restoreLayout(placement ? placePane(reconciled, added!, placement) : reconciled, {
         keepPresentation: true,
       });
       if (added && workspace.getSnapshot().presentationMode === "overview") {
@@ -738,6 +743,33 @@ function SpatialWorkspaceView({
     [addEmpty, getPanes],
   );
   const addPane = useCallback(() => addPaneBeside(focusedPaneIdRef.current), [addPaneBeside]);
+  const pendingPlacementRef = useRef(new Map<string, PanePlacement>());
+  const addPaneAt = useCallback(
+    (spot: EmptySpot) => {
+      const scene = workspaceRef.current?.getScene();
+      const ownerOf = (paneId: string | null | undefined) => {
+        if (!paneId) return undefined;
+        const tool = getPanes().find((pane) => pane.paneId === paneId);
+        if (tool) return { owner: tool as ThreadPaneData, after: tool.paneId };
+        const pane = scene?.paneById.get(paneId);
+        return pane?.surfaceKind === "thread"
+          ? { owner: pane.data as ThreadPaneData, after: null }
+          : undefined;
+      };
+      const resolved =
+        ownerOf(spot.ownerPaneId) ??
+        ownerOf(focusedPaneIdRef.current) ??
+        ownerOf(panesRef.current?.find((pane) => pane.surfaceKind === "thread")?.paneId);
+      if (!resolved) return;
+      const paneId = addEmpty(
+        { environmentId: resolved.owner.environmentId, threadId: resolved.owner.threadId },
+        resolved.after,
+      );
+      pendingPlacementRef.current.set(paneId, spot.placement);
+      pendingFocusPaneIdRef.current = paneId;
+    },
+    [addEmpty, getPanes],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -998,7 +1030,9 @@ function SpatialWorkspaceView({
   const emptySpot = useEmptySpotPanes(
     stageElement,
     active && !overview && !cameraMoving && maximizedPaneId === null,
-    addPaneBeside,
+    layoutMode !== "strip",
+    getLayout,
+    addPaneAt,
   );
 
   return (

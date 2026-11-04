@@ -150,3 +150,47 @@ export function threadLayoutPositions(layout: OnirigiriLayout) {
     ),
   );
 }
+
+export interface PanePlacement {
+  readonly plane: number;
+  readonly slot: number;
+  readonly newPlane: boolean;
+}
+
+export function placePane(
+  layout: OnirigiriLayout,
+  paneId: string,
+  placement: PanePlacement,
+): OnirigiriLayout {
+  const moving = layout.columns.find(
+    (column) => column.cells.length === 1 && column.cells[0]!.paneId === paneId,
+  );
+  if (!moving) return layout;
+  const rest = layout.columns
+    .filter((column) => column !== moving)
+    .map((column) => ({
+      ...column,
+      slotIndex:
+        column.planeIndex === moving.planeIndex && slot(column) > slot(moving)
+          ? slot(column) - 1
+          : slot(column),
+    }));
+  const shifted = rest.map((column) => {
+    if (placement.newPlane)
+      return column.planeIndex >= placement.plane
+        ? { ...column, planeIndex: column.planeIndex + 1 }
+        : column;
+    return column.planeIndex === placement.plane && slot(column) >= placement.slot
+      ? { ...column, slotIndex: slot(column) + 1 }
+      : column;
+  });
+  const placed = { ...moving, planeIndex: placement.plane, slotIndex: placement.slot };
+  const columns = [...shifted, placed]
+    .toSorted((a, b) => a.planeIndex - b.planeIndex || slot(a) - slot(b))
+    .map((column, index) => ({ ...column, index }));
+  return {
+    ...layout,
+    columns,
+    cursor: { column: placement.slot, row: placement.plane, split: 0 },
+  };
+}

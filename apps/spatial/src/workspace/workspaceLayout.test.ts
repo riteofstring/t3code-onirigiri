@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 
 import {
   createPaneLayoutPersistence,
+  placePane,
   reconcilePaneLayout,
   threadLayoutPositions,
   readPaneLayout,
@@ -275,4 +276,23 @@ it("coalesces repeated resizing writes and flushes the latest arrangement before
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+it("places a new pane before a row's first pane or in a new row", () => {
+  const panes = [pane("a", 0, 0), pane("b", 0, 1), pane("c", 1, 0), pane("new", 0, 2)];
+  const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
+  const layout = serializeWorkspaceLayout(scene, cursor);
+  const where = (next: typeof layout) =>
+    Object.fromEntries(
+      next.columns.map((column) => [
+        column.cells[0]!.paneId,
+        [column.planeIndex, column.slotIndex ?? column.index],
+      ]),
+    );
+  const before = placePane(layout, "new", { plane: 0, slot: 0, newPlane: false });
+  expect(where(before)).toEqual({ new: [0, 0], a: [0, 1], b: [0, 2], c: [1, 0] });
+  expect(before.cursor).toMatchObject({ row: 0, column: 0 });
+  const between = placePane(layout, "new", { plane: 1, slot: 0, newPlane: true });
+  expect(where(between)).toEqual({ a: [0, 0], b: [0, 1], new: [1, 0], c: [2, 0] });
+  expect(() => assertOnirigiriLayout(between)).not.toThrow();
 });
