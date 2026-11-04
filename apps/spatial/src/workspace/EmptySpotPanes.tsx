@@ -1,26 +1,28 @@
 import type { OnirigiriLayout } from "@riteofstring/onirigiri";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 
 import type { PanePlacement } from "./workspaceLayout";
 
 const DRAG_TOLERANCE_PX = 4;
 const DEFAULT_GAP_PX = 8;
-const IGNORED =
-  'button, a, input, textarea, select, [role="menu"], [role="dialog"], [data-onirigiri-slot="pane"]';
 
 export interface EmptySpot {
+  readonly key: string;
   readonly ownerPaneId: string | null;
   readonly placement: PanePlacement;
   readonly left: number;
   readonly top: number;
   readonly width: number;
   readonly height: number;
-  readonly visible: { readonly left: number; readonly top: number; readonly width: number; readonly height: number };
 }
 
 interface Placed {
   readonly id: string;
-  readonly box: DOMRect;
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
   readonly plane: number;
   readonly slot: number;
 }
@@ -57,15 +59,28 @@ function bands(known: Map<number, Band>, from: number, to: number, gap: number):
   return result;
 }
 
+function nearest(panes: readonly Placed[], slot: number): Placed | undefined {
+  return panes.toSorted((a, b) => Math.abs(a.slot - slot) - Math.abs(b.slot - slot))[0];
+}
+
 function emptyCells(
   stage: HTMLElement,
+  world: HTMLElement,
   layout: OnirigiriLayout | null,
   allowNewRows: boolean,
   focusedPaneId: string | null,
 ): EmptySpot[] {
-  const world = stage.querySelector<HTMLElement>('[data-onirigiri-slot="stage"]');
-  if (!world || !layout) return [];
-  const view = world.getBoundingClientRect();
+  const viewElement = stage.querySelector<HTMLElement>('[data-onirigiri-slot="stage"]');
+  if (!viewElement || !layout || world.offsetWidth === 0) return [];
+  const origin = world.getBoundingClientRect();
+  const scale = origin.width / world.offsetWidth || 1;
+  const toWorld = (x: number, y: number) => ({
+    x: (x - origin.left) / scale,
+    y: (y - origin.top) / scale,
+  });
+  const screen = viewElement.getBoundingClientRect();
+  const topLeft = toWorld(screen.left - screen.width, screen.top - screen.height);
+  const bottomRight = toWorld(screen.right + screen.width, screen.bottom + screen.height);
   const located = new Map(
     layout.columns.flatMap((column) =>
       column.cells.flatMap((cell) =>
@@ -84,18 +99,24 @@ function emptyCells(
   for (const element of stage.querySelectorAll<HTMLElement>('[data-onirigiri-slot="pane"]')) {
     const id = element.dataset.onirigiriPaneId;
     const place = id ? located.get(id) : undefined;
-    if (id && place) placed.push({ id, box: element.getBoundingClientRect(), ...place });
+    if (!id || !place) continue;
+    const box = element.getBoundingClientRect();
+    const start = toWorld(box.left, box.top);
+    placed.push({
+      id,
+      left: start.x,
+      top: start.y,
+      width: box.width / scale,
+      height: box.height / scale,
+      ...place,
+    });
   }
   if (placed.length === 0) return [];
   const slots = new Map<number, Band>();
-  const planes = new Map<number, { start: number; end: number }>();
-  for (const { box, plane, slot } of placed) {
-    if (!slots.has(slot)) slots.set(slot, { start: box.left, size: box.width });
-    const row = planes.get(plane);
-    planes.set(plane, {
-      start: Math.min(row?.start ?? box.top, box.top),
-      end: Math.max(row?.end ?? box.bottom, box.bottom),
-    });
+  const planes = new Map<number, Placed[]>();
+  for (const pane of placed) {
+    if (!slots.has(pane.slot)) slots.set(pane.slot, { start: pane.left, size: pane.width });
+    planes.set(pane.plane, [...(planes.get(pane.plane) ?? []), pane]);
   }
   const slotGap = median(
     [...slots].flatMap(([slot, band]) => {
@@ -104,117 +125,127 @@ function emptyCells(
     }),
     DEFAULT_GAP_PX,
   );
+  const top = (plane: number) => Math.min(...planes.get(plane)!.map((pane) => pane.top));
+  const bottom = (plane: number) =>
+    Math.max(...planes.get(plane)!.map((pane) => pane.top + pane.height));
   const rowGap = median(
-    [...planes].flatMap(([plane, band]) => {
-      const next = planes.get(plane + 1);
-      return next ? [next.start - band.end] : [];
-    }),
+    [...planes.keys()].flatMap((plane) =>
+      planes.has(plane + 1) ? [top(plane + 1) - bottom(plane)] : [],
+    ),
     slotGap,
   );
-  const columns = bands(slots, view.left, view.right, slotGap);
-  const rowHeight = median(
-    [...planes.values()].map((band) => band.end - band.start),
-    view.height,
-  );
+  const columns = bands(slots, topLeft.x, bottomRight.x, slotGap);
   const planeIndexes = [...planes.keys()].toSorted((a, b) => a - b);
   const first = planeIndexes[0]!;
   const last = planeIndexes.at(-1)!;
-  const rows = planeIndexes.map((plane) => ({
-    plane,
-    newPlane: false,
-    top: planes.get(plane)!.start,
-    height: planes.get(plane)!.end - planes.get(plane)!.start,
-  }));
-  if (allowNewRows) {
-    rows.push(
-      {
-        plane: first,
-        newPlane: true,
-        top: planes.get(first)!.start - rowGap - rowHeight,
-        height: rowHeight,
-      },
-      { plane: last + 1, newPlane: true, top: planes.get(last)!.end + rowGap, height: rowHeight },
-    );
-  }
   const occupied = new Set(placed.map(({ plane, slot }) => `${plane}|${slot}`));
-  const nearestIn = (plane: number, slot: number) =>
-    placed
-      .filter((pane) => pane.plane === plane && !pane.id.startsWith("draft:"))
-      .toSorted((a, b) => Math.abs(a.slot - slot) - Math.abs(b.slot - slot))[0]?.id ?? null;
-  const origin = stage.getBoundingClientRect();
   const cells: EmptySpot[] = [];
-  for (const row of rows) {
-    if (row.top + row.height < view.top || row.top > view.bottom) continue;
+  const add = (
+    plane: number,
+    newPlane: boolean,
+    slot: number,
+    column: Band,
+    rowTop: (height: number) => number,
+    match: Placed | undefined,
+    owner: string | null,
+  ) => {
+    const height = match?.height ?? median(placed.map((pane) => pane.height), 0);
+    const cellTop = rowTop(height);
+    if (cellTop + height < topLeft.y || cellTop > bottomRight.y || height <= 0) return;
+    cells.push({
+      key: `${newPlane ? "new" : "row"}|${plane}|${slot}`,
+      ownerPaneId: owner,
+      placement: { plane, slot, newPlane, matchPaneId: match?.id ?? null },
+      left: column.start,
+      top: cellTop,
+      width: column.size,
+      height,
+    });
+  };
+  for (const plane of planeIndexes) {
+    const panes = planes.get(plane)!;
     for (const [slot, column] of columns) {
-      if (column.start + column.size < view.left || column.start > view.right) continue;
-      if (!row.newPlane && occupied.has(`${row.plane}|${slot}`)) continue;
-      const left = Math.max(column.start, view.left);
-      const top = Math.max(row.top, view.top);
-      const right = Math.min(column.start + column.size, view.right);
-      const bottom = Math.min(row.top + row.height, view.bottom);
-      cells.push({
-        ownerPaneId: row.newPlane ? focusedPaneId : nearestIn(row.plane, slot),
-        placement: { plane: row.plane, slot, newPlane: row.newPlane },
-        left: column.start - origin.left,
-        top: row.top - origin.top,
-        width: column.size,
-        height: row.height,
-        visible: {
-          left: left - column.start,
-          top: top - row.top,
-          width: right - left,
-          height: bottom - top,
-        },
-      });
+      if (column.start + column.size < topLeft.x || column.start > bottomRight.x) continue;
+      if (occupied.has(`${plane}|${slot}`)) continue;
+      const match = nearest(panes, slot);
+      const owner = nearest(
+        panes.filter((pane) => !pane.id.startsWith("draft:")),
+        slot,
+      )?.id;
+      add(plane, false, slot, column, () => top(plane), match, owner ?? null);
+    }
+  }
+  if (allowNewRows) {
+    for (const [slot, column] of columns) {
+      if (column.start + column.size < topLeft.x || column.start > bottomRight.x) continue;
+      add(
+        first,
+        true,
+        slot,
+        column,
+        (height) => top(first) - rowGap - height,
+        nearest(planes.get(first)!, slot),
+        focusedPaneId,
+      );
+      add(
+        last + 1,
+        true,
+        slot,
+        column,
+        () => bottom(last) + rowGap,
+        nearest(planes.get(last)!, slot),
+        focusedPaneId,
+      );
     }
   }
   return cells;
 }
 
-function cellAt(stage: HTMLElement, cells: readonly EmptySpot[], x: number, y: number) {
-  const origin = stage.getBoundingClientRect();
-  const localX = x - origin.left;
-  const localY = y - origin.top;
-  return (
-    cells.find(
-      (cell) =>
-        localX >= cell.left &&
-        localX <= cell.left + cell.width &&
-        localY >= cell.top &&
-        localY <= cell.top + cell.height,
-    ) ?? null
-  );
-}
-
-export function useEmptySpotPanes(
+export function useEmptySpots(
   stage: HTMLElement | null,
   enabled: boolean,
+  moving: boolean,
   allowNewRows: boolean,
   getLayout: () => OnirigiriLayout | null,
   getFocusedPaneId: () => string | null,
   revision: unknown,
-  onAdd: (spot: EmptySpot) => void,
-): { cells: readonly EmptySpot[]; hovered: EmptySpot | null } {
+): { cells: readonly EmptySpot[]; container: HTMLElement | null } {
   const [cells, setCells] = useState<readonly EmptySpot[]>([]);
-  const [hovered, setHovered] = useState<EmptySpot | null>(null);
-  const latest = useRef({ getLayout, getFocusedPaneId, onAdd });
-  latest.current = { getLayout, getFocusedPaneId, onAdd };
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const latest = useRef({ getLayout, getFocusedPaneId });
+  latest.current = { getLayout, getFocusedPaneId };
   useEffect(() => {
-    if (!stage || !enabled) {
-      setCells([]);
-      setHovered(null);
+    const world = stage?.querySelector<HTMLElement>('[data-onirigiri-world-surface]');
+    if (!world || !enabled) {
+      setContainer(null);
       return;
     }
-    let current: readonly EmptySpot[] = [];
-    const measure = () => {
-      current = emptyCells(
-        stage,
-        latest.current.getLayout(),
-        allowNewRows,
-        latest.current.getFocusedPaneId(),
-      );
-      setCells(current);
+    const layer = world.ownerDocument.createElement("div");
+    layer.className = "spatial-empty-cells";
+    world.prepend(layer);
+    setContainer(layer);
+    return () => {
+      layer.remove();
+      setContainer(null);
     };
+  }, [enabled, stage]);
+  useEffect(() => {
+    const world = stage?.querySelector<HTMLElement>('[data-onirigiri-world-surface]');
+    if (!stage || !world || !enabled) {
+      setCells([]);
+      return;
+    }
+    if (moving) return;
+    const measure = () =>
+      setCells(
+        emptyCells(
+          stage,
+          world,
+          latest.current.getLayout(),
+          allowNewRows,
+          latest.current.getFocusedPaneId(),
+        ),
+      );
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(measure);
     });
@@ -223,101 +254,72 @@ export function useEmptySpotPanes(
       frame = requestAnimationFrame(measure);
     });
     resize.observe(stage);
-    let down: { x: number; y: number } | null = null;
-    const empty = (event: PointerEvent | MouseEvent) =>
-      event.target instanceof Element && !event.target.closest(IGNORED);
-    const move = (event: PointerEvent) =>
-      setHovered(
-        event.buttons === 0 && empty(event)
-          ? cellAt(stage, current, event.clientX, event.clientY)
-          : null,
-      );
-    const leave = () => setHovered(null);
-    const press = (event: PointerEvent) => {
-      down = event.button === 0 && empty(event) ? { x: event.clientX, y: event.clientY } : null;
-    };
-    const click = (event: MouseEvent) => {
-      const start = down;
-      down = null;
-      if (
-        !start ||
-        event.button !== 0 ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        Math.hypot(event.clientX - start.x, event.clientY - start.y) > DRAG_TOLERANCE_PX ||
-        !empty(event)
-      )
-        return;
-      const found = cellAt(stage, current, event.clientX, event.clientY);
-      if (!found) return;
-      setHovered(null);
-      latest.current.onAdd(found);
-    };
-    stage.addEventListener("pointermove", move, { passive: true });
-    stage.addEventListener("pointerleave", leave);
-    stage.addEventListener("pointerdown", press, { capture: true });
-    stage.addEventListener("click", click);
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
-      stage.removeEventListener("pointermove", move);
-      stage.removeEventListener("pointerleave", leave);
-      stage.removeEventListener("pointerdown", press, { capture: true });
-      stage.removeEventListener("click", click);
     };
-  }, [allowNewRows, enabled, revision, stage]);
-  return enabled ? { cells, hovered } : { cells: [], hovered: null };
+  }, [allowNewRows, enabled, moving, revision, stage]);
+  return { cells: enabled ? cells : [], container };
 }
 
 export function EmptySpotGrid({
   cells,
-  hovered,
+  container,
   showGrid,
+  onAdd,
 }: {
   cells: readonly EmptySpot[];
-  hovered: EmptySpot | null;
+  container: HTMLElement | null;
   showGrid: boolean;
+  onAdd: (spot: EmptySpot) => void;
 }) {
-  return (
-    <>
-      {showGrid
-        ? cells.map((cell) =>
-            cell === hovered ? null : (
-              <div
-                key={`${cell.placement.newPlane}|${cell.placement.plane}|${cell.placement.slot}`}
-                aria-hidden="true"
-                className="pointer-events-none absolute z-10 rounded-lg bg-black/[0.15]"
-                style={{ left: cell.left, top: cell.top, width: cell.width, height: cell.height }}
-              />
-            ),
+  const press = useRef<{ x: number; y: number } | null>(null);
+  if (!container) return null;
+  const track = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    const scale = box.width / event.currentTarget.offsetWidth || 1;
+    event.currentTarget.style.setProperty("--spot-x", `${(event.clientX - box.left) / scale}px`);
+    event.currentTarget.style.setProperty("--spot-y", `${(event.clientY - box.top) / scale}px`);
+  };
+  return createPortal(
+    cells.map((cell) => (
+      <div
+        key={cell.key}
+        aria-hidden="true"
+        className="spatial-empty-cell"
+        data-show-grid={String(showGrid)}
+        style={{
+          transform: `translate(${cell.left}px, ${cell.top}px)`,
+          width: cell.width,
+          height: cell.height,
+        }}
+        onPointerEnter={track}
+        onPointerMove={track}
+        onPointerDown={(event) => {
+          press.current =
+            event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+        }}
+        onClick={(event) => {
+          const start = press.current;
+          press.current = null;
+          if (
+            !start ||
+            event.button !== 0 ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey ||
+            Math.hypot(event.clientX - start.x, event.clientY - start.y) > DRAG_TOLERANCE_PX
           )
-        : null}
-      {hovered ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute z-10 rounded-lg bg-black/[0.3] text-foreground/25"
-          style={{
-            left: hovered.left,
-            top: hovered.top,
-            width: hovered.width,
-            height: hovered.height,
-          }}
-        >
-          <div className="absolute flex items-center justify-center" style={hovered.visible}>
-            <svg
-              viewBox="0 0 24 24"
-              className="size-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-            </svg>
-          </div>
-        </div>
-      ) : null}
-    </>
+            return;
+          onAdd(cell);
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+        </svg>
+      </div>
+    )),
+    container,
   );
 }

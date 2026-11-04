@@ -381,3 +381,52 @@
   > .onirigiri-pane__titlebar {
   display: none;
 }
+
+.spatial-workspace {
+  --spatial-cell: color-mix(in oklch, var(--background) 96%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--background) 98.5%, var(--foreground));
+  --spatial-cell-mark: color-mix(in oklch, var(--background) 60%, var(--foreground));
+}
+
+.spatial-empty-cells {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 0;
+}
+
+.spatial-empty-cell {
+  position: absolute;
+  inset: 0 auto auto 0;
+  border-radius: var(--onirigiri-pane-radius, 12px);
+  color: var(--spatial-cell-mark);
+  pointer-events: auto;
+  animation: spatial-empty-cell-in 160ms ease-out;
+}
+
+.spatial-empty-cell[data-show-grid="true"] {
+  background: var(--spatial-cell);
+}
+
+.spatial-empty-cell:hover {
+  background: var(--spatial-cell-hover);
+}
+
+.spatial-empty-cell > svg {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  left: calc(var(--spot-x, 50%) - 12px);
+  top: calc(var(--spot-y, 50%) - 12px);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.spatial-empty-cell:hover > svg {
+  visibility: visible;
+}
+
+@keyframes spatial-empty-cell-in {
+  from {
+    opacity: 0;
+  }
+}

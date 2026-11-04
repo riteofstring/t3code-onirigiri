@@ -83,7 +83,7 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 import { DraftPane } from "./DraftPane";
-import { EmptySpotGrid, useEmptySpotPanes, type EmptySpot } from "./EmptySpotPanes";
+import { EmptySpotGrid, useEmptySpots, type EmptySpot } from "./EmptySpotPanes";
 
 import { installComposerNavigation } from "./composerNavigation";
 
@@ -1030,14 +1030,14 @@ function SpatialWorkspaceView({
     [stageRef],
   );
   const getFocusedPaneId = useCallback(() => focusedPaneIdRef.current, []);
-  const emptySpots = useEmptySpotPanes(
+  const emptySpots = useEmptySpots(
     stageElement,
-    active && !overview && !cameraMoving && maximizedPaneId === null,
+    active && !overview && maximizedPaneId === null,
+    cameraMoving,
     layoutMode !== "strip",
     getLayout,
     getFocusedPaneId,
     `${layoutRevision}|${panes?.length ?? 0}`,
-    addPaneAt,
   );
 
 
@@ -1113,8 +1113,9 @@ function SpatialWorkspaceView({
         ) : null}
         <EmptySpotGrid
           cells={emptySpots.cells}
-          hovered={emptySpots.hovered}
+          container={emptySpots.container}
           showGrid={preferences.showGrid}
+          onAdd={addPaneAt}
         />
         <FullScreenBorder ref={fullScreenBorderRef} />
       </div>
