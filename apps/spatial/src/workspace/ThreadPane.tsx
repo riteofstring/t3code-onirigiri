@@ -687,7 +687,7 @@ function TimelinePicture({ paneId, leaving }: { paneId: string; leaving: boolean
     const scale = root.width / pane.offsetWidth || 1;
     setOffset({ x: (root.left - box.left) / scale, y: (root.top - box.top) / scale });
   }, [picture?.url]);
-  return picture ? (
+  return (
     <div
       ref={ref}
       className="absolute inset-0 z-10 overflow-hidden bg-background"
@@ -698,20 +698,22 @@ function TimelinePicture({ paneId, leaving }: { paneId: string; leaving: boolean
       }}
       aria-hidden="true"
     >
-      <img
-        src={picture.url}
-        alt=""
-        style={{
-          position: "absolute",
-          left: offset.x,
-          top: offset.y,
-          width: picture.width,
-          height: picture.height,
-          maxWidth: "none",
-        }}
-      />
+      {picture ? (
+        <img
+          src={picture.url}
+          alt=""
+          style={{
+            position: "absolute",
+            left: offset.x,
+            top: offset.y,
+            width: picture.width,
+            height: picture.height,
+            maxWidth: "none",
+          }}
+        />
+      ) : null}
     </div>
-  ) : null;
+  );
 }
 
 function PaneScrollState({

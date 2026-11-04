@@ -268,6 +268,8 @@ function SpatialWorkspaceView({
     lifecycle?.subscribeMotion ?? (() => () => {}),
     lifecycle?.isCameraMoving ?? (() => false),
   );
+  const [hasMoved, setHasMoved] = useState(false);
+  if (cameraMoving && !hasMoved) setHasMoved(true);
   const motionDecision = useCallback(
     (id: string) => lifecycle?.motionDecision(id),
     [lifecycle, cameraMoving],
@@ -851,7 +853,11 @@ function SpatialWorkspaceView({
     (pane: WorkspacePane) => {
       if (pane.surfaceKind !== "thread") return null;
       const data = pane.data as ThreadPaneData;
-      const card = <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />;
+      const card = hasMoved ? (
+        <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />
+      ) : (
+        <div className="h-full w-full bg-background" />
+      );
       const picture = pictureFor(pane.paneId);
       return picture ? (
         <SavedPanePicture
@@ -866,7 +872,7 @@ function SpatialWorkspaceView({
         card
       );
     },
-    [pictureFor, pictureUrl, preparedPictureUrl],
+    [hasMoved, pictureFor, pictureUrl, preparedPictureUrl],
   );
 
   return (
