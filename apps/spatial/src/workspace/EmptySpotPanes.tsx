@@ -215,16 +215,24 @@ export function useEmptySpots(
   const latest = useRef({ getLayout, getFocusedPaneId });
   latest.current = { getLayout, getFocusedPaneId };
   useEffect(() => {
-    const world = stage?.querySelector<HTMLElement>('[data-onirigiri-world-surface]');
-    if (!world || !enabled) {
+    if (!stage || !enabled) {
       setContainer(null);
       return;
     }
-    const layer = world.ownerDocument.createElement("div");
+    const layer = stage.ownerDocument.createElement("div");
     layer.className = "spatial-empty-cells";
-    world.prepend(layer);
-    setContainer(layer);
+    const attach = () => {
+      const world = stage.querySelector<HTMLElement>("[data-onirigiri-world-surface]");
+      if (!world) return;
+      observer.disconnect();
+      world.prepend(layer);
+      setContainer(layer);
+    };
+    const observer = new MutationObserver(attach);
+    observer.observe(stage, { childList: true, subtree: true });
+    attach();
     return () => {
+      observer.disconnect();
       layer.remove();
       setContainer(null);
     };

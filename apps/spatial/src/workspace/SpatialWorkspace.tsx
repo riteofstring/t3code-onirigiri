@@ -1032,7 +1032,11 @@ function SpatialWorkspaceView({
   const getFocusedPaneId = useCallback(() => focusedPaneIdRef.current, []);
   const emptySpots = useEmptySpots(
     stageElement,
-    active && !overview && maximizedPaneId === null,
+    active &&
+      !overview &&
+      maximizedPaneId === null &&
+      initialPanes !== null &&
+      (alwaysLive || lifecycle !== null),
     cameraMoving,
     layoutMode !== "strip",
     getLayout,
