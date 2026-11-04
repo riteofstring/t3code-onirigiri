@@ -139,7 +139,7 @@ function usePaneContent(
         if (lifecycle?.isMoving()) {
           return;
         } else if (focused || visible) {
-          if (REST_DWELL_MS > 0) dwell = setTimeout(show, REST_DWELL_MS);
+          if (REST_DWELL_MS > 0 && !focused) dwell = setTimeout(show, REST_DWELL_MS);
           else show();
         }
         else
