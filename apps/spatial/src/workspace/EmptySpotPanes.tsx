@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { PanePlacement } from "./workspaceLayout";
 
 const DRAG_TOLERANCE_PX = 4;
-const SPOT_GAP_PX = 8;
-const IGNORED = 'button, a, input, textarea, select, [role="menu"], [role="dialog"], [data-onirigiri-slot="pane"]';
+const DEFAULT_GAP_PX = 8;
+const IGNORED =
+  'button, a, input, textarea, select, [role="menu"], [role="dialog"], [data-onirigiri-slot="pane"]';
 
 export interface EmptySpot {
   readonly ownerPaneId: string | null;
@@ -14,213 +15,174 @@ export interface EmptySpot {
   readonly top: number;
   readonly width: number;
   readonly height: number;
+  readonly visible: { readonly left: number; readonly top: number; readonly width: number; readonly height: number };
 }
 
-interface PaneBox {
+interface Placed {
   readonly id: string;
   readonly box: DOMRect;
   readonly plane: number;
   readonly slot: number;
 }
 
-const MIN_SPOT_PX = 48;
+interface Band {
+  readonly start: number;
+  readonly size: number;
+}
 
-function findSpot(
+function median(values: number[], fallback: number): number {
+  if (values.length === 0) return fallback;
+  const sorted = values.toSorted((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
+function bands(known: Map<number, Band>, from: number, to: number, gap: number): Map<number, Band> {
+  const indexes = [...known.keys()].toSorted((a, b) => a - b);
+  const size = median([...known.values()].map((band) => band.size), 0);
+  const result = new Map(known);
+  if (size <= 0) return result;
+  for (let index = indexes[0]! - 1; ; index -= 1) {
+    const next = result.get(index + 1)!;
+    const band = { start: next.start - gap - size, size };
+    if (band.start + band.size < from) break;
+    result.set(index, band);
+  }
+  for (let index = indexes[0]! + 1; ; index += 1) {
+    if (result.has(index)) continue;
+    const previous = result.get(index - 1)!;
+    const band = { start: previous.start + previous.size + gap, size };
+    if (band.start > to && index > indexes.at(-1)!) break;
+    result.set(index, band);
+  }
+  return result;
+}
+
+function emptyCells(
   stage: HTMLElement,
   layout: OnirigiriLayout | null,
   allowNewRows: boolean,
-  x: number,
-  y: number,
-): EmptySpot | null {
+  focusedPaneId: string | null,
+): EmptySpot[] {
   const world = stage.querySelector<HTMLElement>('[data-onirigiri-slot="stage"]');
-  if (!world || !layout) return null;
-  const bounds = world.getBoundingClientRect();
-  if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return null;
+  if (!world || !layout) return [];
+  const view = world.getBoundingClientRect();
   const located = new Map(
     layout.columns.flatMap((column) =>
       column.cells.flatMap((cell) =>
         cell.paneId === null
           ? []
-          : [[cell.paneId, { plane: column.planeIndex, slot: column.slotIndex ?? column.index }] as const],
+          : [
+              [
+                cell.paneId,
+                { plane: column.planeIndex, slot: column.slotIndex ?? column.index },
+              ] as const,
+            ],
       ),
     ),
   );
-  const panes: PaneBox[] = [];
+  const placed: Placed[] = [];
   for (const element of stage.querySelectorAll<HTMLElement>('[data-onirigiri-slot="pane"]')) {
     const id = element.dataset.onirigiriPaneId;
     const place = id ? located.get(id) : undefined;
-    if (!id || !place) continue;
-    const box = element.getBoundingClientRect();
-    if (box.right < bounds.left || box.left > bounds.right) continue;
-    if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return null;
-    panes.push({ id, box, ...place });
+    if (id && place) placed.push({ id, box: element.getBoundingClientRect(), ...place });
   }
-  if (panes.length === 0) return null;
-  const origin = stage.getBoundingClientRect();
-  const owner = (pane: PaneBox | undefined) =>
-    pane && !pane.id.startsWith("draft:") ? pane.id : null;
-  const spot = (
-    ownerPaneId: string | null,
-    placement: PanePlacement,
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-  ): EmptySpot | null =>
-    width < MIN_SPOT_PX || height < MIN_SPOT_PX
-      ? null
-      : {
-          ownerPaneId,
-          placement,
-          left: left - origin.left,
-          top: top - origin.top,
-          width,
-          height,
-        };
-
-  const row = panes
-    .filter((pane) => y >= pane.box.top && y <= pane.box.bottom)
-    .toSorted((a, b) => a.box.left - b.box.left);
-  if (row.length > 0) {
-    const plane = row[0]!.plane;
-    const before = row.filter((pane) => pane.box.right < x).at(-1);
-    const after = row.find((pane) => pane.box.left > x);
-    const reference = (before ?? after)!;
-    const { top, height, width } = reference.box;
-    if (before && after) {
-      const room = after.box.left - before.box.right - 2 * SPOT_GAP_PX;
-      return spot(
-        owner(before) ?? owner(after),
-        { plane, slot: before.slot + 1, newPlane: false },
-        before.box.right + SPOT_GAP_PX,
-        top,
-        Math.min(room, width),
-        height,
-      );
-    }
-    if (before)
-      return spot(
-        owner(before),
-        { plane, slot: before.slot + 1, newPlane: false },
-        before.box.right + SPOT_GAP_PX,
-        top,
-        width,
-        height,
-      );
-    return spot(
-      owner(after),
-      { plane, slot: after!.slot, newPlane: false },
-      after!.box.left - SPOT_GAP_PX - width,
-      top,
-      width,
-      height,
+  if (placed.length === 0) return [];
+  const slots = new Map<number, Band>();
+  const planes = new Map<number, { start: number; end: number }>();
+  for (const { box, plane, slot } of placed) {
+    if (!slots.has(slot)) slots.set(slot, { start: box.left, size: box.width });
+    const row = planes.get(plane);
+    planes.set(plane, {
+      start: Math.min(row?.start ?? box.top, box.top),
+      end: Math.max(row?.end ?? box.bottom, box.bottom),
+    });
+  }
+  const slotGap = median(
+    [...slots].flatMap(([slot, band]) => {
+      const next = slots.get(slot + 1);
+      return next ? [next.start - band.start - band.size] : [];
+    }),
+    DEFAULT_GAP_PX,
+  );
+  const rowGap = median(
+    [...planes].flatMap(([plane, band]) => {
+      const next = planes.get(plane + 1);
+      return next ? [next.start - band.end] : [];
+    }),
+    slotGap,
+  );
+  const columns = bands(slots, view.left, view.right, slotGap);
+  const rowHeight = median(
+    [...planes.values()].map((band) => band.end - band.start),
+    view.height,
+  );
+  const planeIndexes = [...planes.keys()].toSorted((a, b) => a - b);
+  const first = planeIndexes[0]!;
+  const last = planeIndexes.at(-1)!;
+  const rows = planeIndexes.map((plane) => ({
+    plane,
+    newPlane: false,
+    top: planes.get(plane)!.start,
+    height: planes.get(plane)!.end - planes.get(plane)!.start,
+  }));
+  if (allowNewRows) {
+    rows.push(
+      {
+        plane: first,
+        newPlane: true,
+        top: planes.get(first)!.start - rowGap - rowHeight,
+        height: rowHeight,
+      },
+      { plane: last + 1, newPlane: true, top: planes.get(last)!.end + rowGap, height: rowHeight },
     );
   }
-
-  if (!allowNewRows) return null;
-  const above = panes.filter((pane) => pane.box.bottom < y);
-  const below = panes.filter((pane) => pane.box.top > y);
-  const aboveBottom = above.length ? Math.max(...above.map((pane) => pane.box.bottom)) : null;
-  const belowTop = below.length ? Math.min(...below.map((pane) => pane.box.top)) : null;
-  const nearest = (belowTop !== null && (aboveBottom === null || belowTop - y < y - aboveBottom)
-    ? below.filter((pane) => pane.box.top === belowTop)
-    : above.filter((pane) => pane.box.bottom === aboveBottom)
-  ).toSorted((a, b) => Math.abs((a.box.left + a.box.right) / 2 - x) - Math.abs((b.box.left + b.box.right) / 2 - x));
-  const column = nearest[0];
-  if (!column) return null;
-  const height = column.box.height;
-  const plane =
-    belowTop !== null
-      ? below.find((pane) => pane.box.top === belowTop)!.plane
-      : above.find((pane) => pane.box.bottom === aboveBottom)!.plane + 1;
-  const top =
-    aboveBottom !== null
-      ? aboveBottom + SPOT_GAP_PX
-      : belowTop! - SPOT_GAP_PX - height;
-  const room = belowTop !== null && aboveBottom !== null ? belowTop - SPOT_GAP_PX - top : height;
-  return spot(
-    null,
-    { plane, slot: column.slot, newPlane: true },
-    column.box.left,
-    top,
-    column.box.width,
-    Math.min(room, height),
-  );
-}
-
-const PROBE_PX = 24;
-
-function gridSpots(
-  stage: HTMLElement,
-  layout: OnirigiriLayout | null,
-  allowNewRows: boolean,
-): EmptySpot[] {
-  const world = stage.querySelector<HTMLElement>('[data-onirigiri-slot="stage"]');
-  if (!world || !layout) return [];
-  const bounds = world.getBoundingClientRect();
-  const probes: [number, number][] = [];
-  for (const element of stage.querySelectorAll<HTMLElement>('[data-onirigiri-slot="pane"]')) {
-    const box = element.getBoundingClientRect();
-    if (box.right < bounds.left || box.left > bounds.right) continue;
-    const middleX = (box.left + box.right) / 2;
-    const middleY = (box.top + box.bottom) / 2;
-    probes.push([box.left - PROBE_PX, middleY], [box.right + PROBE_PX, middleY]);
-    if (allowNewRows) probes.push([middleX, box.top - PROBE_PX], [middleX, box.bottom + PROBE_PX]);
-  }
-  const seen = new Set<string>();
-  const spots: EmptySpot[] = [];
-  for (const [x, y] of probes) {
-    const found = findSpot(stage, layout, allowNewRows, x, y);
-    if (!found) continue;
-    const key = `${found.placement.newPlane}|${found.placement.plane}|${found.placement.slot}|${Math.round(found.left)}|${Math.round(found.top)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    spots.push(found);
-  }
-  return spots;
-}
-
-export function useGridSpots(
-  stage: HTMLElement | null,
-  enabled: boolean,
-  allowNewRows: boolean,
-  getLayout: () => OnirigiriLayout | null,
-  revision: unknown,
-): readonly EmptySpot[] {
-  const [spots, setSpots] = useState<readonly EmptySpot[]>([]);
-  const getLayoutRef = useRef(getLayout);
-  getLayoutRef.current = getLayout;
-  useEffect(() => {
-    if (!stage || !enabled) {
-      setSpots([]);
-      return;
+  const occupied = new Set(placed.map(({ plane, slot }) => `${plane}|${slot}`));
+  const nearestIn = (plane: number, slot: number) =>
+    placed
+      .filter((pane) => pane.plane === plane && !pane.id.startsWith("draft:"))
+      .toSorted((a, b) => Math.abs(a.slot - slot) - Math.abs(b.slot - slot))[0]?.id ?? null;
+  const origin = stage.getBoundingClientRect();
+  const cells: EmptySpot[] = [];
+  for (const row of rows) {
+    if (row.top + row.height < view.top || row.top > view.bottom) continue;
+    for (const [slot, column] of columns) {
+      if (column.start + column.size < view.left || column.start > view.right) continue;
+      if (!row.newPlane && occupied.has(`${row.plane}|${slot}`)) continue;
+      const left = Math.max(column.start, view.left);
+      const top = Math.max(row.top, view.top);
+      const right = Math.min(column.start + column.size, view.right);
+      const bottom = Math.min(row.top + row.height, view.bottom);
+      cells.push({
+        ownerPaneId: row.newPlane ? focusedPaneId : nearestIn(row.plane, slot),
+        placement: { plane: row.plane, slot, newPlane: row.newPlane },
+        left: column.start - origin.left,
+        top: row.top - origin.top,
+        width: column.size,
+        height: row.height,
+        visible: {
+          left: left - column.start,
+          top: top - row.top,
+          width: right - left,
+          height: bottom - top,
+        },
+      });
     }
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => setSpots(gridSpots(stage, getLayoutRef.current(), allowNewRows)));
-    });
-    const resize = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setSpots(gridSpots(stage, getLayoutRef.current(), allowNewRows)));
-    });
-    resize.observe(stage);
-    return () => {
-      cancelAnimationFrame(frame);
-      resize.disconnect();
-    };
-  }, [allowNewRows, enabled, revision, stage]);
-  return enabled ? spots : [];
+  }
+  return cells;
 }
 
-export function GridSpots({ spots, hovered }: { spots: readonly EmptySpot[]; hovered: EmptySpot | null }) {
-  return spots.map((spot) =>
-    hovered && hovered.left === spot.left && hovered.top === spot.top ? null : (
-      <div
-        key={`${spot.placement.newPlane}|${spot.placement.plane}|${spot.placement.slot}|${spot.left}|${spot.top}`}
-        aria-hidden="true"
-        className="pointer-events-none absolute z-10 rounded-lg border border-dashed border-foreground/[0.07]"
-        style={{ left: spot.left, top: spot.top, width: spot.width, height: spot.height }}
-      />
-    ),
+function cellAt(stage: HTMLElement, cells: readonly EmptySpot[], x: number, y: number) {
+  const origin = stage.getBoundingClientRect();
+  const localX = x - origin.left;
+  const localY = y - origin.top;
+  return (
+    cells.find(
+      (cell) =>
+        localX >= cell.left &&
+        localX <= cell.left + cell.width &&
+        localY >= cell.top &&
+        localY <= cell.top + cell.height,
+    ) ?? null
   );
 }
 
@@ -229,36 +191,48 @@ export function useEmptySpotPanes(
   enabled: boolean,
   allowNewRows: boolean,
   getLayout: () => OnirigiriLayout | null,
+  getFocusedPaneId: () => string | null,
+  revision: unknown,
   onAdd: (spot: EmptySpot) => void,
-): EmptySpot | null {
-  const [spot, setSpot] = useState<EmptySpot | null>(null);
-  const onAddRef = useRef(onAdd);
-  onAddRef.current = onAdd;
-  const getLayoutRef = useRef(getLayout);
-  getLayoutRef.current = getLayout;
+): { cells: readonly EmptySpot[]; hovered: EmptySpot | null } {
+  const [cells, setCells] = useState<readonly EmptySpot[]>([]);
+  const [hovered, setHovered] = useState<EmptySpot | null>(null);
+  const latest = useRef({ getLayout, getFocusedPaneId, onAdd });
+  latest.current = { getLayout, getFocusedPaneId, onAdd };
   useEffect(() => {
     if (!stage || !enabled) {
-      setSpot(null);
+      setCells([]);
+      setHovered(null);
       return;
     }
-    let frame: number | null = null;
+    let current: readonly EmptySpot[] = [];
+    const measure = () => {
+      current = emptyCells(
+        stage,
+        latest.current.getLayout(),
+        allowNewRows,
+        latest.current.getFocusedPaneId(),
+      );
+      setCells(current);
+    };
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(measure);
+    });
+    const resize = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+    resize.observe(stage);
     let down: { x: number; y: number } | null = null;
     const empty = (event: PointerEvent | MouseEvent) =>
       event.target instanceof Element && !event.target.closest(IGNORED);
-    const move = (event: PointerEvent) => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      const { clientX, clientY, buttons } = event;
-      const target = empty(event);
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        setSpot(
-          buttons === 0 && target
-            ? findSpot(stage, getLayoutRef.current(), allowNewRows, clientX, clientY)
-            : null,
-        );
-      });
-    };
-    const leave = () => setSpot(null);
+    const move = (event: PointerEvent) =>
+      setHovered(
+        event.buttons === 0 && empty(event)
+          ? cellAt(stage, current, event.clientX, event.clientY)
+          : null,
+      );
+    const leave = () => setHovered(null);
     const press = (event: PointerEvent) => {
       down = event.button === 0 && empty(event) ? { x: event.clientX, y: event.clientY } : null;
     };
@@ -276,37 +250,74 @@ export function useEmptySpotPanes(
         !empty(event)
       )
         return;
-      const found = findSpot(stage, getLayoutRef.current(), allowNewRows, event.clientX, event.clientY);
+      const found = cellAt(stage, current, event.clientX, event.clientY);
       if (!found) return;
-      setSpot(null);
-      onAddRef.current(found);
+      setHovered(null);
+      latest.current.onAdd(found);
     };
     stage.addEventListener("pointermove", move, { passive: true });
     stage.addEventListener("pointerleave", leave);
     stage.addEventListener("pointerdown", press, { capture: true });
     stage.addEventListener("click", click);
     return () => {
-      if (frame !== null) cancelAnimationFrame(frame);
+      cancelAnimationFrame(frame);
+      resize.disconnect();
       stage.removeEventListener("pointermove", move);
       stage.removeEventListener("pointerleave", leave);
       stage.removeEventListener("pointerdown", press, { capture: true });
       stage.removeEventListener("click", click);
     };
-  }, [allowNewRows, enabled, stage]);
-  return enabled ? spot : null;
+  }, [allowNewRows, enabled, revision, stage]);
+  return enabled ? { cells, hovered } : { cells: [], hovered: null };
 }
 
-export function EmptySpotOutline({ spot }: { spot: EmptySpot | null }) {
-  if (!spot) return null;
+export function EmptySpotGrid({
+  cells,
+  hovered,
+  showGrid,
+}: {
+  cells: readonly EmptySpot[];
+  hovered: EmptySpot | null;
+  showGrid: boolean;
+}) {
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute z-20 flex items-center justify-center rounded-lg border border-dashed border-foreground/15 text-foreground/30"
-      style={{ left: spot.left, top: spot.top, width: spot.width, height: spot.height }}
-    >
-      <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-      </svg>
-    </div>
+    <>
+      {showGrid
+        ? cells.map((cell) =>
+            cell === hovered ? null : (
+              <div
+                key={`${cell.placement.newPlane}|${cell.placement.plane}|${cell.placement.slot}`}
+                aria-hidden="true"
+                className="pointer-events-none absolute z-10 rounded-lg bg-black/[0.15]"
+                style={{ left: cell.left, top: cell.top, width: cell.width, height: cell.height }}
+              />
+            ),
+          )
+        : null}
+      {hovered ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute z-10 rounded-lg bg-black/[0.3] text-foreground/25"
+          style={{
+            left: hovered.left,
+            top: hovered.top,
+            width: hovered.width,
+            height: hovered.height,
+          }}
+        >
+          <div className="absolute flex items-center justify-center" style={hovered.visible}>
+            <svg
+              viewBox="0 0 24 24"
+              className="size-6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+            </svg>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

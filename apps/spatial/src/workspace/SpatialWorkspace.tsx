@@ -83,13 +83,7 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 import { DraftPane } from "./DraftPane";
-import {
-  EmptySpotOutline,
-  GridSpots,
-  useEmptySpotPanes,
-  useGridSpots,
-  type EmptySpot,
-} from "./EmptySpotPanes";
+import { EmptySpotGrid, useEmptySpotPanes, type EmptySpot } from "./EmptySpotPanes";
 
 import { installComposerNavigation } from "./composerNavigation";
 
@@ -1035,20 +1029,17 @@ function SpatialWorkspaceView({
     },
     [stageRef],
   );
-  const emptySpot = useEmptySpotPanes(
+  const getFocusedPaneId = useCallback(() => focusedPaneIdRef.current, []);
+  const emptySpots = useEmptySpotPanes(
     stageElement,
     active && !overview && !cameraMoving && maximizedPaneId === null,
     layoutMode !== "strip",
     getLayout,
+    getFocusedPaneId,
+    `${layoutRevision}|${panes?.length ?? 0}`,
     addPaneAt,
   );
-  const gridSpots = useGridSpots(
-    stageElement,
-    preferences.showGrid && active && !overview && !cameraMoving && maximizedPaneId === null,
-    layoutMode !== "strip",
-    getLayout,
-    `${layoutRevision}|${panes?.length ?? 0}|${focusedPaneIdRef.current}`,
-  );
+
 
   return (
     <WorkspaceTooltips>
@@ -1120,8 +1111,11 @@ function SpatialWorkspaceView({
             </PaneLifecycleContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
-        <GridSpots spots={gridSpots} hovered={emptySpot} />
-        <EmptySpotOutline spot={emptySpot} />
+        <EmptySpotGrid
+          cells={emptySpots.cells}
+          hovered={emptySpots.hovered}
+          showGrid={preferences.showGrid}
+        />
         <FullScreenBorder ref={fullScreenBorderRef} />
       </div>
     </WorkspaceTooltips>

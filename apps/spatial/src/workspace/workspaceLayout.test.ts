@@ -296,3 +296,26 @@ it("places a new pane before a row's first pane or in a new row", () => {
   expect(where(between)).toEqual({ a: [0, 0], b: [0, 1], new: [1, 0], c: [2, 0] });
   expect(() => assertOnirigiriLayout(between)).not.toThrow();
 });
+
+it("places a new pane in an empty grid cell without moving other panes", () => {
+  const panes = [pane("a", 0, 0), pane("b", 1, 0), pane("new", 0, 1)];
+  const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
+  const layout = serializeWorkspaceLayout(scene, cursor);
+  const where = (next: typeof layout) =>
+    Object.fromEntries(
+      next.columns.map((column) => [
+        column.cells[0]!.paneId,
+        [column.planeIndex, column.slotIndex ?? column.index],
+      ]),
+    );
+  expect(where(placePane(layout, "new", { plane: 1, slot: 3, newPlane: false }))).toEqual({
+    a: [0, 0],
+    b: [1, 0],
+    new: [1, 3],
+  });
+  expect(where(placePane(layout, "new", { plane: 1, slot: -1, newPlane: false }))).toEqual({
+    a: [0, 1],
+    b: [1, 1],
+    new: [1, 0],
+  });
+});

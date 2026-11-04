@@ -175,22 +175,28 @@ export function placePane(
           ? slot(column) - 1
           : slot(column),
     }));
+  const offset = Math.max(0, -placement.slot);
+  const target = placement.slot + offset;
+  const occupied = rest.some(
+    (column) => column.planeIndex === placement.plane && slot(column) + offset === target,
+  );
   const shifted = rest.map((column) => {
+    const moved = { ...column, slotIndex: slot(column) + offset };
     if (placement.newPlane)
-      return column.planeIndex >= placement.plane
-        ? { ...column, planeIndex: column.planeIndex + 1 }
-        : column;
-    return column.planeIndex === placement.plane && slot(column) >= placement.slot
-      ? { ...column, slotIndex: slot(column) + 1 }
-      : column;
+      return moved.planeIndex >= placement.plane
+        ? { ...moved, planeIndex: moved.planeIndex + 1 }
+        : moved;
+    return occupied && moved.planeIndex === placement.plane && moved.slotIndex >= target
+      ? { ...moved, slotIndex: moved.slotIndex + 1 }
+      : moved;
   });
-  const placed = { ...moving, planeIndex: placement.plane, slotIndex: placement.slot };
+  const placed = { ...moving, planeIndex: placement.plane, slotIndex: target };
   const columns = [...shifted, placed]
     .toSorted((a, b) => a.planeIndex - b.planeIndex || slot(a) - slot(b))
     .map((column, index) => ({ ...column, index }));
   return {
     ...layout,
     columns,
-    cursor: { column: placement.slot, row: placement.plane, split: 0 },
+    cursor: { column: target, row: placement.plane, split: 0 },
   };
 }
