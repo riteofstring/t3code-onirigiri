@@ -95,10 +95,7 @@ const PaneRouter = memo(function PaneRouter({
   );
 });
 
-const REST_DWELL_MS =
-  typeof window === "undefined"
-    ? 0
-    : Number(new URLSearchParams(window.location.search).get("restDwell")) || 0;
+const NEIGHBOUR_MOUNT_DELAY_MS = 300;
 
 function usePaneContent(
   paneId: string,
@@ -139,8 +136,8 @@ function usePaneContent(
         if (lifecycle?.isMoving()) {
           return;
         } else if (focused || visible) {
-          if (REST_DWELL_MS > 0 && !focused) dwell = setTimeout(show, REST_DWELL_MS);
-          else show();
+          if (focused) show();
+          else dwell = setTimeout(show, NEIGHBOUR_MOUNT_DELAY_MS);
         }
         else
           idle = requestIdleCallback((deadline) => {
