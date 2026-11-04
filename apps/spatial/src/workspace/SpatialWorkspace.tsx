@@ -81,6 +81,7 @@ import {
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
 import { DraftPane } from "./DraftPane";
+import { EmptySpotOutline, useEmptySpotPanes } from "./EmptySpotPanes";
 
 import { installComposerNavigation } from "./composerNavigation";
 
@@ -986,11 +987,25 @@ function SpatialWorkspaceView({
     [hasMoved, pictureFor, pictureUrl, preparedPictureUrl],
   );
 
+  const [stageElement, setStageElement] = useState<HTMLElement | null>(null);
+  const attachStage = useCallback(
+    (element: HTMLDivElement | null) => {
+      stageRef(element);
+      setStageElement(element);
+    },
+    [stageRef],
+  );
+  const emptySpot = useEmptySpotPanes(
+    stageElement,
+    active && !overview && !cameraMoving && maximizedPaneId === null,
+    addPaneBeside,
+  );
+
   return (
     <WorkspaceTooltips>
       <LinkPullRequestDialogHost />
       <div
-        ref={stageRef}
+        ref={attachStage}
         inert={!active}
         className="spatial-workspace relative flex h-full w-full flex-col"
         data-spatial-navigation-bar={String(preferences.navigationBar)}
@@ -1056,6 +1071,7 @@ function SpatialWorkspaceView({
             </PaneLifecycleContext>
           </SpatialWorkspaceActiveContext>
         ) : null}
+        <EmptySpotOutline spot={emptySpot} />
         <FullScreenBorder ref={fullScreenBorderRef} />
       </div>
     </WorkspaceTooltips>
