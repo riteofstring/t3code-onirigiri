@@ -98,6 +98,12 @@ export function usePanePictureTheme(): string {
   return `${themeHalves?.[resolvedTheme] ?? theme}|${resolvedTheme}|${fonts}`;
 }
 
+function onScreen(element: HTMLElement): boolean {
+  const box = element.getBoundingClientRect();
+  const view = element.ownerDocument.defaultView!;
+  return box.right > 0 && box.bottom > 0 && box.left < view.innerWidth && box.top < view.innerHeight;
+}
+
 export function markPaneSynced(
   paneId: string,
   content: PaneContentRevision | null,
@@ -553,6 +559,7 @@ export function useSavedPanePictures(
           visualRevision(paneId) === beforeVisualRevision &&
           content !== undefined &&
           paneHasCommittedContent(paneId, content, beforeVisualRevision) &&
+          !onScreen(element) &&
           canStart()
         );
       };
