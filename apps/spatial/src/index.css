@@ -366,14 +366,18 @@
   --onirigiri-focus-outline-offset: 1px;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="thread"] > .onirigiri-pane__titlebar {
+.spatial-workspace
+  :is([data-onirigiri-surface-kind="thread"], [data-onirigiri-surface-kind="draft"])
+  > .onirigiri-pane__titlebar {
   position: absolute;
   inset-block-start: 0;
   inset-inline: 0;
 }
 
 .spatial-workspace
-  [data-onirigiri-surface-kind="thread"]:not([data-presentation-mode="overview"])
+  :is([data-onirigiri-surface-kind="thread"], [data-onirigiri-surface-kind="draft"]):not(
+    [data-presentation-mode="overview"]
+  )
   > .onirigiri-pane__titlebar {
   display: none;
 }

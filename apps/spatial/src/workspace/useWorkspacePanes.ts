@@ -5,7 +5,8 @@ import {
   type LiveWorkspace,
   type WorkspaceLayout,
 } from "@riteofstring/onirigiri-t3";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { DraftId } from "@t3tools/web/src/composerDraftStore";
 import { useMemo, useState } from "react";
 
 import { sortLogicalProjectsForSidebar } from "@t3tools/web/src/components/Sidebar.logic";
@@ -31,7 +32,18 @@ export interface ThreadPaneData {
   readonly threadId: ThreadId;
 }
 
+export interface WorkspaceDraft {
+  readonly draftId: DraftId;
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly threadId: ThreadId;
+}
+
 export type WorkspaceLayoutMode = "rows" | "strip";
+
+export function draftPaneId(draftId: string) {
+  return `draft:${draftId}`;
+}
 
 export function threadPaneId(environmentId: string, threadId: string) {
   return `thread:${environmentId}:${threadId}`;
@@ -75,6 +87,7 @@ export function useWorkspacePanes(
   layoutMode: WorkspaceLayoutMode,
   toolPanes: readonly ToolPane[],
   dismissedPaneIds: ReadonlySet<string>,
+  drafts: readonly WorkspaceDraft[] = [],
 ): readonly OnirigiriPaneDefinition[] | null {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const catalogReady = useAtomValue(environmentCatalog.catalogValueAtom).isReady;
@@ -144,10 +157,37 @@ export function useWorkspacePanes(
       const key = scopedKey(tool.environmentId, tool.threadId);
       toolPanesByThread.set(key, [...(toolPanesByThread.get(key) ?? []), tool]);
     }
-    const rows = layout.rows
-      .filter((row) => row.panes.length > 0)
-      .map((row) =>
-        row.panes.flatMap((pane) => {
+    const draftPanes = new Map<string, OnirigiriPaneDefinition[]>();
+    for (const draft of drafts) {
+      const projectKey =
+        groups.find((group) =>
+          group.memberProjectRefs.some(
+            (ref) => ref.environmentId === draft.environmentId && ref.projectId === draft.projectId,
+          ),
+        )?.projectKey ?? `draft-project:${draft.environmentId}:${draft.projectId}`;
+      const paneId = draftPaneId(draft.draftId);
+      draftPanes.set(projectKey, [
+        ...(draftPanes.get(projectKey) ?? []),
+        {
+          paneId,
+          surfaceId: `surface:${paneId}`,
+          surfaceKind: "draft",
+          title: "New thread",
+          subtitle: titleByGroup.get(projectKey) ?? "",
+          data: draft,
+        },
+      ]);
+    }
+    const rowProjects = new Set(layout.rows.map((row) => row.projectId));
+    const rows = [
+      ...layout.rows,
+      ...[...draftPanes.keys()]
+        .filter((projectId) => !rowProjects.has(projectId))
+        .map((projectId) => ({ projectId, panes: [] })),
+    ]
+      .map((row) => [
+        ...(draftPanes.get(row.projectId) ?? []),
+        ...row.panes.flatMap((pane) => {
           const thread = threadByKey.get(pane.threadId);
           if (!thread) return [];
           const data: ThreadPaneData = { environmentId: thread.environmentId, threadId: thread.id };
@@ -166,14 +206,14 @@ export function useWorkspacePanes(
             ...added.map((tool) => toolPaneDefinition(tool, thread.title)),
           ];
         }),
-      )
+      ])
       .filter((row) => row.length > 0);
     const planes = layoutMode === "strip" ? [rows.flat()] : rows;
     const panes = planes.flatMap((plane, planeIndex) =>
       plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
     );
     return panes;
-  }, [arrangement.layout, dismissedPaneIds, groups, layoutMode, threads, toolPanes]);
+  }, [arrangement.layout, dismissedPaneIds, drafts, groups, layoutMode, threads, toolPanes]);
 }
 
 const TOOL_TITLES: Record<ToolPane["kind"], string> = {

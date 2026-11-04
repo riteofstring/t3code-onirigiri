@@ -42,6 +42,8 @@ import {
 } from "@t3tools/web/src/browser/browserSurfaceProjection";
 import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
+import { useComposerDraftStore, type DraftId } from "@t3tools/web/src/composerDraftStore";
+import { useThreadShells } from "@t3tools/web/src/state/entities";
 
 import { ToolPaneView } from "./ToolPaneView";
 import { SpatialSurfaceHost } from "./SpatialSurfaceHost";
@@ -71,11 +73,14 @@ import { FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
 import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
+  draftPaneId,
   threadPaneId,
   useWorkspacePanes,
   type ThreadPaneData,
+  type WorkspaceDraft,
   type WorkspaceLayoutMode,
 } from "./useWorkspacePanes";
+import { DraftPane } from "./DraftPane";
 
 import { installComposerNavigation } from "./composerNavigation";
 
@@ -182,7 +187,42 @@ function SpatialWorkspaceView({
     [],
   );
   const [dismissedPaneIds, setDismissedPaneIds] = useState<ReadonlySet<string>>(() => new Set());
-  const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds);
+  const [draftIds, setDraftIds] = useState<readonly DraftId[]>([]);
+  const targetDraftId = target?.kind === "draft" ? target.draftId : null;
+  if (targetDraftId !== null && !draftIds.includes(targetDraftId))
+    setDraftIds([...draftIds, targetDraftId]);
+  const draftKey = useComposerDraftStore((store) =>
+    JSON.stringify(
+      draftIds.flatMap((draftId) => {
+        const draft = store.getDraftThread(draftId);
+        return draft
+          ? [
+              {
+                draftId,
+                environmentId: draft.environmentId,
+                projectId: draft.projectId,
+                threadId: draft.promotedTo?.threadId ?? draft.threadId,
+                promoted: Boolean(draft.promotedTo),
+              },
+            ]
+          : [];
+      }),
+    ),
+  );
+  const threadShells = useThreadShells();
+  const drafts = useMemo(() => {
+    const shown = new Set(
+      threadShells.map((thread) => threadPaneId(thread.environmentId, thread.id)),
+    );
+    return (JSON.parse(draftKey) as (WorkspaceDraft & { promoted: boolean })[]).flatMap(
+      ({ promoted, ...draft }) =>
+        dismissedPaneIds.has(draftPaneId(draft.draftId)) ||
+        (promoted && shown.has(threadPaneId(draft.environmentId, draft.threadId)))
+          ? []
+          : [draft],
+    );
+  }, [dismissedPaneIds, draftKey, threadShells]);
+  const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds, drafts);
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const [preferences, updatePreferences] = useWorkspacePreferences();
@@ -347,6 +387,7 @@ function SpatialWorkspaceView({
   const paneData = useMemo(() => {
     const byPaneId = new Map<string, ThreadPaneData>();
     for (const pane of panes ?? []) {
+      if (pane.surfaceKind === "draft") continue;
       const data = pane.data as ThreadPaneData;
       byPaneId.set(threadPaneId(data.environmentId, data.threadId), data);
     }
@@ -391,7 +432,9 @@ function SpatialWorkspaceView({
   const routePaneId =
     target?.kind === "server"
       ? threadPaneId(target.threadRef.environmentId, target.threadRef.threadId)
-      : null;
+      : target?.kind === "draft"
+        ? draftPaneId(target.draftId)
+        : null;
 
   if (!alwaysLive && lifecycle === null && initialLayout !== null) {
     setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
@@ -530,6 +573,25 @@ function SpatialWorkspaceView({
       const tool = getPanes().find((pane) => pane.paneId === paneId);
       const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
       if (pendingNavigationPaneRef.current !== routeTarget) pendingNavigationPaneRef.current = null;
+      if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
+      routeTimerRef.current = null;
+      pendingRouteRef.current = null;
+      if (paneId.startsWith("draft:")) {
+        lifecycle?.setFocus(null);
+        useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
+        if (paneId === routePaneIdRef.current) return;
+        const draftId = paneId.slice("draft:".length);
+        const followDraft = () => {
+          routeTimerRef.current = null;
+          pendingRouteRef.current = null;
+          if (focusedPaneIdRef.current !== paneId) return;
+          requestedRoutesRef.current.add(paneId);
+          void router.navigate({ to: "/draft/$draftId", params: { draftId } });
+        };
+        pendingRouteRef.current = followDraft;
+        routeTimerRef.current = setTimeout(followDraft, ROUTE_SETTLE_MS);
+        return;
+      }
       const data = paneData.get(routeTarget);
       if (!data) return;
       useWorkspaceFocusedThreadStore
@@ -701,8 +763,26 @@ function SpatialWorkspaceView({
     async (pane: WorkspacePane) => {
       const tool = toolController.getPanes().find((candidate) => candidate.paneId === pane.paneId);
       if (!tool) {
-        if (pane.surfaceKind !== "thread") return false;
+        if (pane.surfaceKind !== "thread" && pane.surfaceKind !== "draft") return false;
         setDismissedPaneIds((current) => new Set([...current, pane.paneId]));
+        if (pane.surfaceKind === "draft" && routePaneIdRef.current === pane.paneId)
+          setTimeout(() => {
+            const focused = workspaceRef.current?.getSnapshot().focusedPaneId;
+            const owner =
+              toolController.getPanes().find((candidate) => candidate.paneId === focused) ??
+              (panesRef.current?.find(
+                (candidate) => candidate.paneId === focused && candidate.surfaceKind === "thread",
+              )?.data as ThreadPaneData | undefined);
+            if (!owner) {
+              void router.navigate({ to: "/" });
+              return;
+            }
+            requestedRoutesRef.current.add(threadPaneId(owner.environmentId, owner.threadId));
+            void router.navigate({
+              to: "/$environmentId/$threadId",
+              params: { environmentId: owner.environmentId, threadId: owner.threadId },
+            });
+          });
         return false;
       }
       if (isPaneClosing(tool.paneId)) return false;
@@ -758,7 +838,7 @@ function SpatialWorkspaceView({
         setClosingToolPanes(new Set(closingToolPanesRef.current));
       }
     },
-    [closePreview, closeTerminal, isPaneClosing, remove, toolController],
+    [closePreview, closeTerminal, isPaneClosing, remove, router, toolController],
   );
 
   const navigateFromTerminal = useCallback<OnirigiriWorkspaceHandle["focus"]>(
@@ -794,6 +874,26 @@ function SpatialWorkspaceView({
           <div className="p-6 text-sm text-muted-foreground">
             Choose a chat in the sidebar to reopen it.
           </div>
+        );
+      }
+      if (pane.surfaceKind === "draft") {
+        return (
+          <SpatialSurfaceHost
+            controller={toolController}
+            paneId={pane.paneId}
+            focusPane={focusSurfacePane}
+            isPaneClosing={isPaneClosing}
+          >
+            <DraftPane
+              draftId={(pane.data as WorkspaceDraft).draftId}
+              paneId={pane.paneId}
+              maximized={state.maximized}
+              onNavigateAway={navigateAway}
+              onAddPane={addPaneBeside}
+              onClosePane={closeChatPane}
+              onToggleMaximized={togglePaneMaximized}
+            />
+          </SpatialSurfaceHost>
         );
       }
       const tool =
