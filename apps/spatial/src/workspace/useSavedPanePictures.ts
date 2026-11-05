@@ -511,7 +511,9 @@ export function useSavedPanePictures(
     (pane, { phase, visible, maximized }) => {
       if (!enabled || maximized) return "dom";
       if (pane.surfaceKind !== "thread")
-        return otherPanePictures && phase !== "rest" ? { kind: "texture" } : "dom";
+        return otherPanePictures && (phase === "motion" || phase === "resize")
+          ? { kind: "texture" }
+          : "dom";
       if (
         visible &&
         (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
