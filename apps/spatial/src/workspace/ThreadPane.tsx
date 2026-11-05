@@ -127,10 +127,10 @@ function usePaneContent(
   const statusReady = status === "live" || status === "cached" || status === "deleted";
   const [waitedForStatus, setWaitedForStatus] = useState(false);
   useEffect(() => {
-    if (!mounted || statusReady || waitedForStatus) return;
+    if (!mounted || !visible || statusReady || waitedForStatus) return;
     const timer = setTimeout(() => setWaitedForStatus(true), STATUS_WAIT_MS);
     return () => clearTimeout(timer);
-  }, [mounted, statusReady, waitedForStatus]);
+  }, [mounted, statusReady, visible, waitedForStatus]);
   const contentAvailable = focused || statusReady || waitedForStatus;
   useEffect(() => {
     if (!mounted) setContentMounted(false);
