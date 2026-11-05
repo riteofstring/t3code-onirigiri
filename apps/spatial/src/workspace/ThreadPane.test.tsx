@@ -729,6 +729,28 @@ it("keeps the current picture when only input caret visibility changes", async (
   expect(requestSnapshot).toHaveBeenCalled();
 });
 
+it("keeps the current picture when the composer only renames hidden inputs or settles menu state", async () => {
+  live();
+  state.interactive = true;
+  await render(true);
+  const editor = container.querySelector("textarea")!;
+  const hidden = document.createElement("input");
+  hidden.className = "hidden";
+  const trigger = document.createElement("button");
+  await act(async () => editor.parentElement!.append(hidden, trigger));
+  requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
+  await act(async () => hidden.setAttribute("name", ""));
+  await act(async () => hidden.setAttribute("value", "model"));
+  await act(async () => trigger.setAttribute("aria-expanded", "false"));
+  await act(async () => editor.setAttribute("name", "message"));
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  await act(async () => trigger.setAttribute("aria-expanded", "true"));
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
+});
+
 it("refreshes a scrolled descendant at rest without predicting its keydown", async () => {
   live();
   state.interactive = true;

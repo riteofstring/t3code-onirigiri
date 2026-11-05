@@ -545,6 +545,13 @@ const PaneBody = memo(function PaneBody({
           );
         if (type !== "attributes" || !(target instanceof Element) || attributeName === null)
           return true;
+        if (attributeName === "name" || target.matches('[hidden], .hidden, input[type="hidden"]'))
+          return false;
+        if (
+          attributeName === "aria-expanded" &&
+          (oldValue ?? "false") === (target.getAttribute(attributeName) ?? "false")
+        )
+          return false;
         let seen = attributes.get(target);
         if (!seen) attributes.set(target, (seen = new Set()));
         if (seen.has(attributeName)) return false;
