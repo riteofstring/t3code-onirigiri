@@ -993,6 +993,27 @@ it.each([
   },
 );
 
+it("shows the stored picture until the chat mounts instead of an empty pane", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  live();
+  snapshots.timelinePicture = () => ({ url: "blob:stored", width: 800, height: 600 });
+  vi.stubGlobal("requestIdleCallback", () => 99);
+  lifecycle.setMoving(true);
+  await render(false, false, true);
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(container.querySelector('img[src="blob:stored"]')).not.toBeNull();
+  await act(() => lifecycle!.setMoving(false));
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(container.querySelector("textarea")).not.toBeNull();
+  expect(
+    [...container.querySelectorAll('img[src="blob:stored"]')].filter((image) =>
+      image.parentElement?.parentElement?.classList.contains("spatial-thread-pane"),
+    ),
+  ).toHaveLength(0);
+});
+
 it("cancels an offscreen content mount if motion starts before its idle callback", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");

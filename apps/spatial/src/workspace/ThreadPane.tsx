@@ -383,6 +383,7 @@ const PaneBody = memo(function PaneBody({
     [deferred, paneId, pictureLeaving, preparing],
   );
   const activity = usePaneActivity(active, liveVisible, contentRef);
+  const storedPicture = mounted ? null : (snapshots?.timelinePicture(paneId)?.url ?? null);
 
   const focusOnArrival = useRef(false);
   const arrivalText = useRef("");
@@ -674,6 +675,9 @@ const PaneBody = memo(function PaneBody({
               mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined
             }
           >
+            {storedPicture ? (
+              <TimelinePicture key={storedPicture} paneId={paneId} leaving={false} />
+            ) : null}
             <ChatViewHostContext value={lifecycle ? host : null}>
               <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
                 {mounted ? (
