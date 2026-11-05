@@ -230,7 +230,7 @@ function usePaneContent(
 
   return {
     mounted: renderContent,
-    preparing: renderContent && !prepared,
+    preparing: renderContent && !presented,
     onContentReadyChange: setViewReady,
     picturable:
       prepared &&

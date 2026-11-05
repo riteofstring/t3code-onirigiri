@@ -502,7 +502,7 @@ it("waits for the displayed sync row to clear before revealing or capturing the 
   expect(requestSnapshot).toHaveBeenCalledOnce();
 });
 
-it("retains the editor while a reconnect delays readiness and cancels the pending reveal", async () => {
+it("keeps shown content and the editor through a reconnect without taking pictures", async () => {
   live();
   await render(true);
   const editor = container.querySelector("textarea")!;
@@ -512,7 +512,7 @@ it("retains the editor while a reconnect delays readiness and cancels the pendin
 
   state.status = "synchronizing";
   await render(true);
-  expect(container.querySelector("[data-spatial-preparing]")).not.toBeNull();
+  expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
   state.status = "live";
   await render(true, false);
   state.status = "synchronizing";
