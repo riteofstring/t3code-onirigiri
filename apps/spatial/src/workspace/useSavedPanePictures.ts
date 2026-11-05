@@ -508,10 +508,12 @@ export function useSavedPanePictures(
     [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
-    (pane, { phase, visible, maximized }) => {
+    (pane, { phase, visible, maximized, capabilities }) => {
       if (!enabled || maximized) return "dom";
       if (pane.surfaceKind !== "thread")
-        return otherPanePictures && (phase === "motion" || phase === "resize")
+        return otherPanePictures &&
+          capabilities.canCapture === true &&
+          (phase === "motion" || phase === "resize")
           ? { kind: "texture" }
           : "dom";
       if (
@@ -698,7 +700,7 @@ export function useSavedPanePictures(
       },
       request: (paneId, element) => {
         if (!enabled) return visualRevision(paneId);
-        snapshots.request(paneId, element);
+        if (!onScreen(element)) snapshots.request(paneId, element);
         return visualRevision(paneId);
       },
     }),

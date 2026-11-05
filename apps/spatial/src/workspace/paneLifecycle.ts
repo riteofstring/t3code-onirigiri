@@ -94,8 +94,8 @@ export function createPaneLifecycleStore(
     idle = null;
   };
   const retained = () => {
+    if (!focused) return new Set([...visible].filter((id) => !hasPicture(id)));
     const ids = new Set(visible);
-    if (!focused) return ids;
     ids.add(focused);
     if (keepNeighbours)
       for (const id of panes.keys()) if ([1, 1000].includes(distance(id))) ids.add(id);

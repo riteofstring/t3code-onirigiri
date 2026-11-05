@@ -269,3 +269,14 @@ it("does not wait for a pending composer that leaves the destination", () => {
   vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p0")).toBe(false);
 });
+
+it("mounts only visible chats without a current picture while overview has no focus", () => {
+  const store = make();
+  store.setPictures((id) => id !== "p26");
+  store.setFocus(null);
+  for (const id of ["p25", "p26", "p27"]) store.setVisible(id, true);
+  vi.advanceTimersByTime(600);
+  expect(store.isMounted("p26")).toBe(true);
+  expect(store.isMounted("p25")).toBe(false);
+  expect(store.isMounted("p27")).toBe(false);
+});
