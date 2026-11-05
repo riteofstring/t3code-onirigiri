@@ -6,6 +6,7 @@ import type { PanePlacement } from "./workspaceLayout";
 
 const DRAG_TOLERANCE_PX = 4;
 const DEFAULT_GAP_PX = 8;
+const MEASURE_SETTLE_MS = 150;
 
 export interface EmptySpot {
   readonly key: string;
@@ -260,16 +261,14 @@ export function useEmptySpots(
           defaultRowHeight,
         ),
       );
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(measure);
-    });
+    let timer = setTimeout(measure, MEASURE_SETTLE_MS);
     const resize = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
+      clearTimeout(timer);
+      timer = setTimeout(measure, MEASURE_SETTLE_MS);
     });
     resize.observe(stage);
     return () => {
-      cancelAnimationFrame(frame);
+      clearTimeout(timer);
       resize.disconnect();
     };
   }, [allowNewRows, defaultRowHeight, enabled, moving, revision, stage]);
