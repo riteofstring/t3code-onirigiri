@@ -288,11 +288,15 @@ export function EmptySpotGrid({
 }) {
   const press = useRef<{ x: number; y: number } | null>(null);
   if (!container) return null;
-  const track = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const box = event.currentTarget.getBoundingClientRect();
-    const scale = box.width / event.currentTarget.offsetWidth || 1;
-    event.currentTarget.style.setProperty("--spot-x", `${(event.clientX - box.left) / scale}px`);
-    event.currentTarget.style.setProperty("--spot-y", `${(event.clientY - box.top) / scale}px`);
+  const centre = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const cell = event.currentTarget;
+    const box = cell.getBoundingClientRect();
+    const view = cell.closest('[data-onirigiri-slot="stage"]')?.getBoundingClientRect() ?? box;
+    const scale = box.width / cell.offsetWidth || 1;
+    const x = (Math.max(box.left, view.left) + Math.min(box.right, view.right)) / 2;
+    const y = (Math.max(box.top, view.top) + Math.min(box.bottom, view.bottom)) / 2;
+    cell.style.setProperty("--spot-x", `${(x - box.left) / scale}px`);
+    cell.style.setProperty("--spot-y", `${(y - box.top) / scale}px`);
   };
   return createPortal(
     cells.map((cell) => (
@@ -306,8 +310,7 @@ export function EmptySpotGrid({
           width: cell.width,
           height: cell.height,
         }}
-        onPointerEnter={track}
-        onPointerMove={track}
+        onPointerEnter={centre}
         onPointerDown={(event) => {
           press.current =
             event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
@@ -328,9 +331,7 @@ export function EmptySpotGrid({
           onAdd(cell);
         }}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-        </svg>
+        <span className="spatial-empty-cell__label">New pane</span>
       </div>
     )),
     container,
