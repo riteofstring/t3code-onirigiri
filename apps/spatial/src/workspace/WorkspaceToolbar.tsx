@@ -313,6 +313,27 @@ export function WorkspaceToolbar({
               </svg>
             </Button>
             <Button
+              aria-label={preferences.focusOnClick ? "Keep focus on click" : "Focus pane on click"}
+              aria-pressed={preferences.focusOnClick}
+              tooltip={
+                preferences.focusOnClick
+                  ? "Clicking a pane focuses it and brings it into view"
+                  : "Clicking a pane leaves the focus ring and view where they are"
+              }
+              onClick={() => onPreferencesChange({ focusOnClick: !preferences.focusOnClick })}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                <path d="M7 6l4 2.5-1.8.5-.7 1.8z" strokeLinejoin="round" />
+              </svg>
+            </Button>
+            <Button
               aria-label={preferences.showGrid ? "Hide grid" : "Show grid"}
               aria-pressed={preferences.showGrid}
               tooltip={

@@ -399,6 +399,7 @@
   inset: 0 auto auto 0;
   border-radius: var(--onirigiri-pane-radius, 12px);
   color: var(--spatial-cell-mark);
+  cursor: pointer;
   pointer-events: auto;
   animation: spatial-empty-cell-in 160ms ease-out;
 }

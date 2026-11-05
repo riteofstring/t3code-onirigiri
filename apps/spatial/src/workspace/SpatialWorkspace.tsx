@@ -483,12 +483,13 @@ function SpatialWorkspaceView({
         row: focused?.planeIndex ?? 0,
         split: 0,
       });
-      const reconciled = reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId);
-      const placement = added ? pendingPlacementRef.current.get(added) : undefined;
-      if (added) pendingPlacementRef.current.delete(added);
-      workspace.restoreLayout(placement ? placePane(reconciled, added!, placement) : reconciled, {
-        keepPresentation: true,
-      });
+      let next = reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId);
+      for (const [paneId, placement] of pendingPlacementRef.current) {
+        if (!panes.some((pane) => pane.paneId === paneId)) continue;
+        pendingPlacementRef.current.delete(paneId);
+        next = placePane(next, paneId, placement, focused?.paneId ?? paneId);
+      }
+      workspace.restoreLayout(next, { keepPresentation: true });
       if (added && workspace.getSnapshot().presentationMode === "overview") {
         workspace.focusPane(added, { exitOverview: true });
       }
@@ -768,7 +769,6 @@ function SpatialWorkspaceView({
         resolved.after,
       );
       pendingPlacementRef.current.set(paneId, spot.placement);
-      pendingFocusPaneIdRef.current = paneId;
     },
     [addEmpty, getPanes],
   );
@@ -1106,6 +1106,7 @@ function SpatialWorkspaceView({
                     renderPane={renderPane}
                     renderPanePlaceholder={renderPanePlaceholder}
                     restPictureFade={!alwaysLive}
+                    focusPaneOnPointer={preferences.focusOnClick}
                     shortcutScope={active ? "application" : "workspace"}
                     shortcuts={SHORTCUTS}
                     workspaceId={WORKSPACE_ID}

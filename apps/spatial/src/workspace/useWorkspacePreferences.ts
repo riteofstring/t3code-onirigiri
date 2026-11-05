@@ -34,6 +34,7 @@ export interface WorkspacePreferences {
   navigationBar: boolean;
   maximizeAll: boolean;
   showGrid: boolean;
+  focusOnClick: boolean;
 }
 
 const defaults: WorkspacePreferences = {
@@ -42,6 +43,7 @@ const defaults: WorkspacePreferences = {
   navigationBar: false,
   maximizeAll: false,
   showGrid: true,
+  focusOnClick: false,
 };
 
 function readPreferences(): WorkspacePreferences {
@@ -53,6 +55,7 @@ function readPreferences(): WorkspacePreferences {
     const navigationBar = "navigationBar" in value ? value.navigationBar : null;
     const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
     const showGrid = "showGrid" in value ? value.showGrid : null;
+    const focusOnClick = "focusOnClick" in value ? value.focusOnClick : null;
     return {
       overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
@@ -62,6 +65,7 @@ function readPreferences(): WorkspacePreferences {
       navigationBar: navigationBar === true,
       maximizeAll: maximizeAll === true,
       showGrid: showGrid !== false,
+      focusOnClick: focusOnClick === true,
     };
   } catch {
     return defaults;
