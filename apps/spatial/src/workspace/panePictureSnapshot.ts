@@ -31,10 +31,13 @@ export async function snapshotPanePicture(
   if (!(await waitToDraw()) || signal.aborted || !canSnapshot()) return null;
   const host = element.closest<HTMLElement>(".onirigiri-pane__live-content");
   if (host) host.dataset.spatialSnapshot = "";
-  try {
-    const picture = await captureOnirigiriPanePicture(element, signal);
-    return !signal.aborted && element.isConnected && canSnapshot() ? picture : null;
-  } finally {
+  const recorded = () => {
     if (host) delete host.dataset.spatialSnapshot;
+  };
+  try {
+    const picture = await captureOnirigiriPanePicture(element, signal, recorded);
+    return element.isConnected ? picture : null;
+  } finally {
+    recorded();
   }
 }

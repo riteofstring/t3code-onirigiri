@@ -48,7 +48,7 @@ it("passes the original edited and scrolled DOM to native capture without clonin
       signal,
     ),
   ).toEqual(picture);
-  expect(native).toHaveBeenCalledWith(element, signal);
+  expect(native).toHaveBeenCalledWith(element, signal, expect.any(Function));
   expect(element.firstElementChild!.textContent).toBe("draft");
   expect(element.lastElementChild!.scrollTop).toBe(150);
   expect(clone).not.toHaveBeenCalled();
@@ -64,7 +64,7 @@ it("leaves unsupported capture without substitute pixels", async () => {
   ).toBeNull();
 });
 it.each(["revision", "abort", "detach"])(
-  "discards a completed capture after %s",
+  "returns a completed capture to the caller after %s unless the pane detached",
   async (change) => {
     const element = pane();
     let finish!: (value: typeof picture) => void;
@@ -87,7 +87,7 @@ it.each(["revision", "abort", "detach"])(
     if (change === "abort") controller.abort();
     if (change === "detach") element.remove();
     finish(picture);
-    expect(await result).toBeNull();
+    expect(await result).toBe(change === "detach" ? null : picture);
   },
 );
 it("does not start native work after cancelled phase admission or for live producers", async () => {
@@ -149,6 +149,30 @@ it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion
     finishes[1]!();
   },
 );
+it("saves a picture that finished encoding during motion once the camera stops", async () => {
+  const queue = createSnapshotQueue();
+  let finish!: () => void;
+  const save = vi.fn();
+  const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(async () => {
+    await new Promise<void>((resolve) => (finish = resolve));
+    return save;
+  });
+  dispose = queue.setDraw(
+    draw,
+    () => false,
+    () => false,
+  );
+  queue.request("first", pane());
+  await vi.advanceTimersByTimeAsync(300);
+  expect(draw).toHaveBeenCalledOnce();
+  queue.setActivity(true, true);
+  finish();
+  await vi.advanceTimersByTimeAsync(300);
+  expect(save).not.toHaveBeenCalled();
+  queue.setActivity(true, false);
+  await vi.advanceTimersByTimeAsync(300);
+  expect(save).toHaveBeenCalledOnce();
+});
 it("starts a missing visible picture within the half-second route interval", async () => {
   const queue = createSnapshotQueue();
   const draw = vi.fn(async () => {});

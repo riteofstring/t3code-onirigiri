@@ -612,7 +612,6 @@ export function useSavedPanePictures(
         if (current() && canSnapshot()) onSnapshotFailure(paneId, startedAt);
         return;
       }
-      if (!current() || !canSnapshot() || signal.aborted) return;
       const picture = {
         recordKey: record,
         paneId,
@@ -623,7 +622,10 @@ export function useSavedPanePictures(
         savedAt: Date.now(),
         source: "snapshot" as const,
       };
-      await keepPicture(picture, beforeVisualRevision);
+      const keep = () =>
+        current() && element.isConnected ? keepPicture(picture, beforeVisualRevision) : undefined;
+      if (signal.aborted) return keep;
+      if (canSnapshot()) await keep();
     },
     [
       expectedRevision,
@@ -761,12 +763,13 @@ export function createSnapshotQueue() {
     canStart: () => boolean,
     waitToDraw: () => Promise<boolean>,
     signal: AbortSignal,
-  ) => Promise<void>;
+  ) => Promise<void | (() => unknown)>;
   const pending = new Map<
     string,
     { element: HTMLElement; after: number; retryAfter: number; background: boolean }
   >();
   let draw: Draw | null = null;
+  const finished: (() => unknown)[] = [];
   let needsPicture: (paneId: string) => boolean = () => false;
   let hasSavedPixels: (paneId: string) => boolean = () => false;
   let mountOf: (paneId: string) => PictureMount = () => "ordinary";
@@ -835,14 +838,27 @@ export function createSnapshotQueue() {
       (drawing && !continuation) ||
       idle !== null ||
       timer !== null ||
-      (!continuation && pending.size === 0) ||
+      (!continuation && pending.size === 0 && finished.length === 0) ||
       !draw
     )
       return;
     const current = draw;
     idle = requestIdleCallback((deadline) => {
       idle = null;
-      if (draw !== current || (!continuation && pending.size === 0)) return;
+      if (draw !== current) return;
+      const save = finished.shift();
+      if (save) {
+        drawing = true;
+        void Promise.resolve()
+          .then(save)
+          .catch(() => {})
+          .finally(() => {
+            drawing = false;
+            next();
+          });
+        return;
+      }
+      if (!continuation && pending.size === 0) return;
       if (continuation && mountOf(continuation.paneId) === null) {
         const abandoned = continuation;
         continuation = null;
@@ -951,6 +967,9 @@ export function createSnapshotQueue() {
         });
       };
       void current(paneId, request.element, canStart, waitToDraw, controller.signal)
+        .then((save) => {
+          if (save && draw === current) finished.push(save);
+        })
         .catch(() => {})
         .finally(() => {
           drawing = false;
@@ -1002,6 +1021,7 @@ export function createSnapshotQueue() {
       activeCapture?.abort();
       draw = null;
       pending.clear();
+      finished.length = 0;
       pointers.clear();
       cancelScheduled();
       continuation?.resolve(false);
