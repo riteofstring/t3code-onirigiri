@@ -588,8 +588,7 @@ export function useSavedPanePictures(
           visualRevision(paneId) === beforeVisualRevision &&
           content !== undefined &&
           paneHasCommittedContent(paneId, content, beforeVisualRevision) &&
-          (!onScreen(element) ||
-            element.closest<HTMLElement>('[data-onirigiri-slot="pane"]')?.dataset.focused !== "true") &&
+          !onScreen(element) &&
           canStart()
         );
       };
@@ -710,7 +709,7 @@ export function useSavedPanePictures(
       },
       request: (paneId, element) => {
         if (!enabled) return visualRevision(paneId);
-        snapshots.request(paneId, element);
+        if (!onScreen(element)) snapshots.request(paneId, element);
         return visualRevision(paneId);
       },
     }),
