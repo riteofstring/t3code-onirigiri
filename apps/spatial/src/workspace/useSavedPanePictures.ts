@@ -506,7 +506,12 @@ export function useSavedPanePictures(
         (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
       )
         return "dom";
-      if (phase === "motion" || phase === "overview-motion" || phase === "resize") {
+      if (
+        phase === "motion" ||
+        phase === "overview" ||
+        phase === "overview-motion" ||
+        phase === "resize"
+      ) {
         const decision = motionDecision?.(pane.paneId);
         if (decision !== undefined) return decision === null ? { kind: "placeholder" } : "dom";
         flushPaneVisualChanges(pane.paneId);
