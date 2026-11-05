@@ -41,7 +41,7 @@ function contentKey(content: PaneContentRevision): string {
 }
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
-  return source === "capture" ? revision : `${revision}|native-worker-6`;
+  return source === "capture" ? revision : `${revision}|native-worker-7`;
 }
 
 function paneHasCommittedContent(
