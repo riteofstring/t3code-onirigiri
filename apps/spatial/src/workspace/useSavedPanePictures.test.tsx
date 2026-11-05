@@ -33,7 +33,6 @@ const store = {
   saved: new Map<string, SavedPanePicture>(),
   loading: null as Promise<Map<string, SavedPanePicture>> | null,
   writes: [] as SavedPanePicture[],
-  deleted: [] as string[],
   threadIds: ["t1"],
   updatedAt: "u1",
   runtimeStatus: null as ThreadRuntimeSummary["status"] | null,
@@ -306,7 +305,6 @@ afterEach(async () => {
   store.saved.clear();
   store.loading = null;
   store.writes.length = 0;
-  store.deleted.length = 0;
   for (const id of store.threadIds) markPaneSynced(`thread:e:${id}`, null);
   store.threadIds = ["t1"];
   store.updatedAt = "u1";
@@ -348,7 +346,6 @@ it("keeps live presentation without restoring or capturing pictures when disable
   await advance(4000);
   expect(snapshot).not.toHaveBeenCalled();
   expect(store.writes).toEqual([]);
-  expect(store.deleted).toEqual([]);
   expect(hook.canBackgroundPicture(paneId)).toBe(false);
 });
 
@@ -518,8 +515,9 @@ it("keeps the in-memory set under the byte cap and stops background filling near
   store.saved.set(paneId, savedPicture({ image: heavy("older"), savedAt: 1 }));
   store.saved.set(second, savedPicture({ paneId: second, image: heavy("newer"), savedAt: 2 }));
   await mount();
-  expect(pictureImageFor(second)).toBeNull();
+  expect(pictureImageFor(second)).toBe(store.saved.get(second)!.image);
   expect(pictureImageFor(paneId)).toBeNull();
+  expect(hook.displayedPictureFor(paneId)).toBeNull();
   expect(hook.canBackgroundPicture(second)).toBe(true);
   expect(hook.canBackgroundPicture(third)).toBe(false);
   expect(hook.canBackgroundPicture(third, true)).toBe(true);
@@ -581,7 +579,7 @@ it("does not refill its own evictions but still snapshots visited panes", async 
   expect(hook.canBackgroundPicture(paneId)).toBe(false);
 });
 
-it("requires a new capture after the workspace is recreated", async () => {
+it("reuses a picture saved before the workspace was recreated without a new capture", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
@@ -596,8 +594,11 @@ it("requires a new capture after the workspace is recreated", async () => {
   store.saved.set(paneId, accepted);
 
   await mount();
-  expect(hook.pictureFor(paneId)?.image).toBeUndefined();
-  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.pictureFor(paneId)?.image).toBe(accepted.image);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
   expect(hook.pictureUrl(accepted.image)).not.toBe(previousUrl);
   expect(revokedUrls).toContain(previousUrl);
   expect(snapshot).toHaveBeenCalledTimes(draws);
@@ -899,34 +900,32 @@ it.each(["motion", "input", "content", "readiness", "disconnect"])(
   },
 );
 
-it.each(["capture", "snapshot"] as const)(
-  "refreshes old drawing styles while preserving saved %s content",
-  async (source) => {
-    const image = new Blob(["previous picture"]);
-    store.saved.set(paneId, savedPicture({ image, source }));
-    await mount();
-    expect(hook.hasFreshPicture(paneId)).toBe(false);
-    expect(pictureImageFor(paneId)).toBeNull();
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
-    const element = { isConnected: true } as HTMLElement;
-    hook.paneSnapshots.request(paneId, element);
-    await advance(3500);
+it("refreshes an old drawing style and keeps the replacement current after a reload", async () => {
+  const image = new Blob(["previous picture"]);
+  store.saved.set(paneId, savedPicture({ image, source: "snapshot" }));
+  await mount();
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(pictureImageFor(paneId)).toBeNull();
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(image);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
+  const element = { isConnected: true } as HTMLElement;
+  hook.paneSnapshots.request(paneId, element);
+  await advance(3500);
 
-    expect(snapshot).toHaveBeenCalledOnce();
-    const replacement = store.writes[0]!;
-    expect(replacement.image).not.toBe(image);
-    expect(hook.pictureFor(paneId)?.image).toBe(replacement.image);
-    await act(() => renderer!.unmount());
-    store.saved.set(paneId, replacement);
-    await mount();
-    expect(hook.hasFreshPicture(paneId)).toBe(false);
-    expect(pictureImageFor(paneId)).toBeNull();
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-    hook.paneSnapshots.request(paneId, element);
-    await advance(3500);
-    expect(snapshot).toHaveBeenCalledTimes(2);
-  },
-);
+  expect(snapshot).toHaveBeenCalledOnce();
+  const replacement = store.writes[0]!;
+  expect(replacement.image).not.toBe(image);
+  expect(hook.pictureFor(paneId)?.image).toBe(replacement.image);
+  await act(() => renderer!.unmount());
+  store.saved.set(paneId, replacement);
+  await mount();
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(pictureImageFor(paneId)).toBe(replacement.image);
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, element);
+  await advance(3500);
+  expect(snapshot).toHaveBeenCalledOnce();
+});
 
 it("replaces pictures drawn under the old raster cap with full-density pixels", async () => {
   store.saved.set(
@@ -987,12 +986,11 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
     await advance(249);
     expect(snapshot).not.toHaveBeenCalled();
     await advance(10);
-    expect(snapshot).toHaveBeenCalledTimes(2);
-    expect(store.writes).toHaveLength(2);
-    expect(store.writes.find((picture) => picture.paneId === paneId)?.geometryRevision).toBe(
-      geometry(500),
-    );
+    expect(snapshot).toHaveBeenCalledOnce();
+    expect(store.writes).toHaveLength(1);
+    expect(store.writes[0]).toMatchObject({ paneId, geometryRevision: geometry(500) });
     expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(hook.hasFreshPicture("thread:e:t2")).toBe(true);
   },
 );
 
@@ -1244,7 +1242,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
       : null;
   });
   await mount();
-  expect(pictureImageFor(paneId)).toBeNull();
+  expect(pictureImageFor(paneId)).toBe(old);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.invalidate(paneId);
   const revision = hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
@@ -1363,14 +1361,61 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
   expect(revokedUrls).toEqual([url]);
 });
 
-it("does not decode a stored picture that was never valid in this session", async () => {
-  const invalid = new Blob(["old geometry"]);
-  store.saved.set(paneId, savedPicture({ geometryRevision: geometry(600), image: invalid }));
+it("prepares a stored picture from another geometry for display without treating it as fresh", async () => {
+  const stale = new Blob(["old geometry"]);
+  store.saved.set(paneId, savedPicture({ geometryRevision: geometry(600), image: stale }));
   await mount();
   await advance(5);
-  expect(hook.preparedPictureUrl(invalid)).toBeNull();
-  expect(decodedUrls).toEqual([]);
-  expect(store.deleted).toEqual([]);
+  expect(hook.pictureFor(paneId)).toBeNull();
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(stale);
+  const url = hook.preparedPictureUrl(stale);
+  expect(url).not.toBeNull();
+  expect(decodedUrls).toEqual([url]);
+});
+
+it("displays a stale stored picture until a fresh capture replaces it", async () => {
+  const stale = new Blob(["earlier content"]);
+  store.saved.set(
+    paneId,
+    savedPicture({ revision: `u0|dark|dark|${fontRevision}|chat-chrome-2`, image: stale }),
+  );
+  await mount();
+  await advance(5);
+  expect(hook.pictureFor(paneId)).toBeNull();
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(stale);
+  const staleUrl = hook.preparedPictureUrl(stale);
+  expect(staleUrl).not.toBeNull();
+
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
+  const fresh = store.writes.at(-1)!.image;
+  expect(fresh).not.toBe(stale);
+  expect(hook.pictureFor(paneId)?.image).toBe(fresh);
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(fresh);
+  expect(revokedUrls).toContain(staleUrl);
+});
+
+it("captures a pane only once its element is off screen", async () => {
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const element = document.createElement("div");
+  document.body.append(element);
+  let left = 0;
+  element.getBoundingClientRect = () => new DOMRect(left, 0, 400, 580);
+  hook.paneSnapshots.request(paneId, element);
+  await advance(3500);
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
+
+  left = element.ownerDocument.defaultView!.innerWidth + 100;
+  hook.paneSnapshots.request(paneId, element);
+  await advance(3500);
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  element.remove();
 });
 
 it.each([
@@ -1552,31 +1597,28 @@ it("retains an unpublished refresh across content release and an ordinary remoun
 it.each([
   ["threads", "stage"],
   ["stage", "threads"],
-])(
-  "rejects unvalidated stored pixels after both the %s and the %s arrive",
-  async (first, second) => {
-    const image = new Blob(["stored"]);
-    store.saved.set(paneId, savedPicture({ image }));
-    store.threadIds = [];
-    await mount({ resizeStage: false });
-    expect(hook.picturesLoaded).toBe(true);
-    expect(shownPicture).toBeNull();
-    const arrive = (prerequisite: string) =>
-      act(() => {
-        if (prerequisite === "stage") resize(800, 600);
-        else {
-          store.threadIds = ["t1"];
-          renderer!.update(<Probe />);
-        }
-      });
-    await arrive(first);
-    expect(shownPicture).toBeNull();
-    await arrive(second);
-    expect(shownPicture).toBeNull();
-    expect(snapshot).not.toHaveBeenCalled();
-    expect(store.writes).toHaveLength(0);
-  },
-);
+])("accepts stored pixels only once both the %s and the %s arrive", async (first, second) => {
+  const image = new Blob(["stored"]);
+  store.saved.set(paneId, savedPicture({ image }));
+  store.threadIds = [];
+  await mount({ resizeStage: false });
+  expect(hook.picturesLoaded).toBe(true);
+  expect(shownPicture).toBeNull();
+  const arrive = (prerequisite: string) =>
+    act(() => {
+      if (prerequisite === "stage") resize(800, 600);
+      else {
+        store.threadIds = ["t1"];
+        renderer!.update(<Probe />);
+      }
+    });
+  await arrive(first);
+  expect(shownPicture).toBeNull();
+  await arrive(second);
+  expect(pictureImageFor(paneId)).toBe(image);
+  expect(snapshot).not.toHaveBeenCalled();
+  expect(store.writes).toHaveLength(0);
+});
 
 it("keeps a picture for each stage size and selects the stored one on return without redrawing", async () => {
   const image = new Blob(["stored"]);
@@ -1623,7 +1665,7 @@ const setCompact = (compact: boolean) =>
     stage.parentElement!.dataset.compactLayout = String(compact);
   });
 
-it("recaptures loaded fullscreen pixels before considering them current", async () => {
+it("uses fullscreen pixels loaded after a pending request without recapturing them", async () => {
   let loaded!: (pictures: Map<string, SavedPanePicture>) => void;
   store.loading = new Promise((resolve) => {
     loaded = resolve;
@@ -1638,9 +1680,9 @@ it("recaptures loaded fullscreen pixels before considering them current", async 
     cssSize: { width: 800, height: 600 },
   });
   await act(() => loaded(new Map([[picture.recordKey, picture]])));
-  expect(shownPicture).toBeNull();
+  expect(shownPicture).toBe(picture.image);
   await advance(3500);
-  expect(snapshot).toHaveBeenCalledOnce();
+  expect(snapshot).not.toHaveBeenCalled();
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
@@ -1706,12 +1748,17 @@ it("keeps a pane's tiled and compact pictures apart through a layout round trip"
   await act(() => {
     hook.paneSnapshots.setLiveProducer(paneId, true);
   });
-  expect(store.deleted).toEqual([paneId]);
+  expect(pictureImageFor(paneId)).toBeNull();
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
   await setCompact(true);
   expect(shownPicture).toBeNull();
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(compact);
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
+  expect(store.writes).toHaveLength(2);
 });
 
-it("keeps pictures deleted by a live producer out of a load that finishes later", async () => {
+it("keeps pictures from before a live producer stale when their load finishes later", async () => {
   let loaded!: (value: Map<string, SavedPanePicture>) => void;
   store.loading = new Promise((resolve) => {
     loaded = resolve;
@@ -1741,18 +1788,17 @@ it("keeps pictures deleted by a live producer out of a load that finishes later"
   expect(shownPicture).toBeNull();
 });
 
-it("recaptures stored compact pixels before presenting them", async () => {
+it("presents stored compact pixels without recapturing them", async () => {
   const image = new Blob(["compact"]);
   store.saved.set(
     paneId,
     savedPicture({ image, geometryRevision: geometry(400).replace(/\|tiled$/, "|compact") }),
   );
   await mount({ compact: true });
-  expect(shownPicture).toBeNull();
+  expect(shownPicture).toBe(image);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-  const current = new Blob(["restored compact view"]);
-  await act(() => drawPicture(pane, current));
-  expect(shownPicture).toBe(current);
+  await act(() => drawPicture(pane, new Blob(["restored compact view"])));
+  expect(store.writes).toHaveLength(0);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   await setCompact(false);
   expect(shownPicture).toBeNull();
@@ -1766,9 +1812,7 @@ it.each([false, true])(
     });
     store.saved.set(paneId, picture);
     await mount({ compact });
-    expect(hook.hasFreshPicture(paneId)).toBe(false);
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-    await act(() => drawPicture(pane, picture.image));
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
     expect(presentationAt("rest")).toBe("dom");
     for (const phase of ["motion", "overview", "overview-motion"] as const) {
       expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
@@ -1830,11 +1874,11 @@ it("merges pictures loaded from storage with captures already accepted this sess
     ),
   );
   expect(pictureImageFor(paneId)).toBe(captured);
-  expect(pictureImageFor(secondId)).toBeNull();
+  expect(pictureImageFor(secondId)).toBe(previous);
   expect(hook.picturesLoaded).toBe(true);
 });
 
-it("replaces removed producer pixels only after a valid snapshot", async () => {
+it("keeps showing pixels from before a live producer until a valid snapshot replaces them", async () => {
   await mount();
   const old = new Blob(["static before embedded content"]);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
@@ -1848,7 +1892,7 @@ it("replaces removed producer pixels only after a valid snapshot", async () => {
   expect(pictureImageFor(paneId)).toBeNull();
   expect(hook.canBackgroundPicture(paneId)).toBe(false);
   expect(hook.canBackgroundPicture(paneId, true)).toBe(false);
-  expect(store.deleted).toContain(paneId);
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(old);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
   await act(() => drawPicture(pane, new Blob(["empty guest slot"])));
   expect(store.writes).toHaveLength(1);
@@ -1858,6 +1902,7 @@ it("replaces removed producer pixels only after a valid snapshot", async () => {
   });
   expect(hook.canBackgroundPicture(paneId)).toBe(true);
   expect(pictureImageFor(paneId)).toBeNull();
+  expect(hook.displayedPictureFor(paneId)?.image).toBe(old);
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance }, revision);
   await act(async () => {
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
@@ -2070,7 +2115,7 @@ it("refreshes pictures when the default row height changes and validates it afte
   store.saved.set(paneId, store.writes.at(-1)!);
   await act(() => renderer!.unmount());
   await mount();
-  expect(hook.pictureFor(paneId)?.image).toBeUndefined();
+  expect(hook.pictureFor(paneId)?.image).toBe(replacement.image);
   await act(() => renderer!.unmount());
   defaultRowHeight = 600;
   await mount();

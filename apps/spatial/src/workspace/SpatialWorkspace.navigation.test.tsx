@@ -77,6 +77,11 @@ vi.mock("@t3tools/web/src/components/pullRequest/LinkPullRequestDialog", () => (
 vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({ ThreadCard: () => null }));
+vi.mock("./DraftPane", () => ({ DraftPane: () => null }));
+vi.mock("@t3tools/web/src/hooks/useHandleNewThread", () => {
+  const newThread = vi.fn();
+  return { useNewThreadHandler: () => newThread };
+});
 vi.mock("./ThreadPane", async () => {
   const { createContext, use } = await import("react");
   const { useOnirigiriPaneContentReady } = await import("@riteofstring/onirigiri");

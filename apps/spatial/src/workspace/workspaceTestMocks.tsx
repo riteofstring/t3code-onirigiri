@@ -10,6 +10,7 @@ const pictures = {
   getPanePresentation: () => "dom",
   onLayoutChange: pictureLayoutChanged,
   pictureFor: () => null,
+  displayedPictureFor: () => null,
   preparedPictureUrl: () => null,
   pictureUrl: () => "",
   hasFreshPicture: () => false,

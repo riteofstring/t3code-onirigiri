@@ -184,7 +184,9 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
       <>
         {state.showClock ? <Clock /> : null}
         {state.suspended ? <ChatViewPendingContent /> : null}
-        <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
+        <div data-chat-composer-surface="true">
+          <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
+        </div>
         <div className="messages-timeline-scroll" />
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
         <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
@@ -769,10 +771,11 @@ it("ignores repeated and temporary attribute writes but refreshes a changed pres
   live();
   await render(true);
   await render(false);
-  const panel = container.querySelector("aside")!;
+  const surface = container.querySelector<HTMLElement>('[data-chat-composer-surface="true"]')!;
+  surface.setAttribute("aria-label", "Composer");
   const input = document.createElement("input");
   input.type = "file";
-  await act(async () => panel.append(input));
+  await act(async () => surface.append(input));
   requestSnapshot.mockClear();
   invalidateSnapshot.mockClear();
 
@@ -780,20 +783,20 @@ it("ignores repeated and temporary attribute writes but refreshes a changed pres
     input.name = "";
     input.type = "file";
     input.removeAttribute("name");
-    panel.setAttribute("aria-label", "Thread panel");
+    surface.setAttribute("aria-label", "Composer");
   });
   expect(requestSnapshot).not.toHaveBeenCalled();
 
   await act(async () => {
-    panel.setAttribute("aria-label", "Thread panel");
-    panel.setAttribute("style", "color: red");
-    panel.setAttribute("aria-label", "Updated panel");
+    surface.setAttribute("aria-label", "Composer");
+    surface.setAttribute("style", "color: red");
+    surface.setAttribute("aria-label", "Updated composer");
   });
   expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
   expect(requestSnapshot).toHaveBeenCalled();
 });
 
-it("refreshes a picture when background content changes without a new message revision", async () => {
+it("keeps the picture through content changes outside the composer until an expansion changes", async () => {
   live();
   await render(true);
   await render(false);
@@ -804,7 +807,13 @@ it("refreshes a picture when background content changes without a new message re
   const panel = container.querySelector("aside")!;
   await act(async () => {
     panel.textContent = "Asynchronous content is ready";
+    panel.setAttribute("style", "color: red");
   });
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+  expect(state.engineRevision).toBe(revision);
+
+  await act(async () => panel.setAttribute("aria-expanded", "true"));
   expect(invalidateSnapshot).toHaveBeenCalledWith(paneId);
   expect(requestSnapshot).toHaveBeenCalled();
   expect(state.engineRevision).not.toBe(revision);
@@ -913,18 +922,31 @@ it.each(["route", "timeline", "suspended content"])(
   },
 );
 
-it("defers a newly visible view until motion stops", async () => {
-  const { createPaneLifecycleStore } =
-    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
-  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-  lifecycle.setMoving(true);
-  live();
-  vi.stubGlobal("requestIdleCallback", () => 99);
-  await render(false, false, true);
-  expect(container.querySelector("textarea")).toBeNull();
-  await act(() => lifecycle!.setMoving(false));
-  expect(container.querySelector("textarea")).not.toBeNull();
-});
+it.each([
+  { fresh: true, delay: 300 },
+  { fresh: false, delay: 0 },
+])(
+  "defers a newly visible view until motion stops, then $delay ms more with a fresh picture: $fresh",
+  async ({ fresh, delay }) => {
+    const { createPaneLifecycleStore } =
+      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+    lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+    lifecycle.setMoving(true);
+    live();
+    snapshots.hasFreshPicture = () => fresh;
+    vi.stubGlobal("requestIdleCallback", () => 99);
+    await render(false, false, true);
+    expect(container.querySelector("textarea")).toBeNull();
+    await act(() => lifecycle!.setMoving(false));
+    if (delay > 0) {
+      expect(container.querySelector("textarea")).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(delay - 1));
+      expect(container.querySelector("textarea")).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1));
+    }
+    expect(container.querySelector("textarea")).not.toBeNull();
+  },
+);
 
 it("cancels an offscreen content mount if motion starts before its idle callback", async () => {
   const { createPaneLifecycleStore } =
@@ -949,6 +971,7 @@ it("updates visible neighbors' clocks, pauses hidden content, and catches up on 
   state.showClock = true;
   state.interactive = true;
   live();
+  snapshots.hasFreshPicture = () => false;
   await render(false, false, true);
   const minute = () => container.querySelector('[aria-label="Current minute"]')?.textContent;
   expect(minute()).toBe("2026-10-23T12:00");
@@ -1302,6 +1325,7 @@ it("keeps transit content dormant until rest and then retains its editor", async
   await render(false, false, true, true);
   expect(container.querySelector("textarea")).toBeNull();
   await act(() => lifecycle!.setMoving(false));
+  await act(() => vi.advanceTimersByTimeAsync(300));
   expect(container.querySelector("textarea")).not.toBeNull();
   const editor = container.querySelector("textarea")!;
   editor.value = "retained draft";
@@ -1319,6 +1343,7 @@ it("does not mount a stale transit pane until motion stops", async () => {
   live();
   await render(false, false, true, false);
   expect(container.querySelector("textarea")).toBeNull();
+  snapshots.hasFreshPicture = () => false;
   await act(() =>
     lifecycle!.setPictures(
       () => false,

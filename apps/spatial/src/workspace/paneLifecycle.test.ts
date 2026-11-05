@@ -156,6 +156,8 @@ it("removes eligible chat DOM after a covered frame, then admits focused and pee
   expect(store.timelineDeferred("p1")).toBe(true);
   vi.advanceTimersByTime(16);
   expect(store.timelineDeferred("p0")).toBe(false);
+  expect(store.timelineDeferred("p1")).toBe(true);
+  vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p1")).toBe(false);
   expect(store.measurements().moves[0]).toMatchObject({ removed: ["p0", "p1"], latched: [] });
 });
@@ -223,6 +225,8 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   store.composerReady("p0");
   store.composerReady("p1");
   vi.advanceTimersByTime(33);
+  expect(store.isMounted("p2")).toBe(false);
+  vi.advanceTimersByTime(33);
   expect(store.isMounted("p2")).toBe(true);
   expect(store.timelineDeferred("p2")).toBe(false);
 });
@@ -244,6 +248,8 @@ it("stages a cold visible chat behind the focused composer", () => {
   store.composerReady("p1");
   vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p0")).toBe(false);
+  expect(store.timelineDeferred("p1")).toBe(true);
+  vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p1")).toBe(false);
 });
 

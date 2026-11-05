@@ -469,7 +469,9 @@ export function useSavedPanePictures(
       const fresh = pictureFor(paneId);
       if (fresh || !enabled) return fresh;
       const key = recordKey(paneId);
-      let latest: SavedPanePicture | null = (key !== null && saved?.get(key)) || null;
+      const sameGeometry = key === null ? undefined : saved?.get(key);
+      if (sameGeometry) return sameGeometry;
+      let latest: SavedPanePicture | null = null;
       for (const candidate of saved?.values() ?? [])
         if (candidate.paneId === paneId && (!latest || candidate.savedAt > latest.savedAt))
           latest = candidate;
