@@ -356,14 +356,23 @@
   font-variant-numeric: tabular-nums;
 }
 
-.spatial-workspace-controls__hint {
-  color: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
-}
-
 .spatial-workspace-controls__toggles {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+.spatial-workspace-controls__toggles > [aria-pressed]::after {
+  content: "";
+  order: -1;
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 9999px;
+}
+
+.spatial-workspace-controls__toggles > [aria-pressed="true"]::after {
+  background: currentColor;
 }
 
 .spatial-workspace-controls__actions > .spatial-workspace-controls__settings {
@@ -408,6 +417,38 @@
   zoom: calc(1 / var(--spatial-overview-scale, 1));
 }
 
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  > .onirigiri-pane__titlebar {
+  flex-wrap: nowrap;
+}
+
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  > .onirigiri-pane__titlebar
+  > .onirigiri-pane__tone {
+  flex: none;
+}
+
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  > .onirigiri-pane__titlebar
+  > .onirigiri-pane__heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  > .onirigiri-pane__titlebar::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 0.75rem;
+  background: linear-gradient(var(--onirigiri-titlebar), transparent);
+  pointer-events: none;
+}
+
 .spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading {
   display: flex;
   flex-direction: row-reverse;
@@ -433,6 +474,11 @@
 .spatial-workspace {
   --spatial-cell: color-mix(in oklch, var(--background) 90.5%, var(--foreground));
   --spatial-cell-hover: color-mix(in oklch, var(--background) 85%, var(--foreground));
+}
+
+.spatial-workspace:not(.dark *) {
+  --spatial-cell: color-mix(in oklch, var(--background) 95.5%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--background) 92%, var(--foreground));
 }
 
 .spatial-empty-cells {

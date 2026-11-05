@@ -247,7 +247,7 @@ export function WorkspaceToolbar({
                       if (choice) onPreferencesChange({ overviewZoom: choice.value });
                     }}
                   >
-                    <SelectTrigger size="compact" aria-label="Overview zoom">
+                    <SelectTrigger size="compact" className="text-xs" aria-label="Overview zoom">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectPopup ref={selectPopupRef} side="top" alignItemWithTrigger={false}>
@@ -438,8 +438,11 @@ function RowHeightControl({
   const value = Math.max(min, Math.min(max, height === "viewport" ? max : height));
   const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
   return (
-    <label className="spatial-workspace-controls__field">
-      <span>Current row height</span>
+    <label
+      className="spatial-workspace-controls__field"
+      title="Shows the focused row. Changing it sets every row."
+    >
+      <span>Row height</span>
       <span className="spatial-workspace-controls__height">
         <input
           className="settings-slider w-full"
@@ -467,7 +470,6 @@ function RowHeightControl({
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
         {value === max ? "Full view" : `${value}px`}
       </span>
-      <span className="spatial-workspace-controls__hint">sets all rows</span>
     </label>
   );
 }
