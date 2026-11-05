@@ -93,6 +93,7 @@ import { installComposerNavigation } from "./composerNavigation";
 const WORKSPACE_CHROME = { WorkspaceControlButton };
 const WORKSPACE_ID = "onirigiri-t3";
 const COMPACT_STAGE_WIDTH = 640;
+const LAYOUT_SETTLE_MS = 150;
 const SNAP_CAMERA = { navigation: { durationMs: 0 } };
 
 function whileEditing(key: string) {
@@ -375,6 +376,13 @@ function SpatialWorkspaceView({
     };
   }, [layoutPersistence]);
   const [layoutRevision, setLayoutRevision] = useState(0);
+  const layoutSettleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (layoutSettleRef.current !== null) clearTimeout(layoutSettleRef.current);
+    },
+    [],
+  );
   const [focusedRowHeight, setFocusedRowHeight] = useState<number | null>(null);
   const syncFocusedRowHeight = useCallback(() => {
     const workspace = workspaceRef.current;
@@ -390,8 +398,12 @@ function SpatialWorkspaceView({
       layoutPersistence.save(layout);
       if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
       lastLayoutRevisionRef.current = metadata.layoutRevision;
-      setLayoutRevision(metadata.layoutRevision);
-      syncFocusedRowHeight();
+      if (layoutSettleRef.current !== null) clearTimeout(layoutSettleRef.current);
+      layoutSettleRef.current = setTimeout(() => {
+        layoutSettleRef.current = null;
+        setLayoutRevision(metadata.layoutRevision);
+        syncFocusedRowHeight();
+      }, LAYOUT_SETTLE_MS);
       setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
       syncMaximized();
       onPictureLayoutChange(layout);

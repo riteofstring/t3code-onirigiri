@@ -525,7 +525,11 @@ export function useSavedPanePictures(
           (phase === "motion" || phase === "resize")
           ? { kind: "texture" }
           : "dom";
-      if (visible && (phase === "rest" || phase === "resize")) return "dom";
+      if (
+        visible &&
+        (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
+      )
+        return "dom";
       if (
         phase === "motion" ||
         phase === "overview" ||
@@ -584,7 +588,8 @@ export function useSavedPanePictures(
           visualRevision(paneId) === beforeVisualRevision &&
           content !== undefined &&
           paneHasCommittedContent(paneId, content, beforeVisualRevision) &&
-          !onScreen(element) &&
+          (!onScreen(element) ||
+            element.closest<HTMLElement>('[data-onirigiri-slot="pane"]')?.dataset.focused !== "true") &&
           canStart()
         );
       };
@@ -705,7 +710,7 @@ export function useSavedPanePictures(
       },
       request: (paneId, element) => {
         if (!enabled) return visualRevision(paneId);
-        if (!onScreen(element)) snapshots.request(paneId, element);
+        snapshots.request(paneId, element);
         return visualRevision(paneId);
       },
     }),

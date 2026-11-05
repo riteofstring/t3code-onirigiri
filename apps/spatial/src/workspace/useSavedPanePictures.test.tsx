@@ -1397,24 +1397,27 @@ it("displays a stale stored picture until a fresh capture replaces it", async ()
   expect(revokedUrls).toContain(staleUrl);
 });
 
-it("captures a pane only once its element is off screen", async () => {
+it("captures an on-screen chat only while it is not the focused pane", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  const slot = document.createElement("div");
+  slot.dataset.onirigiriSlot = "pane";
+  slot.dataset.focused = "true";
   const element = document.createElement("div");
-  document.body.append(element);
-  let left = 0;
-  element.getBoundingClientRect = () => new DOMRect(left, 0, 400, 580);
+  slot.append(element);
+  document.body.append(slot);
+  element.getBoundingClientRect = () => new DOMRect(0, 0, 400, 580);
   hook.paneSnapshots.request(paneId, element);
   await advance(3500);
   expect(snapshot).not.toHaveBeenCalled();
   expect(hook.hasFreshPicture(paneId)).toBe(false);
 
-  left = element.ownerDocument.defaultView!.innerWidth + 100;
+  slot.dataset.focused = "false";
   hook.paneSnapshots.request(paneId, element);
   await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.hasFreshPicture(paneId)).toBe(true);
-  element.remove();
+  slot.remove();
 });
 
 it.each([
@@ -2250,15 +2253,7 @@ it("recaptures committed visible changes without a fixed quiet embargo", async (
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
-it("keeps visible chats live while resizing, even when their picture would be used in motion", async () => {
-  await mount();
-  motionDecision = null;
-  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  expect(presentationAt("resize")).toBe("dom");
-  expect(presentationAt("resize", false)).toEqual({ kind: "placeholder" });
-});
-
-it.each(["motion", "overview-motion"] as const)(
+it.each(["motion", "overview-motion", "resize"] as const)(
   "honors the latched removal decision during %s, then returns live at rest",
   async (phase) => {
     await mount();
