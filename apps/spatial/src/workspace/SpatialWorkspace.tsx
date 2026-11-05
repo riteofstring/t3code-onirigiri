@@ -43,6 +43,9 @@ import {
 import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import { useComposerDraftStore, type DraftId } from "@t3tools/web/src/composerDraftStore";
+import { useNewThreadHandler } from "@t3tools/web/src/hooks/useHandleNewThread";
+import { readThreadShell } from "@t3tools/web/src/state/entities";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
 
 import { ToolPaneView } from "./ToolPaneView";
@@ -747,6 +750,27 @@ function SpatialWorkspaceView({
   );
   const addPane = useCallback(() => addPaneBeside(focusedPaneIdRef.current), [addPaneBeside]);
   const pendingPlacementRef = useRef(new Map<string, PanePlacement>());
+  const newThread = useNewThreadHandler();
+  const startChatInPane = useCallback(
+    async (tool: ToolPane) => {
+      const shell = readThreadShell(scopeThreadRef(tool.environmentId, tool.threadId));
+      if (!shell) return;
+      const column = workspaceRef.current
+        ?.getLayout()
+        .columns.find((candidate) => candidate.cells.some((cell) => cell.paneId === tool.paneId));
+      const draft = await newThread(scopeProjectRef(tool.environmentId, shell.projectId));
+      if (!draft) return;
+      if (column)
+        pendingPlacementRef.current.set(draftPaneId(draft.draftId), {
+          plane: column.planeIndex,
+          slot: column.slotIndex ?? column.index,
+          newPlane: false,
+          heightPx: column.cells.length === 1 ? (column.cells[0]!.heightPx ?? null) : null,
+        });
+      remove(tool.paneId);
+    },
+    [newThread, remove],
+  );
   const addPaneAt = useCallback(
     (spot: EmptySpot) => {
       const scene = workspaceRef.current?.getScene();
@@ -961,6 +985,7 @@ function SpatialWorkspaceView({
                 onFocusThread={() =>
                   focusSurfacePane(threadPaneId(tool.environmentId, tool.threadId))
                 }
+                onStartChat={() => void startChatInPane(tool)}
               />
             </div>
           ) : (
@@ -990,6 +1015,7 @@ function SpatialWorkspaceView({
       navigateAway,
       navigateFromTerminal,
       togglePaneMaximized,
+      startChatInPane,
       toolController,
       toolPanes,
     ],
@@ -1040,6 +1066,9 @@ function SpatialWorkspaceView({
     layoutMode !== "strip",
     getLayout,
     getFocusedPaneId,
+    typeof preferences.rowHeight === "number"
+      ? Math.min(preferences.rowHeight, paneViewport?.height ?? preferences.rowHeight)
+      : (paneViewport?.height ?? null),
     `${layoutRevision}|${panes?.length ?? 0}|${overview}`,
   );
 

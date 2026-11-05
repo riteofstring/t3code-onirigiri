@@ -57,6 +57,7 @@ export function ToolPaneView({
   onNavigate,
   onFocusThread,
   onDismissDeviceSetup,
+  onStartChat,
   isPresent,
 }: {
   pane: ToolPane;
@@ -65,6 +66,7 @@ export function ToolPaneView({
   onNavigate: OnirigiriWorkspaceHandle["focus"];
   onFocusThread: () => void;
   onDismissDeviceSetup: ThreadSurfaceActions["onDismissDeviceSetup"];
+  onStartChat: () => void;
   isPresent: () => boolean;
 }) {
   const interactive = useOnirigiriPaneInteractive();
@@ -412,6 +414,7 @@ export function ToolPaneView({
               }}
               onAddPullRequests={() => navigation.open(threadRef, "pull-requests")}
               onAddLineage={() => navigation.open(threadRef, "lineage")}
+              onAddChat={onStartChat}
               onAddDevice={() => navigation.open(threadRef, "device")}
             />
           </div>

@@ -69,6 +69,7 @@ function emptyCells(
   layout: OnirigiriLayout | null,
   allowNewRows: boolean,
   focusedPaneId: string | null,
+  defaultRowHeight: number | null,
 ): EmptySpot[] {
   const viewElement = stage.querySelector<HTMLElement>('[data-onirigiri-slot="stage"]');
   if (!viewElement || !layout || world.offsetWidth === 0) return [];
@@ -149,13 +150,15 @@ function emptyCells(
     match: Placed | undefined,
     owner: string | null,
   ) => {
-    const height = match?.height ?? median(placed.map((pane) => pane.height), 0);
+    const height = newPlane
+      ? (defaultRowHeight ?? median(placed.map((pane) => pane.height), 0))
+      : (match?.height ?? median(placed.map((pane) => pane.height), 0));
     const cellTop = rowTop(height);
     if (cellTop + height < topLeft.y || cellTop > bottomRight.y || height <= 0) return;
     cells.push({
       key: `${newPlane ? "new" : "row"}|${plane}|${slot}`,
       ownerPaneId: owner,
-      placement: { plane, slot, newPlane, matchPaneId: match?.id ?? null },
+      placement: { plane, slot, newPlane, matchPaneId: newPlane ? null : (match?.id ?? null) },
       left: column.start,
       top: cellTop,
       width: column.size,
@@ -208,6 +211,7 @@ export function useEmptySpots(
   allowNewRows: boolean,
   getLayout: () => OnirigiriLayout | null,
   getFocusedPaneId: () => string | null,
+  defaultRowHeight: number | null,
   revision: unknown,
 ): { cells: readonly EmptySpot[]; container: HTMLElement | null } {
   const [cells, setCells] = useState<readonly EmptySpot[]>([]);
@@ -252,6 +256,7 @@ export function useEmptySpots(
           latest.current.getLayout(),
           allowNewRows,
           latest.current.getFocusedPaneId(),
+          defaultRowHeight,
         ),
       );
     let frame = requestAnimationFrame(() => {
@@ -266,7 +271,7 @@ export function useEmptySpots(
       cancelAnimationFrame(frame);
       resize.disconnect();
     };
-  }, [allowNewRows, enabled, moving, revision, stage]);
+  }, [allowNewRows, defaultRowHeight, enabled, moving, revision, stage]);
   return { cells: enabled ? cells : [], container };
 }
 

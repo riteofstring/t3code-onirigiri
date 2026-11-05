@@ -144,6 +144,7 @@ function render(nextFocused = focused) {
         visible
         onNavigate={() => false}
         onFocusThread={() => {}}
+        onStartChat={() => {}}
         onDismissDeviceSetup={() => {}}
         isPresent={() => true}
       />

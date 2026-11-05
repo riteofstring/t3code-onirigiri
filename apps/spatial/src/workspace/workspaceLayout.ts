@@ -156,6 +156,7 @@ export interface PanePlacement {
   readonly slot: number;
   readonly newPlane: boolean;
   readonly matchPaneId?: string | null;
+  readonly heightPx?: number | null;
 }
 
 export function placePane(
@@ -196,7 +197,14 @@ export function placePane(
     (column) =>
       column.cells.length === 1 && column.cells[0]!.paneId === placement.matchPaneId,
   );
-  const heightPx = match ? match.cells[0]!.heightPx : moving.cells[0]!.heightPx;
+  const heightPx =
+    placement.heightPx !== undefined
+      ? (placement.heightPx ?? undefined)
+      : placement.newPlane
+        ? undefined
+        : match
+          ? match.cells[0]!.heightPx
+          : moving.cells[0]!.heightPx;
   const { heightPx: _previous, ...cell } = moving.cells[0]!;
   const placed = {
     ...moving,

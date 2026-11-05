@@ -35,6 +35,7 @@ import {
   Globe2,
   GitFork,
   Plus,
+  SquarePen,
   TerminalSquare,
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
@@ -345,6 +346,7 @@ export function RightPanelEmptyState(props: {
   onAddDevice: () => void;
   onAddLineage?: (() => void) | undefined;
   lineageAvailable?: boolean | undefined;
+  onAddChat?: (() => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -358,6 +360,18 @@ export function RightPanelEmptyState(props: {
   const [highlight, setHighlight] = useState(-1);
 
   const actions = [
+    ...(props.onAddChat
+      ? [
+          {
+            label: "Chat",
+            icon: SquarePen,
+            shortcut: "C",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddChat,
+          },
+        ]
+      : []),
     {
       label: "Browser",
       icon: Globe2,

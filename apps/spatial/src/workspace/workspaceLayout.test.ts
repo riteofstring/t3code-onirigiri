@@ -319,3 +319,24 @@ it("places a new pane in an empty grid cell without moving other panes", () => {
     new: [1, 0],
   });
 });
+
+it("gives a pane placed in a new row the default height instead of a neighbour's", () => {
+  const panes = [pane("a", 0, 0), pane("new", 0, 1)];
+  const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
+  const layout = serializeWorkspaceLayout(scene, cursor);
+  const resized = {
+    ...layout,
+    columns: layout.columns.map((column) => ({
+      ...column,
+      cells: column.cells.map((cell) => ({ ...cell, heightPx: 320 })),
+    })),
+  };
+  const height = (next: typeof layout, paneId: string) =>
+    next.columns.find((column) => column.cells[0]!.paneId === paneId)!.cells[0]!.heightPx;
+  expect(height(placePane(resized, "new", { plane: 1, slot: 0, newPlane: true }), "new")).toBe(
+    undefined,
+  );
+  expect(
+    height(placePane(resized, "new", { plane: 0, slot: 2, newPlane: false, matchPaneId: "a" }), "new"),
+  ).toBe(320);
+});
