@@ -40,8 +40,14 @@ function contentKey(content: PaneContentRevision): string {
   return `${content.updatedAt}|${content.theme}|chat-chrome-2`;
 }
 
+const SNAPSHOT_REVISION = "native-worker-7";
+
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
-  return source === "capture" ? revision : `${revision}|native-worker-7`;
+  return source === "capture" ? revision : `${revision}|${SNAPSHOT_REVISION}`;
+}
+
+function currentImplementation(picture: SavedPanePicture): boolean {
+  return picture.source === "capture" || picture.revision.endsWith(`|${SNAPSHOT_REVISION}`);
 }
 
 function paneHasCommittedContent(
@@ -469,7 +475,8 @@ export function useSavedPanePictures(
       const fresh = pictureFor(paneId);
       if (fresh || !enabled) return fresh;
       const key = recordKey(paneId);
-      return (key !== null && saved?.get(key)) || null;
+      const picture = key === null ? undefined : saved?.get(key);
+      return picture && currentImplementation(picture) ? picture : null;
     },
     [enabled, pictureFor, recordKey, saved],
   );

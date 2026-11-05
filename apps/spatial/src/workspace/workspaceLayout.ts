@@ -157,6 +157,7 @@ export interface PanePlacement {
   readonly newPlane: boolean;
   readonly matchPaneId?: string | null;
   readonly heightPx?: number | null;
+  readonly inserted?: boolean;
 }
 
 export function placePane(

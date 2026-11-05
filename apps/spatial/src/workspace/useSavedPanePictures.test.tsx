@@ -900,13 +900,13 @@ it.each(["motion", "input", "content", "readiness", "disconnect"])(
   },
 );
 
-it("refreshes an old drawing style and keeps the replacement current after a reload", async () => {
+it("does not show a picture from an old drawing style, refreshes it and keeps the replacement current after a reload", async () => {
   const image = new Blob(["previous picture"]);
   store.saved.set(paneId, savedPicture({ image, source: "snapshot" }));
   await mount();
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   expect(pictureImageFor(paneId)).toBeNull();
-  expect(hook.displayedPictureFor(paneId)?.image).toBe(image);
+  expect(hook.displayedPictureFor(paneId)).toBeNull();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   const element = { isConnected: true } as HTMLElement;
   hook.paneSnapshots.request(paneId, element);
