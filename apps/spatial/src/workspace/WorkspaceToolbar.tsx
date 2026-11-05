@@ -259,6 +259,53 @@ export function WorkspaceToolbar({
                     </SelectPopup>
                   </Select>
                 </label>
+                <span className="spatial-workspace-controls__toggles">
+                  <Button
+                    size="xs"
+                    aria-label={preferences.showGrid ? "Hide grid" : "Show grid"}
+                    aria-pressed={preferences.showGrid}
+                    tooltip={
+                      preferences.showGrid
+                        ? "Hide the empty pane slots"
+                        : "Show the empty pane slots around your panes"
+                    }
+                    onClick={() => onPreferencesChange({ showGrid: !preferences.showGrid })}
+                  >
+                    Grid
+                  </Button>
+                  <Button
+                    size="xs"
+                    aria-label={
+                      preferences.focusOnClick ? "Keep focus on click" : "Focus pane on click"
+                    }
+                    aria-pressed={preferences.focusOnClick}
+                    tooltip={
+                      preferences.focusOnClick
+                        ? "Clicking a pane focuses it and brings it into view"
+                        : "Clicking a pane leaves the focus ring and view where they are"
+                    }
+                    onClick={() => onPreferencesChange({ focusOnClick: !preferences.focusOnClick })}
+                  >
+                    Focus on click
+                  </Button>
+                  <Button
+                    size="xs"
+                    aria-label={
+                      preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"
+                    }
+                    aria-pressed={preferences.navigationBar}
+                    tooltip={
+                      preferences.navigationBar
+                        ? "Hide the navigation bar"
+                        : "Show the navigation bar along the bottom"
+                    }
+                    onClick={() =>
+                      onPreferencesChange({ navigationBar: !preferences.navigationBar })
+                    }
+                  >
+                    Navigation bar
+                  </Button>
+                </span>
                 <RowHeightControl
                   height={
                     preferences.maximizeAll ? "viewport" : (focusedRowHeight ?? preferences.rowHeight)
@@ -296,70 +343,6 @@ export function WorkspaceToolbar({
               </svg>
             </Button>
             <span className="spatial-workspace-controls__divider" aria-hidden="true" />
-            <Button
-              aria-label={preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"}
-              aria-pressed={preferences.navigationBar}
-              tooltip={
-                preferences.navigationBar
-                  ? "Hide the navigation bar"
-                  : "Show the navigation bar along the bottom"
-              }
-              onClick={() => onPreferencesChange({ navigationBar: !preferences.navigationBar })}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <rect x="2" y="2" width="12" height="12" rx="1.5" />
-                <path d="M2 10.5h12M6 12.5h4" />
-              </svg>
-            </Button>
-            <Button
-              aria-label={preferences.focusOnClick ? "Keep focus on click" : "Focus pane on click"}
-              aria-pressed={preferences.focusOnClick}
-              tooltip={
-                preferences.focusOnClick
-                  ? "Clicking a pane focuses it and brings it into view"
-                  : "Clicking a pane leaves the focus ring and view where they are"
-              }
-              onClick={() => onPreferencesChange({ focusOnClick: !preferences.focusOnClick })}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <rect x="2" y="2" width="12" height="12" rx="1.5" />
-                <path d="M7 6l4 2.5-1.8.5-.7 1.8z" strokeLinejoin="round" />
-              </svg>
-            </Button>
-            <Button
-              aria-label={preferences.showGrid ? "Hide grid" : "Show grid"}
-              aria-pressed={preferences.showGrid}
-              tooltip={
-                preferences.showGrid
-                  ? "Hide the empty pane slots"
-                  : "Show the empty pane slots around your panes"
-              }
-              onClick={() => onPreferencesChange({ showGrid: !preferences.showGrid })}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeDasharray="2 1.5"
-              >
-                <rect x="2" y="2" width="12" height="12" rx="1.5" />
-                <path d="M8 5.5v5M5.5 8h5" strokeDasharray="none" />
-              </svg>
-            </Button>
             <Button
               aria-label={layoutMode === "strip" ? "Switch to 2D layout" : "Switch to strip layout"}
               tooltip={
@@ -456,7 +439,7 @@ function RowHeightControl({
   const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
   return (
     <label className="spatial-workspace-controls__field">
-      <span>Row height · all rows</span>
+      <span>Current row height</span>
       <span className="spatial-workspace-controls__height">
         <input
           className="settings-slider w-full"
@@ -482,8 +465,9 @@ function RowHeightControl({
         />
       </span>
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
-        {value === max ? "Full" : `${value}px`}
+        {value === max ? "Full view" : `${value}px`}
       </span>
+      <span className="spatial-workspace-controls__hint">sets all rows</span>
     </label>
   );
 }

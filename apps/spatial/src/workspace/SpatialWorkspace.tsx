@@ -835,10 +835,13 @@ function SpatialWorkspaceView({
         resolved.after,
       );
       pendingPlacementRef.current.set(paneId, spot.placement);
-      if (workspaceRef.current?.getSnapshot().presentationMode === "overview")
+      if (
+        preferences.focusOnClick &&
+        workspaceRef.current?.getSnapshot().presentationMode === "overview"
+      )
         pendingFocusPaneIdRef.current = paneId;
     },
-    [addEmpty, getPanes],
+    [addEmpty, getPanes, preferences.focusOnClick],
   );
 
   useEffect(() => {

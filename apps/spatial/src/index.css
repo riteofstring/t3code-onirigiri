@@ -82,7 +82,7 @@
   --onirigiri-muted: var(--muted-foreground);
   --onirigiri-edge: var(--border);
   --onirigiri-divider: var(--border);
-  --onirigiri-focus: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
+  --onirigiri-focus: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
   --onirigiri-focus-ring-size: 0px;
   --onirigiri-control: transparent;
   --onirigiri-control-hover: var(--accent);
@@ -268,7 +268,6 @@
 .spatial-workspace-controls__surface[data-expanded="true"] {
   background: var(--card);
   border-color: var(--border);
-  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45);
 }
 
 .spatial-workspace[data-spatial-navigation-bar="true"]
@@ -353,8 +352,18 @@
 }
 
 .spatial-workspace-controls__height-value {
-  width: 42px;
+  width: 56px;
   font-variant-numeric: tabular-nums;
+}
+
+.spatial-workspace-controls__hint {
+  color: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
+}
+
+.spatial-workspace-controls__toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .spatial-workspace-controls__actions > .spatial-workspace-controls__settings {
@@ -387,6 +396,37 @@
     [data-presentation-mode="overview"]
   )
   > .onirigiri-pane__titlebar {
+  display: none;
+}
+
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  > .onirigiri-pane__titlebar,
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"][data-presentation-mode="overview"]
+  > .onirigiri-pane__content {
+  zoom: calc(1 / var(--spatial-overview-scale, 1));
+}
+
+.spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading > strong {
+  font-weight: 500;
+}
+
+.spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading > small::after {
+  content: "/";
+  margin-inline-start: 0.5rem;
+  color: var(--muted-foreground);
+}
+
+.spatial-workspace [data-onirigiri-surface-kind="empty"] > .onirigiri-pane__titlebar > .onirigiri-pane__tone {
   display: none;
 }
 

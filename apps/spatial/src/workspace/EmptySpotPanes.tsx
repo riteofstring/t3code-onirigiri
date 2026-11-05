@@ -75,6 +75,7 @@ function emptyCells(
   if (!viewElement || !layout || world.offsetWidth === 0) return [];
   const origin = world.getBoundingClientRect();
   const scale = origin.width / world.offsetWidth || 1;
+  if (scale < 0.99) stage.style.setProperty("--spatial-overview-scale", String(scale));
   const toWorld = (x: number, y: number) => ({
     x: (x - origin.left) / scale,
     y: (y - origin.top) / scale,

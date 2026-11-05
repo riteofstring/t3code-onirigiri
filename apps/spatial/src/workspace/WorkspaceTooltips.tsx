@@ -35,7 +35,14 @@ export function WorkspaceTooltipButton({
     <TooltipTrigger
       handle={handle ?? undefined}
       payload={tooltip}
-      render={<Button variant="ghost-muted" size="icon-xs" {...props} />}
+      render={
+        <Button
+          variant="ghost-muted"
+          size="icon-xs"
+          data-pressed={props["aria-pressed"] === true ? "" : undefined}
+          {...props}
+        />
+      }
     />
   );
 }
