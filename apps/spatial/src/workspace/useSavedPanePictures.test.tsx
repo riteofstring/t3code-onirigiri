@@ -1361,17 +1361,16 @@ it("warms only pictures valid for current panes and releases their URLs on unmou
   expect(revokedUrls).toEqual([url]);
 });
 
-it("prepares a stored picture from another geometry for display without treating it as fresh", async () => {
+it("does not display or decode a stored picture from another geometry", async () => {
   const stale = new Blob(["old geometry"]);
   store.saved.set(paneId, savedPicture({ geometryRevision: geometry(600), image: stale }));
   await mount();
   await advance(5);
   expect(hook.pictureFor(paneId)).toBeNull();
   expect(hook.hasFreshPicture(paneId)).toBe(false);
-  expect(hook.displayedPictureFor(paneId)?.image).toBe(stale);
-  const url = hook.preparedPictureUrl(stale);
-  expect(url).not.toBeNull();
-  expect(decodedUrls).toEqual([url]);
+  expect(hook.displayedPictureFor(paneId)).toBeNull();
+  expect(hook.preparedPictureUrl(stale)).toBeNull();
+  expect(decodedUrls).toEqual([]);
 });
 
 it("displays a stale stored picture until a fresh capture replaces it", async () => {
