@@ -1546,17 +1546,25 @@ it.each(["input", "pointerdown", "click", "keydown", "drop", "paste", "expansion
   },
 );
 
-it.each(["approval", "question"])("keeps a pending %s live", async (kind) => {
-  const { createPaneLifecycleStore } =
-    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
-  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-  const registration = vi.spyOn(lifecycle, "registerChat");
-  state.pendingApproval = kind === "approval";
-  state.pendingQuestion = kind === "question";
-  live();
-  await render(true);
-  expect(registration.mock.calls.at(-1)![1]()).toBe(`pending-${kind}`);
-});
+it.each(["approval", "question", "running turn"])(
+  "shows a chat with a %s as its latest picture in motion",
+  async (kind) => {
+    const { createPaneLifecycleStore } =
+      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+    lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+    const registration = vi.spyOn(lifecycle, "registerChat");
+    state.pendingApproval = kind === "approval";
+    state.pendingQuestion = kind === "question";
+    if (kind === "running turn") state.runtimeStatus = "running";
+    snapshots.hasFreshPicture = () => false;
+    snapshots.timelinePicture = () => ({ url: "blob:latest", width: 800, height: 600 });
+    live();
+    await render(true);
+    expect(registration.mock.calls.at(-1)![1]()).toBeNull();
+    snapshots.timelinePicture = () => null;
+    expect(registration.mock.calls.at(-1)![1]()).toMatch(/^no-picture:/);
+  },
+);
 
 it.each(["live", "deleted"] as const)(
   "only releases a missing composer after the %s view is ready",

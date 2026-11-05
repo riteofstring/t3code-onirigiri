@@ -1829,15 +1829,21 @@ it.each([false, true])(
   },
 );
 
-it("keeps changed mounted content live on the first motion frame, flushing pending mutations", async () => {
+it("shows the latest picture of changed mounted content in motion, flushing pending mutations", async () => {
   await mount();
   expect(presentationAt("motion")).toBe("dom");
   expect(presentationAt("rest", true, false)).toBe("dom");
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   await act(() => drawPicture(pane, new Blob(["first picture"])));
   expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
-  const stop = observePaneVisualChanges(paneId, () => hook.paneSnapshots.invalidate(paneId, true));
-  await act(() => expect(presentationAt("motion")).toBe("dom"));
+  let flushed = false;
+  const stop = observePaneVisualChanges(paneId, () => {
+    flushed = true;
+    hook.paneSnapshots.invalidate(paneId, true);
+  });
+  await act(() => expect(presentationAt("motion")).toEqual({ kind: "placeholder" }));
+  expect(flushed).toBe(true);
+  expect(hook.hasFreshPicture(paneId)).toBe(false);
   stop();
   expect(presentationAt("rest")).toBe("dom");
   expect(presentationAt("resize", true, false)).toBe("dom");

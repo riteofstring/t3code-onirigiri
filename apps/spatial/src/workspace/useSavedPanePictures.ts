@@ -536,11 +536,11 @@ export function useSavedPanePictures(
         const decision = motionDecision?.(pane.paneId);
         if (decision !== undefined) return decision === null ? { kind: "placeholder" } : "dom";
         flushPaneVisualChanges(pane.paneId);
-        if (pictureMount(pane.paneId) !== null && !hasFreshPicture(pane.paneId)) return "dom";
+        if (pictureMount(pane.paneId) !== null && !displayedPictureFor(pane.paneId)) return "dom";
       }
       return { kind: "placeholder" };
     },
-    [enabled, hasFreshPicture, pictureMount, motionDecision],
+    [enabled, displayedPictureFor, pictureMount, motionDecision],
   );
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {

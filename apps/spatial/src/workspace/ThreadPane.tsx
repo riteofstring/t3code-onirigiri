@@ -147,8 +147,7 @@ function usePaneContent(
         } else if (focused || visible) {
           if (focused || !snapshots?.hasFreshPicture(paneId)) show();
           else dwell = setTimeout(show, NEIGHBOUR_MOUNT_DELAY_MS);
-        }
-        else
+        } else
           idle = requestIdleCallback((deadline) => {
             idle = null;
             if (deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) prepare();
@@ -336,17 +335,11 @@ const PaneBody = memo(function PaneBody({
   maximizedRef.current = maximized;
   const motionState = useRef<() => string | null>(() => "not-ready");
   motionState.current = () => {
-    if (threadRuntimeIsActive(shell?.runtime)) return "in-progress-turn";
-    if (shell?.hasPendingApprovals || shell?.pendingSubagentRequest === "approval")
-      return "pending-approval";
-    if (shell?.hasPendingUserInput || shell?.pendingSubagentRequest === "user_input")
-      return "pending-question";
     flushPaneVisualChanges(paneId);
     if (localStateAtRisk.current) return "local-ui-interaction";
     if (maximizedRef.current) return "full-screen";
-    if (!snapshots?.hasFreshPicture(paneId))
-      return mounted ? `no-current-picture:${snapshots?.pictureMiss(paneId)}` : "not-ready";
-    if (!snapshots.timelinePicture(paneId)) return "picture-not-decoded";
+    if (!snapshots?.timelinePicture(paneId))
+      return mounted ? `no-picture:${snapshots?.pictureMiss(paneId)}` : "not-ready";
     if (!preparing) saveScroll.current?.();
     const element = contentRef.current;
     if (element?.contains(document.activeElement))
@@ -543,7 +536,9 @@ const PaneBody = memo(function PaneBody({
         if (!node?.closest('[data-chat-composer-surface="true"]'))
           return (
             type === "attributes" &&
-            ["aria-expanded", "data-user-message-collapsed", "open"].includes(attributeName ?? "") &&
+            ["aria-expanded", "data-user-message-collapsed", "open"].includes(
+              attributeName ?? "",
+            ) &&
             oldValue !== node?.getAttribute(attributeName!)
           );
         if (type !== "attributes" || !(target instanceof Element) || attributeName === null)
