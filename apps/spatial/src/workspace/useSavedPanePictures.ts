@@ -78,7 +78,6 @@ interface PaneSnapshots {
 
 export const PaneSnapshotContext = createContext<PaneSnapshots | null>(null);
 
-
 const OTHER_PANES_KEY = "onirigiri.otherPanes";
 const otherPanePictures = (() => {
   if (typeof window === "undefined") return false;
@@ -114,7 +113,10 @@ function onScreen(element: HTMLElement): boolean {
     bottom: view.innerHeight,
   };
   return (
-    box.right > stage.left && box.bottom > stage.top && box.left < stage.right && box.top < stage.bottom
+    box.right > stage.left &&
+    box.bottom > stage.top &&
+    box.left < stage.right &&
+    box.top < stage.bottom
   );
 }
 
@@ -234,12 +236,7 @@ export function useSavedPanePictures(
         for (const picture of pictures.values())
           if (!visualRevisions.current.has(picture.paneId))
             pictureVisualRevisions.current.set(picture.image, 0);
-        updateSaved(
-          new Map([
-            ...pictures,
-            ...(savedRef.current ?? []),
-          ]),
-        );
+        updateSaved(new Map([...pictures, ...(savedRef.current ?? [])]));
       });
     return () => {
       current = false;
@@ -683,8 +680,7 @@ export function useSavedPanePictures(
       timelinePicture: (paneId) => {
         const picture = displayedPictureFor(paneId);
         const url =
-          picture &&
-          (pictureUrls.preparedUrl(picture.image) ?? pictureUrls.urlFor(picture.image));
+          picture && (pictureUrls.preparedUrl(picture.image) ?? pictureUrls.urlFor(picture.image));
         return picture && url ? { url, ...picture.cssSize } : null;
       },
       invalidate: (paneId, committed = false) => {
@@ -898,9 +894,7 @@ export function createSnapshotQueue() {
               priority(a) - priority(b) ||
               distanceFromCenter(a[1].element) - distanceFromCenter(b[1].element),
           )[0]!
-        : offScreen.reduce((first, candidate) =>
-            due(candidate) < due(first) ? candidate : first,
-          );
+        : offScreen.reduce((first, candidate) => (due(candidate) < due(first) ? candidate : first));
       const wait = due([paneId, request]) - now;
       if (wait > 0) {
         timer = setTimeout(() => {
