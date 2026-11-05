@@ -107,7 +107,15 @@ function onScreen(element: HTMLElement): boolean {
   const view = element.ownerDocument?.defaultView;
   if (!view || typeof element.getBoundingClientRect !== "function") return false;
   const box = element.getBoundingClientRect();
-  return box.right > 0 && box.bottom > 0 && box.left < view.innerWidth && box.top < view.innerHeight;
+  const stage = element.closest?.('[data-onirigiri-slot="stage"]')?.getBoundingClientRect() ?? {
+    left: 0,
+    top: 0,
+    right: view.innerWidth,
+    bottom: view.innerHeight,
+  };
+  return (
+    box.right > stage.left && box.bottom > stage.top && box.left < stage.right && box.top < stage.bottom
+  );
 }
 
 export function markPaneSynced(

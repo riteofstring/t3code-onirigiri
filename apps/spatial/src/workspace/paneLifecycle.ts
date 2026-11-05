@@ -133,12 +133,12 @@ export function createPaneLifecycleStore(
       .filter(
         (id) =>
           !mounted.has(id) &&
+          !visible.has(id) &&
           (hasPicture(id) || canPicture(id, visited.has(id))) &&
           (retryAt.get(id) ?? 0) <= performance.now(),
       )
       .sort(
         (a, b) =>
-          Number(visible.has(b)) - Number(visible.has(a)) ||
           distance(a) - distance(b) ||
           Number(hasCover(a)) - Number(hasCover(b)),
       )[0];
