@@ -132,3 +132,17 @@ it("lets an arriving view retry a failed warm with a new URL", async () => {
   await vi.advanceTimersByTimeAsync(1);
   expect(urls.preparedUrl(image)).toBe("blob:2");
 });
+
+it("decodes a shown picture at once, ahead of idle warming", async () => {
+  const warming = new Blob(["warming"]);
+  const shown = new Blob(["shown"]);
+  urls.retain(new Set([warming, shown]));
+  const url = urls.shownUrl(shown);
+  expect(pending.map((entry) => entry.url)).toEqual([url]);
+  pending[0]!.resolve();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(urls.preparedUrl(shown)).toBe(url);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(pending).toHaveLength(2);
+  expect(pending[1]!.url).not.toBe(url);
+});

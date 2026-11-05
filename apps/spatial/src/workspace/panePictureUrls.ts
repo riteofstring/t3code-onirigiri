@@ -18,34 +18,35 @@ export function createPanePictureUrls() {
     return entry;
   };
 
+  const decode = (image: Blob, entry: PictureUrl) => {
+    queue = queue.filter((queued) => queued !== image);
+    entry.state = "decoding";
+    const decoder = new Image();
+    entry.decoder = decoder;
+    decoder.src = entry.url!;
+    return decoder.decode().then(
+      () => {
+        if (entries.get(image) === entry) entry.state = "ready";
+      },
+      () => {
+        if (entry.url !== null) URL.revokeObjectURL(entry.url);
+        entry.url = null;
+        entry.state = "failed";
+      },
+    );
+  };
+
   const schedule = () => {
     if (idle !== null || decoding || queue.length === 0) return;
     idle = requestIdleCallback(() => {
       idle = null;
       const image = queue.shift();
       if (!image) return;
-      const entry = entryFor(image);
-      entry.state = "decoding";
-      const decoder = new Image();
-      entry.decoder = decoder;
       decoding = true;
-      decoder.src = entry.url!;
-      void decoder
-        .decode()
-        .then(
-          () => {
-            if (entries.get(image) === entry) entry.state = "ready";
-          },
-          () => {
-            if (entry.url !== null) URL.revokeObjectURL(entry.url);
-            entry.url = null;
-            entry.state = "failed";
-          },
-        )
-        .finally(() => {
-          decoding = false;
-          schedule();
-        });
+      void decode(image, entryFor(image)).finally(() => {
+        decoding = false;
+        schedule();
+      });
     });
   };
 
@@ -54,6 +55,11 @@ export function createPanePictureUrls() {
       const entry = entryFor(image);
       if (entry.state === "queued" && !queue.includes(image)) queue.push(image);
       schedule();
+      return entry.url!;
+    },
+    shownUrl: (image: Blob): string => {
+      const entry = entryFor(image);
+      if (entry.state === "queued") void decode(image, entry);
       return entry.url!;
     },
     preparedUrl: (image: Blob): string | null => {
