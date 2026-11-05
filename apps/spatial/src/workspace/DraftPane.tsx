@@ -7,11 +7,18 @@ import {
   RouterProvider,
   useParams,
 } from "@tanstack/react-router";
-import { memo, useEffect, useMemo, useState } from "react";
+import { useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
+import { memo, use, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { ChatPaneControlsContext } from "@t3tools/web/src/components/chatPaneControls";
+import { ChatViewActivityContext } from "@t3tools/web/src/components/chatViewActivity";
+import { ComposerHandleContext } from "@t3tools/web/src/composerHandleContext";
 import { ThreadRouteView } from "@t3tools/web/src/components/ThreadRouteView";
 import { resolveThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
+
+import { usePaneActivity } from "./paneActivity";
+import { PaneLifecycleContext } from "./paneLifecycle";
+import { SpatialWorkspaceActiveContext, usePaneComposerHandle } from "./ThreadPane";
 
 function DraftRoute() {
   const target = useParams({
@@ -29,6 +36,7 @@ const draftRouteTree = draftRootRoute.addChildren([
 export const DraftPane = memo(function DraftPane({
   draftId,
   paneId,
+  focused,
   maximized,
   onNavigateAway,
   onAddPane,
@@ -37,6 +45,7 @@ export const DraftPane = memo(function DraftPane({
 }: {
   draftId: string;
   paneId: string;
+  focused: boolean;
   maximized: boolean;
   onNavigateAway: (href: string) => void;
   onAddPane: (paneId: string) => void;
@@ -68,11 +77,30 @@ export const DraftPane = memo(function DraftPane({
     }),
     [maximized, onAddPane, onClosePane, onToggleMaximized, paneId],
   );
+  const lifecycle = use(PaneLifecycleContext);
+  const cameraMoving = useSyncExternalStore(
+    lifecycle?.subscribeMotion ?? (() => () => {}),
+    lifecycle?.isCameraMoving ?? (() => false),
+  );
+  const interactive = useOnirigiriPaneInteractive();
+  const liveVisible = use(SpatialWorkspaceActiveContext) && interactive;
+  const active = focused && liveVisible && !cameraMoving;
+  const contentRef = useRef<HTMLDivElement>(null);
+  const activity = usePaneActivity(active, liveVisible, contentRef);
+  const composerRef = usePaneComposerHandle(active);
   return (
     <ChatPaneControlsContext value={controls}>
-      <div className="spatial-draft-pane h-full w-full" data-spatial-draft={draftId}>
-        <RouterProvider router={router} />
-      </div>
+      <ChatViewActivityContext value={activity}>
+        <ComposerHandleContext value={composerRef}>
+          <div
+            ref={contentRef}
+            className="spatial-draft-pane h-full w-full"
+            data-spatial-draft={draftId}
+          >
+            <RouterProvider router={router} />
+          </div>
+        </ComposerHandleContext>
+      </ChatViewActivityContext>
     </ChatPaneControlsContext>
   );
 });

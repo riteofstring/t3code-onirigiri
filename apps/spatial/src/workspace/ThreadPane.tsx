@@ -351,13 +351,14 @@ const PaneBody = memo(function PaneBody({
     [lifecycle, paneId],
   );
   useLayoutEffect(() => {
-    if (!interactive || !mounted || (!composerReady && preparing)) return;
+    if (!mounted || (!composerReady && preparing)) return;
+    lifecycle?.composerReady?.(paneId);
+    if (!interactive) return;
     const editor = contentRef.current?.querySelector<HTMLElement>(
       '[data-testid="composer-editor"]',
     );
     if (editor && (!editor.isContentEditable || editor.closest("[inert]"))) return;
     if (editor) lifecycle?.recordReady?.(paneId, "composerTypeableAt");
-    lifecycle?.composerReady?.(paneId);
     if (!preparing) lifecycle?.recordReady?.(paneId, "timelineInteractiveAt");
   }, [composerReady, interactive, lifecycle, mounted, paneId, preparing]);
   const [pictureLeaving, setPictureLeaving] = useState(false);
@@ -772,7 +773,7 @@ function PaneScrollState({
   );
 }
 
-function usePaneComposerHandle(active: boolean): ComposerHandleRef {
+export function usePaneComposerHandle(active: boolean): ComposerHandleRef {
   const appComposerRef = useComposerHandleContext();
   const [pane] = useState(() => {
     let handle: ChatComposerHandle | null = null;

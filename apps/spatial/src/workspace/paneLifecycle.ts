@@ -8,6 +8,7 @@ const QUIET_MS = 500;
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 const STORED_PICTURES_WAIT_MS = 2000;
+const HISTORY_LIMIT = 200;
 
 export interface PanePosition {
   readonly paneId: string;
@@ -75,6 +76,7 @@ export function createPaneLifecycleStore(
         deferred.add(paneId);
         pendingComposers.add(paneId);
         arrivals.push({ paneId, inputAt: arrivalInputAt });
+        if (arrivals.length > HISTORY_LIMIT) arrivals.shift();
       } else deferred.delete(paneId);
       startTransition(() => notify(paneId));
     }
@@ -326,6 +328,7 @@ export function createPaneLifecycleStore(
           else move.latched.push({ paneId: id, reason });
         }
         moves.push(move);
+        if (moves.length > HISTORY_LIMIT) moves.shift();
         if (removable.length > 0)
           removalFrame = requestAnimationFrame(() => {
             removalFrame = requestAnimationFrame(() => {

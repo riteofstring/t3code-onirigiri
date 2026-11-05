@@ -163,7 +163,7 @@ export function placePane(
   layout: OnirigiriLayout,
   paneId: string,
   placement: PanePlacement,
-  focusPaneId: string = paneId,
+  { focusPaneId = paneId, inserted = true }: { focusPaneId?: string | null; inserted?: boolean } = {},
 ): OnirigiriLayout {
   const moving = layout.columns.find(
     (column) => column.cells.length === 1 && column.cells[0]!.paneId === paneId,
@@ -174,7 +174,7 @@ export function placePane(
     .map((column) => ({
       ...column,
       slotIndex:
-        column.planeIndex === moving.planeIndex && slot(column) > slot(moving)
+        inserted && column.planeIndex === moving.planeIndex && slot(column) > slot(moving)
           ? slot(column) - 1
           : slot(column),
     }));
@@ -215,9 +215,10 @@ export function placePane(
   const columns = [...shifted, placed]
     .toSorted((a, b) => a.planeIndex - b.planeIndex || slot(a) - slot(b))
     .map((column, index) => ({ ...column, index }));
-  const focused = columns.find((column) =>
-    column.cells.some((cell) => cell.paneId === focusPaneId),
-  );
+  const focused =
+    focusPaneId === null
+      ? undefined
+      : columns.find((column) => column.cells.some((cell) => cell.paneId === focusPaneId));
   return {
     ...layout,
     columns,

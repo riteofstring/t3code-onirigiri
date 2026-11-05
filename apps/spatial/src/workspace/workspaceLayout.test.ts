@@ -340,3 +340,24 @@ it("gives a pane placed in a new row the default height instead of a neighbour's
     height(placePane(resized, "new", { plane: 0, slot: 2, newPlane: false, matchPaneId: "a" }), "new"),
   ).toBe(320);
 });
+
+it("moves an existing pane into a cell without shifting its old neighbours, keeping the cursor", () => {
+  const panes = [pane("draft", 0, 0), pane("a", 0, 1), pane("b", 1, 0)];
+  const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
+  const layout = { ...serializeWorkspaceLayout(scene, cursor), cursor: { column: 5, row: 0, split: 0 } };
+  const next = placePane(
+    layout,
+    "draft",
+    { plane: 0, slot: 3, newPlane: false },
+    { focusPaneId: null, inserted: false },
+  );
+  expect(
+    Object.fromEntries(
+      next.columns.map((column) => [
+        column.cells[0]!.paneId,
+        [column.planeIndex, column.slotIndex ?? column.index],
+      ]),
+    ),
+  ).toEqual({ a: [0, 1], draft: [0, 3], b: [1, 0] });
+  expect(next.cursor).toEqual({ column: 5, row: 0, split: 0 });
+});

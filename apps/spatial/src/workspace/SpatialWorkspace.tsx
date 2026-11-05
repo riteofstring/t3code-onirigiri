@@ -497,11 +497,39 @@ function SpatialWorkspaceView({
         row: focused?.planeIndex ?? 0,
         split: 0,
       });
-      let next = reconcilePaneLayout(layout, workspace.getLayout(), focused?.paneId);
+      const current = workspace.getLayout();
+      for (const pane of panes) {
+        if (pane.surfaceKind !== "thread" || previousById.has(pane.paneId)) continue;
+        const draft = previous.find(
+          (candidate) =>
+            candidate.surfaceKind === "draft" &&
+            !panes.some((next) => next.paneId === candidate.paneId) &&
+            threadPaneId(
+              (candidate.data as WorkspaceDraft).environmentId,
+              (candidate.data as WorkspaceDraft).threadId,
+            ) === pane.paneId,
+        );
+        const column =
+          draft &&
+          current.columns.find((candidate) =>
+            candidate.cells.some((cell) => cell.paneId === draft.paneId),
+          );
+        if (column)
+          pendingPlacementRef.current.set(pane.paneId, {
+            plane: column.planeIndex,
+            slot: column.slotIndex ?? column.index,
+            newPlane: false,
+            heightPx: column.cells.length === 1 ? (column.cells[0]!.heightPx ?? null) : null,
+          });
+      }
+      let next = reconcilePaneLayout(layout, current, focused?.paneId);
       for (const [paneId, placement] of pendingPlacementRef.current) {
         if (!panes.some((pane) => pane.paneId === paneId)) continue;
         pendingPlacementRef.current.delete(paneId);
-        next = placePane(next, paneId, placement, focused?.paneId ?? paneId);
+        next = placePane(next, paneId, placement, {
+          focusPaneId: focused?.paneId ?? null,
+          inserted: !previousById.has(paneId),
+        });
       }
       workspace.restoreLayout(next, { keepPresentation: true });
       if (added && workspace.getSnapshot().presentationMode === "overview") {
@@ -967,6 +995,7 @@ function SpatialWorkspaceView({
             <DraftPane
               draftId={(pane.data as WorkspaceDraft).draftId}
               paneId={pane.paneId}
+              focused={state.focused}
               maximized={state.maximized}
               onNavigateAway={navigateAway}
               onAddPane={addPaneBeside}
