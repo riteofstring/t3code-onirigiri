@@ -32,6 +32,7 @@ export function WorkspaceToolbar({
   controlsRef,
   shortcuts,
   preferences,
+  focusedRowHeight,
   maxRowHeight,
   onPreferencesChange,
   layoutMode,
@@ -43,6 +44,7 @@ export function WorkspaceToolbar({
   controlsRef: (element: HTMLDivElement | null) => void;
   shortcuts: OnirigiriShortcutBindings;
   preferences: WorkspacePreferences;
+  focusedRowHeight: number | null;
   maxRowHeight: number | null;
   onPreferencesChange: (change: Partial<WorkspacePreferences>) => void;
   layoutMode: "strip" | "rows";
@@ -258,7 +260,9 @@ export function WorkspaceToolbar({
                   </Select>
                 </label>
                 <RowHeightControl
-                  height={preferences.maximizeAll ? "viewport" : preferences.rowHeight}
+                  height={
+                    preferences.maximizeAll ? "viewport" : (focusedRowHeight ?? preferences.rowHeight)
+                  }
                   maximum={maxRowHeight}
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
                 />

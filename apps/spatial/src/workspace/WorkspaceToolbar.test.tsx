@@ -25,6 +25,7 @@ function Workspace() {
         controlsRef={setControls}
         shortcuts={{}}
         preferences={preferences}
+        focusedRowHeight={null}
         maxRowHeight={maximum}
         onPreferencesChange={update}
         layoutMode={layoutMode}

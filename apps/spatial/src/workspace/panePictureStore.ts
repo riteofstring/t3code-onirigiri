@@ -105,16 +105,3 @@ export async function savePanePicture(
   });
   await completed(transaction);
 }
-
-export async function deletePanePictures(paneId: string): Promise<void> {
-  const db = await openDatabase();
-  const transaction = db.transaction(STORE, "readwrite");
-  const cursor = transaction.objectStore(STORE).index(BY_PANE).openCursor(IDBKeyRange.only(paneId));
-  cursor.addEventListener("success", () => {
-    const current = cursor.result;
-    if (!current) return;
-    current.delete();
-    current.continue();
-  });
-  await completed(transaction);
-}

@@ -69,11 +69,6 @@ vi.mock("./panePictureStore", async (importOriginal) => ({
   savePanePicture: async (picture: SavedPanePicture) => {
     store.writes.push(picture);
   },
-  deletePanePictures: async (paneId: string) => {
-    store.deleted.push(paneId);
-    for (const [key, picture] of store.saved)
-      if (picture.paneId === paneId) store.saved.delete(key);
-  },
 }));
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({
   useTheme: () => ({ resolvedTheme: "dark", theme: store.theme, themeHalves: store.themeHalves }),

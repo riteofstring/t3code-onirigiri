@@ -375,18 +375,29 @@ function SpatialWorkspaceView({
     };
   }, [layoutPersistence]);
   const [layoutRevision, setLayoutRevision] = useState(0);
+  const [focusedRowHeight, setFocusedRowHeight] = useState<number | null>(null);
+  const syncFocusedRowHeight = useCallback(() => {
+    const workspace = workspaceRef.current;
+    const focusedId = workspace?.getSnapshot().focusedPaneId;
+    const cell = workspace
+      ?.getLayout()
+      .columns.flatMap((column) => column.cells)
+      .find((candidate) => candidate.paneId === focusedId);
+    setFocusedRowHeight(cell?.heightPx ?? null);
+  }, []);
   const onLayoutChange = useCallback<NonNullable<OnirigiriWorkspaceProps["onLayoutChange"]>>(
     (layout, metadata) => {
       layoutPersistence.save(layout);
       if (lastLayoutRevisionRef.current === metadata.layoutRevision) return;
       lastLayoutRevisionRef.current = metadata.layoutRevision;
       setLayoutRevision(metadata.layoutRevision);
+      syncFocusedRowHeight();
       setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
       syncMaximized();
       onPictureLayoutChange(layout);
       lifecycle?.setPanes(threadLayoutPositions(layout));
     },
-    [layoutPersistence, lifecycle, onPictureLayoutChange, syncMaximized],
+    [layoutPersistence, lifecycle, onPictureLayoutChange, syncFocusedRowHeight, syncMaximized],
   );
 
   const focusedPaneIdRef = useRef<string | null>(null);
@@ -577,6 +588,7 @@ function SpatialWorkspaceView({
       const paneId = frame?.paneId ?? workspaceRef.current?.getSnapshot().focusedPaneId ?? null;
       if (paneId === focusedPaneIdRef.current || !activeRef.current) return;
       focusedPaneIdRef.current = paneId;
+      syncFocusedRowHeight();
       if (paneId === null) {
         lifecycle?.setFocus(null);
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
@@ -627,7 +639,16 @@ function SpatialWorkspaceView({
       pendingRouteRef.current = follow;
       routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
     },
-    [alwaysLive, getPanes, syncMaximized, lifecycle, paneData, router, setCaptureActivity],
+    [
+      alwaysLive,
+      getPanes,
+      syncFocusedRowHeight,
+      syncMaximized,
+      lifecycle,
+      paneData,
+      router,
+      setCaptureActivity,
+    ],
   );
 
   useEffect(() => {
@@ -1089,6 +1110,7 @@ function SpatialWorkspaceView({
           onAdd={addPane}
           onToggleAnchor={toggleFocusAnchor}
           preferences={preferences}
+          focusedRowHeight={focusedRowHeight}
           maxRowHeight={
             stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
           }

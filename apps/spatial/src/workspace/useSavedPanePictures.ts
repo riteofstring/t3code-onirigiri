@@ -19,7 +19,6 @@ import {
   MAX_SAVED,
   MAX_SAVED_BYTES,
   loadPanePictures,
-  deletePanePictures,
   pictureRecordKey,
   savePanePicture,
   type SavedPanePicture,
@@ -209,7 +208,6 @@ export function useSavedPanePictures(
     setGeometryVersion((version) => version + 1);
   }, [defaultRowHeight]);
 
-  const deletedWhileLoading = useRef<Set<string> | null>(new Set());
   useEffect(() => {
     if (!enabled) return;
     let current = true;
@@ -217,14 +215,12 @@ export function useSavedPanePictures(
       .catch(() => new Map<string, SavedPanePicture>())
       .then((pictures) => {
         if (!current) return;
-        const deleted = deletedWhileLoading.current;
-        deletedWhileLoading.current = null;
         for (const picture of pictures.values())
           if (!visualRevisions.current.has(picture.paneId))
             pictureVisualRevisions.current.set(picture.image, 0);
         updateSaved(
           new Map([
-            ...[...pictures].filter(([, picture]) => !deleted?.has(picture.paneId)),
+            ...pictures,
             ...(savedRef.current ?? []),
           ]),
         );
@@ -457,14 +453,20 @@ export function useSavedPanePictures(
       const key = recordKey(paneId);
       const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
-      if (liveProducersRef.current.get(paneId) === "live" || !content) return null;
       const fresh =
         picture &&
+        content &&
+        liveProducersRef.current.get(paneId) !== "live" &&
         picture.revision === pictureRevision(contentKey(content), picture.source) &&
         pictureMatchesVisualRevision(paneId, picture.image)
           ? picture
           : null;
-      return fresh;
+      if (fresh) return fresh;
+      let latest: SavedPanePicture | null = picture ?? null;
+      for (const candidate of saved?.values() ?? [])
+        if (candidate.paneId === paneId && (!latest || candidate.savedAt > latest.savedAt))
+          latest = candidate;
+      return latest;
     },
     [enabled, geometryVersion, pictureMatchesVisualRevision, recordKey, saved],
   );
@@ -473,7 +475,7 @@ export function useSavedPanePictures(
     pictureUrls.retain(
       new Set(
         [...contentRevisions.keys()].flatMap((paneId) => {
-          const picture = freshPictureFor(paneId);
+          const picture = pictureFor(paneId);
           return picture ? [picture.image] : [];
         }),
       ),
@@ -481,7 +483,7 @@ export function useSavedPanePictures(
   }, [
     contentRevisions,
     enabled,
-    freshPictureFor,
+    pictureFor,
     geometryVersion,
     pictureUrls,
     liveProducers,
@@ -681,15 +683,6 @@ export function useSavedPanePictures(
         else next.delete(paneId);
         updateLiveProducers(next);
         visualRevisions.current.set(paneId, visualRevision(paneId) + 1);
-        const pictures = new Map(savedRef.current);
-        for (const [key, picture] of pictures) {
-          if (picture.paneId === paneId) pictures.delete(key);
-        }
-        if (pictures.size !== (savedRef.current?.size ?? 0)) updateSaved(pictures);
-        if (present) {
-          deletedWhileLoading.current?.add(paneId);
-          void deletePanePictures(paneId).catch(() => {});
-        }
         return visualRevision(paneId);
       },
       request: (paneId, element) => {
