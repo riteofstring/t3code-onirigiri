@@ -96,6 +96,7 @@ const PaneRouter = memo(function PaneRouter({
 });
 
 const NEIGHBOUR_MOUNT_DELAY_MS = 300;
+const STATUS_WAIT_MS = 1000;
 const PICTURE_FADE_MS = 100;
 
 function usePaneContent(
@@ -123,8 +124,14 @@ function usePaneContent(
   const updatedAt = shell?.updatedAt ?? null;
   const projectionUpdatedAt = projection ? DateTime.formatIso(projection.updatedAt) : null;
   const status = useThreadStatus(mounted ? thread : null);
-  const contentAvailable =
-    focused || status === "live" || status === "cached" || status === "deleted";
+  const statusReady = status === "live" || status === "cached" || status === "deleted";
+  const [waitedForStatus, setWaitedForStatus] = useState(false);
+  useEffect(() => {
+    if (!mounted || !visible || statusReady || waitedForStatus) return;
+    const timer = setTimeout(() => setWaitedForStatus(true), STATUS_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [mounted, statusReady, visible, waitedForStatus]);
+  const contentAvailable = focused || statusReady || waitedForStatus;
   useEffect(() => {
     if (!mounted) setContentMounted(false);
     else if (contentAvailable && !contentMounted) {

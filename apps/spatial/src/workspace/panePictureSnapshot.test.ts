@@ -82,7 +82,7 @@ it.each(["revision", "abort", "detach"])(
       async () => true,
       controller.signal,
     );
-    await Promise.resolve();
+    while (native.mock.calls.length === 0) await Promise.resolve();
     if (change === "revision") current = false;
     if (change === "abort") controller.abort();
     if (change === "detach") element.remove();
@@ -234,3 +234,18 @@ it.each([true, false])(
     }
   },
 );
+it("waits for running animations inside the pane before capturing", async () => {
+  const element = pane();
+  let finishAnimation!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    finishAnimation = resolve;
+  });
+  element.getAnimations = () => [{ finished } as unknown as Animation];
+  native.mockResolvedValue(picture);
+  const result = snapshotPanePicture(element, () => true, async () => true);
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  expect(native).not.toHaveBeenCalled();
+  finishAnimation();
+  expect(await result).toBe(picture);
+  expect(native).toHaveBeenCalledOnce();
+});
