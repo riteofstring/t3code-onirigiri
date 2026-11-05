@@ -1397,7 +1397,7 @@ it("displays a stale stored picture until a fresh capture replaces it", async ()
   expect(revokedUrls).toContain(staleUrl);
 });
 
-it("captures a pane only once its element is off screen", async () => {
+it("captures a pane requested on screen once a move leaves it off screen", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   const element = document.createElement("div");
@@ -1410,7 +1410,10 @@ it("captures a pane only once its element is off screen", async () => {
   expect(hook.hasFreshPicture(paneId)).toBe(false);
 
   left = element.ownerDocument.defaultView!.innerWidth + 100;
-  hook.paneSnapshots.request(paneId, element);
+  act(() => {
+    hook.setCaptureActivity(true, true);
+    hook.setCaptureActivity(true, false);
+  });
   await advance(3500);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.hasFreshPicture(paneId)).toBe(true);

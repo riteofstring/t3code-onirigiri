@@ -709,7 +709,7 @@ export function useSavedPanePictures(
       },
       request: (paneId, element) => {
         if (!enabled) return visualRevision(paneId);
-        if (!onScreen(element)) snapshots.request(paneId, element);
+        snapshots.request(paneId, element);
         return visualRevision(paneId);
       },
     }),
@@ -887,7 +887,9 @@ export function createSnapshotQueue() {
         resume.resolve(true);
         return;
       }
-      const dueRequests = [...pending].filter((candidate) => due(candidate) <= now);
+      const offScreen = [...pending].filter(([, request]) => !onScreen(request.element));
+      if (offScreen.length === 0) return;
+      const dueRequests = offScreen.filter((candidate) => due(candidate) <= now);
       const priority = ([paneId, request]: (typeof dueRequests)[number]) =>
         request.background ? 2 : hasSavedPixels(paneId) ? 1 : 0;
       const [paneId, request] = dueRequests.length
@@ -896,7 +898,7 @@ export function createSnapshotQueue() {
               priority(a) - priority(b) ||
               distanceFromCenter(a[1].element) - distanceFromCenter(b[1].element),
           )[0]!
-        : [...pending].reduce((first, candidate) =>
+        : offScreen.reduce((first, candidate) =>
             due(candidate) < due(first) ? candidate : first,
           );
       const wait = due([paneId, request]) - now;
