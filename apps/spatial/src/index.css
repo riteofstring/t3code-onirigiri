@@ -412,10 +412,7 @@
 
 .spatial-workspace
   [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
-  > .onirigiri-pane__titlebar,
-.spatial-workspace
-  [data-onirigiri-surface-kind="empty"][data-presentation-mode="overview"]
-  > .onirigiri-pane__content {
+  > .onirigiri-pane__titlebar {
   zoom: calc(1 / var(--spatial-overview-scale, 1));
 }
 
