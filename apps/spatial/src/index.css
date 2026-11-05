@@ -383,8 +383,8 @@
 }
 
 .spatial-workspace {
-  --spatial-cell: color-mix(in oklch, var(--background) 96%, var(--foreground));
-  --spatial-cell-hover: color-mix(in oklch, var(--background) 98.5%, var(--foreground));
+  --spatial-cell: color-mix(in oklch, var(--background) 90.5%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--background) 87.5%, var(--foreground));
   --spatial-cell-mark: color-mix(in oklch, var(--background) 60%, var(--foreground));
 }
 

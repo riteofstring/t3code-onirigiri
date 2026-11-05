@@ -1033,7 +1033,6 @@ function SpatialWorkspaceView({
   const emptySpots = useEmptySpots(
     stageElement,
     active &&
-      !overview &&
       maximizedPaneId === null &&
       initialPanes !== null &&
       (alwaysLive || lifecycle !== null),
@@ -1041,7 +1040,7 @@ function SpatialWorkspaceView({
     layoutMode !== "strip",
     getLayout,
     getFocusedPaneId,
-    `${layoutRevision}|${panes?.length ?? 0}`,
+    `${layoutRevision}|${panes?.length ?? 0}|${overview}`,
   );
 
 
