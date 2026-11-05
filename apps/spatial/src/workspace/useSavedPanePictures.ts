@@ -98,8 +98,9 @@ export function usePanePictureTheme(): string {
 }
 
 function onScreen(element: HTMLElement): boolean {
+  const view = element.ownerDocument?.defaultView;
+  if (!view || typeof element.getBoundingClientRect !== "function") return false;
   const box = element.getBoundingClientRect();
-  const view = element.ownerDocument.defaultView!;
   return box.right > 0 && box.bottom > 0 && box.left < view.innerWidth && box.top < view.innerHeight;
 }
 
@@ -142,6 +143,7 @@ export function useSavedPanePictures(
   getPanePresentation: PanePresentationResolver;
   onLayoutChange: (layout: OnirigiriLayout) => void;
   pictureFor: (paneId: string) => SavedPanePicture | null;
+  displayedPictureFor: (paneId: string) => SavedPanePicture | null;
   preparedPictureUrl: (image: Blob) => string | null;
   pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
@@ -453,29 +455,34 @@ export function useSavedPanePictures(
       const key = recordKey(paneId);
       const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
-      const fresh =
-        picture &&
-        content &&
-        liveProducersRef.current.get(paneId) !== "live" &&
+      if (liveProducersRef.current.get(paneId) === "live" || !content) return null;
+      return picture &&
         picture.revision === pictureRevision(contentKey(content), picture.source) &&
         pictureMatchesVisualRevision(paneId, picture.image)
-          ? picture
-          : null;
-      if (fresh) return fresh;
-      let latest: SavedPanePicture | null = picture ?? null;
+        ? picture
+        : null;
+    },
+    [enabled, geometryVersion, pictureMatchesVisualRevision, recordKey, saved],
+  );
+  const displayedPictureFor = useCallback(
+    (paneId: string): SavedPanePicture | null => {
+      const fresh = pictureFor(paneId);
+      if (fresh || !enabled) return fresh;
+      const key = recordKey(paneId);
+      let latest: SavedPanePicture | null = (key !== null && saved?.get(key)) || null;
       for (const candidate of saved?.values() ?? [])
         if (candidate.paneId === paneId && (!latest || candidate.savedAt > latest.savedAt))
           latest = candidate;
       return latest;
     },
-    [enabled, geometryVersion, pictureMatchesVisualRevision, recordKey, saved],
+    [enabled, pictureFor, recordKey, saved],
   );
   useLayoutEffect(() => {
     if (!enabled) return;
     pictureUrls.retain(
       new Set(
         [...contentRevisions.keys()].flatMap((paneId) => {
-          const picture = pictureFor(paneId);
+          const picture = displayedPictureFor(paneId);
           return picture ? [picture.image] : [];
         }),
       ),
@@ -483,7 +490,7 @@ export function useSavedPanePictures(
   }, [
     contentRevisions,
     enabled,
-    pictureFor,
+    displayedPictureFor,
     geometryVersion,
     pictureUrls,
     liveProducers,
@@ -659,7 +666,7 @@ export function useSavedPanePictures(
       hasFreshPicture,
       pictureMiss,
       timelinePicture: (paneId) => {
-        const picture = pictureFor(paneId);
+        const picture = displayedPictureFor(paneId);
         const url =
           picture &&
           (pictureUrls.preparedUrl(picture.image) ?? pictureUrls.urlFor(picture.image));
@@ -697,6 +704,7 @@ export function useSavedPanePictures(
       hasFreshPicture,
       pictureMiss,
       pictureFor,
+      displayedPictureFor,
       pictureUrls,
       snapshots,
       updateLiveProducers,
@@ -709,6 +717,7 @@ export function useSavedPanePictures(
     getPanePresentation,
     onLayoutChange,
     pictureFor,
+    displayedPictureFor,
     preparedPictureUrl: pictureUrls.preparedUrl,
     pictureUrl: pictureUrls.urlFor,
     hasFreshPicture,

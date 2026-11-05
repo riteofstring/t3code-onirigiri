@@ -334,7 +334,7 @@ function SpatialWorkspaceView({
   const {
     getPanePresentation,
     onLayoutChange: onPictureLayoutChange,
-    pictureFor,
+    displayedPictureFor,
     preparedPictureUrl,
     pictureUrl,
     hasFreshPicture,
@@ -532,9 +532,9 @@ function SpatialWorkspaceView({
       hasFreshPicture,
       picturesLoaded,
       canBackgroundPicture,
-      (id) => pictureFor(id) !== null,
+      (id) => displayedPictureFor(id) !== null,
     );
-  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture, pictureFor]);
+  }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture, displayedPictureFor]);
   useEffect(() => lifecycle?.setKeepNeighbours(fullScreen), [fullScreen, lifecycle]);
   const fullScreenPhaseRef = useRef(fullScreenPhase);
   useEffect(() => {
@@ -1051,7 +1051,7 @@ function SpatialWorkspaceView({
       ) : (
         <div className="h-full w-full bg-background" />
       );
-      const picture = pictureFor(pane.paneId);
+      const picture = displayedPictureFor(pane.paneId);
       return picture ? (
         <SavedPanePicture
           key={picture.geometryRevision.endsWith("|compact") ? "compact" : "tiled"}
@@ -1065,7 +1065,7 @@ function SpatialWorkspaceView({
         card
       );
     },
-    [hasMoved, pictureFor, pictureUrl, preparedPictureUrl],
+    [displayedPictureFor, hasMoved, pictureUrl, preparedPictureUrl],
   );
 
   const [stageElement, setStageElement] = useState<HTMLElement | null>(null);
