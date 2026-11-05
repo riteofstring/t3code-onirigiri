@@ -362,17 +362,19 @@
   gap: 2px;
 }
 
-.spatial-workspace-controls__toggles > [aria-pressed]::after {
-  content: "";
-  order: -1;
-  width: 6px;
-  height: 6px;
-  border: 1px solid currentColor;
-  border-radius: 9999px;
+.spatial-workspace-controls__toggles > [aria-pressed] {
+  border-color: var(--border);
+}
+
+.spatial-workspace-controls__toggles > [aria-pressed="true"] {
+  color: var(--foreground);
 }
 
 .spatial-workspace-controls__toggles > [aria-pressed="true"]::after {
-  background: currentColor;
+  content: "✓";
+  order: -1;
+  font-size: 0.6875rem;
+  line-height: 1;
 }
 
 .spatial-workspace-controls__actions > .spatial-workspace-controls__settings {
@@ -439,17 +441,24 @@
 }
 
 .spatial-workspace
-  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]:not(
+    [data-onirigiri-surface-kind="empty"]
+  )
   > .onirigiri-pane__titlebar::after {
   content: "";
   position: absolute;
   inset: 100% 0 auto;
-  height: 0.75rem;
+  height: 1.5rem;
   background: linear-gradient(var(--onirigiri-titlebar), transparent);
   pointer-events: none;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading {
+.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) > .onirigiri-pane__titlebar {
+  min-height: 3rem;
+}
+
+.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) .onirigiri-pane__heading {
+  font-size: 0.875rem;
   display: flex;
   flex-direction: row-reverse;
   justify-content: flex-end;
@@ -457,11 +466,11 @@
   gap: 0.5rem;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading > strong {
+.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) .onirigiri-pane__heading > strong {
   font-weight: 500;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"] .onirigiri-pane__heading > small::after {
+.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) .onirigiri-pane__heading > small::after {
   content: "/";
   margin-inline-start: 0.5rem;
   color: var(--muted-foreground);
@@ -477,8 +486,8 @@
 }
 
 .spatial-workspace:not(.dark *) {
-  --spatial-cell: color-mix(in oklch, var(--background) 95.5%, var(--foreground));
-  --spatial-cell-hover: color-mix(in oklch, var(--background) 92%, var(--foreground));
+  --spatial-cell: color-mix(in oklch, var(--background) 94%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--background) 90.5%, var(--foreground));
 }
 
 .spatial-empty-cells {
