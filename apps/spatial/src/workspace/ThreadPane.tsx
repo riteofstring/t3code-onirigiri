@@ -522,9 +522,12 @@ const PaneBody = memo(function PaneBody({
       if (event?.type === "scroll" && event.target instanceof HTMLElement) {
         const target = event.target;
         const next = `${target.scrollLeft}|${target.scrollTop}`;
-        const previous = scrollOffsets.current.get(target) ?? "0|0";
+        const previous = scrollOffsets.current.get(target);
         scrollOffsets.current.set(target, next);
-        if (next === previous) return;
+        const restored =
+          previous === undefined &&
+          target.matches(".messages-timeline-scroll, [data-tool-group-scroll]");
+        if (restored || next === (previous ?? "0|0")) return;
       }
       if (!snapshotPrepared.current) return;
       if (active && picturable !== null) snapshots?.invalidate(paneId, true);

@@ -751,6 +751,29 @@ it("keeps the current picture when the composer only renames hidden inputs or se
   expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
 });
 
+it("keeps the current picture when a remounted timeline restores its scroll position", async () => {
+  live();
+  state.interactive = true;
+  await render(true);
+  const timeline = document.createElement("div");
+  timeline.className = "messages-timeline-scroll";
+  await act(async () => container.querySelector("aside")!.parentElement!.append(timeline));
+  requestSnapshot.mockClear();
+  invalidateSnapshot.mockClear();
+  await act(() => {
+    timeline.scrollTop = 640;
+    timeline.dispatchEvent(new Event("scroll"));
+  });
+  expect(invalidateSnapshot).not.toHaveBeenCalled();
+  expect(requestSnapshot).not.toHaveBeenCalled();
+
+  await act(() => {
+    timeline.scrollTop = 200;
+    timeline.dispatchEvent(new Event("scroll"));
+  });
+  expect(invalidateSnapshot).toHaveBeenCalledWith(paneId, true);
+});
+
 it("refreshes a scrolled descendant at rest without predicting its keydown", async () => {
   live();
   state.interactive = true;
