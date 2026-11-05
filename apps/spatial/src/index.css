@@ -268,6 +268,7 @@
 .spatial-workspace-controls__surface[data-expanded="true"] {
   background: var(--card);
   border-color: var(--border);
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45);
 }
 
 .spatial-workspace[data-spatial-navigation-bar="true"]
@@ -315,6 +316,13 @@
   padding-inline: 3px;
 }
 
+.spatial-workspace-controls__divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 3px;
+  background: var(--border);
+}
+
 .spatial-workspace-controls__actions > *,
 .spatial-workspace-controls__advanced > * {
   flex-shrink: 0;
@@ -341,7 +349,7 @@
 
 .spatial-workspace-controls__height {
   display: flex;
-  width: 104px;
+  width: 140px;
 }
 
 .spatial-workspace-controls__height-value {
@@ -384,7 +392,7 @@
 
 .spatial-workspace {
   --spatial-cell: color-mix(in oklch, var(--background) 90.5%, var(--foreground));
-  --spatial-cell-hover: color-mix(in oklch, var(--background) 87.5%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--background) 85%, var(--foreground));
 }
 
 .spatial-empty-cells {
@@ -399,7 +407,6 @@
   border-radius: var(--onirigiri-pane-radius, 12px);
   cursor: pointer;
   pointer-events: auto;
-  animation: spatial-empty-cell-in 160ms ease-out;
 }
 
 .spatial-empty-cell[data-show-grid="true"] {
@@ -415,6 +422,7 @@
   left: var(--spot-x, 50%);
   top: var(--spot-y, 50%);
   translate: -50% -50%;
+  scale: var(--spot-scale, 1);
   border: 1px solid var(--border);
   border-radius: 9999px;
   background: var(--background);
@@ -429,10 +437,4 @@
 
 .spatial-empty-cell:hover > .spatial-empty-cell__label {
   visibility: visible;
-}
-
-@keyframes spatial-empty-cell-in {
-  from {
-    opacity: 0;
-  }
 }

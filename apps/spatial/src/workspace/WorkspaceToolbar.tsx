@@ -295,6 +295,7 @@ export function WorkspaceToolbar({
                 )}
               </svg>
             </Button>
+            <span className="spatial-workspace-controls__divider" aria-hidden="true" />
             <Button
               aria-label={preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"}
               aria-pressed={preferences.navigationBar}
@@ -391,6 +392,7 @@ export function WorkspaceToolbar({
                 )}
               </svg>
             </Button>
+            <span className="spatial-workspace-controls__divider" aria-hidden="true" />
             <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
             <div ref={controlsRef} />
           </div>
@@ -454,7 +456,7 @@ function RowHeightControl({
   const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
   return (
     <label className="spatial-workspace-controls__field">
-      <span>Row height</span>
+      <span>Row height · all rows</span>
       <span className="spatial-workspace-controls__height">
         <input
           className="settings-slider w-full"

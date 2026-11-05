@@ -297,6 +297,7 @@ export function EmptySpotGrid({
     const y = (Math.max(box.top, view.top) + Math.min(box.bottom, view.bottom)) / 2;
     cell.style.setProperty("--spot-x", `${(x - box.left) / scale}px`);
     cell.style.setProperty("--spot-y", `${(y - box.top) / scale}px`);
+    cell.style.setProperty("--spot-scale", String(1 / scale));
   };
   return createPortal(
     cells.map((cell) => (

@@ -525,11 +525,7 @@ export function useSavedPanePictures(
           (phase === "motion" || phase === "resize")
           ? { kind: "texture" }
           : "dom";
-      if (
-        visible &&
-        (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
-      )
-        return "dom";
+      if (visible && (phase === "rest" || phase === "resize")) return "dom";
       if (
         phase === "motion" ||
         phase === "overview" ||

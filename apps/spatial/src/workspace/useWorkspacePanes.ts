@@ -203,7 +203,12 @@ export function useWorkspacePanes(
           const added = toolPanesByThread.get(pane.threadId) ?? [];
           return [
             ...(dismissedPaneIds.has(paneId) ? [] : [threadPane]),
-            ...added.map((tool) => toolPaneDefinition(tool, thread.title)),
+            ...added.map((tool) =>
+              toolPaneDefinition(
+                tool,
+                tool.kind === "empty" ? (titleByGroup.get(row.projectId) ?? "") : thread.title,
+              ),
+            ),
           ];
         }),
       ])
@@ -223,7 +228,7 @@ const TOOL_TITLES: Record<ToolPane["kind"], string> = {
   surface: "Pane",
 };
 
-function toolPaneDefinition(tool: ToolPane, threadTitle: string) {
+function toolPaneDefinition(tool: ToolPane, subtitle: string) {
   return {
     paneId: tool.paneId,
     surfaceId: `surface:${tool.paneId}:${tool.kind}`,
@@ -232,7 +237,7 @@ function toolPaneDefinition(tool: ToolPane, threadTitle: string) {
       tool.kind === "surface" && tool.surface
         ? toolSurfaceTitle(tool.surface)
         : TOOL_TITLES[tool.kind],
-    subtitle: threadTitle,
+    subtitle,
     data: tool,
   };
 }

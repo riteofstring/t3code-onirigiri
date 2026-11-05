@@ -2250,7 +2250,15 @@ it("recaptures committed visible changes without a fixed quiet embargo", async (
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
-it.each(["motion", "overview-motion", "resize"] as const)(
+it("keeps visible chats live while resizing, even when their picture would be used in motion", async () => {
+  await mount();
+  motionDecision = null;
+  expect(presentationAt("motion")).toEqual({ kind: "placeholder" });
+  expect(presentationAt("resize")).toBe("dom");
+  expect(presentationAt("resize", false)).toEqual({ kind: "placeholder" });
+});
+
+it.each(["motion", "overview-motion"] as const)(
   "honors the latched removal decision during %s, then returns live at rest",
   async (phase) => {
     await mount();
