@@ -218,17 +218,23 @@ function SpatialWorkspaceView({
     ),
   );
   const threadShells = useThreadShells();
-  const drafts = useMemo(() => {
+  const { drafts, sentDraftPaneIds } = useMemo(() => {
     const shown = new Set(
       threadShells.map((thread) => threadPaneId(thread.environmentId, thread.id)),
     );
-    return (JSON.parse(draftKey) as (WorkspaceDraft & { promoted: boolean })[]).flatMap(
-      ({ promoted, ...draft }) =>
-        dismissedPaneIds.has(draftPaneId(draft.draftId)) ||
-        (promoted && shown.has(threadPaneId(draft.environmentId, draft.threadId)))
-          ? []
-          : [draft],
+    const sent = new Set<string>();
+    const open = (JSON.parse(draftKey) as (WorkspaceDraft & { promoted: boolean })[]).flatMap(
+      ({ promoted, ...draft }) => {
+        const promotedId = threadPaneId(draft.environmentId, draft.threadId);
+        if (dismissedPaneIds.has(draftPaneId(draft.draftId))) return [];
+        if (promoted && shown.has(promotedId)) {
+          sent.add(promotedId);
+          return [];
+        }
+        return [draft];
+      },
     );
+    return { drafts: open, sentDraftPaneIds: sent };
   }, [dismissedPaneIds, draftKey, threadShells]);
   const panes = useWorkspacePanes(layoutMode, toolPanes, dismissedPaneIds, drafts);
   const [initialPanes, setInitialPanes] = useState(panes);
@@ -1087,6 +1093,7 @@ function SpatialWorkspaceView({
               onAddPane={addPaneBeside}
               onClosePane={closeChatPane}
               onToggleMaximized={togglePaneMaximized}
+              fromDraft={sentDraftPaneIds.has(pane.paneId)}
             />
           )}
         </SpatialSurfaceHost>
@@ -1101,6 +1108,7 @@ function SpatialWorkspaceView({
       isPaneClosing,
       navigateAway,
       navigateFromTerminal,
+      sentDraftPaneIds,
       togglePaneMaximized,
       startChatInPane,
       toolController,

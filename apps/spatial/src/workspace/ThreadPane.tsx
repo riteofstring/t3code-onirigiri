@@ -107,17 +107,20 @@ function usePaneContent(
   focused: boolean,
   visualRevision: number,
   composerReady: boolean,
+  handoff: boolean,
 ): {
   mounted: boolean;
+  lifecycleMounted: boolean;
   preparing: boolean;
   picturable: string | null;
   onContentReadyChange: (ready: boolean) => void;
 } {
   const lifecycle = use(PaneLifecycleContext);
   const snapshots = use(PaneSnapshotContext);
-  const mounted = usePaneMounted(paneId, settledVisible);
+  const lifecycleMounted = usePaneMounted(paneId, settledVisible);
+  const mounted = lifecycleMounted || handoff;
   const shell = useThreadShell(thread);
-  const [contentMounted, setContentMounted] = useState(false);
+  const [contentMounted, setContentMounted] = useState(handoff);
   const renderContent = mounted && contentMounted;
   const projection = useThreadProjection(renderContent ? thread : null)?.projection ?? null;
   const history = useThreadHistory(renderContent ? thread : null);
@@ -229,6 +232,7 @@ function usePaneContent(
 
   return {
     mounted: renderContent,
+    lifecycleMounted,
     preparing: renderContent && !presented,
     onContentReadyChange: setViewReady,
     picturable:
@@ -269,6 +273,7 @@ const PaneBody = memo(function PaneBody({
   onAddPane,
   onClosePane,
   onToggleMaximized,
+  fromDraft = false,
 }: {
   thread: ThreadPaneThread;
   paneId: string;
@@ -280,6 +285,7 @@ const PaneBody = memo(function PaneBody({
   onAddPane?: (paneId: string) => void;
   onClosePane?: (paneId: string) => void;
   onToggleMaximized?: (paneId: string) => void;
+  fromDraft?: boolean;
 }) {
   const paneControls = useMemo(
     () =>
@@ -313,7 +319,8 @@ const PaneBody = memo(function PaneBody({
     ),
     () => lifecycle?.timelineDeferred(paneId) ?? false,
   );
-  const { mounted, preparing, picturable, onContentReadyChange } = usePaneContent(
+  const [handoff, setHandoff] = useState(fromDraft);
+  const { mounted, lifecycleMounted, preparing, picturable, onContentReadyChange } = usePaneContent(
     paneId,
     thread,
     visible,
@@ -321,7 +328,9 @@ const PaneBody = memo(function PaneBody({
     focused,
     visualRevision,
     composerReady,
+    handoff,
   );
+  if (handoff && lifecycleMounted && !deferred && !preparing) setHandoff(false);
 
   const paneComposerRef = usePaneComposerHandle(active);
 
@@ -373,14 +382,14 @@ const PaneBody = memo(function PaneBody({
   }, [preparing]);
   const host = useMemo(
     () => ({
-      deferTimeline: deferred,
+      deferTimeline: deferred && !handoff,
       timelineFallback:
-        preparing || pictureLeaving ? (
+        !handoff && (preparing || pictureLeaving) ? (
           <TimelinePicture paneId={paneId} leaving={!preparing} />
         ) : null,
       onComposerReady: setComposerReady,
     }),
-    [deferred, paneId, pictureLeaving, preparing],
+    [deferred, handoff, paneId, pictureLeaving, preparing],
   );
   const activity = usePaneActivity(active, liveVisible, contentRef);
   const storedPicture = mounted ? null : (snapshots?.timelinePicture(paneId)?.url ?? null);
