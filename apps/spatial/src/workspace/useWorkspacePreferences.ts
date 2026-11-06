@@ -7,6 +7,11 @@ const STORAGE_KEY = "onirigiri-t3:workspace-preferences";
 const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
 const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 const MINIMAP_PLACEMENT_KEY = "onirigiri-t3:minimap-placement";
+const DEFAULT_MINIMAP_PLACEMENT: OnirigiriMinimapPlacement = {
+  corner: "bottom-right",
+  widthPx: 220,
+  heightPx: 64,
+};
 export const MIN_COLUMN_WIDTH = 442;
 export const DEFAULT_COLUMN_WIDTH = 600;
 
@@ -50,7 +55,7 @@ const defaults: WorkspacePreferences = {
   maximizeAll: false,
   showGrid: false,
   focusOnClick: false,
-  showMinimap: false,
+  showMinimap: true,
 };
 
 function readPreferences(): WorkspacePreferences {
@@ -79,7 +84,7 @@ function readPreferences(): WorkspacePreferences {
       maximizeAll: maximizeAll === true,
       showGrid: showGrid === true,
       focusOnClick: focusOnClick === true,
-      showMinimap: showMinimap === true,
+      showMinimap: showMinimap !== false,
     };
   } catch {
     return defaults;
@@ -130,9 +135,9 @@ export function useMinimapPlacement() {
   const [placement, setPlacement] = useState((): Partial<OnirigiriMinimapPlacement> => {
     try {
       const value: unknown = JSON.parse(readItem(MINIMAP_PLACEMENT_KEY) ?? "null");
-      return typeof value === "object" && value !== null ? value : {};
+      return typeof value === "object" && value !== null ? value : DEFAULT_MINIMAP_PLACEMENT;
     } catch {
-      return {};
+      return DEFAULT_MINIMAP_PLACEMENT;
     }
   });
   const update = useCallback((next: OnirigiriMinimapPlacement) => {

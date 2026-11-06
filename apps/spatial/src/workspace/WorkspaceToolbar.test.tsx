@@ -117,7 +117,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
-    showMinimap: false,
+    showMinimap: true,
   });
   await click("Workspace controls");
   await click("Advanced workspace controls");
@@ -141,7 +141,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
-    showMinimap: false,
+    showMinimap: true,
   });
 
   await act(() => root.unmount());
@@ -155,7 +155,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
-    showMinimap: false,
+    showMinimap: true,
   });
   await click("Workspace controls");
   await click("Advanced workspace controls");
@@ -168,7 +168,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
-    showMinimap: false,
+    showMinimap: true,
   });
 });
 
@@ -310,7 +310,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
-    showMinimap: false,
+    showMinimap: true,
   });
 });
 
@@ -371,18 +371,18 @@ it("sets every column's width from 442 pixels up to half the view width, and dou
   expect(settings().rowHeight).toBe("viewport");
 });
 
-it("shows the minimap from an icon button and remembers it", async () => {
-  expect(settings().showMinimap).toBe(false);
-  await click("Workspace controls");
-  await click("Minimap");
+it("shows the minimap by default and toggles it from an icon button", async () => {
   expect(settings().showMinimap).toBe(true);
+  await click("Workspace controls");
   expect(button("Minimap").getAttribute("aria-pressed")).toBe("true");
-  expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).showMinimap).toBe(
-    true,
-  );
   await click("Minimap");
   expect(settings().showMinimap).toBe(false);
   expect(button("Minimap").getAttribute("aria-pressed")).toBe("false");
+  expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).showMinimap).toBe(
+    false,
+  );
+  await click("Minimap");
+  expect(settings().showMinimap).toBe(true);
 });
 
 it("maximizes all panes edge to edge through the preference", async () => {
