@@ -81,6 +81,7 @@ function move(
   target: (origin: DOMRect, radius: number) => Box | null,
   duration: number,
   opacity: (from: number | null) => Keyframe[],
+  start?: Box,
 ) {
   const workspace = border.parentElement?.querySelector(".onirigiri-workspace");
   if (!workspace) return;
@@ -89,7 +90,8 @@ function move(
   const line = parseFloat(style.getPropertyValue("--onirigiri-focus-border-width")) || 1;
   const origin = border.getBoundingClientRect();
   const stage = { x: 0, y: 0, width: origin.width, height: origin.height };
-  const from = currentBox(border, origin) ?? (motion === "grow" ? focusBox(border, origin) : stage);
+  const from =
+    start ?? currentBox(border, origin) ?? (motion === "grow" ? focusBox(border, origin) : stage);
   const to = target(origin, radius);
   const fromOpacity = border.dataset.motion ? Number(getComputedStyle(border).opacity) : null;
   stop(border);
@@ -122,7 +124,7 @@ function stop(border: HTMLElement) {
   delete border.dataset.motion;
 }
 
-function grow(border: HTMLElement) {
+function grow(border: HTMLElement, start?: Box) {
   move(
     border,
     "grow",
@@ -137,7 +139,16 @@ function grow(border: HTMLElement) {
     },
     GROW_MS,
     (from) => [{ opacity: from ?? 1 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }],
+    start,
   );
+}
+
+export function beginFullScreenGrow(border: HTMLElement | null) {
+  if (!border || matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
+  const start = focusBox(border, border.getBoundingClientRect());
+  return () => {
+    if (start) grow(border, start);
+  };
 }
 
 export function useFullScreenBorder(

@@ -24,6 +24,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { terminalEnvironment } from "@t3tools/web/src/state/terminal";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -74,7 +75,7 @@ import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
 import { ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
-import { FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
+import { beginFullScreenGrow, FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
 import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
@@ -320,8 +321,7 @@ function SpatialWorkspaceView({
     if (interacted) return;
     const done = () => setInteracted(true);
     const types = ["pointerdown", "keydown", "wheel"] as const;
-    for (const type of types)
-      window.addEventListener(type, done, { capture: true, passive: true });
+    for (const type of types) window.addEventListener(type, done, { capture: true, passive: true });
     return () => {
       for (const type of types) window.removeEventListener(type, done, { capture: true });
     };
@@ -359,6 +359,28 @@ function SpatialWorkspaceView({
     phase: fullScreenPhase,
   } = useFullScreenTransition(preferences.maximizeAll, stageViewport.width > COMPACT_STAGE_WIDTH);
   const fullScreenBorderRef = useFullScreenBorder(fullScreenPhase, fullScreen, fullScreenRequested);
+  const animateFullScreen = stageViewport.width > COMPACT_STAGE_WIDTH;
+  const growFullScreenBorder = useCallback(
+    () => (animateFullScreen ? beginFullScreenGrow(fullScreenBorderRef.current) : () => {}),
+    [animateFullScreen, fullScreenBorderRef],
+  );
+  const changeWorkspacePreferences = useCallback(
+    (change: Partial<WorkspacePreferences>) => {
+      const grow =
+        change.maximizeAll === true && !preferences.maximizeAll ? growFullScreenBorder() : null;
+      changePreferences(change);
+      grow?.();
+    },
+    [changePreferences, growFullScreenBorder, preferences.maximizeAll],
+  );
+  const [snapMaximize, setSnapMaximize] = useState(false);
+  useEffect(() => {
+    if (!snapMaximize) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setSnapMaximize(false));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [snapMaximize]);
   const paneViewport = useMemo(() => {
     if (stageViewport.height <= 0) return null;
     return {
@@ -969,10 +991,14 @@ function SpatialWorkspaceView({
   }, []);
   const togglePaneMaximized = useCallback(
     (paneId: string) => {
+      const entering = workspaceRef.current?.getSnapshot().maximizedPaneId !== paneId;
+      const grow = entering ? growFullScreenBorder() : null;
+      if (entering) flushSync(() => setSnapMaximize(true));
       workspaceRef.current?.togglePaneMaximized(paneId);
       syncMaximized();
+      grow?.();
     },
-    [syncMaximized],
+    [growFullScreenBorder, syncMaximized],
   );
   const focusSurfacePane = useCallback((paneId: string) => {
     if (workspaceRef.current?.focusPane(paneId, { exitOverview: true })) return;
@@ -1132,7 +1158,6 @@ function SpatialWorkspaceView({
     `${layoutRevision}|${panes?.length ?? 0}|${overview}`,
   );
 
-
   return (
     <WorkspaceTooltips>
       <LinkPullRequestDialogHost />
@@ -1153,7 +1178,7 @@ function SpatialWorkspaceView({
           maxRowHeight={
             stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
           }
-          onPreferencesChange={changePreferences}
+          onPreferencesChange={changeWorkspacePreferences}
           layoutMode={layoutMode}
           onLayoutModeChange={onLayoutModeChange}
           controlsRef={setControlsContainer}
@@ -1169,7 +1194,7 @@ function SpatialWorkspaceView({
                     ariaLabel="Onirigiri for T3 Code"
                     className="min-h-0 flex-1"
                     compactBreakpoint={fullScreen ? Number.POSITIVE_INFINITY : COMPACT_STAGE_WIDTH}
-                    {...(fullScreenPhase === "swap" || fullScreenPhase === "enter"
+                    {...(fullScreenPhase === "swap" || fullScreenPhase === "enter" || snapMaximize
                       ? { cameraMotion: SNAP_CAMERA }
                       : {})}
                     chromeComponents={WORKSPACE_CHROME}
