@@ -1,3 +1,4 @@
+import { PaneLoading } from "./ThreadCard";
 import { COMPOSER_NAVIGATION } from "./composerNavigation";
 import { flushPaneVisualChanges, observePaneVisualChanges } from "./paneVisualChanges";
 import { useOnirigiriPaneContentReady, useOnirigiriPaneInteractive } from "@riteofstring/onirigiri";
@@ -741,7 +742,9 @@ function TimelinePicture({ paneId, leaving }: { paneId: string; leaving: boolean
             maxWidth: "none",
           }}
         />
-      ) : null}
+      ) : (
+        <PaneLoading />
+      )}
     </div>
   );
 }

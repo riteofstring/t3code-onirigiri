@@ -2,6 +2,7 @@ import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models"
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import { ProjectFavicon } from "@t3tools/web/src/components/ProjectFavicon";
+import { Spinner } from "@t3tools/web/src/components/ui/spinner";
 import { useProject, useThreadShell } from "@t3tools/web/src/state/entities";
 
 const RUN_STATUS_LABEL: Record<ThreadRuntimeSummary["status"], string> = {
@@ -18,12 +19,22 @@ const RUN_STATUS_LABEL: Record<ThreadRuntimeSummary["status"], string> = {
   rolled_back: "Rolled back",
 };
 
+export function PaneLoading() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground">
+      <Spinner size="lg" />
+    </div>
+  );
+}
+
 export function ThreadCard({
   environmentId,
   threadId,
+  loading = false,
 }: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
+  loading?: boolean;
 }) {
   const thread = useThreadShell({ environmentId, threadId });
   const project = useProject(thread ? { environmentId, projectId: thread.projectId } : null);
@@ -53,6 +64,7 @@ export function ThreadCard({
         {thread.branch ? <span>{thread.branch}</span> : null}
         <span>Updated {new Date(thread.updatedAt).toLocaleString()}</span>
       </div>
+      {loading ? <Spinner size="lg" className="text-muted-foreground" /> : null}
     </div>
   );
 }

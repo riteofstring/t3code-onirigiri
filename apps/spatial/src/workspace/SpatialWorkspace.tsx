@@ -74,7 +74,7 @@ import {
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
-import { ThreadCard } from "./ThreadCard";
+import { PaneLoading, ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { beginFullScreenGrow, FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
@@ -1169,12 +1169,18 @@ function SpatialWorkspaceView({
     (pane: WorkspacePane) => {
       if (pane.surfaceKind !== "thread") return null;
       const data = pane.data as ThreadPaneData;
-      const card = hasMoved ? (
-        <ThreadCard environmentId={data.environmentId} threadId={data.threadId} />
-      ) : (
-        <div className="h-full w-full bg-background" />
-      );
       const picture = displayedPictureFor(pane.paneId);
+      const card = hasMoved ? (
+        <ThreadCard
+          environmentId={data.environmentId}
+          threadId={data.threadId}
+          loading={!picture}
+        />
+      ) : (
+        <div className="relative h-full w-full bg-background">
+          {picture ? null : <PaneLoading />}
+        </div>
+      );
       return picture ? (
         <SavedPanePicture
           key={picture.geometryRevision.endsWith("|compact") ? "compact" : "tiled"}
