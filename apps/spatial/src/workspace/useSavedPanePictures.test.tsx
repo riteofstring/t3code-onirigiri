@@ -626,7 +626,7 @@ it("keeps the last completed picture through streaming and saves the completed t
   await act(() => drawPicture(pane, completed));
   expect(store.writes).toHaveLength(2);
   expect(store.writes[1]).toMatchObject({
-    revision: `u2|dark|dark|${fontRevision}|chat-chrome-2|native-worker-8`,
+    revision: `u2|dark|dark|${fontRevision}|chat-chrome-2|native-worker-9`,
     image: completed,
   });
 });
@@ -656,7 +656,7 @@ it("refreshes pictures when the palette changes within the same appearance", asy
   await act(() => drawPicture(pane, new Blob(["iris"])));
   expect(hook.hasFreshPicture(paneId)).toBe(true);
   expect(store.writes[2]?.revision).toBe(
-    `u1|iris|dark|${fontRevision}|chat-chrome-2|native-worker-8`,
+    `u1|iris|dark|${fontRevision}|chat-chrome-2|native-worker-9`,
   );
 });
 
@@ -675,7 +675,7 @@ it("waits for committed detail to catch up with shell metadata before saving a p
   await advance(3500);
   expect(store.writes).toHaveLength(1);
   expect(store.writes[0]?.revision).toBe(
-    `u2|dark|dark|${fontRevision}|chat-chrome-2|native-worker-8`,
+    `u2|dark|dark|${fontRevision}|chat-chrome-2|native-worker-9`,
   );
 
   markPaneSynced(paneId, { updatedAt: "u3", theme: "light" });
@@ -1229,7 +1229,7 @@ it("retries an interrupted refresh with the latest pane element", async () => {
   store.saved.set(
     paneId,
     savedPicture({
-      revision: `${contentRevision}|native-worker-8`,
+      revision: `${contentRevision}|native-worker-9`,
       image: old,
       source: "snapshot",
     }),

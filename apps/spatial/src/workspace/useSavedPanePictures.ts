@@ -40,7 +40,7 @@ function contentKey(content: PaneContentRevision): string {
   return `${content.updatedAt}|${content.theme}|chat-chrome-2`;
 }
 
-const SNAPSHOT_REVISION = "native-worker-8";
+const SNAPSHOT_REVISION = "native-worker-9";
 
 function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
   return source === "capture" ? revision : `${revision}|${SNAPSHOT_REVISION}`;
