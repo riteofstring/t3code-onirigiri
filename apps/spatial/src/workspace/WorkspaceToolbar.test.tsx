@@ -116,6 +116,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
+    showMinimap: false,
   });
   await click("Workspace controls");
   await click("Advanced workspace controls");
@@ -138,6 +139,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
+    showMinimap: false,
   });
 
   await act(() => root.unmount());
@@ -150,6 +152,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
+    showMinimap: false,
   });
   await click("Workspace controls");
   await click("Advanced workspace controls");
@@ -161,6 +164,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
+    showMinimap: false,
   });
 });
 
@@ -301,6 +305,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
     maximizeAll: false,
     showGrid: false,
     focusOnClick: false,
+    showMinimap: false,
   });
 });
 
@@ -334,6 +339,20 @@ it("hides the grid by default and toggles it and focus on click from the hover b
   await click("Hide grid");
   await click("Keep focus on click");
   expect(settings()).toMatchObject({ showGrid: false, focusOnClick: false });
+});
+
+it("shows the minimap from an icon button and remembers it", async () => {
+  expect(settings().showMinimap).toBe(false);
+  await click("Workspace controls");
+  await click("Minimap");
+  expect(settings().showMinimap).toBe(true);
+  expect(button("Minimap").getAttribute("aria-pressed")).toBe("true");
+  expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).showMinimap).toBe(
+    true,
+  );
+  await click("Minimap");
+  expect(settings().showMinimap).toBe(false);
+  expect(button("Minimap").getAttribute("aria-pressed")).toBe("false");
 });
 
 it("maximizes all panes edge to edge through the preference", async () => {

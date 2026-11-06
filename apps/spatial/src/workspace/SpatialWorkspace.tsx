@@ -58,6 +58,7 @@ import {
   overviewZoomChoices,
   useFocusAnchorPreference,
   useLayoutModePreference,
+  useMinimapPlacement,
   useWorkspacePreferences,
   type WorkspacePreferences,
 } from "./useWorkspacePreferences";
@@ -240,6 +241,7 @@ function SpatialWorkspaceView({
   const [initialPanes, setInitialPanes] = useState(panes);
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const [preferences, updatePreferences] = useWorkspacePreferences();
+  const [minimapPlacement, setMinimapPlacement] = useMinimapPlacement();
   const paneDefaults = useMemo(() => ({ height: preferences.rowHeight }), [preferences.rowHeight]);
   const gridAxes = layoutMode === "strip" ? "horizontal" : "spatial";
   const [savedLayout] = useState(() => readPaneLayout(layoutMode));
@@ -1251,6 +1253,9 @@ function SpatialWorkspaceView({
                     renderPane={renderPane}
                     renderPanePlaceholder={renderPanePlaceholder}
                     panePictures={!alwaysLive}
+                    showMinimap={preferences.showMinimap}
+                    minimapPlacement={minimapPlacement}
+                    onMinimapPlacementChange={setMinimapPlacement}
                     restPictureFade={!alwaysLive}
                     focusPaneOnPointer={preferences.focusOnClick}
                     shortcutScope={active ? "application" : "workspace"}

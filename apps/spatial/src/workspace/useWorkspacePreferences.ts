@@ -1,4 +1,4 @@
-import type { WorkspaceFocusAnchor } from "@riteofstring/onirigiri";
+import type { OnirigiriMinimapPlacement, WorkspaceFocusAnchor } from "@riteofstring/onirigiri";
 import { useCallback, useEffect, useState } from "react";
 
 import type { WorkspaceLayoutMode } from "./useWorkspacePanes";
@@ -6,6 +6,7 @@ import type { WorkspaceLayoutMode } from "./useWorkspacePanes";
 const STORAGE_KEY = "onirigiri-t3:workspace-preferences";
 const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
 const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
+const MINIMAP_PLACEMENT_KEY = "onirigiri-t3:minimap-placement";
 
 function readItem(key: string): string | null {
   try {
@@ -35,6 +36,7 @@ export interface WorkspacePreferences {
   maximizeAll: boolean;
   showGrid: boolean;
   focusOnClick: boolean;
+  showMinimap: boolean;
 }
 
 const defaults: WorkspacePreferences = {
@@ -44,6 +46,7 @@ const defaults: WorkspacePreferences = {
   maximizeAll: false,
   showGrid: false,
   focusOnClick: false,
+  showMinimap: false,
 };
 
 function readPreferences(): WorkspacePreferences {
@@ -56,6 +59,7 @@ function readPreferences(): WorkspacePreferences {
     const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
     const showGrid = "showGrid" in value ? value.showGrid : null;
     const focusOnClick = "focusOnClick" in value ? value.focusOnClick : null;
+    const showMinimap = "showMinimap" in value ? value.showMinimap : null;
     return {
       overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
@@ -66,6 +70,7 @@ function readPreferences(): WorkspacePreferences {
       maximizeAll: maximizeAll === true,
       showGrid: showGrid === true,
       focusOnClick: focusOnClick === true,
+      showMinimap: showMinimap === true,
     };
   } catch {
     return defaults;
@@ -110,4 +115,20 @@ export function useLayoutModePreference() {
   });
   useEffect(() => writeItem(LAYOUT_MODE_KEY, layoutMode), [layoutMode]);
   return [layoutMode, setLayoutMode] as const;
+}
+
+export function useMinimapPlacement() {
+  const [placement, setPlacement] = useState((): Partial<OnirigiriMinimapPlacement> => {
+    try {
+      const value: unknown = JSON.parse(readItem(MINIMAP_PLACEMENT_KEY) ?? "null");
+      return typeof value === "object" && value !== null ? value : {};
+    } catch {
+      return {};
+    }
+  });
+  const update = useCallback((next: OnirigiriMinimapPlacement) => {
+    setPlacement(next);
+    writeItem(MINIMAP_PLACEMENT_KEY, JSON.stringify(next));
+  }, []);
+  return [placement, update] as const;
 }

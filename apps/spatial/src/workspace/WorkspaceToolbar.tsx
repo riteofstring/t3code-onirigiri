@@ -308,7 +308,9 @@ export function WorkspaceToolbar({
                 </span>
                 <RowHeightControl
                   height={
-                    preferences.maximizeAll ? "viewport" : (focusedRowHeight ?? preferences.rowHeight)
+                    preferences.maximizeAll
+                      ? "viewport"
+                      : (focusedRowHeight ?? preferences.rowHeight)
                   }
                   maximum={maxRowHeight}
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
@@ -340,6 +342,23 @@ export function WorkspaceToolbar({
                     <rect x="5" y="5" width="6" height="6" rx="1" />
                   </>
                 )}
+              </svg>
+            </Button>
+            <Button
+              aria-label="Minimap"
+              aria-pressed={preferences.showMinimap}
+              tooltip={preferences.showMinimap ? "Hide minimap" : "Show minimap"}
+              onClick={() => onPreferencesChange({ showMinimap: !preferences.showMinimap })}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+                <rect x="8" y="8" width="4.5" height="3.5" rx="0.5" />
               </svg>
             </Button>
             <span className="spatial-workspace-controls__divider" aria-hidden="true" />
