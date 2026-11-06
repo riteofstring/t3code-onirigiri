@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@t3tools/web/src/components/ui/select";
 
-import { AddPaneButton, FocusAnchorToggle } from "./FocusAnchorToggle";
+import { FocusAnchorToggle } from "./FocusAnchorToggle";
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
@@ -32,7 +32,6 @@ import { WorkspaceTooltipButton as Button } from "./WorkspaceTooltips";
 
 export function WorkspaceToolbar({
   focusAnchor,
-  onAdd,
   onToggleAnchor,
   controlsRef,
   shortcuts,
@@ -45,7 +44,6 @@ export function WorkspaceToolbar({
   onLayoutModeChange,
 }: {
   focusAnchor: WorkspaceFocusAnchor;
-  onAdd: () => void;
   onToggleAnchor: () => void;
   controlsRef: (element: HTMLDivElement | null) => void;
   shortcuts: OnirigiriShortcutBindings;
@@ -91,6 +89,7 @@ export function WorkspaceToolbar({
     moveBinding &&
       `${formatOnirigiriShortcut(moveBinding).keys.slice(0, -1).join(" + ")} + arrows to move panes`,
     overviewBinding && `${formatOnirigiriShortcut(overviewBinding).label} for overview`,
+    "Alt + N to add a pane",
   ]
     .filter(Boolean)
     .join("; ");
@@ -285,9 +284,60 @@ export function WorkspaceToolbar({
                     onPreferencesChange({ columnWidth, maximizeAll: false })
                   }
                 />
+                <span className="spatial-workspace-controls__options">
+                  <Button
+                    aria-label={
+                      preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"
+                    }
+                    aria-pressed={preferences.navigationBar}
+                    tooltip={
+                      preferences.navigationBar
+                        ? "Hide the navigation bar"
+                        : "Show the navigation bar along the bottom"
+                    }
+                    onClick={() =>
+                      onPreferencesChange({ navigationBar: !preferences.navigationBar })
+                    }
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    >
+                      <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                      <path d="M2 10.5h12M6 12.5h4" />
+                    </svg>
+                  </Button>
+                  <Button
+                    aria-label={
+                      preferences.focusOnClick ? "Keep focus on click" : "Focus pane on click"
+                    }
+                    aria-pressed={preferences.focusOnClick}
+                    tooltip={
+                      preferences.focusOnClick
+                        ? "Clicking a pane focuses it and brings it into view"
+                        : "Clicking a pane leaves the focus ring and view where they are"
+                    }
+                    onClick={() => onPreferencesChange({ focusOnClick: !preferences.focusOnClick })}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M7 1.5H2.5a1 1 0 0 0-1 1V7M14.5 7V2.5a1 1 0 0 0-1-1H9M1.5 9v4.5a1 1 0 0 0 1 1H7" />
+                      <path d="M9 9l5.5 2-2.5 1-1 2.5z" />
+                    </svg>
+                  </Button>
+                  <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
+                </span>
               </div>
             </div>
-            <AddPaneButton onAdd={onAdd} />
             <Button
               aria-label="Full screen panes"
               aria-pressed={preferences.maximizeAll}
@@ -356,50 +406,6 @@ export function WorkspaceToolbar({
               </svg>
             </Button>
             <Button
-              aria-label={preferences.navigationBar ? "Hide navigation bar" : "Show navigation bar"}
-              aria-pressed={preferences.navigationBar}
-              tooltip={
-                preferences.navigationBar
-                  ? "Hide the navigation bar"
-                  : "Show the navigation bar along the bottom"
-              }
-              onClick={() => onPreferencesChange({ navigationBar: !preferences.navigationBar })}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <rect x="2" y="2" width="12" height="12" rx="1.5" />
-                <path d="M2 10.5h12M6 12.5h4" />
-              </svg>
-            </Button>
-            <Button
-              aria-label={preferences.focusOnClick ? "Keep focus on click" : "Focus pane on click"}
-              aria-pressed={preferences.focusOnClick}
-              tooltip={
-                preferences.focusOnClick
-                  ? "Clicking a pane focuses it and brings it into view"
-                  : "Clicking a pane leaves the focus ring and view where they are"
-              }
-              onClick={() => onPreferencesChange({ focusOnClick: !preferences.focusOnClick })}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-              >
-                <path d="M7 1.5H2.5a1 1 0 0 0-1 1V7M14.5 7V2.5a1 1 0 0 0-1-1H9M1.5 9v4.5a1 1 0 0 0 1 1H7" />
-                <path d="M9 9l5.5 2-2.5 1-1 2.5z" />
-              </svg>
-            </Button>
-            <span className="spatial-workspace-controls__divider" aria-hidden="true" />
-            <Button
               aria-label={layoutMode === "strip" ? "Switch to 2D layout" : "Switch to strip layout"}
               tooltip={
                 layoutMode === "strip"
@@ -431,8 +437,6 @@ export function WorkspaceToolbar({
                 )}
               </svg>
             </Button>
-            <span className="spatial-workspace-controls__divider" aria-hidden="true" />
-            <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
             <div ref={controlsRef} />
           </div>
         </div>

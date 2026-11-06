@@ -1235,7 +1235,6 @@ function SpatialWorkspaceView({
       >
         <WorkspaceToolbar
           focusAnchor={focusAnchor}
-          onAdd={addPane}
           onToggleAnchor={toggleFocusAnchor}
           preferences={preferences}
           focusedRowHeight={focusedRowHeight}

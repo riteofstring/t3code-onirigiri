@@ -20,7 +20,6 @@ function Workspace() {
     <WorkspaceTooltips>
       <WorkspaceToolbar
         focusAnchor="center"
-        onAdd={() => {}}
         onToggleAnchor={() => {}}
         controlsRef={setControls}
         shortcuts={{}}
@@ -318,6 +317,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
 it("shows the navigation bar by default and toggles it from the hover bar", async () => {
   expect(settings().navigationBar).toBe(true);
   await click("Workspace controls");
+  await click("Advanced workspace controls");
   await click("Hide navigation bar");
   expect(settings().navigationBar).toBe(false);
   expect(button("Show navigation bar").getAttribute("aria-pressed")).toBe("false");
@@ -335,6 +335,7 @@ it("hides the grid by default and toggles it and focus on click from the hover b
   await click("Show grid");
   expect(settings().showGrid).toBe(true);
   expect(button("Hide grid").getAttribute("aria-pressed")).toBe("true");
+  await click("Advanced workspace controls");
   await click("Focus pane on click");
   expect(settings().focusOnClick).toBe(true);
   expect(button("Keep focus on click").getAttribute("aria-pressed")).toBe("true");

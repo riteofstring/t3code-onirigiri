@@ -29,26 +29,3 @@ export function FocusAnchorToggle({
     </WorkspaceTooltipButton>
   );
 }
-
-export function AddPaneButton({ onAdd }: { onAdd: () => void }) {
-  return (
-    <WorkspaceTooltipButton
-      aria-label="Add a pane"
-      aria-keyshortcuts="Alt+N"
-      tooltip="Add a pane (Alt+N)"
-      onClick={onAdd}
-    >
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      >
-        <path d="M8 3v10M3 8h10" strokeLinecap="round" />
-      </svg>
-    </WorkspaceTooltipButton>
-  );
-}

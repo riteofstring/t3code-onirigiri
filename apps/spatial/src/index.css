@@ -316,13 +316,6 @@
   padding-inline: 3px;
 }
 
-.spatial-workspace-controls__divider {
-  align-self: stretch;
-  width: 1px;
-  margin: 6px 3px;
-  background: var(--border);
-}
-
 .spatial-workspace-controls__actions > *,
 .spatial-workspace-controls__advanced > * {
   flex-shrink: 0;
@@ -336,6 +329,12 @@
   padding-inline-end: 6px;
   margin-inline-end: 3px;
   border-inline-end: 1px solid var(--border);
+}
+
+.spatial-workspace-controls__options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .spatial-workspace-controls__field {
