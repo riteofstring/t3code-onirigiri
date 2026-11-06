@@ -1219,7 +1219,7 @@ function SpatialWorkspaceView({
     typeof preferences.rowHeight === "number"
       ? Math.min(preferences.rowHeight, paneViewport?.height ?? preferences.rowHeight)
       : (paneViewport?.height ?? null),
-    `${layoutRevision}|${panes?.length ?? 0}|${overview}`,
+    `${layoutRevision}|${panes?.length ?? 0}|${overview}|${preferences.showGrid}`,
   );
 
   return (
