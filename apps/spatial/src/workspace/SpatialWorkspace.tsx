@@ -59,6 +59,7 @@ import {
   useFocusAnchorPreference,
   useLayoutModePreference,
   useMinimapPlacement,
+  MIN_COLUMN_WIDTH,
   useWorkspacePreferences,
   type WorkspacePreferences,
 } from "./useWorkspacePreferences";
@@ -242,7 +243,10 @@ function SpatialWorkspaceView({
   if (initialPanes === null && panes !== null) setInitialPanes(panes);
   const [preferences, updatePreferences] = useWorkspacePreferences();
   const [minimapPlacement, setMinimapPlacement] = useMinimapPlacement();
-  const paneDefaults = useMemo(() => ({ height: preferences.rowHeight }), [preferences.rowHeight]);
+  const paneDefaults = useMemo(
+    () => ({ height: preferences.rowHeight, width: preferences.columnWidth }),
+    [preferences.rowHeight, preferences.columnWidth],
+  );
   const gridAxes = layoutMode === "strip" ? "horizontal" : "spatial";
   const [savedLayout] = useState(() => readPaneLayout(layoutMode));
   const initialLayout = useMemo(() => {
@@ -272,6 +276,18 @@ function SpatialWorkspaceView({
   const changePreferences = useCallback(
     (change: Partial<WorkspacePreferences>) => {
       const workspace = workspaceRef.current;
+      if (change.columnWidth !== undefined && workspace) {
+        const layout = workspace.getLayout();
+        if (layout.columns.some((column) => column.widthOverride)) {
+          workspace.restoreLayout(
+            {
+              ...layout,
+              columns: layout.columns.map(({ widthOverride: _widthOverride, ...column }) => column),
+            },
+            { keepPresentation: true },
+          );
+        }
+      }
       if (change.rowHeight !== undefined && workspace) {
         const layout = workspace.getLayout();
         if (
@@ -396,6 +412,15 @@ function SpatialWorkspaceView({
       height: Math.max(0, stageViewport.height - workspacePadding * 2),
     };
   }, [stageViewport, workspacePadding]);
+  const maxColumnWidth = paneViewport ? Math.floor(paneViewport.width / 2) : null;
+  const columnWidth =
+    maxColumnWidth === null
+      ? preferences.columnWidth
+      : Math.max(MIN_COLUMN_WIDTH, Math.min(preferences.columnWidth, maxColumnWidth));
+  const workspacePaneDefaults = useMemo(
+    () => ({ height: preferences.rowHeight, width: columnWidth }),
+    [preferences.rowHeight, columnWidth],
+  );
   const lastLayoutRevisionRef = useRef<number | null>(null);
   const layoutPersistence = useMemo(() => createPaneLayoutPersistence(layoutMode), [layoutMode]);
   useEffect(() => {
@@ -512,7 +537,7 @@ function SpatialWorkspaceView({
       const { scene } = createWorkspaceScene({
         gridAxes,
         id: WORKSPACE_ID,
-        paneDefaults,
+        paneDefaults: workspacePaneDefaults,
         panes,
       });
       const selectedId = workspace.getSnapshot().focusedPaneId;
@@ -583,7 +608,7 @@ function SpatialWorkspaceView({
         workspace.renamePane(pane.paneId, pane.title);
       }
     }
-  }, [gridAxes, paneDefaults, panes]);
+  }, [gridAxes, workspacePaneDefaults, panes]);
 
   useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
   useEffect(() => {
@@ -1211,6 +1236,7 @@ function SpatialWorkspaceView({
           maxRowHeight={
             stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
           }
+          maxColumnWidth={stageViewport.compact ? null : maxColumnWidth}
           onPreferencesChange={changeWorkspacePreferences}
           layoutMode={layoutMode}
           onLayoutModeChange={onLayoutModeChange}
@@ -1249,7 +1275,7 @@ function SpatialWorkspaceView({
                           overviewCardMaxWidthPx: overviewCardWidth,
                           overviewCardMinWidthPx: overviewCardWidth,
                         })}
-                    paneDefaults={paneDefaults}
+                    paneDefaults={workspacePaneDefaults}
                     renderPane={renderPane}
                     renderPanePlaceholder={renderPanePlaceholder}
                     panePictures={!alwaysLive}

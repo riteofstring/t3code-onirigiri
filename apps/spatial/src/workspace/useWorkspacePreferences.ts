@@ -7,6 +7,8 @@ const STORAGE_KEY = "onirigiri-t3:workspace-preferences";
 const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
 const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 const MINIMAP_PLACEMENT_KEY = "onirigiri-t3:minimap-placement";
+export const MIN_COLUMN_WIDTH = 442;
+const DEFAULT_COLUMN_WIDTH = 600;
 
 function readItem(key: string): string | null {
   try {
@@ -32,6 +34,7 @@ export const overviewZoomChoices = [
 export interface WorkspacePreferences {
   overviewZoom: (typeof overviewZoomChoices)[number]["value"];
   rowHeight: number | "viewport";
+  columnWidth: number;
   navigationBar: boolean;
   maximizeAll: boolean;
   showGrid: boolean;
@@ -42,6 +45,7 @@ export interface WorkspacePreferences {
 const defaults: WorkspacePreferences = {
   overviewZoom: "medium",
   rowHeight: "viewport",
+  columnWidth: DEFAULT_COLUMN_WIDTH,
   navigationBar: true,
   maximizeAll: false,
   showGrid: false,
@@ -55,6 +59,7 @@ function readPreferences(): WorkspacePreferences {
     if (typeof value !== "object" || value === null) return defaults;
     const zoom = "overviewZoom" in value ? value.overviewZoom : null;
     const height = "rowHeight" in value ? value.rowHeight : null;
+    const width = "columnWidth" in value ? value.columnWidth : null;
     const navigationBar = "navigationBar" in value ? value.navigationBar : null;
     const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
     const showGrid = "showGrid" in value ? value.showGrid : null;
@@ -66,6 +71,10 @@ function readPreferences(): WorkspacePreferences {
         typeof height === "number" && Number.isSafeInteger(height) && height >= 96
           ? height
           : "viewport",
+      columnWidth:
+        typeof width === "number" && Number.isSafeInteger(width) && width >= MIN_COLUMN_WIDTH
+          ? width
+          : DEFAULT_COLUMN_WIDTH,
       navigationBar: navigationBar !== false,
       maximizeAll: maximizeAll === true,
       showGrid: showGrid === true,

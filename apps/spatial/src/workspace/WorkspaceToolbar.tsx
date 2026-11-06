@@ -22,7 +22,11 @@ import {
 } from "@t3tools/web/src/components/ui/select";
 
 import { AddPaneButton, FocusAnchorToggle } from "./FocusAnchorToggle";
-import { overviewZoomChoices, type WorkspacePreferences } from "./useWorkspacePreferences";
+import {
+  MIN_COLUMN_WIDTH,
+  overviewZoomChoices,
+  type WorkspacePreferences,
+} from "./useWorkspacePreferences";
 import { WorkspaceTooltipButton as Button } from "./WorkspaceTooltips";
 
 export function WorkspaceToolbar({
@@ -34,6 +38,7 @@ export function WorkspaceToolbar({
   preferences,
   focusedRowHeight,
   maxRowHeight,
+  maxColumnWidth,
   onPreferencesChange,
   layoutMode,
   onLayoutModeChange,
@@ -46,6 +51,7 @@ export function WorkspaceToolbar({
   preferences: WorkspacePreferences;
   focusedRowHeight: number | null;
   maxRowHeight: number | null;
+  maxColumnWidth: number | null;
   onPreferencesChange: (change: Partial<WorkspacePreferences>) => void;
   layoutMode: "strip" | "rows";
   onLayoutModeChange: (mode: "strip" | "rows") => void;
@@ -315,6 +321,13 @@ export function WorkspaceToolbar({
                   maximum={maxRowHeight}
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
                 />
+                <ColumnWidthControl
+                  width={preferences.columnWidth}
+                  maximum={maxColumnWidth}
+                  onChange={(columnWidth) =>
+                    onPreferencesChange({ columnWidth, maximizeAll: false })
+                  }
+                />
               </div>
             </div>
             <AddPaneButton onAdd={onAdd} />
@@ -488,6 +501,53 @@ function RowHeightControl({
       </span>
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
         {value === max ? "Full view" : `${value}px`}
+      </span>
+    </label>
+  );
+}
+
+function ColumnWidthControl({
+  width,
+  maximum,
+  onChange,
+}: {
+  width: number;
+  maximum: number | null;
+  onChange: (width: number) => void;
+}) {
+  const max = Math.max(MIN_COLUMN_WIDTH, maximum ?? MIN_COLUMN_WIDTH);
+  const value = Math.max(MIN_COLUMN_WIDTH, Math.min(max, width));
+  const progress =
+    max === MIN_COLUMN_WIDTH ? 100 : ((value - MIN_COLUMN_WIDTH) / (max - MIN_COLUMN_WIDTH)) * 100;
+  return (
+    <label className="spatial-workspace-controls__field" title="Sets the width of every column.">
+      <span>Column width</span>
+      <span className="spatial-workspace-controls__height">
+        <input
+          className="settings-slider w-full"
+          type="range"
+          min={MIN_COLUMN_WIDTH}
+          max={max}
+          step={1}
+          disabled={maximum === null || max === MIN_COLUMN_WIDTH}
+          aria-label="Column width in pixels"
+          aria-description="Applies to all columns and leaves full screen panes. The maximum is half the view width."
+          aria-valuetext={`${value} pixels`}
+          value={value}
+          style={
+            {
+              "--settings-slider-progress": `${progress}%`,
+              "--settings-slider-fill-offset": `${0.5 - progress / 100}rem`,
+            } as CSSProperties
+          }
+          onChange={(event) => {
+            const next = event.currentTarget.valueAsNumber;
+            if (next !== value) onChange(next);
+          }}
+        />
+      </span>
+      <span className="spatial-workspace-controls__height-value" aria-hidden="true">
+        {`${value}px`}
       </span>
     </label>
   );

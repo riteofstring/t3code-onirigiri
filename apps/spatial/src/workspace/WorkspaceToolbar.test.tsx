@@ -27,6 +27,7 @@ function Workspace() {
         preferences={preferences}
         focusedRowHeight={null}
         maxRowHeight={maximum}
+        maxColumnWidth={900}
         onPreferencesChange={update}
         layoutMode={layoutMode}
         onLayoutModeChange={setLayoutMode}
@@ -112,6 +113,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "medium",
     rowHeight: "viewport",
+    columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -135,6 +137,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: 384,
+    columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -148,6 +151,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: 384,
+    columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -160,6 +164,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: "viewport",
+    columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -301,6 +306,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
   expect(settings()).toEqual({
     overviewZoom: "medium",
     rowHeight: "viewport",
+    columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -339,6 +345,23 @@ it("hides the grid by default and toggles it and focus on click from the hover b
   await click("Hide grid");
   await click("Keep focus on click");
   expect(settings()).toMatchObject({ showGrid: false, focusOnClick: false });
+});
+
+it("sets every column's width from 442 pixels up to half the view width", async () => {
+  expect(settings().columnWidth).toBe(600);
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
+  const slider = host.querySelector<HTMLInputElement>('[aria-label="Column width in pixels"]')!;
+  expect([slider.min, slider.max, slider.value]).toEqual(["442", "900", "600"]);
+  await act(() => {
+    slider.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, "700");
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(settings().columnWidth).toBe(700);
+  expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).columnWidth).toBe(
+    700,
+  );
 });
 
 it("shows the minimap from an icon button and remembers it", async () => {
