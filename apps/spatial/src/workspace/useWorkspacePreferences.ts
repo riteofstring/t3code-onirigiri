@@ -42,7 +42,7 @@ const defaults: WorkspacePreferences = {
   rowHeight: "viewport",
   navigationBar: true,
   maximizeAll: false,
-  showGrid: true,
+  showGrid: false,
   focusOnClick: false,
 };
 
@@ -64,7 +64,7 @@ function readPreferences(): WorkspacePreferences {
           : "viewport",
       navigationBar: navigationBar !== false,
       maximizeAll: maximizeAll === true,
-      showGrid: showGrid !== false,
+      showGrid: showGrid === true,
       focusOnClick: focusOnClick === true,
     };
   } catch {

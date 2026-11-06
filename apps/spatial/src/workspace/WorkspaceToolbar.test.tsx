@@ -114,7 +114,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: "viewport",
     navigationBar: true,
     maximizeAll: false,
-    showGrid: true,
+    showGrid: false,
     focusOnClick: false,
   });
   await click("Workspace controls");
@@ -136,7 +136,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: 384,
     navigationBar: true,
     maximizeAll: false,
-    showGrid: true,
+    showGrid: false,
     focusOnClick: false,
   });
 
@@ -148,7 +148,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: 384,
     navigationBar: true,
     maximizeAll: false,
-    showGrid: true,
+    showGrid: false,
     focusOnClick: false,
   });
   await click("Workspace controls");
@@ -159,7 +159,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: "viewport",
     navigationBar: true,
     maximizeAll: false,
-    showGrid: true,
+    showGrid: false,
     focusOnClick: false,
   });
 });
@@ -299,7 +299,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
     rowHeight: "viewport",
     navigationBar: true,
     maximizeAll: false,
-    showGrid: true,
+    showGrid: false,
     focusOnClick: false,
   });
 });
@@ -318,21 +318,22 @@ it("shows the navigation bar by default and toggles it from the hover bar", asyn
   expect(button("Hide navigation bar").getAttribute("aria-pressed")).toBe("true");
 });
 
-it("toggles grid visibility and focus on click from the hover bar", async () => {
-  await click("Workspace controls");
-  await click("Hide grid");
+it("hides the grid by default and toggles it and focus on click from the hover bar", async () => {
   expect(settings().showGrid).toBe(false);
-  expect(button("Show grid").getAttribute("aria-pressed")).toBe("false");
+  await click("Workspace controls");
+  await click("Show grid");
+  expect(settings().showGrid).toBe(true);
+  expect(button("Hide grid").getAttribute("aria-pressed")).toBe("true");
   await click("Focus pane on click");
   expect(settings().focusOnClick).toBe(true);
   expect(button("Keep focus on click").getAttribute("aria-pressed")).toBe("true");
   expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!)).toMatchObject({
-    showGrid: false,
+    showGrid: true,
     focusOnClick: true,
   });
-  await click("Show grid");
+  await click("Hide grid");
   await click("Keep focus on click");
-  expect(settings()).toMatchObject({ showGrid: true, focusOnClick: false });
+  expect(settings()).toMatchObject({ showGrid: false, focusOnClick: false });
 });
 
 it("maximizes all panes edge to edge through the preference", async () => {
