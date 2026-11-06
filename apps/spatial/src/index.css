@@ -13,7 +13,8 @@
   }
 }
 
-.spatial-thread-pane [data-slot="sidebar-inset"] {
+.spatial-thread-pane [data-slot="sidebar-inset"],
+.spatial-draft-pane [data-slot="sidebar-inset"] {
   height: 100%;
 }
 
