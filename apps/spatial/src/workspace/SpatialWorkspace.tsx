@@ -842,6 +842,7 @@ function SpatialWorkspaceView({
           slot: column.slotIndex ?? column.index,
           newPlane: false,
           heightPx: column.cells.length === 1 ? (column.cells[0]!.heightPx ?? null) : null,
+          inserted: true,
         });
       remove(tool.paneId);
     },

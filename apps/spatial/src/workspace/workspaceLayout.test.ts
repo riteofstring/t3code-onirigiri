@@ -337,14 +337,20 @@ it("gives a pane placed in a new row the default height instead of a neighbour's
     undefined,
   );
   expect(
-    height(placePane(resized, "new", { plane: 0, slot: 2, newPlane: false, matchPaneId: "a" }), "new"),
+    height(
+      placePane(resized, "new", { plane: 0, slot: 2, newPlane: false, matchPaneId: "a" }),
+      "new",
+    ),
   ).toBe(320);
 });
 
 it("moves an existing pane into a cell without shifting its old neighbours, keeping the cursor", () => {
   const panes = [pane("draft", 0, 0), pane("a", 0, 1), pane("b", 1, 0)];
   const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
-  const layout = { ...serializeWorkspaceLayout(scene, cursor), cursor: { column: 5, row: 0, split: 0 } };
+  const layout = {
+    ...serializeWorkspaceLayout(scene, cursor),
+    cursor: { column: 5, row: 0, split: 0 },
+  };
   const next = placePane(
     layout,
     "draft",
@@ -360,4 +366,47 @@ it("moves an existing pane into a cell without shifting its old neighbours, keep
     ),
   ).toEqual({ a: [0, 1], draft: [0, 3], b: [1, 0] });
   expect(next.cursor).toEqual({ column: 5, row: 0, split: 0 });
+});
+
+it("keeps an empty-cell cursor on the same cell when a pane placed left of every pane shifts the grid", () => {
+  const panes = [pane("a", 0, 0), pane("b", 0, 1), pane("new", 0, 2)];
+  const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
+  const layout = {
+    ...serializeWorkspaceLayout(scene, cursor),
+    cursor: { column: -1, row: 0, split: 0 },
+  };
+  const next = placePane(
+    layout,
+    "new",
+    { plane: 0, slot: -2, newPlane: false },
+    { focusPaneId: null },
+  );
+  expect(next.cursor).toEqual({ column: 1, row: 0, split: 0 });
+  const row = placePane(
+    layout,
+    "new",
+    { plane: 0, slot: 0, newPlane: true },
+    { focusPaneId: null },
+  );
+  expect(row.cursor).toEqual({ column: -1, row: 1, split: 0 });
+});
+
+it("puts a chat started in an empty pane in that pane's cell after the empty pane closes", () => {
+  const panes = [pane("empty", 0, 1), pane("a", 0, 2), pane("b", 0, 3)];
+  const current = layoutFor(panes);
+  const arrived = reconcilePaneLayout(
+    layoutFor([pane("empty", 0, 1), pane("a", 0, 2), pane("chat", 0, 3), pane("b", 0, 4)]),
+    current,
+  );
+  const settled = placePane(
+    reconcilePaneLayout(layoutFor([pane("a", 0, 2), pane("chat", 0, 3), pane("b", 0, 4)]), arrived),
+    "chat",
+    { plane: 0, slot: 1, newPlane: false, inserted: true },
+    { focusPaneId: null, inserted: true },
+  );
+  expect(
+    Object.fromEntries(
+      settled.columns.map((column) => [column.cells[0]!.paneId, column.slotIndex ?? column.index]),
+    ),
+  ).toEqual({ chat: 1, a: 2, b: 3 });
 });

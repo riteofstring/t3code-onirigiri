@@ -164,7 +164,10 @@ export function placePane(
   layout: OnirigiriLayout,
   paneId: string,
   placement: PanePlacement,
-  { focusPaneId = paneId, inserted = true }: { focusPaneId?: string | null; inserted?: boolean } = {},
+  {
+    focusPaneId = paneId,
+    inserted = true,
+  }: { focusPaneId?: string | null; inserted?: boolean } = {},
 ): OnirigiriLayout {
   const moving = layout.columns.find(
     (column) => column.cells.length === 1 && column.cells[0]!.paneId === paneId,
@@ -195,8 +198,7 @@ export function placePane(
       : moved;
   });
   const match = layout.columns.find(
-    (column) =>
-      column.cells.length === 1 && column.cells[0]!.paneId === placement.matchPaneId,
+    (column) => column.cells.length === 1 && column.cells[0]!.paneId === placement.matchPaneId,
   );
   const heightPx =
     placement.heightPx !== undefined
@@ -220,6 +222,7 @@ export function placePane(
     focusPaneId === null
       ? undefined
       : columns.find((column) => column.cells.some((cell) => cell.paneId === focusPaneId));
+  const column = layout.cursor.column + offset;
   return {
     ...layout,
     columns,
@@ -229,6 +232,17 @@ export function placePane(
           row: focused.planeIndex,
           split: focused.cells.findIndex((cell) => cell.paneId === focusPaneId),
         }
-      : layout.cursor,
+      : placement.newPlane
+        ? {
+            ...layout.cursor,
+            column,
+            row: layout.cursor.row + (layout.cursor.row >= placement.plane ? 1 : 0),
+          }
+        : {
+            ...layout.cursor,
+            column:
+              column +
+              (occupied && layout.cursor.row === placement.plane && column >= target ? 1 : 0),
+          },
   };
 }
