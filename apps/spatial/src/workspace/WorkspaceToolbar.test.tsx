@@ -347,7 +347,7 @@ it("hides the grid by default and toggles it and focus on click from the hover b
   expect(settings()).toMatchObject({ showGrid: false, focusOnClick: false });
 });
 
-it("sets every column's width from 442 pixels up to half the view width", async () => {
+it("sets every column's width from 442 pixels up to half the view width, and double-click resets both sliders", async () => {
   expect(settings().columnWidth).toBe(600);
   await click("Workspace controls");
   await click("Advanced workspace controls");
@@ -362,6 +362,12 @@ it("sets every column's width from 442 pixels up to half the view width", async 
   expect(JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).columnWidth).toBe(
     700,
   );
+  await act(() => slider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(settings().columnWidth).toBe(600);
+  await typeHeight("300");
+  expect(settings().rowHeight).toBe(300);
+  await act(() => rowHeight().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(settings().rowHeight).toBe("viewport");
 });
 
 it("shows the minimap from an icon button and remembers it", async () => {

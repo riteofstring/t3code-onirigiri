@@ -8,7 +8,7 @@ const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
 const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 const MINIMAP_PLACEMENT_KEY = "onirigiri-t3:minimap-placement";
 export const MIN_COLUMN_WIDTH = 442;
-const DEFAULT_COLUMN_WIDTH = 600;
+export const DEFAULT_COLUMN_WIDTH = 600;
 
 function readItem(key: string): string | null {
   try {

@@ -23,6 +23,7 @@ import {
 
 import { AddPaneButton, FocusAnchorToggle } from "./FocusAnchorToggle";
 import {
+  DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
   overviewZoomChoices,
   type WorkspacePreferences,
@@ -495,7 +496,7 @@ function RowHeightControl({
   return (
     <label
       className="spatial-workspace-controls__field"
-      title="Shows the focused row. Changing it sets every row."
+      title="Shows the focused row. Changing it sets every row. Double-click to reset."
     >
       <span>Row height</span>
       <span className="spatial-workspace-controls__height">
@@ -520,6 +521,7 @@ function RowHeightControl({
             const next = event.currentTarget.valueAsNumber;
             if (next !== value) onChange(next === max ? "viewport" : next);
           }}
+          onDoubleClick={() => onChange("viewport")}
         />
       </span>
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
@@ -543,7 +545,10 @@ function ColumnWidthControl({
   const progress =
     max === MIN_COLUMN_WIDTH ? 100 : ((value - MIN_COLUMN_WIDTH) / (max - MIN_COLUMN_WIDTH)) * 100;
   return (
-    <label className="spatial-workspace-controls__field" title="Sets the width of every column.">
+    <label
+      className="spatial-workspace-controls__field"
+      title="Sets the width of every column. Double-click to reset."
+    >
       <span>Column width</span>
       <span className="spatial-workspace-controls__height">
         <input
@@ -567,6 +572,7 @@ function ColumnWidthControl({
             const next = event.currentTarget.valueAsNumber;
             if (next !== value) onChange(next);
           }}
+          onDoubleClick={() => onChange(DEFAULT_COLUMN_WIDTH)}
         />
       </span>
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
