@@ -1226,6 +1226,7 @@ function SpatialWorkspaceView({
                     paneDefaults={paneDefaults}
                     renderPane={renderPane}
                     renderPanePlaceholder={renderPanePlaceholder}
+                    panePictures={!alwaysLive}
                     restPictureFade={!alwaysLive}
                     focusPaneOnPointer={preferences.focusOnClick}
                     shortcutScope={active ? "application" : "workspace"}
