@@ -652,6 +652,15 @@ function SpatialWorkspaceView({
       if (paneId === null) {
         lifecycle?.setFocus(null);
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
+        if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
+        const leaveRoute = () => {
+          routeTimerRef.current = null;
+          pendingRouteRef.current = null;
+          if (focusedPaneIdRef.current !== null || routePaneIdRef.current === null) return;
+          void router.navigate({ to: "/" });
+        };
+        pendingRouteRef.current = leaveRoute;
+        routeTimerRef.current = setTimeout(leaveRoute, ROUTE_SETTLE_MS);
         return;
       }
       const tool = getPanes().find((pane) => pane.paneId === paneId);
@@ -744,8 +753,17 @@ function SpatialWorkspaceView({
   }, [active, lifecycle, paneData, overview]);
 
   const pendingRoutePaneRef = useRef<string | null>(null);
-  const focusRoutePane = useEffectEvent((paneId: string) => {
+  const focusRoutePane = useEffectEvent((paneId: string, restoring: boolean) => {
     if (requestedRoutesRef.current.delete(paneId)) return;
+    if (restoring && savedLayout) {
+      const { column, row, split } = savedLayout.cursor;
+      const saved = savedLayout.columns.find(
+        (candidate) =>
+          candidate.planeIndex === row && (candidate.slotIndex ?? candidate.index) === column,
+      )?.cells[split]?.paneId;
+      const tool = saved ? getPanes().find((pane) => pane.paneId === saved) : undefined;
+      if (tool && threadPaneId(tool.environmentId, tool.threadId) === paneId) return;
+    }
     setDismissedPaneIds((current) => withoutPane(current, paneId));
     if (!panes?.some((pane) => pane.paneId === paneId)) {
       pendingRoutePaneRef.current = paneId;
@@ -755,8 +773,11 @@ function SpatialWorkspaceView({
     workspaceRef.current?.focusPane(paneId, { exitOverview: true });
   });
 
+  const restoredRouteRef = useRef(false);
   useEffect(() => {
-    if (routePaneId) focusRoutePane(routePaneId);
+    const restoring = !restoredRouteRef.current;
+    restoredRouteRef.current = true;
+    if (routePaneId) focusRoutePane(routePaneId, restoring);
   }, [routePaneId]);
 
   useEffect(
@@ -770,7 +791,7 @@ function SpatialWorkspaceView({
           const paneId = threadPaneId(params.environmentId, params.threadId);
           if (!requestedRoutesRef.current.has(paneId)) {
             pendingNavigationPaneRef.current = paneId === routePaneIdRef.current ? null : paneId;
-            focusRoutePane(paneId);
+            focusRoutePane(paneId, false);
           }
         } else {
           pendingNavigationPaneRef.current = null;
@@ -781,7 +802,7 @@ function SpatialWorkspaceView({
 
   useEffect(() => {
     const pending = pendingRoutePaneRef.current;
-    if (pending && panes?.some((pane) => pane.paneId === pending)) focusRoutePane(pending);
+    if (pending && panes?.some((pane) => pane.paneId === pending)) focusRoutePane(pending, false);
   }, [panes]);
 
   useEffect(() => {
