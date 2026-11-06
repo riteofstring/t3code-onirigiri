@@ -557,7 +557,36 @@ it("returns to the owning chat when a focused tool closes through its content", 
   expect(status()).not.toContain("Empty cell");
 });
 
-it("visits empty cells within and beyond the pane bounds without invalidating pane pictures", async () => {
+it("returns to a focused tool pane after a reload whose route names its chat", async () => {
+  fixture.panes = [
+    pane("origin", 0, 0),
+    {
+      paneId: "tool-owned",
+      title: "Owned terminal",
+      surfaceKind: "terminal",
+      planeIndex: 0,
+      slotIndex: 1,
+      data: {
+        paneId: "tool-owned",
+        kind: "terminal",
+        environmentId: "e",
+        threadId: "origin",
+        terminalId: "pane-test",
+      },
+    },
+    pane("right", 0, 2),
+  ];
+  await render();
+  await key("ArrowRight");
+  expect(status()).toContain("Owned terminal");
+  await act(() => vi.advanceTimersByTime(1000));
+  await act(() => root.unmount());
+  root = createRoot(host);
+  await render("origin");
+  expect(status()).toContain("Owned terminal");
+});
+
+it("visits empty cells within and beyond the pane bounds, leaving the chat route, without invalidating pane pictures", async () => {
   await render();
   const pictureUpdates = pictureLayoutChanged.mock.calls.length;
   expect((await key("ArrowRight")).defaultPrevented).toBe(true);
@@ -569,7 +598,7 @@ it("visits empty cells within and beyond the pane bounds without invalidating pa
   expect(status()).toContain("Grid cell (1, 3), split 1: Empty cell.");
   await act(() => vi.advanceTimersByTime(1000));
   expect(readPaneLayout("rows")?.cursor).toEqual({ column: 1, row: 3, split: 0 });
-  expect(fixture.navigate).not.toHaveBeenCalled();
+  expect(fixture.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
   expect(pictureLayoutChanged).toHaveBeenCalledTimes(pictureUpdates);
 
   fixture.panes = [...fixture.panes, pane("new-project", 4, 0)];
@@ -625,7 +654,7 @@ it("visits gaps and positions beyond either end of the strip without leaving its
   await key("ArrowRight");
   expect(status()).toContain("Grid cell (1, 0), split 1: Empty cell.");
   await act(() => vi.advanceTimersByTime(1000));
-  expect(fixture.navigate).not.toHaveBeenCalled();
+  expect(fixture.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
   await key("ArrowRight");
   expect(status()).toContain("right");
   await key("ArrowRight");

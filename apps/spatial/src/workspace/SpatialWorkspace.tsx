@@ -761,7 +761,10 @@ function SpatialWorkspaceView({
         (candidate) =>
           candidate.planeIndex === row && (candidate.slotIndex ?? candidate.index) === column,
       )?.cells[split]?.paneId;
-      const tool = saved ? getPanes().find((pane) => pane.paneId === saved) : undefined;
+      const restored = panes?.find((pane) => pane.paneId === saved);
+      const tool =
+        getPanes().find((pane) => pane.paneId === saved) ??
+        (restored?.surfaceKind !== "thread" && restored?.data ? (restored.data as ToolPane) : null);
       if (tool && threadPaneId(tool.environmentId, tool.threadId) === paneId) return;
     }
     setDismissedPaneIds((current) => withoutPane(current, paneId));
