@@ -357,27 +357,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.spatial-workspace-controls__toggles {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.spatial-workspace-controls__toggles > [aria-pressed] {
-  border-color: var(--border);
-}
-
-.spatial-workspace-controls__toggles > [aria-pressed="true"] {
-  color: var(--foreground);
-}
-
-.spatial-workspace-controls__toggles > [aria-pressed="true"]::after {
-  content: "✓";
-  order: -1;
-  font-size: 0.6875rem;
-  line-height: 1;
-}
-
 .spatial-workspace-controls__actions > .spatial-workspace-controls__settings {
   order: -1;
   flex-shrink: 1;
