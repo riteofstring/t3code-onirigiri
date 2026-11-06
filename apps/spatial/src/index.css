@@ -451,11 +451,15 @@
   pointer-events: none;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) > .onirigiri-pane__titlebar {
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"])
+  > .onirigiri-pane__titlebar {
   min-height: 3rem;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) .onirigiri-pane__heading {
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"])
+  .onirigiri-pane__heading {
   font-size: 0.875rem;
   display: flex;
   flex-direction: row-reverse;
@@ -464,17 +468,26 @@
   gap: 0.5rem;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) .onirigiri-pane__heading > strong {
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"])
+  .onirigiri-pane__heading
+  > strong {
   font-weight: 500;
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"]) .onirigiri-pane__heading > small::after {
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"])
+  .onirigiri-pane__heading
+  > small::after {
   content: "/";
   margin-inline-start: 0.5rem;
   color: var(--muted-foreground);
 }
 
-.spatial-workspace [data-onirigiri-surface-kind="empty"] > .onirigiri-pane__titlebar > .onirigiri-pane__tone {
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]
+  > .onirigiri-pane__titlebar
+  > .onirigiri-pane__tone {
   display: none;
 }
 
@@ -500,6 +513,14 @@
   border-radius: var(--onirigiri-pane-radius, 12px);
   cursor: pointer;
   pointer-events: auto;
+  transition: background-color 200ms ease-out;
+  animation: spatial-empty-cell-in 320ms ease-out both;
+}
+
+@keyframes spatial-empty-cell-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .spatial-empty-cell[data-show-grid="true"] {
@@ -525,9 +546,18 @@
   white-space: nowrap;
   color: var(--muted-foreground);
   pointer-events: none;
-  visibility: hidden;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
 }
 
 .spatial-empty-cell:hover > .spatial-empty-cell__label {
-  visibility: visible;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-empty-cell,
+  .spatial-empty-cell__label {
+    transition: none;
+    animation: none;
+  }
 }
