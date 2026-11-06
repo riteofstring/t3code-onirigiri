@@ -40,7 +40,7 @@ export interface WorkspacePreferences {
 const defaults: WorkspacePreferences = {
   overviewZoom: "medium",
   rowHeight: "viewport",
-  navigationBar: false,
+  navigationBar: true,
   maximizeAll: false,
   showGrid: true,
   focusOnClick: false,
@@ -62,7 +62,7 @@ function readPreferences(): WorkspacePreferences {
         typeof height === "number" && Number.isSafeInteger(height) && height >= 96
           ? height
           : "viewport",
-      navigationBar: navigationBar === true,
+      navigationBar: navigationBar !== false,
       maximizeAll: maximizeAll === true,
       showGrid: showGrid !== false,
       focusOnClick: focusOnClick === true,

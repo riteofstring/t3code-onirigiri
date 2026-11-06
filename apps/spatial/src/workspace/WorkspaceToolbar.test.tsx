@@ -112,7 +112,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "medium",
     rowHeight: "viewport",
-    navigationBar: false,
+    navigationBar: true,
     maximizeAll: false,
     showGrid: true,
     focusOnClick: false,
@@ -134,7 +134,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: 384,
-    navigationBar: false,
+    navigationBar: true,
     maximizeAll: false,
     showGrid: true,
     focusOnClick: false,
@@ -146,7 +146,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: 384,
-    navigationBar: false,
+    navigationBar: true,
     maximizeAll: false,
     showGrid: true,
     focusOnClick: false,
@@ -157,7 +157,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: "viewport",
-    navigationBar: false,
+    navigationBar: true,
     maximizeAll: false,
     showGrid: true,
     focusOnClick: false,
@@ -297,25 +297,25 @@ it("uses safe defaults for malformed saved preferences", async () => {
   expect(settings()).toEqual({
     overviewZoom: "medium",
     rowHeight: "viewport",
-    navigationBar: false,
+    navigationBar: true,
     maximizeAll: false,
     showGrid: true,
     focusOnClick: false,
   });
 });
 
-it("toggles the navigation bar preference from the hover bar", async () => {
-  expect(settings().navigationBar).toBe(false);
-  await click("Workspace controls");
-  await click("Show navigation bar");
+it("shows the navigation bar by default and toggles it from the hover bar", async () => {
   expect(settings().navigationBar).toBe(true);
-  expect(button("Hide navigation bar").getAttribute("aria-pressed")).toBe("true");
-  expect(
-    JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).navigationBar,
-  ).toBe(true);
+  await click("Workspace controls");
   await click("Hide navigation bar");
   expect(settings().navigationBar).toBe(false);
   expect(button("Show navigation bar").getAttribute("aria-pressed")).toBe("false");
+  expect(
+    JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).navigationBar,
+  ).toBe(false);
+  await click("Show navigation bar");
+  expect(settings().navigationBar).toBe(true);
+  expect(button("Hide navigation bar").getAttribute("aria-pressed")).toBe("true");
 });
 
 it("toggles grid visibility and focus on click from the hover bar", async () => {

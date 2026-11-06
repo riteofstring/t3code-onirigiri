@@ -278,7 +278,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("places a new pane before a row's first pane or in a new row", () => {
+it("places a new pane before a row's first pane or in a row above or below the panes", () => {
   const panes = [pane("a", 0, 0), pane("b", 0, 1), pane("c", 1, 0), pane("new", 0, 2)];
   const { scene, cursor } = createWorkspaceScene({ gridAxes: "spatial", panes });
   const layout = serializeWorkspaceLayout(scene, cursor);
@@ -289,12 +289,15 @@ it("places a new pane before a row's first pane or in a new row", () => {
         [column.planeIndex, column.slotIndex ?? column.index],
       ]),
     );
-  const before = placePane(layout, "new", { plane: 0, slot: 0, newPlane: false });
+  const before = placePane(layout, "new", { plane: 0, slot: 0 });
   expect(where(before)).toEqual({ new: [0, 0], a: [0, 1], b: [0, 2], c: [1, 0] });
   expect(before.cursor).toMatchObject({ row: 0, column: 0 });
-  const between = placePane(layout, "new", { plane: 1, slot: 0, newPlane: true });
-  expect(where(between)).toEqual({ a: [0, 0], b: [0, 1], new: [1, 0], c: [2, 0] });
-  expect(() => assertOnirigiriLayout(between)).not.toThrow();
+  const above = placePane(layout, "new", { plane: -2, slot: 0 });
+  expect(where(above)).toEqual({ new: [0, 0], a: [2, 0], b: [2, 1], c: [3, 0] });
+  expect(() => assertOnirigiriLayout(above)).not.toThrow();
+  const below = placePane(layout, "new", { plane: 3, slot: 1 });
+  expect(where(below)).toEqual({ a: [0, 0], b: [0, 1], c: [1, 0], new: [3, 1] });
+  expect(() => assertOnirigiriLayout(below)).not.toThrow();
 });
 
 it("places a new pane in an empty grid cell without moving other panes", () => {
@@ -308,12 +311,12 @@ it("places a new pane in an empty grid cell without moving other panes", () => {
         [column.planeIndex, column.slotIndex ?? column.index],
       ]),
     );
-  expect(where(placePane(layout, "new", { plane: 1, slot: 3, newPlane: false }))).toEqual({
+  expect(where(placePane(layout, "new", { plane: 1, slot: 3 }))).toEqual({
     a: [0, 0],
     b: [1, 0],
     new: [1, 3],
   });
-  expect(where(placePane(layout, "new", { plane: 1, slot: -1, newPlane: false }))).toEqual({
+  expect(where(placePane(layout, "new", { plane: 1, slot: -1 }))).toEqual({
     a: [0, 1],
     b: [1, 1],
     new: [1, 0],
@@ -333,15 +336,12 @@ it("gives a pane placed in a new row the default height instead of a neighbour's
   };
   const height = (next: typeof layout, paneId: string) =>
     next.columns.find((column) => column.cells[0]!.paneId === paneId)!.cells[0]!.heightPx;
-  expect(height(placePane(resized, "new", { plane: 1, slot: 0, newPlane: true }), "new")).toBe(
+  expect(height(placePane(resized, "new", { plane: 1, slot: 0, heightPx: null }), "new")).toBe(
     undefined,
   );
-  expect(
-    height(
-      placePane(resized, "new", { plane: 0, slot: 2, newPlane: false, matchPaneId: "a" }),
-      "new",
-    ),
-  ).toBe(320);
+  expect(height(placePane(resized, "new", { plane: 0, slot: 2, matchPaneId: "a" }), "new")).toBe(
+    320,
+  );
 });
 
 it("moves an existing pane into a cell without shifting its old neighbours, keeping the cursor", () => {
@@ -354,7 +354,7 @@ it("moves an existing pane into a cell without shifting its old neighbours, keep
   const next = placePane(
     layout,
     "draft",
-    { plane: 0, slot: 3, newPlane: false },
+    { plane: 0, slot: 3 },
     { focusPaneId: null, inserted: false },
   );
   expect(
@@ -375,20 +375,10 @@ it("keeps an empty-cell cursor on the same cell when a pane placed left of every
     ...serializeWorkspaceLayout(scene, cursor),
     cursor: { column: -1, row: 0, split: 0 },
   };
-  const next = placePane(
-    layout,
-    "new",
-    { plane: 0, slot: -2, newPlane: false },
-    { focusPaneId: null },
-  );
+  const next = placePane(layout, "new", { plane: 0, slot: -2 }, { focusPaneId: null });
   expect(next.cursor).toEqual({ column: 1, row: 0, split: 0 });
-  const row = placePane(
-    layout,
-    "new",
-    { plane: 0, slot: 0, newPlane: true },
-    { focusPaneId: null },
-  );
-  expect(row.cursor).toEqual({ column: -1, row: 1, split: 0 });
+  const row = placePane(layout, "new", { plane: -2, slot: 0 }, { focusPaneId: null });
+  expect(row.cursor).toEqual({ column: -1, row: 2, split: 0 });
 });
 
 it("puts a chat started in an empty pane in that pane's cell after the empty pane closes", () => {
@@ -401,7 +391,7 @@ it("puts a chat started in an empty pane in that pane's cell after the empty pan
   const settled = placePane(
     reconcilePaneLayout(layoutFor([pane("a", 0, 2), pane("chat", 0, 3), pane("b", 0, 4)]), arrived),
     "chat",
-    { plane: 0, slot: 1, newPlane: false, inserted: true },
+    { plane: 0, slot: 1, inserted: true },
     { focusPaneId: null, inserted: true },
   );
   expect(

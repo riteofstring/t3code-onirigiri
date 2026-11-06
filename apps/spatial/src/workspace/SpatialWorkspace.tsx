@@ -550,7 +550,6 @@ function SpatialWorkspaceView({
         pendingPlacementRef.current.set(promoted, {
           plane: column.planeIndex,
           slot: column.slotIndex ?? column.index,
-          newPlane: false,
           heightPx: column.cells.length === 1 ? (column.cells[0]!.heightPx ?? null) : null,
           inserted: true,
         });
@@ -846,7 +845,6 @@ function SpatialWorkspaceView({
         pendingPlacementRef.current.set(draftPaneId(draft.draftId), {
           plane: column.planeIndex,
           slot: column.slotIndex ?? column.index,
-          newPlane: false,
           heightPx: column.cells.length === 1 ? (column.cells[0]!.heightPx ?? null) : null,
           inserted: true,
         });

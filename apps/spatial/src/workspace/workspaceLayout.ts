@@ -154,7 +154,6 @@ export function threadLayoutPositions(layout: OnirigiriLayout) {
 export interface PanePlacement {
   readonly plane: number;
   readonly slot: number;
-  readonly newPlane: boolean;
   readonly matchPaneId?: string | null;
   readonly heightPx?: number | null;
   readonly inserted?: boolean;
@@ -183,17 +182,19 @@ export function placePane(
           : slot(column),
     }));
   const offset = Math.max(0, -placement.slot);
+  const rowOffset = Math.max(0, -placement.plane);
   const target = placement.slot + offset;
+  const plane = placement.plane + rowOffset;
   const occupied = rest.some(
     (column) => column.planeIndex === placement.plane && slot(column) + offset === target,
   );
   const shifted = rest.map((column) => {
-    const moved = { ...column, slotIndex: slot(column) + offset };
-    if (placement.newPlane)
-      return moved.planeIndex >= placement.plane
-        ? { ...moved, planeIndex: moved.planeIndex + 1 }
-        : moved;
-    return occupied && moved.planeIndex === placement.plane && moved.slotIndex >= target
+    const moved = {
+      ...column,
+      planeIndex: column.planeIndex + rowOffset,
+      slotIndex: slot(column) + offset,
+    };
+    return occupied && moved.planeIndex === plane && moved.slotIndex >= target
       ? { ...moved, slotIndex: moved.slotIndex + 1 }
       : moved;
   });
@@ -203,16 +204,14 @@ export function placePane(
   const heightPx =
     placement.heightPx !== undefined
       ? (placement.heightPx ?? undefined)
-      : placement.newPlane
-        ? undefined
-        : match
-          ? match.cells[0]!.heightPx
-          : moving.cells[0]!.heightPx;
+      : match
+        ? match.cells[0]!.heightPx
+        : moving.cells[0]!.heightPx;
   const { heightPx: _previous, ...cell } = moving.cells[0]!;
   const placed = {
     ...moving,
     cells: [heightPx === undefined ? cell : { ...cell, heightPx }],
-    planeIndex: placement.plane,
+    planeIndex: plane,
     slotIndex: target,
   };
   const columns = [...shifted, placed]
@@ -223,6 +222,7 @@ export function placePane(
       ? undefined
       : columns.find((column) => column.cells.some((cell) => cell.paneId === focusPaneId));
   const column = layout.cursor.column + offset;
+  const row = layout.cursor.row + rowOffset;
   return {
     ...layout,
     columns,
@@ -232,17 +232,10 @@ export function placePane(
           row: focused.planeIndex,
           split: focused.cells.findIndex((cell) => cell.paneId === focusPaneId),
         }
-      : placement.newPlane
-        ? {
-            ...layout.cursor,
-            column,
-            row: layout.cursor.row + (layout.cursor.row >= placement.plane ? 1 : 0),
-          }
-        : {
-            ...layout.cursor,
-            column:
-              column +
-              (occupied && layout.cursor.row === placement.plane && column >= target ? 1 : 0),
-          },
+      : {
+          ...layout.cursor,
+          row,
+          column: column + (occupied && row === plane && column >= target ? 1 : 0),
+        },
   };
 }

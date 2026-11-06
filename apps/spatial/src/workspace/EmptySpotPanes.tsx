@@ -39,9 +39,17 @@ function median(values: number[], fallback: number): number {
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
-function bands(known: Map<number, Band>, from: number, to: number, gap: number): Map<number, Band> {
+function bands(
+  known: Map<number, Band>,
+  from: number,
+  to: number,
+  gap: number,
+  size = median(
+    [...known.values()].map((band) => band.size),
+    0,
+  ),
+): Map<number, Band> {
   const indexes = [...known.keys()].toSorted((a, b) => a - b);
-  const size = median([...known.values()].map((band) => band.size), 0);
   const result = new Map(known);
   if (size <= 0) return result;
   for (let index = indexes[0]! - 1; ; index -= 1) {
@@ -138,69 +146,52 @@ function emptyCells(
     slotGap,
   );
   const columns = bands(slots, topLeft.x, bottomRight.x, slotGap);
-  const planeIndexes = [...planes.keys()].toSorted((a, b) => a - b);
-  const first = planeIndexes[0]!;
-  const last = planeIndexes.at(-1)!;
+  const emptyHeight =
+    defaultRowHeight ??
+    median(
+      placed.map((pane) => pane.height),
+      0,
+    );
+  const rows = bands(
+    new Map(
+      [...planes.keys()].map((plane) => [
+        plane,
+        { start: top(plane), size: bottom(plane) - top(plane) },
+      ]),
+    ),
+    topLeft.y,
+    bottomRight.y,
+    rowGap,
+    emptyHeight,
+  );
   const occupied = new Set(placed.map(({ plane, slot }) => `${plane}|${slot}`));
   const cells: EmptySpot[] = [];
-  const add = (
-    plane: number,
-    newPlane: boolean,
-    slot: number,
-    column: Band,
-    rowTop: (height: number) => number,
-    match: Placed | undefined,
-    owner: string | null,
-  ) => {
-    const height = newPlane
-      ? (defaultRowHeight ?? median(placed.map((pane) => pane.height), 0))
-      : (match?.height ?? median(placed.map((pane) => pane.height), 0));
-    const cellTop = rowTop(height);
-    if (cellTop + height < topLeft.y || cellTop > bottomRight.y || height <= 0) return;
-    cells.push({
-      key: `${newPlane ? "new" : "row"}|${plane}|${slot}`,
-      ownerPaneId: owner,
-      placement: { plane, slot, newPlane, matchPaneId: newPlane ? null : (match?.id ?? null) },
-      left: column.start,
-      top: cellTop,
-      width: column.size,
-      height,
-    });
-  };
-  for (const plane of planeIndexes) {
-    const panes = planes.get(plane)!;
+  for (const [plane, row] of rows) {
+    const panes = planes.get(plane);
+    if (!panes && !allowNewRows) continue;
     for (const [slot, column] of columns) {
       if (column.start + column.size < topLeft.x || column.start > bottomRight.x) continue;
       if (occupied.has(`${plane}|${slot}`)) continue;
-      const match = nearest(panes, slot);
-      const owner = nearest(
-        panes.filter((pane) => !pane.id.startsWith("draft:")),
-        slot,
-      )?.id;
-      add(plane, false, slot, column, () => top(plane), match, owner ?? null);
-    }
-  }
-  if (allowNewRows) {
-    for (const [slot, column] of columns) {
-      if (column.start + column.size < topLeft.x || column.start > bottomRight.x) continue;
-      add(
-        first,
-        true,
-        slot,
-        column,
-        (height) => top(first) - rowGap - height,
-        nearest(planes.get(first)!, slot),
-        focusedPaneId,
-      );
-      add(
-        last + 1,
-        true,
-        slot,
-        column,
-        () => bottom(last) + rowGap,
-        nearest(planes.get(last)!, slot),
-        focusedPaneId,
-      );
+      const match = panes ? nearest(panes, slot) : undefined;
+      const height = panes ? (match?.height ?? emptyHeight) : emptyHeight;
+      if (row.start + height < topLeft.y || row.start > bottomRight.y || height <= 0) continue;
+      const owner = panes
+        ? (nearest(
+            panes.filter((pane) => !pane.id.startsWith("draft:")),
+            slot,
+          )?.id ?? null)
+        : focusedPaneId;
+      cells.push({
+        key: `${plane}|${slot}`,
+        ownerPaneId: owner,
+        placement: panes
+          ? { plane, slot, matchPaneId: match?.id ?? null }
+          : { plane, slot, heightPx: null },
+        left: column.start,
+        top: row.start,
+        width: column.size,
+        height,
+      });
     }
   }
   return cells;
@@ -244,7 +235,7 @@ export function useEmptySpots(
     };
   }, [enabled, stage]);
   useEffect(() => {
-    const world = stage?.querySelector<HTMLElement>('[data-onirigiri-world-surface]');
+    const world = stage?.querySelector<HTMLElement>("[data-onirigiri-world-surface]");
     if (!stage || !world || !enabled) {
       setCells([]);
       return;
@@ -313,8 +304,7 @@ export function EmptySpotGrid({
         }}
         onPointerEnter={centre}
         onPointerDown={(event) => {
-          press.current =
-            event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+          press.current = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
         }}
         onClick={(event) => {
           const start = press.current;
