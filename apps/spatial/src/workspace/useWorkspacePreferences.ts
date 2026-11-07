@@ -8,7 +8,7 @@ const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
 const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 const MINIMAP_PLACEMENT_KEY = "onirigiri-t3:minimap-placement";
 const DEFAULT_MINIMAP_PLACEMENT: OnirigiriMinimapPlacement = {
-  corner: "bottom-right",
+  corner: "bottom-left",
   widthPx: 220,
   heightPx: 64,
 };

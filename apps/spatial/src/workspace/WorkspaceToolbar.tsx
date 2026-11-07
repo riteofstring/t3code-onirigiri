@@ -1,6 +1,7 @@
 import {
   formatOnirigiriShortcut,
   getOnirigiriShortcutBindings,
+  type OnirigiriShortcutBinding,
   type OnirigiriShortcutBindings,
   type WorkspaceFocusAnchor,
 } from "@riteofstring/onirigiri";
@@ -29,6 +30,15 @@ import {
   type WorkspacePreferences,
 } from "./useWorkspacePreferences";
 import { WorkspaceTooltipButton as Button } from "./WorkspaceTooltips";
+import { type WorkspaceShortcut, WorkspaceShortcutsDialog } from "./WorkspaceShortcutsDialog";
+
+const NEW_PANE_BINDING = {
+  altKey: true,
+  ctrlKey: false,
+  key: "n",
+  metaKey: false,
+  shiftKey: false,
+};
 
 export function WorkspaceToolbar({
   focusAnchor,
@@ -81,18 +91,36 @@ export function WorkspaceToolbar({
   const overviewBinding = getOnirigiriShortcutBindings("toggleOverview", shortcuts).find(
     (binding) => binding.whileEditing && !binding.ctrlKey,
   );
-  const hint = [
-    focusBinding &&
-      `${formatOnirigiriShortcut(focusBinding).keys.slice(0, -1).join(" + ")} + arrows to navigate (in the composer, at the text edge)`,
-    editingFocusBinding &&
-      `${formatOnirigiriShortcut(editingFocusBinding).keys.slice(0, -1).join(" + ")} + arrows while typing (with no selection)`,
-    moveBinding &&
-      `${formatOnirigiriShortcut(moveBinding).keys.slice(0, -1).join(" + ")} + arrows to move panes`,
-    overviewBinding && `${formatOnirigiriShortcut(overviewBinding).label} for overview`,
-    "Alt + N to add a pane",
-  ]
-    .filter(Boolean)
-    .join("; ");
+  const arrows = (binding: OnirigiriShortcutBinding) => [
+    ...formatOnirigiriShortcut(binding).keys.slice(0, -1),
+    "Arrows",
+  ];
+  const shortcutList: WorkspaceShortcut[] = [
+    ...(focusBinding
+      ? [
+          {
+            label: "Move between panes",
+            detail: "In the composer, at the edge of the text",
+            keys: arrows(focusBinding),
+          },
+        ]
+      : []),
+    ...(editingFocusBinding
+      ? [
+          {
+            label: "Move between panes while typing",
+            detail: "With no text selected",
+            keys: arrows(editingFocusBinding),
+          },
+        ]
+      : []),
+    ...(moveBinding ? [{ label: "Move the focused pane", keys: arrows(moveBinding) }] : []),
+    ...(overviewBinding
+      ? [{ label: "Overview", keys: formatOnirigiriShortcut(overviewBinding).keys }]
+      : []),
+    { label: "New pane", keys: formatOnirigiriShortcut(NEW_PANE_BINDING).keys },
+  ];
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const cancelClose = useCallback(() => {
     if (closeTimerRef.current === null) return;
@@ -209,6 +237,24 @@ export function WorkspaceToolbar({
           inert={!open}
         >
           <div className="spatial-workspace-controls__actions">
+            <Button
+              aria-label="Keyboard shortcuts"
+              aria-haspopup="dialog"
+              tooltip="Keyboard shortcuts"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
+                <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+                <path d="M4.5 6.5h.01M7 6.5h.01M9.5 6.5h.01M12 6.5h.01M5 9.5h6" />
+              </svg>
+            </Button>
             <Button
               ref={advancedRef}
               aria-label="Advanced workspace controls"
@@ -446,7 +492,7 @@ export function WorkspaceToolbar({
           aria-label="Workspace controls"
           aria-controls={panelId}
           aria-expanded={open}
-          tooltip={hint ? `Workspace controls · ${hint}` : "Workspace controls"}
+          tooltip="Workspace controls"
           onClick={(event) => {
             if (event.detail > 0 && mouseHoverRef.current) {
               setOpen(true);
@@ -462,6 +508,11 @@ export function WorkspaceToolbar({
           <OnirigiriMark />
         </Button>
       </div>
+      <WorkspaceShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+        shortcuts={shortcutList}
+      />
     </div>
   );
 }
