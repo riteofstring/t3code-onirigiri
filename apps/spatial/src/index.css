@@ -3,6 +3,7 @@
 @source "../../web/src";
 
 .spatial-workspace {
+  isolation: isolate;
   --spatial-compact-toolbar-height: 52px;
   --spatial-stage: color-mix(in oklch, var(--background) 94%, var(--foreground));
 }
