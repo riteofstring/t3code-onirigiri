@@ -1080,6 +1080,10 @@ function SpatialWorkspaceView({
   }, []);
   const togglePaneMaximized = useCallback(
     (paneId: string) => {
+      if (preferences.maximizeAll) {
+        changeWorkspacePreferences({ maximizeAll: false });
+        return;
+      }
       const entering = workspaceRef.current?.getSnapshot().maximizedPaneId !== paneId;
       const grow = entering ? growFullScreenBorder() : null;
       if (entering) flushSync(() => setSnapMaximize(true));
@@ -1087,8 +1091,14 @@ function SpatialWorkspaceView({
       syncMaximized();
       grow?.();
     },
-    [growFullScreenBorder, syncMaximized],
+    [changeWorkspacePreferences, growFullScreenBorder, preferences.maximizeAll, syncMaximized],
   );
+  useEffect(() => {
+    if (!preferences.maximizeAll || maximizedPaneId === null) return;
+    workspaceRef.current?.togglePaneMaximized(maximizedPaneId);
+    syncMaximized();
+    changeWorkspacePreferences({ maximizeAll: false });
+  }, [changeWorkspacePreferences, maximizedPaneId, preferences.maximizeAll, syncMaximized]);
   const focusSurfacePane = useCallback((paneId: string) => {
     if (workspaceRef.current?.focusPane(paneId, { exitOverview: true })) return;
     pendingFocusPaneIdRef.current = paneId;
