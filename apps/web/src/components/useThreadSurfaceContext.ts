@@ -12,7 +12,7 @@ import {
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
 
@@ -65,10 +65,7 @@ export function useThreadSurfaceContext(
   const fallbackThread = useAtomValue(shell ? EMPTY_DETAIL_ATOM : detailAtom, threadMetadata);
   const thread = shell ?? fallbackThread;
   const projectId = thread?.projectId;
-  const projectRef = useMemo(
-    () => (projectId ? scopeProjectRef(threadRef.environmentId, projectId) : null),
-    [projectId, threadRef.environmentId],
-  );
+  const projectRef = projectId ? scopeProjectRef(threadRef.environmentId, projectId) : null;
   const project = useProject(projectRef);
   const settings = useEnvironmentSettings(threadRef.environmentId);
   const serverConfig = useServerConfigs().get(threadRef.environmentId) ?? null;
@@ -79,16 +76,11 @@ export function useThreadSurfaceContext(
   const cwd = project
     ? projectScriptCwd({ project: { cwd: project.workspaceRoot }, worktreePath })
     : null;
-  const runtimeEnv = useMemo(
-    () =>
-      project
-        ? projectScriptRuntimeEnv({ project: { cwd: project.workspaceRoot }, worktreePath })
-        : {},
-    [project, worktreePath],
-  );
-  const configuredUrls = useMemo(
-    () => getConfiguredPreviewUrls(project ? resolveProjectScripts(settings, project) : []),
-    [project, settings],
+  const runtimeEnv = project
+    ? projectScriptRuntimeEnv({ project: { cwd: project.workspaceRoot }, worktreePath })
+    : {};
+  const configuredUrls = getConfiguredPreviewUrls(
+    project ? resolveProjectScripts(settings, project) : [],
   );
   const workspaceMutationId = useAtomValue(detailAtom, threadWorkspaceMutationId);
   const gitCwd = worktreePath ?? cwd;
@@ -107,6 +99,7 @@ export function useThreadSurfaceContext(
     resourceKey: `git-status:${scopedThreadKey(threadRef)}:${gitCwd ?? ""}`,
   });
   const liveIsGitRepo = gitStatus.data?.isRepo;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the committed repo status in the session checkout cache that later mounts recall before status loads
   useEffect(() => {
     if (gitCwd !== null && liveIsGitRepo !== undefined) {
       rememberCheckoutIsRepo(threadRef.environmentId, gitCwd, liveIsGitRepo);

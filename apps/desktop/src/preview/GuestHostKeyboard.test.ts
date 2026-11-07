@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import type { DesktopPreviewHostShortcut } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -13,7 +12,25 @@ const navigation: DesktopPreviewHostShortcut = {
 };
 const rearrangement = { ...navigation, ctrlKey: true, whileEditing: true };
 
-function key(overrides: Partial<KeyboardEvent> = {}) {
+class FakeElement {
+  isContentEditable = false;
+  readonly matches: string;
+  constructor(matches: string) {
+    this.matches = matches;
+  }
+  closest(selector: string) {
+    return selector.split(",").some((part) => part.trim() === this.matches) ? this : null;
+  }
+}
+
+const body = new FakeElement("body");
+const guest = {
+  hasFocus: vi.fn(() => true),
+  defaultView: { navigator: { platform: "Linux x86_64" } },
+};
+const document = guest as unknown as Document;
+
+function key(overrides: Partial<Omit<KeyboardEvent, "target">> & { target?: FakeElement } = {}) {
   return {
     ...navigation,
     code: "ArrowRight",
@@ -22,7 +39,7 @@ function key(overrides: Partial<KeyboardEvent> = {}) {
     isComposing: false,
     isTrusted: true,
     defaultPrevented: false,
-    target: document.body,
+    target: body,
     composedPath: () => [],
     getModifierState: () => false,
     preventDefault: vi.fn(),
@@ -32,12 +49,13 @@ function key(overrides: Partial<KeyboardEvent> = {}) {
 }
 
 beforeEach(() => {
-  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  vi.stubGlobal("HTMLElement", FakeElement);
+  guest.hasFocus.mockReturnValue(true);
+  guest.defaultView.navigator.platform = "Linux x86_64";
 });
 
 afterEach(() => {
-  document.body.replaceChildren();
-  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 it("leaves native Browser input alone until the host opts in, and releases it on opt-out", () => {
@@ -70,8 +88,7 @@ it("preserves text movement but forwards configured editing chords from guest in
   const send = vi.fn();
   const keyboard = createGuestHostKeyboard(document, send);
   keyboard.configure([navigation, rearrangement]);
-  const input = document.createElement("textarea");
-  document.body.append(input);
+  const input = new FakeElement("textarea");
   const movement = key({ target: input });
   keyboard.keyDown(movement);
   expect(movement.preventDefault).not.toHaveBeenCalled();
@@ -104,19 +121,17 @@ it("does not forward composition, AltGraph, page-generated input, extra modifier
     keyboard.keyDown(event);
     expect(event.preventDefault).not.toHaveBeenCalled();
   }
-  vi.mocked(document.hasFocus).mockReturnValue(false);
+  guest.hasFocus.mockReturnValue(false);
   keyboard.keyDown(key());
   expect(send).not.toHaveBeenCalled();
 });
 
 it("keeps guest dialogs in control and recognizes macOS Option character chords", () => {
-  vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+  guest.defaultView.navigator.platform = "MacIntel";
   const send = vi.fn();
   const keyboard = createGuestHostKeyboard(document, send);
   keyboard.configure([navigation, { ...navigation, key: "o" }]);
-  const dialog = document.createElement("dialog");
-  dialog.open = true;
-  document.body.append(dialog);
+  const dialog = new FakeElement("dialog[open]");
   keyboard.keyDown(key({ target: dialog }));
   expect(send).not.toHaveBeenCalled();
   keyboard.keyDown(key({ key: "ø", code: "KeyO" }));

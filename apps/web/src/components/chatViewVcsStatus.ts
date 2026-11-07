@@ -2,7 +2,6 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { VcsStatusResult } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useMemo } from "react";
 
 import { formatEnvironmentQueryError } from "../state/query";
 
@@ -32,27 +31,29 @@ function selectChatViewVcsStatus<E>(result: AsyncResult.AsyncResult<VcsStatusRes
   };
 }
 
+function selectedChatViewVcsStatusAtom<E>(
+  statusAtom: Atom.Atom<AsyncResult.AsyncResult<VcsStatusResult, E>>,
+) {
+  return Atom.map(statusAtom, selectChatViewVcsStatus).pipe(
+    Atom.withEquality<ReturnType<typeof selectChatViewVcsStatus>>(
+      (previous, next) =>
+        previous.data?.isRepo === next.data?.isRepo &&
+        previous.data?.refName === next.data?.refName &&
+        previous.data?.hasWorkingTreeChanges === next.data?.hasWorkingTreeChanges &&
+        previous.data?.pr?.number === next.data?.pr?.number &&
+        previous.data?.pr?.url === next.data?.pr?.url &&
+        previous.data?.pr?.state === next.data?.pr?.state &&
+        previous.data?.pr?.headRef === next.data?.pr?.headRef &&
+        previous.error === next.error,
+    ),
+  );
+}
+
 export function useChatViewVcsStatus<E>(
   atom: Atom.Atom<AsyncResult.AsyncResult<VcsStatusResult, E>> | null,
 ) {
   const statusAtom = atom ?? EMPTY_STATUS_ATOM;
-  const selectedAtom = useMemo(
-    () =>
-      Atom.map(statusAtom, selectChatViewVcsStatus).pipe(
-        Atom.withEquality<ReturnType<typeof selectChatViewVcsStatus>>(
-          (previous, next) =>
-            previous.data?.isRepo === next.data?.isRepo &&
-            previous.data?.refName === next.data?.refName &&
-            previous.data?.hasWorkingTreeChanges === next.data?.hasWorkingTreeChanges &&
-            previous.data?.pr?.number === next.data?.pr?.number &&
-            previous.data?.pr?.url === next.data?.pr?.url &&
-            previous.data?.pr?.state === next.data?.pr?.state &&
-            previous.data?.pr?.headRef === next.data?.pr?.headRef &&
-            previous.error === next.error,
-        ),
-      ),
-    [statusAtom],
-  );
+  const selectedAtom = selectedChatViewVcsStatusAtom(statusAtom);
   const selected = useAtomValue(selectedAtom);
   const refresh = useAtomRefresh(statusAtom);
   return { ...selected, refresh };

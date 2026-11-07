@@ -9,6 +9,7 @@ import { cn } from "~/lib/utils";
  */
 function useBannerAttachedAttribute() {
   const ref = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors attached banner surfaces in the shell DOM onto a data attribute via MutationObserver
   useLayoutEffect(() => {
     const shell = ref.current;
     if (!shell) return;

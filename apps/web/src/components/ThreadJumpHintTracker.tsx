@@ -31,6 +31,7 @@ export function ThreadJumpHintTracker({
   });
   const visible = useThreadJumpHintsVisible(shouldShow);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps modifier-key and hint-delay subscriptions out of the Sidebar render; only the settled visibility reaches the parent
   useEffect(() => {
     onVisibilityChange(visible);
   }, [onVisibilityChange, visible]);

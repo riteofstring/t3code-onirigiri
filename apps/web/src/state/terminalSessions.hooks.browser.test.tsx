@@ -22,6 +22,7 @@ const atoms = await vi.hoisted(async () => {
     scopes: Atom.family((_environmentId: EnvironmentId | null) =>
       Atom.make<ReadonlySet<string>>(new Set<string>()).pipe(Atom.keepAlive),
     ),
+    session: Atom.make(AsyncResult.initial()).pipe(Atom.keepAlive),
     metadata: Atom.family((_environmentId: EnvironmentId) =>
       Atom.make<AsyncResult.AsyncResult<ReadonlyArray<TerminalSummary>, Error>>(
         AsyncResult.initial(),
@@ -31,6 +32,8 @@ const atoms = await vi.hoisted(async () => {
 });
 
 vi.mock("./session", () => ({
+  environmentSession: { sessionStateAtom: () => atoms.session },
+  sessionHasScope: () => false,
   useEnvironmentScope: (environmentId: EnvironmentId | null, scope: string) =>
     useAtomValue(atoms.scopes(environmentId)).has(scope),
 }));

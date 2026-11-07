@@ -1,5 +1,5 @@
 import { VirtualizedFile, type File, type PostRenderPhase } from "@pierre/diffs";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 export type FilePostRender = <LAnnotation>(
   container: HTMLElement,
@@ -13,6 +13,7 @@ export function useFileViewport(onPostRender?: FilePostRender): FilePostRender {
     instance: Pick<VirtualizedFile, "rerender" | "getEditorViewport">;
   }>();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the virtualized file's container to rerender it when it scrolls into the editor viewport
   useEffect(() => {
     if (!file) return;
     const { container, instance } = file;
@@ -26,13 +27,11 @@ export function useFileViewport(onPostRender?: FilePostRender): FilePostRender {
     return () => observer.disconnect();
   }, [file]);
 
-  return useCallback<FilePostRender>(
-    (container, instance, phase) => {
-      if (phase !== "unmount" && instance instanceof VirtualizedFile) {
-        setFile((current) => (current?.instance === instance ? current : { container, instance }));
-      }
-      onPostRender?.(container, instance, phase);
-    },
-    [onPostRender],
-  );
+  const postRender: FilePostRender = (container, instance, phase) => {
+    if (phase !== "unmount" && instance instanceof VirtualizedFile) {
+      setFile((current) => (current?.instance === instance ? current : { container, instance }));
+    }
+    onPostRender?.(container, instance, phase);
+  };
+  return postRender;
 }

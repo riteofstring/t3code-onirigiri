@@ -1,8 +1,9 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { PreviewAnnotationPayload, ScopedThreadRef } from "@t3tools/contracts";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect } from "react";
 
 import type { ComposerImageAttachment } from "./composerDraftStore";
+import { useStableCallback } from "./hooks/useStableCallback";
 import type { TerminalContextSelection } from "./lib/terminalContext";
 
 export type ThreadSurfaceCommand =
@@ -51,18 +52,15 @@ export function useThreadSurfaceCommandHandler(
   threadRef: ScopedThreadRef | null,
   handler: CommandHandler,
 ): void {
-  const handlerRef = useRef(handler);
-  useLayoutEffect(() => {
-    handlerRef.current = handler;
-  });
+  const receive = useStableCallback(handler);
   const threadKey = threadRef ? scopedThreadKey(threadRef) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds this surface's entry in the module command registry and drains queued commands while mounted
   useLayoutEffect(() => {
     if (threadKey === null) return;
-    const receive: CommandHandler = (command) => handlerRef.current(command);
     handlers.set(threadKey, receive);
     drain(threadKey);
     return () => {
       if (handlers.get(threadKey) === receive) handlers.delete(threadKey);
     };
-  }, [threadKey]);
+  }, [receive, threadKey]);
 }
