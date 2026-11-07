@@ -376,16 +376,6 @@
 .spatial-workspace
   :is([data-onirigiri-surface-kind="thread"], [data-onirigiri-surface-kind="draft"])
   > .onirigiri-pane__titlebar {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 0;
-}
-
-.spatial-workspace
-  :is([data-onirigiri-surface-kind="thread"], [data-onirigiri-surface-kind="draft"]):not(
-    [data-presentation-mode="overview"]
-  )
-  > .onirigiri-pane__titlebar {
   display: none;
 }
 
@@ -401,16 +391,6 @@
   flex-wrap: nowrap;
 }
 
-.spatial-workspace [data-onirigiri-slot="pane"][data-presentation-mode="overview"] {
-  --onirigiri-titlebar: color-mix(in oklch, var(--card) 90%, var(--background));
-}
-
-.spatial-workspace
-  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
-  > .onirigiri-pane__titlebar {
-  border-bottom: 1px solid var(--border);
-}
-
 .spatial-workspace
   [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
   > .onirigiri-pane__titlebar
@@ -424,19 +404,6 @@
   > .onirigiri-pane__heading {
   min-width: 0;
   flex: 1 1 auto;
-}
-
-.spatial-workspace
-  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]:not(
-    [data-onirigiri-surface-kind="empty"]
-  )
-  > .onirigiri-pane__titlebar::after {
-  content: "";
-  position: absolute;
-  inset: 100% 0 auto;
-  height: 1.5rem;
-  background: linear-gradient(var(--onirigiri-titlebar), transparent);
-  pointer-events: none;
 }
 
 .spatial-workspace
