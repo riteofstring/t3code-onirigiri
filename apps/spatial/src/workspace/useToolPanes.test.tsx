@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -97,6 +97,30 @@ it("turns an empty pane into a terminal or diff and remembers it across reloads"
 
   await act(() => hook.remove(paneId));
   expect(hook.toolPanes).toEqual([]);
+});
+
+it("re-attaches an empty pane to another chat or to a project without chats, across reloads", async () => {
+  await mount();
+  let paneId = "";
+  await act(() => {
+    paneId = hook.addEmpty(thread("t1"), null);
+  });
+  await act(() => hook.attachEmpty(paneId, thread("t2")));
+  expect(hook.toolPanes).toEqual([{ paneId, kind: "empty", ...thread("t2") }]);
+  await act(() => hook.attachEmpty(paneId, { ...thread("t2"), projectId: "p-new" as ProjectId }));
+  const attached = hook.toolPanes[0]!;
+  expect(attached.projectId).toBe("p-new");
+
+  await act(() => renderer!.unmount());
+  renderer = undefined;
+  await mount();
+  expect(hook.toolPanes).toEqual([attached]);
+
+  await act(() => {
+    hook.openSurface(thread("t2"), terminalSurface("onirigiri-pane-test"), paneId);
+  });
+  await act(() => hook.attachEmpty(paneId, thread("t3")));
+  expect(hook.toolPanes[0]).toMatchObject({ kind: "surface", threadId: "t2" });
 });
 
 it("replaces choosers and placeholders in place, and keeps one owner per browser resource", async () => {

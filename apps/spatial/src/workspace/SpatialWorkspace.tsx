@@ -14,6 +14,7 @@ import {
   type WorkspacePane,
 } from "@riteofstring/onirigiri";
 import "@riteofstring/onirigiri/styles.css";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 import {
   useCallback,
@@ -598,11 +599,16 @@ function SpatialWorkspaceView({
     }
     for (const pane of panes) {
       const before = previousById.get(pane.paneId);
-      if (before && before.surfaceKind !== pane.surfaceKind) {
+      if (
+        before &&
+        (before.surfaceKind !== pane.surfaceKind ||
+          (pane.surfaceKind === "empty" && before.subtitle !== pane.subtitle))
+      ) {
         workspace.configurePane(pane.paneId, {
           data: pane.data,
           surfaceKind: pane.surfaceKind,
           title: pane.title,
+          ...(pane.subtitle === undefined ? {} : { subtitle: pane.subtitle }),
         });
       } else if (pane.title && before?.title !== pane.title) {
         workspace.renamePane(pane.paneId, pane.title);
@@ -883,6 +889,31 @@ function SpatialWorkspaceView({
   const addPane = useCallback(() => addPaneBeside(focusedPaneIdRef.current), [addPaneBeside]);
   const pendingPlacementRef = useRef(new Map<string, PanePlacement>());
   const newThread = useNewThreadHandler();
+  const selectPaneProject = useCallback(
+    (tool: ToolPane, project: { environmentId: EnvironmentId; id: ProjectId }) => {
+      const latest = threadShells
+        .filter(
+          (thread) =>
+            thread.environmentId === project.environmentId &&
+            thread.projectId === project.id &&
+            thread.archivedAt === null,
+        )
+        .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      if (latest) {
+        toolController.attachEmpty(tool.paneId, {
+          environmentId: latest.environmentId,
+          threadId: latest.id,
+        });
+      } else if (project.environmentId === tool.environmentId) {
+        toolController.attachEmpty(tool.paneId, {
+          environmentId: tool.environmentId,
+          threadId: tool.threadId,
+          projectId: project.id,
+        });
+      }
+    },
+    [threadShells, toolController],
+  );
   const startChatInPane = useCallback(
     async (tool: ToolPane) => {
       const shell = readThreadShell(scopeThreadRef(tool.environmentId, tool.threadId));
@@ -890,7 +921,9 @@ function SpatialWorkspaceView({
       const column = workspaceRef.current
         ?.getLayout()
         .columns.find((candidate) => candidate.cells.some((cell) => cell.paneId === tool.paneId));
-      const draft = await newThread(scopeProjectRef(tool.environmentId, shell.projectId));
+      const draft = await newThread(
+        scopeProjectRef(tool.environmentId, tool.projectId ?? shell.projectId),
+      );
       if (!draft) return;
       if (column)
         pendingPlacementRef.current.set(draftPaneId(draft.draftId), {
@@ -1128,6 +1161,7 @@ function SpatialWorkspaceView({
                   focusSurfacePane(threadPaneId(tool.environmentId, tool.threadId))
                 }
                 onStartChat={() => void startChatInPane(tool)}
+                onSelectProject={(project) => selectPaneProject(tool, project)}
               />
             </div>
           ) : (
@@ -1157,6 +1191,7 @@ function SpatialWorkspaceView({
       isPaneClosing,
       navigateAway,
       navigateFromTerminal,
+      selectPaneProject,
       sentDraftPaneIds,
       togglePaneMaximized,
       startChatInPane,

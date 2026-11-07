@@ -36,7 +36,9 @@ import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import { useSurfaceNavigation } from "@t3tools/web/src/surfaceNavigation";
 import { requestThreadSurfaceCommand } from "@t3tools/web/src/threadSurfaceCommands";
 import { PANE_TERMINAL_ID_PREFIX } from "@t3tools/web/src/terminalOwnership";
+import { useProject, useProjects, useThreadShell } from "@t3tools/web/src/state/entities";
 import { MAX_TERMINALS_PER_GROUP } from "@t3tools/web/src/types";
+import { PaneProjectPicker } from "./PaneProjectPicker";
 import { usePaneActivity } from "./paneActivity";
 import { newToolResourceId, toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { useToolPaneContext } from "./useToolPaneContext";
@@ -50,6 +52,17 @@ const directions: Readonly<
   ArrowDown: "down",
 };
 
+const NO_THREAD_AVAILABILITY = {
+  browserAvailable: false,
+  terminalAvailable: false,
+  diffAvailable: false,
+  filesAvailable: false,
+  pullRequestAvailable: false,
+  pullRequestsAvailable: false,
+  deviceAvailable: false,
+  lineageAvailable: false,
+};
+
 export function ToolPaneView({
   pane,
   focused,
@@ -58,6 +71,7 @@ export function ToolPaneView({
   onFocusThread,
   onDismissDeviceSetup,
   onStartChat,
+  onSelectProject,
   isPresent,
 }: {
   pane: ToolPane;
@@ -67,6 +81,7 @@ export function ToolPaneView({
   onFocusThread: () => void;
   onDismissDeviceSetup: ThreadSurfaceActions["onDismissDeviceSetup"];
   onStartChat: () => void;
+  onSelectProject: (project: ReturnType<typeof useProjects>[number]) => void;
   isPresent: () => boolean;
 }) {
   const interactive = useOnirigiriPaneInteractive();
@@ -83,6 +98,11 @@ export function ToolPaneView({
         : false,
   });
   const navigation = useSurfaceNavigation();
+  const ownerShell = useThreadShell(pane.kind === "empty" ? threadRef : null);
+  const paneProjectId = pane.projectId ?? ownerShell?.projectId ?? null;
+  const paneProject = useProject(
+    paneProjectId ? { environmentId: pane.environmentId, projectId: paneProjectId } : null,
+  );
   const previewState = useThreadPreviewState(surface?.kind === "preview" ? threadRef : null);
   const terminalSessions = useKnownTerminalSessions({
     environmentId: surface?.kind === "terminal" ? threadRef.environmentId : null,
@@ -399,8 +419,9 @@ export function ToolPaneView({
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col" aria-busy={pending} inert={pending}>
+            <PaneProjectPicker project={paneProject} onSelect={onSelectProject} />
             <RightPanelEmptyState
-              {...data.availability}
+              {...(pane.projectId ? NO_THREAD_AVAILABILITY : data.availability)}
               browserProfiles={data.browserProfiles}
               active={active}
               onAddBrowser={() => void browser()}

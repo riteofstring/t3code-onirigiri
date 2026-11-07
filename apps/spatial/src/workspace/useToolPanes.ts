@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -20,6 +20,7 @@ export interface ToolPane {
   readonly kind: ToolPaneKind;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  readonly projectId?: ProjectId;
   readonly terminalId?: string;
   readonly surface?: RightPanelSurface;
 }
@@ -39,7 +40,8 @@ function isToolPane(value: unknown): value is ToolPane {
     typeof pane.paneId === "string" &&
     pane.paneId.startsWith(TOOL_PANE_PREFIX) &&
     typeof pane.environmentId === "string" &&
-    typeof pane.threadId === "string"
+    typeof pane.threadId === "string" &&
+    (pane.projectId === undefined || (pane.kind === "empty" && typeof pane.projectId === "string"))
   );
 }
 
@@ -218,6 +220,22 @@ export function useToolPanes() {
     [update],
   );
 
+  const attachEmpty = useCallback(
+    (
+      paneId: string,
+      target: { environmentId: EnvironmentId; threadId: ThreadId; projectId?: ProjectId },
+    ) => {
+      update((panes) =>
+        panes.map((pane) =>
+          pane.paneId === paneId && pane.kind === "empty"
+            ? { paneId, kind: "empty", ...target }
+            : pane,
+        ),
+      );
+    },
+    [update],
+  );
+
   const clearSurface = useCallback(
     (paneId: string, surfaceId: string) => {
       update((panes) =>
@@ -245,6 +263,7 @@ export function useToolPanes() {
       openSurface,
       updateSurface,
       clearSurface,
+      attachEmpty,
       getUserActionRevision,
       recordUserAction,
     }),
@@ -256,6 +275,7 @@ export function useToolPanes() {
       openSurface,
       updateSurface,
       clearSurface,
+      attachEmpty,
       getUserActionRevision,
       recordUserAction,
     ],

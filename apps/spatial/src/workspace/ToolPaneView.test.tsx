@@ -174,6 +174,7 @@ async function render(focused = true, pane: ToolPane = terminalPane) {
           onFocusThread={state.focusThread}
           onDismissDeviceSetup={() => {}}
           onStartChat={() => {}}
+          onSelectProject={() => {}}
           isPresent={state.isPresent}
         />
         <textarea aria-label="Chat composer" />

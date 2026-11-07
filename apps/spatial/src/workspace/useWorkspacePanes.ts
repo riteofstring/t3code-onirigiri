@@ -97,6 +97,7 @@ export function useWorkspacePanes(
     catalogReady &&
     (isHostedStaticApp() || localEnvironmentDisabled || primaryEnvironmentId !== null);
   const threads = useThreadShells();
+  const projects = useProjects();
   const groups = useSidebarProjectGroups();
 
   const live = useMemo((): LiveWorkspace | null => {
@@ -152,6 +153,9 @@ export function useWorkspacePanes(
       threads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
     );
     const titleByGroup = new Map(groups.map((group) => [group.projectKey, group.displayName]));
+    const titleByProject = new Map(
+      projects.map((project) => [scopedKey(project.environmentId, project.id), project.title]),
+    );
     const toolPanesByThread = new Map<string, ToolPane[]>();
     for (const tool of toolPanes) {
       const key = scopedKey(tool.environmentId, tool.threadId);
@@ -206,7 +210,13 @@ export function useWorkspacePanes(
             ...added.map((tool) =>
               toolPaneDefinition(
                 tool,
-                tool.kind === "empty" ? (titleByGroup.get(row.projectId) ?? "") : thread.title,
+                tool.kind !== "empty"
+                  ? thread.title
+                  : (titleByProject.get(
+                      scopedKey(tool.environmentId, tool.projectId ?? thread.projectId),
+                    ) ??
+                      titleByGroup.get(row.projectId) ??
+                      ""),
               ),
             ),
           ];
@@ -218,7 +228,16 @@ export function useWorkspacePanes(
       plane.map((pane, slotIndex) => ({ ...pane, planeIndex, slotIndex })),
     );
     return panes;
-  }, [arrangement.layout, dismissedPaneIds, drafts, groups, layoutMode, threads, toolPanes]);
+  }, [
+    arrangement.layout,
+    dismissedPaneIds,
+    drafts,
+    groups,
+    layoutMode,
+    projects,
+    threads,
+    toolPanes,
+  ]);
 }
 
 const TOOL_TITLES: Record<ToolPane["kind"], string> = {
