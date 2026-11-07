@@ -112,6 +112,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "medium",
     rowHeight: "viewport",
+    maxRowHeight: 1200,
     columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
@@ -136,6 +137,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: 384,
+    maxRowHeight: 1200,
     columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
@@ -150,6 +152,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: 384,
+    maxRowHeight: 1200,
     columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
@@ -163,6 +166,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   expect(settings()).toEqual({
     overviewZoom: "near",
     rowHeight: "viewport",
+    maxRowHeight: 1200,
     columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
@@ -294,17 +298,42 @@ it("keeps settings usable when storage cannot be written", async () => {
   expect(settings().rowHeight).toBe(512);
 });
 
+it("sets a maximum row height that stays at least the minimum and turns off at 0", async () => {
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
+  const maximum = host.querySelector<HTMLInputElement>(
+    '[aria-label="Maximum row height in pixels"]',
+  )!;
+  const enter = async (value: string) => {
+    await act(() => {
+      maximum.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        maximum,
+        value,
+      );
+      maximum.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await key(maximum, "Enter");
+    return settings().maxRowHeight;
+  };
+  expect(await enter("800")).toBe(800);
+  expect(await enter("100")).toBe(300);
+  expect(await enter("0")).toBe(0);
+  expect(maximum.value).toBe("0");
+});
+
 it("uses safe defaults for malformed saved preferences", async () => {
   await act(() => root.unmount());
   localStorage.setItem(
     "onirigiri-t3:workspace-preferences",
-    '{"overviewZoom":"invalid","rowHeight":-20}',
+    '{"overviewZoom":"invalid","rowHeight":-20,"maxRowHeight":-5}',
   );
   root = createRoot(host);
   await act(() => root.render(<Workspace />));
   expect(settings()).toEqual({
     overviewZoom: "medium",
     rowHeight: "viewport",
+    maxRowHeight: 1200,
     columnWidth: 600,
     navigationBar: true,
     maximizeAll: false,
