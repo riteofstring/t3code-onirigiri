@@ -1,12 +1,18 @@
 # Onirigiri for T3 Code: design constraints
 
 `apps/spatial` runs T3's own router and app shell and replaces only the chat area with an Onirigiri
-workspace of thread panes and the tool panes users add beside them. `packages/onirigiri-t3` holds the
-T3-independent row reconciliation; its README states those rules. This page records constraints
-that span files and are easy to break without noticing.
+workspace of thread panes and the tool panes users add beside them. The standalone sibling repository
+`onirigiri-t3-adapter` owns `@riteofstring/onirigiri-t3` and its pure row reconciliation; its README
+states those rules. The spatial package links its unchanged TypeScript source exports directly into
+the application bundle. T3 retains ownership of selectors, persistence, routes and pane lifecycle.
+This page records constraints that span files and are easy to break without noticing.
 
 ## Build
 
+- The sibling adapter is validated at commit `a529cce47d07ebfa1c1c82e0aecb133539c9db9e`.
+  Its `link:` dependency reads that checkout directly; keep it on the recorded revision when
+  reproducing this build. T3 worktrees that adopt the link share the same sibling checkout.
+  Adapter tests and Code Polishy checks belong there; workspace integration tests remain here.
 - `apps/spatial/vite.config.ts` inherits the web app's whole toolchain (React Compiler, Tailwind,
   defines, dev proxy) so T3 components compile exactly as upstream, and replaces only the router
   plugin with one pointed at the web app's routes, because the app runs T3's route tree.
