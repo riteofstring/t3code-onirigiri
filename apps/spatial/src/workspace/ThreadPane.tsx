@@ -218,7 +218,7 @@ function usePaneContent(
   else if (!composerShown && renderContent && composerReady) setComposerShown(true);
 
   useOnirigiriPaneContentReady(
-    renderContent && (composerShown || presented),
+    renderContent && (composerShown || presented || handoff),
     `${revision}|${presented && !prepared}|${visualRevision}`,
   );
 
