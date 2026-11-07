@@ -28,7 +28,11 @@ export function PaneProjectPicker({
   project: PickedProject | null;
   onSelect: (project: PickedProject) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [shift, setShift] = useState<{ x: number; y: number } | null>(null);
+  const open = shift !== null;
+  const setOpen = (next: boolean) => {
+    if (!next) setShift(null);
+  };
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <Tooltip>
@@ -36,14 +40,28 @@ export function PaneProjectPicker({
           render={
             <button
               type="button"
-              className="mx-auto mb-2 flex max-w-full items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground hover:bg-accent"
+              className="mx-auto mt-6 mb-2 flex w-64 max-w-[calc(100%-2rem)] items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent"
               aria-label={
                 project ? `Project: ${project.title}. Change project` : "Choose a project"
               }
-              onClick={() => setOpen(true)}
+              onClick={(event) => {
+                const box = event.currentTarget.getBoundingClientRect();
+                const width = Math.min(576, window.innerWidth - 32);
+                const room = Math.max(0, (window.innerWidth - width) / 2 - 16);
+                const offset = box.left + box.width / 2 - window.innerWidth / 2;
+                const top = window.innerHeight * 0.1;
+                const below = Math.max(0, window.innerHeight - top - 420 - 16);
+                setShift({
+                  x: Math.max(-room, Math.min(room, offset)),
+                  y: Math.max(0, Math.min(below, box.bottom + 8 - top)),
+                });
+              }}
             >
+              <span className="text-muted-foreground">Project</span>
               {project ? <ProjectFavicon project={project} className={ITEM_ICON_CLASS} /> : null}
-              <span className="truncate">{project?.title ?? "Choose a project"}</span>
+              <span className="min-w-0 flex-1 truncate text-start">
+                {project?.title ?? "Choose a project"}
+              </span>
               <svg
                 aria-hidden="true"
                 viewBox="0 0 16 16"
@@ -63,6 +81,7 @@ export function PaneProjectPicker({
         <CommandDialogPopup
           aria-label="Choose a project"
           className="overflow-hidden"
+          style={shift ? { translate: `${shift.x}px ${shift.y}px` } : undefined}
           onBackdropPointerDown={() => setOpen(false)}
         >
           <ProjectResults

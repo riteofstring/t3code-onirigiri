@@ -539,3 +539,10 @@
     animation: none;
   }
 }
+
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]
+  [aria-label="Open a surface"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
