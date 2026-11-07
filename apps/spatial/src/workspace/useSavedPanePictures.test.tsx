@@ -121,7 +121,7 @@ const layout = (width: number) =>
     })),
   }) as unknown as OnirigiriLayout;
 const geometry = (width: number) =>
-  `stage:800x600@1|[{"unit":"px","value":${width}},[[null,1,null]]]|0|tiled`;
+  `stage:800x600@1|light:|[{"unit":"px","value":${width}},[[null,1,null]]]|0|tiled`;
 
 type ResizeEntry = { contentRect: { width: number; height: number } };
 const resizeObservers = new Map<Element, (entries: ResizeEntry[]) => void>();
@@ -1620,6 +1620,26 @@ it.each([
   expect(pictureImageFor(paneId)).toBe(image);
   expect(snapshot).not.toHaveBeenCalled();
   expect(store.writes).toHaveLength(0);
+});
+
+it("keeps pictures per colour theme so a theme switch never shows the other theme's picture", async () => {
+  const image = new Blob(["light"]);
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  await act(() => drawPicture(pane, image));
+  await advance(10);
+  expect(shownPicture).toBe(image);
+  try {
+    await act(() => document.documentElement.classList.add("dark"));
+    await advance(10);
+    expect(shownPicture).toBeNull();
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    await act(() => document.documentElement.classList.remove("dark"));
+    await advance(10);
+    expect(shownPicture).toBe(image);
+  } finally {
+    document.documentElement.classList.remove("dark");
+  }
 });
 
 it("keeps a picture for each stage size and selects the stored one on return without redrawing", async () => {

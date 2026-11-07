@@ -34,6 +34,10 @@ interface PaneContentRevision {
   theme: string;
 }
 
+const themeKey = () => {
+  const root = document.documentElement;
+  return `${root.classList.contains("dark") ? "dark" : "light"}:${root.dataset.themeId ?? ""}`;
+};
 const syncedPanes = new Map<string, PaneContentRevision & { visualRevision: number }>();
 
 function contentKey(content: PaneContentRevision): string {
@@ -307,7 +311,18 @@ export function useSavedPanePictures(
       setGeometryVersion((version) => version + 1);
     };
     resolution.addEventListener("change", pixelRatioChanged);
+    let theme = themeKey();
+    const themeObserver = new MutationObserver(() => {
+      if (observedStageRef.current !== stage || themeKey() === theme) return;
+      theme = themeKey();
+      setGeometryVersion((version) => version + 1);
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme-id"],
+    });
     stopObservingStageRef.current = () => {
+      themeObserver.disconnect();
       compactObserver.disconnect();
       delete workspace.dataset.spatialCompact;
       observer.disconnect();
@@ -364,7 +379,7 @@ export function useSavedPanePictures(
       const sizing = paneGeometryRef.current.get(paneId);
       const height = defaultRowHeightRef.current;
       return sizing
-        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${sizing}${height === "viewport" ? "" : `|row:${height}`}|${compactRef.current ? "compact" : "tiled"}`
+        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${themeKey()}|${sizing}${height === "viewport" ? "" : `|row:${height}`}|${compactRef.current ? "compact" : "tiled"}`
         : null;
     },
     [getLayout],
