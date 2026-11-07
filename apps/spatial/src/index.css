@@ -102,6 +102,13 @@
   --onirigiri-compact-toolbar-min-height: var(--spatial-compact-toolbar-height);
   --onirigiri-z-toolbar: 35;
   --onirigiri-minimap-background: var(--card);
+  --onirigiri-minimap-border: var(--border);
+  --onirigiri-minimap-pane: color-mix(in oklch, var(--foreground) 20%, transparent);
+  --onirigiri-minimap-pane-focused: color-mix(in oklch, var(--foreground) 55%, transparent);
+}
+
+.spatial-workspace:not(.dark *) :is(.onirigiri-workspace, .onirigiri-workspace__desktop-controls) {
+  --onirigiri-focus: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
 }
 
 [data-slot="sidebar-gap"][style*="width"] {
@@ -472,8 +479,8 @@
 }
 
 .spatial-workspace:not(.dark *) {
-  --spatial-cell: color-mix(in oklch, var(--background) 94%, var(--foreground));
-  --spatial-cell-hover: color-mix(in oklch, var(--background) 90.5%, var(--foreground));
+  --spatial-cell: color-mix(in oklch, var(--background) 91.5%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--background) 88.5%, var(--foreground));
 }
 
 .spatial-empty-cells {
