@@ -26,6 +26,7 @@ interface Placed {
   readonly height: number;
   readonly plane: number;
   readonly slot: number;
+  readonly draft: boolean;
 }
 
 interface Band {
@@ -119,6 +120,7 @@ function emptyCells(
       top: start.y,
       width: box.width / scale,
       height: box.height / scale,
+      draft: element.dataset.onirigiriSurfaceKind === "draft",
       ...place,
     });
   }
@@ -177,7 +179,7 @@ function emptyCells(
       if (row.start + height < topLeft.y || row.start > bottomRight.y || height <= 0) continue;
       const owner = panes
         ? (nearest(
-            panes.filter((pane) => !pane.id.startsWith("draft:")),
+            panes.filter((pane) => !pane.draft),
             slot,
           )?.id ?? null)
         : focusedPaneId;

@@ -41,8 +41,8 @@ export interface WorkspaceDraft {
 
 export type WorkspaceLayoutMode = "rows" | "strip";
 
-export function draftPaneId(draftId: string) {
-  return `draft:${draftId}`;
+export function draftPaneId(draft: { environmentId: string; threadId: string }) {
+  return threadPaneId(draft.environmentId, draft.threadId);
 }
 
 export function threadPaneId(environmentId: string, threadId: string) {
@@ -162,6 +162,7 @@ export function useWorkspacePanes(
       toolPanesByThread.set(key, [...(toolPanesByThread.get(key) ?? []), tool]);
     }
     const draftPanes = new Map<string, OnirigiriPaneDefinition[]>();
+    const draftPaneIds = new Set(drafts.map((draft) => draftPaneId(draft)));
     for (const draft of drafts) {
       const projectKey =
         groups.find((group) =>
@@ -169,7 +170,7 @@ export function useWorkspacePanes(
             (ref) => ref.environmentId === draft.environmentId && ref.projectId === draft.projectId,
           ),
         )?.projectKey ?? `draft-project:${draft.environmentId}:${draft.projectId}`;
-      const paneId = draftPaneId(draft.draftId);
+      const paneId = draftPaneId(draft);
       draftPanes.set(projectKey, [
         ...(draftPanes.get(projectKey) ?? []),
         {
@@ -196,6 +197,7 @@ export function useWorkspacePanes(
           if (!thread) return [];
           const data: ThreadPaneData = { environmentId: thread.environmentId, threadId: thread.id };
           const paneId = threadPaneId(thread.environmentId, thread.id);
+          if (draftPaneIds.has(paneId)) return [];
           const threadPane = {
             paneId,
             surfaceId: `surface:${paneId}`,
