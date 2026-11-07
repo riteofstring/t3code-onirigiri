@@ -145,6 +145,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       const shouldAnimate =
         animate &&
         positions !== null &&
+        positions.size > 0 &&
         !reducedMotion?.matches &&
         fadeCount <= MAX_FADED_ROWS_PER_UPDATE;
       const movedDelta = new Map<HTMLElement, number>();
