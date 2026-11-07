@@ -91,7 +91,7 @@
   --onirigiri-muted: var(--muted-foreground);
   --onirigiri-edge: var(--border);
   --onirigiri-divider: var(--border);
-  --onirigiri-focus: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+  --onirigiri-focus: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
   --onirigiri-focus-ring-size: 0px;
   --onirigiri-control: transparent;
   --onirigiri-control-hover: var(--accent);
