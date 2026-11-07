@@ -14,7 +14,10 @@ import { useClientSettings } from "@t3tools/web/src/hooks/useSettings";
 import { environmentCatalog } from "@t3tools/web/src/connection/catalog";
 import { isHostedStaticApp } from "@t3tools/web/src/hostedPairing";
 import { isLocalEnvironmentDisabled } from "@t3tools/web/src/localEnvironment";
-import { getProjectOrderKey, selectProjectGroupingSettings } from "@t3tools/web/src/logicalProject";
+import {
+  getProjectOrderKey,
+  selectProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
 import { orderItemsByPreferredIds } from "@t3tools/web/src/components/Sidebar.logic";
 import { buildSidebarProjectSnapshots } from "@t3tools/web/src/sidebarProjectGrouping";
 import {
@@ -281,6 +284,8 @@ function toolSurfaceTitle(surface: NonNullable<ToolPane["surface"]>): string {
       return "Linked pull requests";
     case "lineage":
       return "Lineage";
+    case "side-chat":
+      return "Side chat";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
   }

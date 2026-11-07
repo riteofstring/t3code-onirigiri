@@ -1,35 +1,30 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 import type { PhoneViewer } from "@t3tools/client-runtime/device/phone-viewer";
 import type {
   DeviceAccessorySource,
   DeviceModelSource,
 } from "@t3tools/client-runtime/device/model";
 import type { DeviceShapeProfile } from "@t3tools/client-runtime/device/shape-profile";
-import { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-interaction";
+import type { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-interaction";
 import type { DeviceScreenSize, DeviceStreamClient } from "@t3tools/client-runtime/device/stream";
-import { bindPhoneTrackpad } from "./phoneTrackpad";
-import { observeResize } from "../../lib/observeResize";
-import { readLayoutRect } from "../chat/layoutGeometry";
+import { mountDeviceViewer } from "./mountDeviceViewer";
 
 const loadPhoneViewer = () => import("@t3tools/client-runtime/device/phone-viewer");
 
-/** Web shell for the framework-independent viewer. The decoded screen and input connection remain owned by DeviceStreamView. */
 export function DevicePhoneViewport(props: {
   readonly active: boolean;
   readonly profile: DeviceShapeProfile;
   readonly model: DeviceModelSource | null;
   readonly accessory: DeviceAccessorySource | null;
-  readonly source: RefObject<HTMLCanvasElement | null>;
+  readonly source: HTMLCanvasElement;
   readonly onFrameListener: (listener: (() => void) | null) => void;
   readonly onResetReady: (reset: (() => void) | null) => void;
   readonly onInputCancel: (cancel: (() => void) | null) => void;
-  readonly client: RefObject<DeviceStreamClient | null>;
+  readonly client: DeviceStreamClient;
   readonly screen: DeviceScreenSize | null;
   readonly foldAngle: number | null;
   readonly onUnavailable: () => void;
 }) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<PhoneViewer | null>(null);
   const interactionRef = useRef<ReturnType<typeof createPhoneInteraction> | null>(null);
   const screenRef = useRef(props.screen);
@@ -39,21 +34,22 @@ export function DevicePhoneViewport(props: {
   const accessoryRef = useRef(props.accessory);
   const activeRef = useRef(props.active);
   const resizeRef = useRef<(() => void) | null>(null);
-  const cancelRef = useRef<(() => void) | null>(null);
   const { source, onFrameListener, client, onInputCancel, onResetReady, onUnavailable } = props;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pauses or resumes the retained 3D viewer as its pane hides or shows
   useEffect(() => {
     activeRef.current = props.active;
-    if (!props.active) cancelRef.current?.();
     viewerRef.current?.setActive(props.active);
     if (props.active) resizeRef.current?.();
   }, [props.active]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the fold angle into the imperative 3D phone viewer
   useEffect(() => {
     foldAngleRef.current = props.foldAngle;
     viewerRef.current?.setFoldAngle(props.foldAngle);
   }, [props.foldAngle]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes screen, profile, model and accessory changes into the imperative 3D phone viewer
   useEffect(() => {
     screenRef.current = props.screen;
     profileRef.current = props.profile;
@@ -65,77 +61,41 @@ export function DevicePhoneViewport(props: {
     viewerRef.current?.setScreen(props.screen, props.profile);
   }, [props.screen, props.profile, props.model, props.accessory]);
 
-  useEffect(() => {
-    const host = hostRef.current;
-    const canvas = canvasRef.current;
-    const decoded = source.current;
-    if (!host || !canvas || !decoded) return;
-    let disposed = false;
-    let trackpad: ReturnType<typeof bindPhoneTrackpad> | null = null;
-    let stopTrackpadEnd: (() => void) | undefined;
-    const resize = () => {
-      const { width, height } = readLayoutRect(host);
-      viewerRef.current?.resize(width, height, window.devicePixelRatio);
-    };
-    resizeRef.current = resize;
-    const stopObserving = observeResize(host, resize);
-    const blur = () => {
-      interactionRef.current?.end();
-      trackpad?.cancel();
-    };
-    cancelRef.current = blur;
-    onInputCancel(blur);
-    window.addEventListener("blur", blur);
-    void loadPhoneViewer()
-      .then(({ createPhoneViewer }) => {
-        if (disposed) return;
-        const viewer = createPhoneViewer({
-          canvas,
-          source: decoded,
-          onUnavailable,
-          onModelError: (cause) => console.warn("Device 3D asset could not load", cause),
-          profile: profileRef.current,
-          model: modelRef.current,
-          accessory: accessoryRef.current,
-          foldAngle: foldAngleRef.current,
-        });
-        viewerRef.current = viewer;
-        viewer.setActive(activeRef.current);
-        onResetReady(viewer.resetPose);
+  // The 3D viewer lives as long as its canvas; later prop changes are pushed into it above.
+  const mountViewer = (canvas: HTMLCanvasElement | null) => {
+    const host = canvas?.parentElement;
+    if (!canvas || !host) return;
+    return mountDeviceViewer(canvas, host, {
+      load: () =>
+        loadPhoneViewer().then(
+          ({ createPhoneViewer }) =>
+            () =>
+              createPhoneViewer({
+                canvas,
+                source,
+                onUnavailable,
+                onModelError: (cause) => console.warn("Device 3D asset could not load", cause),
+                profile: profileRef.current,
+                model: modelRef.current,
+                accessory: accessoryRef.current,
+                foldAngle: foldAngleRef.current,
+              }),
+        ),
+      touch: (phase, point) => client.sendTouch(phase, point.x, point.y),
+      viewerRef,
+      interactionRef,
+      active: () => activeRef.current,
+      resizeRef,
+      onInputCancel,
+      onResetReady,
+      onFrameListener,
+      onUnavailable,
+      ready: ({ viewer }) => {
         viewer.setScreen(screenRef.current);
-        onFrameListener(viewer.frameUpdated);
-        interactionRef.current = createPhoneInteraction({
-          screenPoint: (point, captured) => viewer.screenPoint(point.x, point.y, captured),
-          touch: (phase, point) => client.current?.sendTouch(phase, point.x, point.y),
-          orbit: viewer.orbit,
-          zoomBy: () => {},
-          onInteractionActive: viewer.setInteractionActive,
-        });
-        trackpad = bindPhoneTrackpad(canvas, interactionRef.current);
-        stopTrackpadEnd = window.desktopBridge?.onTrackpadScrollEnd?.(() => trackpad?.endOrbit());
-        resize();
-        viewer.frameUpdated();
-      })
-      .catch(() => {
-        if (!disposed) onUnavailable();
-      });
-    return () => {
-      disposed = true;
-      resizeRef.current = null;
-      cancelRef.current = null;
-      stopTrackpadEnd?.();
-      trackpad?.dispose();
-      interactionRef.current?.end();
-      interactionRef.current = null;
-      onInputCancel(null);
-      onResetReady(null);
-      onFrameListener(null);
-      stopObserving();
-      window.removeEventListener("blur", blur);
-      viewerRef.current?.dispose();
-      viewerRef.current = null;
-    };
-  }, [onInputCancel, onResetReady, client, onFrameListener, onUnavailable, source]);
+        return { frame: viewer.frameUpdated };
+      },
+    });
+  };
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -146,13 +106,13 @@ export function DevicePhoneViewport(props: {
   };
   return (
     <div className="absolute inset-0" inert={!props.active}>
-      <div ref={hostRef} className="absolute inset-0">
+      <div className="absolute inset-0">
         <div
           aria-hidden
           className="pointer-events-none absolute bottom-[6%] left-1/2 h-5 w-2/5 -translate-x-1/2 rounded-full bg-foreground/10 blur-xl"
         />
         <canvas
-          ref={canvasRef}
+          ref={mountViewer}
           aria-label="Interactive 3D device. Drag the screen to interact. Drag outside it or swipe with two fingers to turn."
           className="size-full touch-none"
           onPointerDown={(event) => {

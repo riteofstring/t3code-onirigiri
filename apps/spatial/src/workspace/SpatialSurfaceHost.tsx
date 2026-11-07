@@ -52,6 +52,7 @@ export function createSpatialSurfaceNavigation(
           !isPaneClosing(pane.paneId) &&
           toolPaneSurface(pane)?.id === surfaceId,
       );
+  const proactiveDiffTurns = new Map<string, string>();
   const open = (ref: ScopedThreadRef, surface: RightPanelSurface, automatic = false) => {
     if (
       controller
@@ -107,9 +108,16 @@ export function createSpatialSurfaceNavigation(
       }
     },
     getUserActionRevision: controller.getUserActionRevision,
-    openProactive(ref, surface, expectedRevision) {
+    openProactive(ref, request, expectedRevision) {
       if (controller.getUserActionRevision(ref) !== expectedRevision) return false;
-      open(ref, surface, true);
+      if (request.kind !== "diff") {
+        open(ref, request, true);
+        return true;
+      }
+      const key = `${ref.environmentId}:${ref.threadId}`;
+      if (proactiveDiffTurns.get(key) === request.turnId) return true;
+      proactiveDiffTurns.set(key, request.turnId);
+      open(ref, singletonSurface("diff"), true);
       return true;
     },
     open(ref, kind) {

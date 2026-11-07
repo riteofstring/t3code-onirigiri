@@ -9,7 +9,7 @@ import {
 
 import { SpatialWorkspace } from "./SpatialWorkspace";
 
-function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
+function SpatialChatSurface({ target, background, children }: ChatSurfaceProps) {
   const onOtherPage = useLocation({
     select: (location) => location.pathname.startsWith("/pull-requests"),
   });
@@ -21,8 +21,9 @@ function SpatialChatSurface({ target, children }: ChatSurfaceProps) {
       <SidebarInset
         className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
         hidden={!workspaceShown}
+        inert={background}
       >
-        <SpatialWorkspace target={target} active={workspaceShown} />
+        <SpatialWorkspace target={target} active={workspaceShown && !background} />
       </SidebarInset>
       {workspaceShown ? null : children}
     </>

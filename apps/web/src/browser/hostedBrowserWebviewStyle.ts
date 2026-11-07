@@ -20,7 +20,7 @@ export interface HostedBrowserWebviewWrapperStyle {
   readonly clipPath?: string;
 }
 
-export const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
+const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
 
 export function resolveHostedBrowserWebviewWrapperStyle(input: {
   readonly active: boolean;
@@ -62,9 +62,7 @@ export function resolveHostedBrowserWebviewWrapperStyle(input: {
   }
 
   if (renderingActive) {
-    // Electron stops compositing a guest that is fully outside the window, even
-    // when background throttling is disabled. Keep capture-active guests inside
-    // the viewport but behind the app so recordings receive complete frames.
+    // Electron stops compositing offscreen guests; keep capture-active guests inside the viewport behind the app.
     return {
       left: 0,
       top: 0,

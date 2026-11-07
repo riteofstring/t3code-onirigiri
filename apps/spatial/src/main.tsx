@@ -1,22 +1,34 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserHistory } from "@tanstack/react-router";
+import { startAppServices } from "@t3tools/web/src/appInit";
 import { AppRoot } from "@t3tools/web/src/AppRoot";
 import { ChatSurfaceContext } from "@t3tools/web/src/components/chatSurface";
 import { SidebarPresentationContext } from "@t3tools/web/src/components/sidebar/sidebarPresentation";
-import { prepareProviderAuthDelivery } from "@t3tools/web/src/providerAuthDelivery";
-import { getRouter } from "@t3tools/web/src/router";
+import {
+  clearChunkReloadGuard,
+  reloadOnceForChunkLoadError,
+} from "@t3tools/web/src/lib/chunkReloadGuard";
 
 import "./index.css";
 
 import { renderSpatialChatSurface } from "./workspace/SpatialChatSurface";
 import { SpatialSurfaceProvider } from "./workspace/SpatialSurfaceProvider";
 
-prepareProviderAuthDelivery();
+const router = startAppServices();
 
-const router = getRouter(createBrowserHistory());
+let chunkLoadFailed = false;
+let reloadScheduled = false;
+window.addEventListener("vite:preloadError", (event) => {
+  chunkLoadFailed = true;
+  if (reloadOnceForChunkLoadError()) {
+    reloadScheduled = true;
+    event.preventDefault();
+  }
+});
 
 export const startup = router.load().then(() => {
+  if (reloadScheduled) return;
+  if (!chunkLoadFailed) clearChunkReloadGuard();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <ChatSurfaceContext value={renderSpatialChatSurface}>

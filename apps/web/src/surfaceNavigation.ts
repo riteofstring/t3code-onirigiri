@@ -27,6 +27,17 @@ export type SurfaceNavigation = Pick<
 
 export const SurfaceNavigationContext = createContext<SurfaceNavigation | null>(null);
 
+let pageNavigation: SurfaceNavigation | null = null;
+
+/** Routes page-lifetime services, such as agent-opened previews, through a host's own surfaces. */
+export function setPageSurfaceNavigation(navigation: SurfaceNavigation | null): void {
+  pageNavigation = navigation;
+}
+
+export function readPageSurfaceNavigation(): SurfaceNavigation | null {
+  return pageNavigation;
+}
+
 const nativeNavigation: SurfaceNavigation = (() => {
   const state = useRightPanelStore.getState();
   return {

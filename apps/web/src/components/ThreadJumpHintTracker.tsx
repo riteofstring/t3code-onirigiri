@@ -6,6 +6,7 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { shouldShowThreadJumpHintsForModifiers } from "../keybindings";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { useShortcutModifierState } from "../shortcutModifierState";
+import { useThreadJumpHintsVisible } from "./Sidebar.logic";
 
 export function ThreadJumpHintTracker({
   keybindings,
@@ -16,9 +17,6 @@ export function ThreadJumpHintTracker({
   terminalOpen: boolean;
   onVisibilityChange: (visible: boolean) => void;
 }) {
-  // Same predicate as v1: hints show only while the held modifiers exactly
-  // match a thread-jump binding. Adding Shift (screenshots) or Alt no
-  // longer matches ⌘1..9, so the overlay hides for chords like ⌘⇧4.
   const modifiers = useShortcutModifierState();
   const terminalFocused = useTerminalFocus();
   const shouldShow = shouldShowThreadJumpHintsForModifiers(modifiers, keybindings, {
@@ -31,10 +29,11 @@ export function ThreadJumpHintTracker({
       isDesktop: isElectron,
     },
   });
+  const visible = useThreadJumpHintsVisible(shouldShow);
 
   useEffect(() => {
-    onVisibilityChange(shouldShow);
-  }, [onVisibilityChange, shouldShow]);
+    onVisibilityChange(visible);
+  }, [onVisibilityChange, visible]);
 
   return null;
 }

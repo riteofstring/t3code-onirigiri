@@ -1,9 +1,9 @@
-import { useLayoutEffect, useState } from "react";
+import { useState } from "react";
 import { observeResize } from "../../lib/observeResize";
 
 import { useChatViewActivity } from "../chatViewActivity";
 
-export function measureComposerMultilinePrompt(body: HTMLElement): boolean | null {
+function measureComposerMultilinePrompt(body: HTMLElement): boolean | null {
   const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
   if (!editor || editor.clientWidth === 0) return null;
 
@@ -20,48 +20,49 @@ export function measureComposerMultilinePrompt(body: HTMLElement): boolean | nul
   // transform applies; layout sizes do not.
   const scale = editor.getBoundingClientRect().width / editor.offsetWidth || 1;
 
-  // Measure content, not the editor's minimum height. While resting, the
-  // prompt is unwrapped: compare its width with the expanded row so that
-  // moving the actions inline cannot make collapse and expansion oscillate.
+  // Measure against expanded width to prevent inline actions oscillating collapse.
   return bounds.height / scale > lineHeight + 1 || bounds.width / scale > expandedWidth + 1;
 }
 
-export function useComposerMultilinePrompt(body: HTMLElement | null): boolean {
+/** Whether the prompt wraps, and the ref callback that measures it on the composer body. */
+export function useComposerMultilinePrompt(): readonly [
+  boolean,
+  (body: HTMLElement | null) => (() => void) | undefined,
+] {
   const [isMultiline, setIsMultiline] = useState(false);
   const activity = useChatViewActivity();
-
-  useLayoutEffect(() => {
+  const observeBody = (body: HTMLElement | null) => {
     if (!body) return;
     let observedEditor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
     let stopObserving = () => {};
-    const measure = () => {
-      // Switching editor modes replaces its element; follow the current one.
-      const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
-      if (editor !== observedEditor) {
-        stopObserving();
-        observedEditor = editor;
-        stopObserving = observeResize(editor ? [body, editor] : body, measure);
-      }
-      const next = measureComposerMultilinePrompt(body);
-      if (next !== null) setIsMultiline(next);
-    };
+    // Measuring reads layout, so one measurement per frame runs after all of the frame's DOM
+    // writes instead of forcing a layout after each mutation.
     let frame: number | null = null;
-    const scheduleMeasure = () => {
-      frame ??= requestAnimationFrame(() => {
+    const measure = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
         frame = null;
-        measure();
+        // Switching editor modes replaces its element; follow the current one.
+        const editor = body.querySelector<HTMLElement>('[data-testid="composer-editor"]');
+        if (editor !== observedEditor) {
+          stopObserving();
+          observedEditor = editor;
+          stopObserving = observeResize(editor ? [body, editor] : body, measure);
+        }
+        const next = measureComposerMultilinePrompt(body);
+        if (next !== null) setIsMultiline(next);
       });
     };
     stopObserving = observeResize(observedEditor ? [body, observedEditor] : body, measure);
+    // A passive view waits for the observer's first notifications.
     if (activity.isActive()) measure();
-    const mutationObserver = new MutationObserver(scheduleMeasure);
+    const mutationObserver = new MutationObserver(measure);
     mutationObserver.observe(body, { childList: true, characterData: true, subtree: true });
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
       stopObserving();
       mutationObserver.disconnect();
     };
-  }, [activity, body]);
-
-  return isMultiline;
+  };
+  return [isMultiline, observeBody] as const;
 }

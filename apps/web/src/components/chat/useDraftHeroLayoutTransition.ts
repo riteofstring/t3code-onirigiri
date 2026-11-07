@@ -1,6 +1,6 @@
+import { useStableCallback } from "../../hooks/useStableCallback";
 import { useLayoutEffect, useRef } from "react";
 import { readLayoutScale } from "./layoutGeometry";
-
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_EASING,
@@ -16,17 +16,11 @@ export function useDraftHeroLayoutTransition(
   const previousStateRef = useRef(isDraftHeroState);
   const previousComposerRectRef = useRef<DOMRect | null>(null);
   const animationRef = useRef<Animation | null>(null);
-  const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
-    transitionGroupRef.current = element;
-  };
-  const attachComposerAnchorRef = (element: HTMLDivElement | null) => {
-    composerAnchorRef.current = element;
-  };
-
-  const captureComposerRect = () => {
+  const captureComposerRect = useStableCallback(() => {
     previousComposerRectRef.current = composerAnchorRef.current?.getBoundingClientRect() ?? null;
-  };
+  });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the committed composer rect and starts a FLIP Web Animation before paint
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const composerAnchor = composerAnchorRef.current;
@@ -77,9 +71,5 @@ export function useDraftHeroLayoutTransition(
     previousComposerRectRef.current = nextComposerRect;
   }, [animationDurationMs, animationsActive, isDraftHeroState]);
 
-  return {
-    transitionGroupRef: attachTransitionGroupRef,
-    composerAnchorRef: attachComposerAnchorRef,
-    captureComposerRect,
-  } as const;
+  return { transitionGroupRef, composerAnchorRef, captureComposerRect } as const;
 }

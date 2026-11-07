@@ -137,11 +137,7 @@ export function createPaneLifecycleStore(
           (hasPicture(id) || canPicture(id, visited.has(id))) &&
           (retryAt.get(id) ?? 0) <= performance.now(),
       )
-      .sort(
-        (a, b) =>
-          distance(a) - distance(b) ||
-          Number(hasCover(a)) - Number(hasCover(b)),
-      )[0];
+      .sort((a, b) => distance(a) - distance(b) || Number(hasCover(a)) - Number(hasCover(b)))[0];
   const revealTimelines = () => {
     if (![...mounted].some((id) => deferred.has(id))) return;
     if (moving || pendingComposers.size > 0 || arrivalFrame !== null) return;

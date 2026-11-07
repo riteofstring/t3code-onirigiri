@@ -7,7 +7,7 @@ import type {
 } from "@t3tools/contracts";
 
 import { acquireDesktopTab } from "~/browser/desktopTabLifetime";
-import { isCurrentPreviewRuntimeTab, previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
+import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import {
   readThreadPreviewState,
   reconcilePreviewServerSessions,
@@ -52,7 +52,7 @@ export async function navigatePreviewSession<E>(input: {
     const current = readThreadPreviewState(threadRef);
     return (
       current.sessions[tabId] !== undefined &&
-      isCurrentPreviewRuntimeTab(threadRef, current.serverEpoch, tabId, runtimeTabId)
+      previewRuntimeTabId(threadRef, current.serverEpoch, tabId) === runtimeTabId
     );
   };
   const lease = acquireDesktopTab(

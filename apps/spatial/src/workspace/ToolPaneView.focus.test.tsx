@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { EMPTY_TERMINAL_SESSION_STATE } from "../../../../packages/client-runtime/src/state/terminal";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { compileResolvedKeybindingsConfig } from "../../../../packages/shared/src/keybindings";
+import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
 import { terminalSurface } from "@t3tools/web/src/rightPanelStore";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -18,7 +18,10 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@riteofstring/onirigiri", () => ({ useOnirigiriPaneInteractive: () => true }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
+  useAtomValue: () => null,
+}));
 vi.mock("@t3tools/web/src/state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@t3tools/web/src/state/session")>()),
   readEnvironmentScope: () => true,
@@ -59,15 +62,20 @@ vi.mock("@t3tools/web/src/state/entities", () => ({
     projectId: "project",
     worktreePath: null,
   }),
+  useQuietThreadShell: () => ({
+    environmentId: "environment",
+    projectId: "project",
+    worktreePath: null,
+  }),
   useProject: () => ({ workspaceRoot: "/repo" }),
 }));
-vi.mock("@t3tools/web/src/state/terminalSessions", () => ({
+vi.mock("@t3tools/web/src/state/terminalSessions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/web/src/state/terminalSessions")>()),
   useKnownTerminalSessions: () => [
     { target: { terminalId: "one" }, state: { summary: { label: "Build" } } },
     { target: { terminalId: "two" }, state: { summary: { label: "Tests" } } },
     { target: { terminalId: "three" }, state: { summary: { label: "Logs" } } },
   ],
-  useAttachedTerminalSession: () => ({ ...EMPTY_TERMINAL_SESSION_STATE, status: "running" }),
 }));
 vi.mock("@t3tools/web/src/state/use-atom-command", () => ({
   useAtomCommand: () => state.runTerminalCommand,
@@ -110,6 +118,14 @@ vi.mock("~/terminal/ghostty/surface", () => ({
             input,
             setVisible: vi.fn(),
             setTheme: vi.fn(),
+            setFont: vi.fn(),
+            setSharedGrid: vi.fn(),
+            resendSize: vi.fn(),
+            resetAndWrite: vi.fn(),
+            write: vi.fn(),
+            clearSelection: vi.fn(),
+            getSelection: () => "",
+            getSelectionCellCount: () => 0,
             focus: () => input.focus(),
             dispose: () => input.remove(),
             isAtBottom: () => true,

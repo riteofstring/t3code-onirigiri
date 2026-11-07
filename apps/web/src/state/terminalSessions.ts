@@ -8,30 +8,23 @@ import {
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
+  EnvironmentId,
   ThreadId,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
-  type EnvironmentId,
-  type TerminalAttachInput,
+  TerminalAttachInput,
   type TerminalSummary,
 } from "@t3tools/contracts";
-import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/reactivity";
-import { useCallback, useMemo } from "react";
 
-import { useEnvironmentQuery } from "./query";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { AsyncResult, Atom } from "effect/reactivity";
+
+import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
-import { useEnvironmentScope } from "./session";
+import { environmentSession, sessionHasScope, useEnvironmentScope } from "./session";
 
 const EMPTY_KNOWN_TERMINAL_SESSIONS = Object.freeze<ReadonlyArray<KnownTerminalSession>>([]);
-type TerminalMetadataResult = AsyncResult.AsyncResult<ReadonlyArray<TerminalSummary>, unknown>;
-const EMPTY_TERMINAL_METADATA_ATOM = Atom.make<TerminalMetadataResult>(AsyncResult.initial(false));
-
-function terminalMetadataAtom(environmentId: EnvironmentId | null) {
-  return environmentId === null
-    ? EMPTY_TERMINAL_METADATA_ATOM
-    : terminalEnvironment.metadata({ environmentId, input: null });
-}
 
 interface TerminalMetadataIndex {
   readonly all: ReadonlyArray<TerminalSummary>;
@@ -41,8 +34,7 @@ interface TerminalMetadataIndex {
 
 const metadataIndexes = new WeakMap<ReadonlyArray<TerminalSummary>, TerminalMetadataIndex>();
 const sessionsBySummary = new WeakMap<TerminalSummary, Map<EnvironmentId, KnownTerminalSession>>();
-// Reuse groups a consumer still holds without keeping old group members alive
-// merely because their first summary remains in a newer metadata snapshot.
+// Reuse held groups without retaining old members when their anchor survives in newer snapshots.
 const groupsByAnchor = new WeakMap<
   TerminalSummary,
   Map<
@@ -94,7 +86,6 @@ function terminalMetadataIndex(metadata: ReadonlyArray<TerminalSummary>): Termin
   return index;
 }
 
-/** Share one ordered index per immutable snapshot and retain unchanged thread groups. */
 export function selectKnownTerminalSessions(
   metadata: ReadonlyArray<TerminalSummary> | null,
   environmentId: EnvironmentId | null,
@@ -135,51 +126,97 @@ export function selectKnownTerminalSessions(
   return sessions;
 }
 
-export function useAttachedTerminalSession(input: {
-  readonly environmentId: EnvironmentId | null;
-  readonly terminal: TerminalAttachInput | null;
-}): TerminalSessionState {
-  const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
-  const canOperate = useEnvironmentScope(input.environmentId, AuthTerminalOperateScope);
-  const attach = useEnvironmentQuery(
-    input.environmentId !== null && input.terminal !== null
-      ? canOperate
-        ? terminalEnvironment.attach({
-            environmentId: input.environmentId,
-            input: input.terminal,
-          })
-        : canRead
-          ? terminalEnvironment.observe({
-              environmentId: input.environmentId,
-              input: { threadId: input.terminal.threadId, terminalId: input.terminal.terminalId },
-            })
-          : null
-      : null,
-  );
-  const threadId = input.terminal?.threadId;
-  const terminalId = input.terminal?.terminalId;
-  const summary = useAtomValue(
-    terminalMetadataAtom(canRead ? input.environmentId : null),
-    useCallback(
-      (result: TerminalMetadataResult) => {
-        const metadata = Option.getOrNull(AsyncResult.value(result));
-        return metadata === null || threadId === undefined
-          ? null
-          : (terminalMetadataIndex(metadata)
-              .byThreadId.get(threadId)
-              ?.find((terminal) => terminal.terminalId === terminalId) ?? null);
-      },
-      [terminalId, threadId],
-    ),
-  );
+const EMPTY_TERMINAL_SESSION_ATOM = Atom.make(EMPTY_TERMINAL_SESSION_STATE).pipe(
+  Atom.withLabel("web-terminal-session:empty"),
+);
 
-  return useMemo(() => {
-    if (input.environmentId === null || input.terminal === null) {
-      return EMPTY_TERMINAL_SESSION_STATE;
-    }
-    const state = combineTerminalSessionState(summary, attach.data ?? EMPTY_TERMINAL_BUFFER_STATE);
-    return attach.error === null ? state : { ...state, error: attach.error, status: "error" };
-  }, [attach.data, attach.error, input.environmentId, input.terminal, summary]);
+const decodeAttachKey = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Tuple([EnvironmentId, TerminalAttachInput])),
+);
+
+// The family key carries the whole launch so an idle atom leaves nothing behind.
+const attachedTerminalSessionFamily = Atom.family((key: string) => {
+  const decoded = decodeAttachKey(key);
+  if (Option.isNone(decoded)) {
+    return Atom.make<TerminalSessionState>({
+      ...EMPTY_TERMINAL_SESSION_STATE,
+      error: "Invalid terminal launch input",
+      status: "error",
+    }).pipe(Atom.withLabel(`web-terminal-session:${key}`));
+  }
+  const [environmentId, terminal] = decoded.value;
+  return Atom.make((get): TerminalSessionState => {
+    const session = get(environmentSession.sessionStateAtom(environmentId));
+    const canRead = sessionHasScope(session, AuthTerminalReadScope);
+    const canOperate = sessionHasScope(session, AuthTerminalOperateScope);
+    const attach = canOperate
+      ? get(terminalEnvironment.attach({ environmentId, input: terminal }))
+      : canRead
+        ? get(
+            terminalEnvironment.observe({
+              environmentId,
+              input: { threadId: terminal.threadId, terminalId: terminal.terminalId },
+            }),
+          )
+        : null;
+    const metadata = canRead
+      ? AsyncResult.getOrElse(
+          get(terminalEnvironment.metadata({ environmentId, input: null })),
+          () => null,
+        )
+      : null;
+    const summary =
+      (metadata === null
+        ? null
+        : terminalMetadataIndex(metadata)
+            .byThreadId.get(terminal.threadId)
+            ?.find((candidate) => candidate.terminalId === terminal.terminalId)) ?? null;
+    const buffer =
+      attach === null
+        ? EMPTY_TERMINAL_BUFFER_STATE
+        : AsyncResult.getOrElse(attach, () => EMPTY_TERMINAL_BUFFER_STATE);
+    const state = combineTerminalSessionState(summary, buffer);
+    return attach?._tag === "Failure"
+      ? { ...state, error: formatEnvironmentQueryError(attach.cause), status: "error" }
+      : state;
+  }).pipe(Atom.withLabel(`web-terminal-session:${key}`));
+});
+
+/**
+ * One shown terminal's session: its attach (or read-only observe) buffer
+ * combined with the metadata summary. Surfaces subscribe to it imperatively so
+ * output chunks never re-render React.
+ */
+export function attachedTerminalSessionAtom(
+  environmentId: EnvironmentId | null,
+  terminal: TerminalAttachInput | null,
+): Atom.Atom<TerminalSessionState> {
+  if (environmentId === null || terminal === null) return EMPTY_TERMINAL_SESSION_ATOM;
+  return attachedTerminalSessionFamily(JSON.stringify([environmentId, terminal]));
+}
+
+const NO_KNOWN_TERMINAL_SESSIONS_ATOM = Atom.make<ReadonlyArray<KnownTerminalSession> | null>(null);
+
+const decodeKnownSessionsKey = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Tuple([EnvironmentId, Schema.NullOr(ThreadId)])),
+);
+
+// Derived per thread, so a terminal update elsewhere in the environment notifies no one here.
+const knownTerminalSessionsFamily = Atom.family((key: string) => {
+  const [environmentId, threadId] = Option.getOrThrow(decodeKnownSessionsKey(key));
+  return Atom.make((get) => {
+    const metadata = get(terminalEnvironment.metadata({ environmentId, input: null }));
+    return metadata._tag === "Success"
+      ? selectKnownTerminalSessions(metadata.value, environmentId, threadId)
+      : null;
+  }).pipe(Atom.withLabel(`web-known-terminal-sessions:${key}`));
+});
+
+export function knownTerminalSessionsAtom(
+  environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+): Atom.Atom<ReadonlyArray<KnownTerminalSession> | null> {
+  return knownTerminalSessionsFamily(JSON.stringify([environmentId, threadId]));
 }
 
 export function useKnownTerminalSessions(input: {
@@ -188,16 +225,9 @@ export function useKnownTerminalSessions(input: {
 }): ReadonlyArray<KnownTerminalSession> | null {
   const canRead = useEnvironmentScope(input.environmentId, AuthTerminalReadScope);
   return useAtomValue(
-    terminalMetadataAtom(canRead ? input.environmentId : null),
-    useCallback(
-      (result: TerminalMetadataResult) => {
-        const metadata = Option.getOrNull(AsyncResult.value(result));
-        return metadata === null || result._tag === "Failure"
-          ? null
-          : selectKnownTerminalSessions(metadata, input.environmentId, input.threadId);
-      },
-      [input.environmentId, input.threadId],
-    ),
+    input.environmentId === null || !canRead
+      ? NO_KNOWN_TERMINAL_SESSIONS_ATOM
+      : knownTerminalSessionsAtom(input.environmentId, input.threadId),
   );
 }
 
@@ -206,5 +236,5 @@ export function useThreadRunningTerminalIds(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<string> {
   const sessions = useKnownTerminalSessions(input);
-  return useMemo(() => selectRunningSubprocessTerminalIds(sessions ?? []), [sessions]);
+  return selectRunningSubprocessTerminalIds(sessions ?? []);
 }

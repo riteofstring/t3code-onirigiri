@@ -1,13 +1,14 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ProjectId, ResolvedKeybindingsConfig, ScopedThreadRef } from "@t3tools/contracts";
-import { type ComponentProps, lazy, Suspense } from "react";
+import { type ComponentProps, lazy, Suspense, useEffect, useEffectEvent } from "react";
 
-import type { RightPanelSurface } from "../rightPanelStore";
+import { focusTerminal } from "../lib/terminalFocus";
+import { type RightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { ThreadRelationshipsPanel } from "./chat/ThreadRelationshipsControl";
 import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
-} from "./PersistentThreadTerminalPanel";
+} from "./PersistentThreadTerminals";
 import { pullRequestPanelContext } from "./pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
@@ -34,19 +35,18 @@ export interface ThreadSurfaceContext {
   terminal: Pick<
     PersistentThreadTerminalPanelProps,
     | "launchContext"
-    | "focusRequestId"
     | "splitShortcutLabel"
     | "splitVerticalShortcutLabel"
     | "newShortcutLabel"
     | "closeShortcutLabel"
-  >;
+  > & { focusRequestId: number };
   pullRequests: {
     capabilityKnown: boolean;
     supported: boolean;
     thread: Parameters<typeof pullRequestPanelContext>[0];
   };
   files: {
-    project: { title: string } | null;
+    project: { id?: ProjectId | undefined; title: string } | null;
     workspaceRoot: string | undefined;
     availableEditors: FilePreviewProps["availableEditors"];
     selectedFilePending: boolean;
@@ -81,14 +81,36 @@ export interface ThreadSurfaceContentProps {
   actions: ThreadSurfaceActions;
 }
 
-export function ThreadSurfaceContent({
+function SurfaceTerminal({
   threadRef,
   surface,
   visible,
   focused,
   context,
   actions,
-}: ThreadSurfaceContentProps) {
+}: ThreadSurfaceContentProps & { surface: Extract<RightPanelSurface, { kind: "terminal" }> }) {
+  const { focusRequestId, ...terminal } = context.terminal;
+  const activeTerminalId = surface.activeTerminalId;
+  const isFocused = useEffectEvent(() => focused);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves DOM focus into the terminal when the host requests it
+  useEffect(() => {
+    if (focusRequestId > 0 && isFocused()) focusTerminal(threadRef, activeTerminalId);
+  }, [activeTerminalId, focusRequestId, threadRef]);
+  return (
+    <PersistentThreadTerminalPanel
+      {...terminal}
+      {...actions.terminal}
+      visible={visible}
+      focused={focused}
+      threadRef={threadRef}
+      surface={surface}
+      keybindings={context.keybindings}
+    />
+  );
+}
+
+export function ThreadSurfaceContent(props: ThreadSurfaceContentProps) {
+  const { threadRef, surface, visible, focused, context, actions } = props;
   switch (surface.kind) {
     case "preview":
       return (
@@ -104,17 +126,7 @@ export function ThreadSurfaceContent({
         </Suspense>
       );
     case "terminal":
-      return (
-        <PersistentThreadTerminalPanel
-          {...context.terminal}
-          {...actions.terminal}
-          visible={visible}
-          focused={focused}
-          threadRef={threadRef}
-          surface={surface}
-          keybindings={context.keybindings}
-        />
-      );
+      return <SurfaceTerminal {...props} surface={surface} />;
     case "diff":
       return (
         <Suspense fallback={null}>
@@ -124,6 +136,7 @@ export function ThreadSurfaceContent({
             threadRef={threadRef}
             composerDraftTarget={context.composerDraftTarget}
             workspaceMutationId={context.workspaceMutationId}
+            visible={visible}
           />
         </Suspense>
       );
@@ -137,11 +150,8 @@ export function ThreadSurfaceContent({
           />
         );
       }
-      // No onClose: the surface tab's own X owns closing here, and a second X in the header
-      // would be the same action twice. The thread context also drops the checkout button, so it
-      // is only right for the thread's own pull request, whose branch is already under the
-      // reader's feet. A link the agent wrote can open any other one here, and that one has to be
-      // checkable out like it is anywhere else.
+      // No onClose: the surface tab's own X owns closing. The thread context drops the checkout
+      // button, which suits only the thread's own pull request; any other one stays checkable out.
       return (
         <PullRequestDetailPanel
           getShortcutContext={actions.getShortcutContext}
@@ -156,6 +166,10 @@ export function ThreadSurfaceContent({
             repository: surface.repository,
             number: surface.number,
           }}
+          initialTab={surface.detailTab ?? "summary"}
+          onTabChange={(tab) => {
+            useRightPanelStore.getState().setPullRequestDetailTab(threadRef, surface.id, tab);
+          }}
           context={pullRequestPanelContext(context.pullRequests.thread, surface)}
           composerDraftTarget={context.composerDraftTarget}
           onBack={actions.onBackToPullRequests}
@@ -163,11 +177,15 @@ export function ThreadSurfaceContent({
       );
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "side-chat":
+      return null;
     case "lineage":
       return (
         <ThreadRelationshipsPanel
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
+          showLineage
+          showSideChats
         />
       );
     case "device":
@@ -196,15 +214,23 @@ export function ThreadSurfaceContent({
             environmentId={threadRef.environmentId}
             cwd={context.files.workspaceRoot ?? ""}
             projectName={context.files.project?.title ?? ""}
+            projectId={context.files.project?.id}
             threadRef={threadRef}
             composerDraftTarget={context.composerDraftTarget}
             keybindings={context.keybindings}
             availableEditors={context.files.availableEditors}
+            openInShortcutEnabled={visible}
             relativePath={surface.kind === "file" ? surface.relativePath : null}
             {...(attachment ? { attachment } : {})}
             revealLine={surface.kind === "file" ? (surface.revealLine ?? null) : null}
             revealRequestId={surface.kind === "file" ? surface.revealRequestId : 0}
             onOpenFile={actions.onOpenFile}
+            onNavigateFolder={(relativePath, folderTrail, keepSource) =>
+              useRightPanelStore
+                .getState()
+                .navigateFolder(threadRef, surface.id, relativePath, folderTrail, keepSource)
+            }
+            folderTrail={surface.folderTrail}
             onPendingChange={actions.onFilePendingChange}
             selectedFilePending={surface.kind === "file" && context.files.selectedFilePending}
             workspaceMutationId={context.workspaceMutationId}

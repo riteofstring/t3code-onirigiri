@@ -30,7 +30,11 @@ function DraftRoute() {
 
 const draftRootRoute = createRootRoute({ component: Outlet });
 const draftRouteTree = draftRootRoute.addChildren([
-  createRoute({ getParentRoute: () => draftRootRoute, path: "draft/$draftId", component: DraftRoute }),
+  createRoute({
+    getParentRoute: () => draftRootRoute,
+    path: "draft/$draftId",
+    component: DraftRoute,
+  }),
 ]);
 
 export const DraftPane = memo(function DraftPane({

@@ -2,8 +2,10 @@ import {
   createContext,
   useContext,
   useEffect,
+  useSyncExternalStore,
   type DependencyList,
   type EffectCallback,
+  type ReactNode,
 } from "react";
 
 export interface ChatViewActivity {
@@ -26,6 +28,7 @@ export function useChatViewActivity(): ChatViewActivity {
 
 export function useActiveChatViewEffect(effect: EffectCallback, deps: DependencyList): void {
   const activity = useChatViewActivity();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs the caller's external subscription only while the host reports the view active
   useEffect(() => {
     let active = false;
     let cleanup: ReturnType<EffectCallback>;
@@ -48,4 +51,10 @@ export function useActiveChatViewEffect(effect: EffectCallback, deps: Dependency
       cleanup?.();
     };
   }, [activity, ...deps]);
+}
+
+export function ActiveChatViewContent({ children }: { children: ReactNode }) {
+  const activity = useChatViewActivity();
+  const active = useSyncExternalStore(activity.subscribe, activity.isActive, activity.isActive);
+  return active ? children : null;
 }

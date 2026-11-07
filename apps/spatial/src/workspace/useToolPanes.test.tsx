@@ -1,3 +1,4 @@
+import { RunId } from "@t3tools/contracts";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -404,7 +405,11 @@ it("rejects late proactive openings after a user choice without moving focus", a
   await act(() => navigation.open(thread("t1"), "files"));
   let accepted = true;
   await act(() => {
-    accepted = navigation.openProactive(thread("t1"), { kind: "diff", id: "diff" }, revision);
+    accepted = navigation.openProactive(
+      thread("t1"),
+      { kind: "diff", turnId: RunId.make("turn-1") },
+      revision,
+    );
   });
   expect(accepted).toBe(false);
   expect(hook.toolPanes).toHaveLength(1);
@@ -423,7 +428,11 @@ it("adds a proactive diff beside a pull request without moving focus", async () 
   const revision = navigation.getUserActionRevision(ref);
   let accepted = false;
   await act(() => {
-    accepted = navigation.openProactive(ref, { kind: "diff", id: "diff" }, revision);
+    accepted = navigation.openProactive(
+      ref,
+      { kind: "diff", turnId: RunId.make("turn-1") },
+      revision,
+    );
   });
   expect(accepted).toBe(true);
   expect(hook.toolPanes).toHaveLength(2);

@@ -1,6 +1,17 @@
-import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { AppRouter } from "@t3tools/web/src/router";
-import { SurfaceNavigationContext } from "@t3tools/web/src/surfaceNavigation";
+import {
+  setPageSurfaceNavigation,
+  SurfaceNavigationContext,
+} from "@t3tools/web/src/surfaceNavigation";
 import { useSpatialSurfaceNavigation, type ToolPaneController } from "./SpatialSurfaceHost";
 import { useToolPanes } from "./useToolPanes";
 
@@ -64,6 +75,11 @@ export function SpatialSurfaceProvider({
     [],
   );
   const navigation = useSpatialSurfaceNavigation(controller, "", focusPane, isPaneClosing);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- page-lifetime preview services read the workspace's navigation outside React
+  useEffect(() => {
+    setPageSurfaceNavigation(navigation);
+    return () => setPageSurfaceNavigation(null);
+  }, [navigation]);
   const value = useMemo(() => ({ controller, bindWorkspace }), [controller, bindWorkspace]);
   return (
     <SpatialControllerContext value={value}>

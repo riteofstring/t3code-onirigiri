@@ -423,6 +423,8 @@ export function ToolPaneView({
             <RightPanelEmptyState
               {...(pane.projectId ? NO_THREAD_AVAILABILITY : data.availability)}
               browserProfiles={data.browserProfiles}
+              sideChatAvailable={false}
+              sideChatDisabledReason={null}
               active={active}
               onAddBrowser={() => void browser()}
               onAddBrowserInProfile={(profileId) => void browser(profileId)}

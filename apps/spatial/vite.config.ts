@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import { readFileSync } from "node:fs";
 
 import { tanstackRouter } from "@tanstack/router-plugin/vite";

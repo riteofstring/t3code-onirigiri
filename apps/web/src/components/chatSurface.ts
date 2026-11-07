@@ -4,6 +4,8 @@ import type { ThreadRouteTarget } from "../threadRoutes";
 
 export interface ChatSurfaceProps {
   readonly target: ThreadRouteTarget | null;
+  /** Settings or Usage covers the surface, which must not take input meanwhile. */
+  readonly background: boolean;
   readonly children: ReactNode;
 }
 

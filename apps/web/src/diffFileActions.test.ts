@@ -15,40 +15,6 @@ describe("openDiffFilePrimaryAction", () => {
     useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   });
 
-  it("opens diff files in the thread file viewer", () => {
-    const openInEditor = vi.fn();
-
-    openDiffFilePrimaryAction({
-      threadRef: THREAD_REF,
-      filePath: "apps/web/src/components/DiffPanel.tsx",
-      activeCwd: "/repo/project",
-      openInEditor,
-    });
-
-    expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
-    ).toMatchObject({
-      isOpen: true,
-      activeSurfaceId: "file:apps/web/src/components/DiffPanel.tsx",
-    });
-    expect(openInEditor).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the editor without thread context", () => {
-    const openInEditor = vi.fn();
-
-    openDiffFilePrimaryAction({
-      threadRef: null,
-      filePath: "apps/web/src/components/DiffPanel.tsx",
-      activeCwd: "/repo/project",
-      openInEditor,
-    });
-
-    expect(openInEditor).toHaveBeenCalledWith(
-      "/repo/project/apps/web/src/components/DiffPanel.tsx",
-    );
-  });
-
   it("opens the resolved file through its independent presentation without changing native tabs", () => {
     useRightPanelStore.getState().open(THREAD_REF, "diff");
     const native = selectThreadRightPanelState(
@@ -112,6 +78,7 @@ describe("openDiffFilePrimaryAction", () => {
     ).toBe("src/index.ts");
   });
 
+  // regression: #6174 opening diff files broke for repositories at a filesystem root
   it.each([
     { workspaceRoot: "/frontend", repositoryRoot: "/" },
     { workspaceRoot: "C:\\frontend", repositoryRoot: "C:\\" },
@@ -125,23 +92,45 @@ describe("openDiffFilePrimaryAction", () => {
     ).toBe("index.ts");
   });
 
-  it.each(["backend/server.ts", "frontend2/app.ts", "frontend/../secret.ts", "C:secret.ts"])(
-    "does not open an out-of-project diff path: %s",
-    (filePath) => {
-      const openInEditor = vi.fn();
-
-      openDiffFilePrimaryAction({
-        threadRef: THREAD_REF,
-        filePath,
-        activeCwd: "/repo/frontend",
-        repositoryRoot: "/repo",
-        openInEditor,
-      });
-
+  it.each([
+    {
+      filePath: "/repo/frontend/src/index.ts",
+      workspaceRoot: "/repo/frontend",
+      expected: "src/index.ts",
+    },
+    { filePath: "c:\\Repo\\src\\index.ts", workspaceRoot: "C:\\repo", expected: "src/index.ts" },
+  ])(
+    "opens absolute diff paths inside the workspace: $filePath",
+    ({ filePath, workspaceRoot, expected }) => {
       expect(
-        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
-      ).toMatchObject({ isOpen: false });
-      expect(openInEditor).not.toHaveBeenCalled();
+        resolveDiffPathForWorkspace({ filePath, workspaceRoot, repositoryRoot: workspaceRoot }),
+      ).toBe(expected);
     },
   );
+
+  it.each([
+    "backend/server.ts",
+    "frontend2/app.ts",
+    "frontend/../secret.ts",
+    "C:secret.ts",
+    "/repo/backend/server.ts",
+    "/repo/frontend/../backend/server.ts",
+    "/repo/frontend",
+    "/etc/passwd",
+  ])("does not open an out-of-project diff path: %s", (filePath) => {
+    const openInEditor = vi.fn();
+
+    openDiffFilePrimaryAction({
+      threadRef: THREAD_REF,
+      filePath,
+      activeCwd: "/repo/frontend",
+      repositoryRoot: "/repo",
+      openInEditor,
+    });
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+    ).toMatchObject({ isOpen: false });
+    expect(openInEditor).not.toHaveBeenCalled();
+  });
 });

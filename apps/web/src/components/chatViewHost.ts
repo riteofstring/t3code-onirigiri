@@ -5,7 +5,3 @@ export const ChatViewHostContext = createContext<{
   timelineFallback: ReactNode;
   onComposerReady: (ready: boolean) => void;
 } | null>(null);
-
-export function DeferredChatTimeline() {
-  return null;
-}

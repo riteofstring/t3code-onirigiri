@@ -1,3 +1,4 @@
+import { RunId } from "@t3tools/contracts";
 // @vitest-environment jsdom
 import type {
   OnirigiriPaneDefinition,
@@ -397,7 +398,11 @@ it("invalidates pending proactive navigation immediately and preserves the group
   expect(navigation.getUserActionRevision(owner)).toBe(pendingRevision + 1);
   let reopened = true;
   await act(() => {
-    reopened = navigation.openProactive(owner, { id: "diff", kind: "diff" }, pendingRevision);
+    reopened = navigation.openProactive(
+      owner,
+      { kind: "diff", turnId: RunId.make("turn-1") },
+      pendingRevision,
+    );
   });
   expect(reopened).toBe(false);
   expect(stored()).toEqual(before);

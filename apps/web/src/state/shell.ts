@@ -8,22 +8,65 @@ import {
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
   type EnvironmentShellState,
+  type EnvironmentShellStatus,
 } from "@t3tools/client-runtime/state/shell";
 import {
   type EnvironmentCatalogState,
   enabledEnvironmentIds,
 } from "@t3tools/client-runtime/state/connections";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
 export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(environmentShell.stateAtom);
+
+const NO_SHELL_STATUS_ATOM = Atom.make<EnvironmentShellStatus | null>(null).pipe(
+  Atom.withLabel("web-environment-shell-status:none"),
+);
+const NO_SHELL_SNAPSHOT_ATOM = Atom.make(false).pipe(
+  Atom.withLabel("web-environment-shell-has-snapshot:none"),
+);
+
+export function useEnvironmentShellStatus(
+  environmentId: EnvironmentId | null,
+): EnvironmentShellStatus | null {
+  return useAtomValue(
+    environmentId === null ? NO_SHELL_STATUS_ATOM : environmentShell.statusAtom(environmentId),
+  );
+}
+
+export function useEnvironmentShellHasSnapshot(environmentId: EnvironmentId | null): boolean {
+  return useAtomValue(
+    environmentId === null
+      ? NO_SHELL_SNAPSHOT_ATOM
+      : environmentShell.hasSnapshotAtom(environmentId),
+  );
+}
+
+let previousLiveEnvironmentIds: ReadonlySet<EnvironmentId> = new Set();
+/** Environments whose threads reflect the server now, not a cache or a resync in flight. */
+export const liveShellEnvironmentIdsAtom = Atom.make((get) => {
+  const next = new Set<EnvironmentId>();
+  for (const environmentId of enabledEnvironmentIds(get(environmentCatalog.catalogValueAtom))) {
+    if (get(environmentShell.statusAtom(environmentId)) === "live") next.add(environmentId);
+  }
+  if (
+    next.size === previousLiveEnvironmentIds.size &&
+    [...next].every((environmentId) => previousLiveEnvironmentIds.has(environmentId))
+  ) {
+    return previousLiveEnvironmentIds;
+  }
+  previousLiveEnvironmentIds = next;
+  return next;
+}).pipe(Atom.withLabel("web-live-shell-environment-ids"));
 
 export function createAllEnvironmentShellsBootstrappedAtom<CatalogError, ConnectionError>(input: {
   readonly catalogAtom: Atom.Atom<AsyncResult.AsyncResult<EnvironmentCatalogState, CatalogError>>;
@@ -50,8 +93,6 @@ export function createAllEnvironmentShellsBootstrappedAtom<CatalogError, Connect
       if (connectionProjectionPhase(connection) !== "disconnected") {
         return false;
       }
-      // A retrying environment is only transiently disconnected; give it its
-      // first retries before letting the landing settle without its snapshot.
       if (connection.phase === "backoff" && connection.desired && connection.attempt <= 2) {
         return false;
       }
@@ -66,10 +107,7 @@ export const allEnvironmentShellsBootstrappedAtom = createAllEnvironmentShellsBo
   connectionStateAtom: environmentCatalog.stateAtom,
 });
 
-/**
- * The persisted catalog can emit before platform discovery registers the primary environment.
- * Neither that gap nor an empty catalog proves a project is absent.
- */
+// Catalog can precede primary discovery; an empty or incomplete catalog cannot prove absence.
 function catalogIsComplete(
   catalog: EnvironmentCatalogState,
   requiresPrimaryEnvironment: boolean,
@@ -83,7 +121,6 @@ function catalogIsComplete(
   );
 }
 
-/** Cached or missing snapshots cannot establish that a saved project no longer exists. */
 export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
   readonly shellStateValueAtom: (environmentId: EnvironmentId) => Atom.Atom<EnvironmentShellState>;
@@ -104,17 +141,17 @@ export const allEnvironmentProjectSnapshotsReadyAtom =
   createAllEnvironmentProjectSnapshotsReadyAtom({
     catalogValueAtom: environmentCatalog.catalogValueAtom,
     shellStateValueAtom: environmentShell.stateValueAtom,
-    requiresPrimaryEnvironment: !isHostedStaticApp(),
+    requiresPrimaryEnvironment: expectsPrimaryEnvironment(),
   });
 
-/**
- * Every enabled machine has sent its live projects or has settled offline. Prompt links wait for
- * it before they decide a repository is missing: one offline machine must not hold a link
- * forever. A machine that has not started connecting yet is "available", not offline.
- */
+/** Hosted clients and desktops with the local environment disabled never discover a primary. */
+export function expectsPrimaryEnvironment(): boolean {
+  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
+}
+
 export const allReachableShellsLiveAtom = Atom.make((get) => {
   const catalog = get(environmentCatalog.catalogValueAtom);
-  if (!catalogIsComplete(catalog, !isHostedStaticApp())) return false;
+  if (!catalogIsComplete(catalog, expectsPrimaryEnvironment())) return false;
   for (const environmentId of enabledEnvironmentIds(catalog)) {
     const shell = get(environmentShell.stateValueAtom(environmentId));
     if (shell.status === "live" && Option.isSome(shell.snapshot)) continue;

@@ -7,7 +7,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run"
   },
   "dependencies": {
@@ -18,19 +18,21 @@
     "@t3tools/contracts": "workspace:*",
     "@t3tools/web": "workspace:*",
     "@tanstack/react-router": "^1.160.2",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react": "catalog:",
+    "react-dom": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@pierre/diffs": "catalog:",
+    "@t3tools/shared": "workspace:*",
     "@tanstack/router-plugin": "^1.161.0",
-    "@types/react": "~19.3.0",
-    "@types/react-dom": "~19.2.3",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@types/react-test-renderer": "19.1.0",
     "babel-plugin-react-compiler": "1.0.0",
     "effect": "catalog:",
-    "react-test-renderer": "19.2.6",
+    "react-test-renderer": "19.3.0",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   }
