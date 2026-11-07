@@ -402,7 +402,13 @@
 }
 
 .spatial-workspace [data-onirigiri-slot="pane"][data-presentation-mode="overview"] {
-  --onirigiri-titlebar: color-mix(in oklch, var(--card) 75%, var(--background));
+  --onirigiri-titlebar: color-mix(in oklch, var(--card) 90%, var(--background));
+}
+
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
+  > .onirigiri-pane__titlebar {
+  border-bottom: 1px solid var(--border);
 }
 
 .spatial-workspace
