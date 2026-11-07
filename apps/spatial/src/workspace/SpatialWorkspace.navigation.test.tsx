@@ -528,7 +528,7 @@ it("admits exactly the configured engine chords, including editable targets and 
   }
 });
 
-it("returns to the owning chat when a focused tool closes through its content", async () => {
+it("stays on the emptied cell when a focused tool closes through its content", async () => {
   fixture.panes = [
     pane("origin", 0, 0),
     {
@@ -553,8 +553,7 @@ it("returns to the owning chat when a focused tool closes through its content", 
   fixture.panes = fixture.panes.filter((pane) => pane.paneId !== "tool-owned");
   await render();
   await act(() => vi.advanceTimersByTime(120));
-  expect(status()).toContain("origin");
-  expect(status()).not.toContain("Empty cell");
+  expect(status()).toContain("Empty cell");
 });
 
 it("returns to a focused tool pane after a reload whose route names its chat", async () => {

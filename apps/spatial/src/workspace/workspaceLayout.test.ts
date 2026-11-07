@@ -152,7 +152,7 @@ it("keeps negative empty coordinates while honoring an explicit pane selection",
   expect(selected.cursor).toEqual({ column: 1, row: 1, split: 0 });
 
   const removed = reconcilePaneLayout(layoutFor([pane("origin", 0, 0)]), selected);
-  expect(removed.cursor).toEqual({ column: 0, row: 0, split: 0 });
+  expect(removed.cursor).toEqual(selected.cursor);
 });
 
 it("keeps a pane's actual 2D position, identity and size through fresh metadata and membership", () => {

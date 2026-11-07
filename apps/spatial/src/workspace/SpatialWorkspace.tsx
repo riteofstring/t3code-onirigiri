@@ -571,20 +571,9 @@ function SpatialWorkspaceView({
         panes,
       });
       const selectedId = workspace.getSnapshot().focusedPaneId;
-      const previousSelected = selectedId ? previousById.get(selectedId) : undefined;
-      const removedTool =
-        previousSelected?.surfaceKind !== "thread" && previousSelected?.data
-          ? (previousSelected.data as ToolPane)
-          : null;
       const focused =
         panes.find((pane) => pane.paneId === pendingFocusPaneIdRef.current) ??
-        panes.find((pane) => pane.paneId === selectedId) ??
-        (removedTool
-          ? panes.find(
-              (pane) =>
-                pane.paneId === threadPaneId(removedTool.environmentId, removedTool.threadId),
-            )
-          : undefined);
+        panes.find((pane) => pane.paneId === selectedId);
       const added = panes.some((pane) => pane.paneId === pendingFocusPaneIdRef.current)
         ? pendingFocusPaneIdRef.current
         : null;
@@ -1068,7 +1057,6 @@ function SpatialWorkspaceView({
           });
           if (closed._tag !== "Success") return false;
         }
-        pendingFocusPaneIdRef.current = threadPaneId(tool.environmentId, tool.threadId);
         remove(tool.paneId);
         return false;
       } finally {
