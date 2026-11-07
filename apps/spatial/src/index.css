@@ -6,11 +6,13 @@
   isolation: isolate;
   --spatial-compact-toolbar-height: 52px;
   --spatial-stage: color-mix(in oklch, var(--background) 94%, var(--foreground));
+  --spatial-navigation-bar: var(--card);
 }
 
 /* T3's dark canvas is true black; the stage keeps the grey it had over neutral-950. */
 .dark .spatial-workspace {
-  --spatial-stage: color-mix(in oklch, var(--color-neutral-950) 94%, var(--foreground));
+  --spatial-stage: color-mix(in oklch, var(--color-neutral-950) 95.5%, var(--foreground));
+  --spatial-navigation-bar: color-mix(in oklch, var(--color-neutral-950) 98%, var(--foreground));
 }
 
 @media (pointer: fine) {
@@ -257,7 +259,7 @@
     calc(var(--onirigiri-compact-toolbar-padding-block) + env(safe-area-inset-bottom));
   padding-inline: var(--onirigiri-compact-toolbar-padding-inline);
   border-radius: 0;
-  background: var(--card);
+  background: var(--spatial-navigation-bar);
 }
 
 .spatial-workspace-controls__surface {
@@ -288,6 +290,11 @@
 .spatial-workspace[data-spatial-compact="true"]
   .spatial-workspace-controls__surface[data-expanded="true"] {
   background: var(--spatial-stage);
+}
+
+.spatial-workspace[data-spatial-navigation-bar="true"]:not([data-spatial-compact="true"])
+  .spatial-workspace-controls__surface[data-expanded="true"] {
+  background: var(--spatial-navigation-bar);
 }
 
 .spatial-workspace-controls__reveal {
