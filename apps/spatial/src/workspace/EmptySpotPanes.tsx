@@ -7,6 +7,7 @@ import type { PanePlacement } from "./workspaceLayout";
 const DRAG_TOLERANCE_PX = 4;
 const DEFAULT_GAP_PX = 8;
 const MEASURE_SETTLE_MS = 150;
+const RESIZE_FADE_FALLBACK_MS = 1500;
 
 export interface EmptySpot {
   readonly key: string;
@@ -237,13 +238,35 @@ export function useEmptySpots(
     };
   }, [enabled, stage]);
   useEffect(() => {
+    if (!stage || !container) return;
+    let observed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => delete container.dataset.resizing;
+    const resize = new ResizeObserver(() => {
+      if (!observed) {
+        observed = true;
+        return;
+      }
+      if (!container.dataset.resizing) container.dataset.resizing = "true";
+      clearTimeout(timer);
+      timer = setTimeout(settle, RESIZE_FADE_FALLBACK_MS);
+    });
+    resize.observe(stage);
+    return () => {
+      clearTimeout(timer);
+      resize.disconnect();
+      settle();
+    };
+  }, [container, stage]);
+  useEffect(() => {
     const world = stage?.querySelector<HTMLElement>("[data-onirigiri-world-surface]");
     if (!stage || !world || !enabled) {
       setCells([]);
       return;
     }
     if (moving) return;
-    const measure = () =>
+    const measure = () => {
+      if (container) delete container.dataset.resizing;
       setCells(
         emptyCells(
           stage,
@@ -254,6 +277,7 @@ export function useEmptySpots(
           defaultRowHeight,
         ),
       );
+    };
     let timer = setTimeout(measure, MEASURE_SETTLE_MS);
     const resize = new ResizeObserver(() => {
       clearTimeout(timer);
@@ -264,7 +288,7 @@ export function useEmptySpots(
       clearTimeout(timer);
       resize.disconnect();
     };
-  }, [allowNewRows, defaultRowHeight, enabled, moving, revision, stage]);
+  }, [allowNewRows, container, defaultRowHeight, enabled, moving, revision, stage]);
   return { cells: enabled ? cells : [], container };
 }
 
