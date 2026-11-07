@@ -238,24 +238,6 @@ export function WorkspaceToolbar({
         >
           <div className="spatial-workspace-controls__actions">
             <Button
-              aria-label="Keyboard shortcuts"
-              aria-haspopup="dialog"
-              tooltip="Keyboard shortcuts"
-              onClick={() => setShortcutsOpen(true)}
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
-                <path d="M4.5 6.5h.01M7 6.5h.01M9.5 6.5h.01M12 6.5h.01M5 9.5h6" />
-              </svg>
-            </Button>
-            <Button
               ref={advancedRef}
               aria-label="Advanced workspace controls"
               aria-controls={advancedId}
@@ -381,6 +363,24 @@ export function WorkspaceToolbar({
                     </svg>
                   </Button>
                   <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
+                  <Button
+                    aria-label="Keyboard shortcuts"
+                    aria-haspopup="dialog"
+                    tooltip="Keyboard shortcuts"
+                    onClick={() => setShortcutsOpen(true)}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    >
+                      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+                      <path d="M4.5 6.5h.01M7 6.5h.01M9.5 6.5h.01M12 6.5h.01M5 9.5h6" />
+                    </svg>
+                  </Button>
                 </span>
               </div>
             </div>
