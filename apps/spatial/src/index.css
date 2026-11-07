@@ -11,7 +11,7 @@
 
 /* T3's dark canvas is true black; the stage keeps the grey it had over neutral-950. */
 .dark .spatial-workspace {
-  --spatial-stage: color-mix(in oklch, var(--color-neutral-950) 95.25%, var(--foreground));
+  --spatial-stage: color-mix(in oklch, var(--color-neutral-950) 95.75%, var(--foreground));
   --spatial-navigation-bar: color-mix(in oklch, var(--color-neutral-950) 98%, var(--foreground));
 }
 
@@ -467,8 +467,8 @@
 }
 
 .spatial-workspace {
-  --spatial-cell: color-mix(in oklch, var(--color-neutral-950) 92.5%, var(--foreground));
-  --spatial-cell-hover: color-mix(in oklch, var(--color-neutral-950) 88%, var(--foreground));
+  --spatial-cell: color-mix(in oklch, var(--color-neutral-950) 93.5%, var(--foreground));
+  --spatial-cell-hover: color-mix(in oklch, var(--color-neutral-950) 89.5%, var(--foreground));
 }
 
 .spatial-workspace:not(.dark *) {
