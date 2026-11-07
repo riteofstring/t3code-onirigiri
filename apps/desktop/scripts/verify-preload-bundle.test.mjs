@@ -1,6 +1,6 @@
 import { assert, describe, it } from "vite-plus/test";
 
-import { verifyPanePicturePreloadBundle, verifyPreloadBundle } from "./verify-preload-bundle.mjs";
+import { verifyPreloadBundle } from "./verify-preload-bundle.mjs";
 
 const validPreload = `
   const electron = require("electron");
@@ -100,25 +100,6 @@ describe("desktop preload bundle verifier", () => {
         const message = 'require("node:fs")';
         // require("node:path")
       `),
-    );
-  });
-});
-
-describe("pane picture preload bundle verifier", () => {
-  const valid = 'require("electron").ipcRenderer.once("desktop:pane-picture:port", () => {});';
-  it("accepts the self-contained sandbox entry", () => {
-    assert.doesNotThrow(() => verifyPanePicturePreloadBundle(valid));
-  });
-  it("rejects a shared runtime chunk even when its branch is not executed", () => {
-    assert.throws(
-      () => verifyPanePicturePreloadBundle(`${valid}\nif (false) require("./shared.cjs");`),
-      /unsupported sandbox imports/,
-    );
-  });
-  it("rejects a port listener that exists only as text", () => {
-    assert.throws(
-      () => verifyPanePicturePreloadBundle('"desktop:pane-picture:port";'),
-      /missing its executable port listener/,
     );
   });
 });

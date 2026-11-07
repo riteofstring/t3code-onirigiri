@@ -921,13 +921,6 @@ const make = Effect.gen(function* () {
     page.on("crash", () => dropTab(tab, true));
     tabs.set(key, tab);
     reportLiveTabs();
-    // The desktop can finish navigating before the CDP connection installs these listeners.
-    if (desktop) {
-      void page
-        .waitForLoadState("load")
-        .then(() => reportLoaded(tab))
-        .catch(constVoid);
-    }
     // A popup is already loading its own URL, and the desktop loads its tab's.
     if (!adopted && !desktop && snapshot.navStatus._tag === "Loading") {
       tab.initialNavigation = page

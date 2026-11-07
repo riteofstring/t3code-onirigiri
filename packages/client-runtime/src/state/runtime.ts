@@ -517,6 +517,7 @@ const refreshEveryUntilFinal =
       (get) => {
         const value = get(self);
         if (!isFinal(value)) {
+          // @effect-diagnostics-next-line globalTimers:off - Mirrors `Atom.withRefresh`, outside an Effect runtime.
           const handle = setTimeout(() => get.refresh(self), intervalMs);
           get.addFinalizer(() => clearTimeout(handle));
         }

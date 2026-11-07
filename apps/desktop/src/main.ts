@@ -55,7 +55,6 @@ import * as DesktopServerExposure from "./backend/DesktopServerExposure.ts";
 import * as DesktopClientSettings from "./settings/DesktopClientSettings.ts";
 import * as DesktopSavedEnvironments from "./settings/DesktopSavedEnvironments.ts";
 import * as DesktopSnapShot from "./snapShot/DesktopSnapShot.ts";
-import * as DesktopPanePictureRaster from "./panePictures/DesktopPanePictureRaster.ts";
 import * as DesktopAppSettings from "./settings/DesktopAppSettings.ts";
 import * as DesktopPreReadyFileSystem from "./app/DesktopPreReadyFileSystem.ts";
 import * as DesktopPreReadyPlatform from "./app/DesktopPreReadyPlatform.ts";
@@ -223,7 +222,6 @@ const layerDesktopApplication = Layer.mergeAll(
   DesktopShellEnvironment.layer,
   layerDesktopSsh,
 ).pipe(
-  Layer.provideMerge(DesktopPanePictureRaster.layer),
   Layer.provideMerge(layerDesktopSnapShot),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(layerDesktopWslBackend),
