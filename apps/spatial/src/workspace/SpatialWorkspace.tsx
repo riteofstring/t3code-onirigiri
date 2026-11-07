@@ -870,29 +870,6 @@ function SpatialWorkspaceView({
     if (pending && panes?.some((pane) => pane.paneId === pending)) focusRoutePane(pending, false);
   }, [panes]);
 
-  useEffect(() => {
-    if (!active) return;
-    const confirmOverview = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.defaultPrevented || event.isComposing) return;
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(
-          "button, a, input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']",
-        )
-      )
-        return;
-      const workspace = workspaceRef.current;
-      const snapshot = workspace?.getSnapshot();
-      if (snapshot?.presentationMode !== "overview" || !snapshot.focusedPaneId) return;
-      event.preventDefault();
-      workspace?.focusPane(snapshot.focusedPaneId, { exitOverview: true });
-    };
-    window.addEventListener("keydown", confirmOverview);
-    return () => window.removeEventListener("keydown", confirmOverview);
-  }, [active]);
-
   const navigateAway = useCallback(
     (href: string) => {
       void router.navigate({ href });
@@ -1306,6 +1283,54 @@ function SpatialWorkspaceView({
       : (paneViewport?.height ?? null),
     `${layoutRevision}|${panes?.length ?? 0}|${overview}|${preferences.showGrid}`,
   );
+
+  useEffect(() => {
+    if (!active) return;
+    const confirmCell = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.defaultPrevented || event.isComposing) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          "button, a, input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']",
+        )
+      )
+        return;
+      const workspace = workspaceRef.current;
+      if (!workspace) return;
+      const { cursor, focusedPaneId, presentationMode } = workspace.getSnapshot();
+      if (presentationMode === "overview") {
+        event.preventDefault();
+        if (focusedPaneId) workspace.focusPane(focusedPaneId, { exitOverview: true });
+        else workspace.toggleOverview();
+        return;
+      }
+      if (focusedPaneId) return;
+      const occupied = workspace
+        .getLayout()
+        .columns.some(
+          (column) =>
+            column.planeIndex === cursor.row &&
+            (column.slotIndex ?? column.index) === cursor.column,
+        );
+      if (occupied) return;
+      event.preventDefault();
+      addPaneAt(
+        emptySpots.cells.find((cell) => cell.key === `${cursor.row}|${cursor.column}`) ?? {
+          key: `${cursor.row}|${cursor.column}`,
+          ownerPaneId: null,
+          placement: { plane: cursor.row, slot: cursor.column, heightPx: null },
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+        },
+      );
+    };
+    window.addEventListener("keydown", confirmCell);
+    return () => window.removeEventListener("keydown", confirmCell);
+  }, [active, addPaneAt, emptySpots.cells]);
 
   return (
     <WorkspaceTooltips>
