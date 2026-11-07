@@ -305,26 +305,42 @@ export function EmptySpotGrid({
           height: cell.height,
         }}
         onPointerEnter={centre}
-        onPointerDown={(event) => {
-          press.current = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
-        }}
-        onClick={(event) => {
-          const start = press.current;
-          press.current = null;
-          if (
-            !start ||
-            event.button !== 0 ||
-            event.altKey ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.shiftKey ||
-            Math.hypot(event.clientX - start.x, event.clientY - start.y) > DRAG_TOLERANCE_PX
-          )
-            return;
-          onAdd(cell);
-        }}
       >
-        <span className="spatial-empty-cell__label">New pane</span>
+        <button
+          type="button"
+          tabIndex={-1}
+          className="spatial-empty-cell__label"
+          onPointerDown={(event) => {
+            press.current = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+          }}
+          onClick={(event) => {
+            const start = press.current;
+            press.current = null;
+            if (
+              !start ||
+              event.button !== 0 ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey ||
+              Math.hypot(event.clientX - start.x, event.clientY - start.y) > DRAG_TOLERANCE_PX
+            )
+              return;
+            onAdd(cell);
+          }}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          >
+            <path d="M8 3.5v9M3.5 8h9" />
+          </svg>
+          New pane
+        </button>
       </div>
     )),
     container,
