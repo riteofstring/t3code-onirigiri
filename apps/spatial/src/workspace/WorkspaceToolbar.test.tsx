@@ -113,7 +113,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     overviewZoom: "medium",
     rowHeight: "viewport",
     maxRowHeight: 1200,
-    columnWidth: 600,
+    columnWidth: 840,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -138,7 +138,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     overviewZoom: "near",
     rowHeight: 384,
     maxRowHeight: 1200,
-    columnWidth: 600,
+    columnWidth: 840,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -153,7 +153,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     overviewZoom: "near",
     rowHeight: 384,
     maxRowHeight: 1200,
-    columnWidth: 600,
+    columnWidth: 840,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -167,7 +167,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     overviewZoom: "near",
     rowHeight: "viewport",
     maxRowHeight: 1200,
-    columnWidth: 600,
+    columnWidth: 840,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -334,7 +334,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
     overviewZoom: "medium",
     rowHeight: "viewport",
     maxRowHeight: 1200,
-    columnWidth: 600,
+    columnWidth: 840,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -378,11 +378,11 @@ it("hides the grid by default and toggles it and focus on click from the hover b
 });
 
 it("sets every column's width from 442 pixels up to half the view width, and double-click resets both sliders", async () => {
-  expect(settings().columnWidth).toBe(600);
+  expect(settings().columnWidth).toBe(840);
   await click("Workspace controls");
   await click("Advanced workspace controls");
   const slider = host.querySelector<HTMLInputElement>('[aria-label="Column width in pixels"]')!;
-  expect([slider.min, slider.max, slider.value]).toEqual(["442", "900", "600"]);
+  expect([slider.min, slider.max, slider.value]).toEqual(["442", "900", "840"]);
   await act(() => {
     slider.focus();
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, "700");
@@ -393,7 +393,7 @@ it("sets every column's width from 442 pixels up to half the view width, and dou
     700,
   );
   await act(() => slider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-  expect(settings().columnWidth).toBe(600);
+  expect(settings().columnWidth).toBe(840);
   await typeHeight("300");
   expect(settings().rowHeight).toBe(300);
   await act(() => rowHeight().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));

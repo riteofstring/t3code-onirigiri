@@ -13,7 +13,7 @@ const DEFAULT_MINIMAP_PLACEMENT: OnirigiriMinimapPlacement = {
   heightPx: 64,
 };
 export const MIN_COLUMN_WIDTH = 442;
-export const DEFAULT_COLUMN_WIDTH = 600;
+export const DEFAULT_COLUMN_WIDTH = 840;
 export const MIN_ROW_HEIGHT = 300;
 export const DEFAULT_MAX_ROW_HEIGHT = 1200;
 
