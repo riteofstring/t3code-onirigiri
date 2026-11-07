@@ -62,6 +62,7 @@ import {
   useLayoutModePreference,
   useMinimapPlacement,
   MIN_COLUMN_WIDTH,
+  MIN_ROW_HEIGHT,
   useWorkspacePreferences,
   type WorkspacePreferences,
 } from "./useWorkspacePreferences";
@@ -444,10 +445,19 @@ function SpatialWorkspaceView({
     maxColumnWidth === null
       ? preferences.columnWidth
       : Math.max(MIN_COLUMN_WIDTH, Math.min(preferences.columnWidth, maxColumnWidth));
+  const maxRowHeight = preferences.maxRowHeight || undefined;
   const workspacePaneDefaults = useMemo(
-    () => ({ height: preferences.rowHeight, width: columnWidth }),
-    [preferences.rowHeight, columnWidth],
+    () => ({
+      height: preferences.rowHeight,
+      width: columnWidth,
+      minHeight: MIN_ROW_HEIGHT,
+      ...(maxRowHeight === undefined ? {} : { maxHeight: maxRowHeight }),
+    }),
+    [preferences.rowHeight, columnWidth, maxRowHeight],
   );
+  const rowHeightLimit = paneViewport
+    ? Math.min(paneViewport.height, maxRowHeight ?? paneViewport.height)
+    : null;
   const lastLayoutRevisionRef = useRef<number | null>(null);
   const layoutPersistence = useMemo(() => createPaneLayoutPersistence(layoutMode), [layoutMode]);
   useEffect(() => {
@@ -1267,8 +1277,8 @@ function SpatialWorkspaceView({
     getLayout,
     getFocusedPaneId,
     typeof preferences.rowHeight === "number"
-      ? Math.min(preferences.rowHeight, paneViewport?.height ?? preferences.rowHeight)
-      : (paneViewport?.height ?? null),
+      ? Math.min(preferences.rowHeight, rowHeightLimit ?? preferences.rowHeight)
+      : rowHeightLimit,
     `${layoutRevision}|${panes?.length ?? 0}|${overview}|${preferences.showGrid}`,
   );
 
@@ -1337,7 +1347,9 @@ function SpatialWorkspaceView({
           preferences={preferences}
           focusedRowHeight={focusedRowHeight}
           maxRowHeight={
-            stageViewport.compact ? stageViewport.height : (paneViewport?.height ?? null)
+            stageViewport.compact
+              ? Math.min(stageViewport.height, maxRowHeight ?? stageViewport.height)
+              : rowHeightLimit
           }
           maxColumnWidth={stageViewport.compact ? null : maxColumnWidth}
           onPreferencesChange={changeWorkspacePreferences}

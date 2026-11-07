@@ -14,6 +14,8 @@ const DEFAULT_MINIMAP_PLACEMENT: OnirigiriMinimapPlacement = {
 };
 export const MIN_COLUMN_WIDTH = 442;
 export const DEFAULT_COLUMN_WIDTH = 600;
+export const MIN_ROW_HEIGHT = 300;
+export const DEFAULT_MAX_ROW_HEIGHT = 1200;
 
 function readItem(key: string): string | null {
   try {
@@ -39,6 +41,7 @@ export const overviewZoomChoices = [
 export interface WorkspacePreferences {
   overviewZoom: (typeof overviewZoomChoices)[number]["value"];
   rowHeight: number | "viewport";
+  maxRowHeight: number;
   columnWidth: number;
   navigationBar: boolean;
   maximizeAll: boolean;
@@ -50,6 +53,7 @@ export interface WorkspacePreferences {
 const defaults: WorkspacePreferences = {
   overviewZoom: "medium",
   rowHeight: "viewport",
+  maxRowHeight: DEFAULT_MAX_ROW_HEIGHT,
   columnWidth: DEFAULT_COLUMN_WIDTH,
   navigationBar: true,
   maximizeAll: false,
@@ -64,6 +68,7 @@ function readPreferences(): WorkspacePreferences {
     if (typeof value !== "object" || value === null) return defaults;
     const zoom = "overviewZoom" in value ? value.overviewZoom : null;
     const height = "rowHeight" in value ? value.rowHeight : null;
+    const maxHeight = "maxRowHeight" in value ? value.maxRowHeight : null;
     const width = "columnWidth" in value ? value.columnWidth : null;
     const navigationBar = "navigationBar" in value ? value.navigationBar : null;
     const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
@@ -73,9 +78,15 @@ function readPreferences(): WorkspacePreferences {
     return {
       overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
       rowHeight:
-        typeof height === "number" && Number.isSafeInteger(height) && height >= 96
+        typeof height === "number" && Number.isSafeInteger(height) && height >= MIN_ROW_HEIGHT
           ? height
           : "viewport",
+      maxRowHeight:
+        typeof maxHeight === "number" &&
+        Number.isSafeInteger(maxHeight) &&
+        (maxHeight === 0 || maxHeight >= MIN_ROW_HEIGHT)
+          ? maxHeight
+          : DEFAULT_MAX_ROW_HEIGHT,
       columnWidth:
         typeof width === "number" && Number.isSafeInteger(width) && width >= MIN_COLUMN_WIDTH
           ? width

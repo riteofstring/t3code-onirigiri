@@ -21,11 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@t3tools/web/src/components/ui/select";
+import { Input } from "@t3tools/web/src/components/ui/input";
 
 import { FocusAnchorToggle } from "./FocusAnchorToggle";
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
+  MIN_ROW_HEIGHT,
   overviewZoomChoices,
   type WorkspacePreferences,
 } from "./useWorkspacePreferences";
@@ -303,7 +305,14 @@ export function WorkspaceToolbar({
                       : (focusedRowHeight ?? preferences.rowHeight)
                   }
                   maximum={maxRowHeight}
+                  capped={
+                    preferences.maxRowHeight > 0 && maxRowHeight === preferences.maxRowHeight
+                  }
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
+                />
+                <MaxRowHeightControl
+                  height={preferences.maxRowHeight}
+                  onChange={(maxRowHeight) => onPreferencesChange({ maxRowHeight })}
                 />
                 <ColumnWidthControl
                   width={preferences.columnWidth}
@@ -538,14 +547,16 @@ function OnirigiriMark() {
 function RowHeightControl({
   height,
   maximum,
+  capped,
   onChange,
 }: {
   height: WorkspacePreferences["rowHeight"];
   maximum: number | null;
+  capped: boolean;
   onChange: (height: WorkspacePreferences["rowHeight"]) => void;
 }) {
-  const max = maximum ?? 96;
-  const min = Math.min(96, max);
+  const max = maximum ?? MIN_ROW_HEIGHT;
+  const min = Math.min(MIN_ROW_HEIGHT, max);
   const value = Math.max(min, Math.min(max, height === "viewport" ? max : height));
   const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
   return (
@@ -564,7 +575,7 @@ function RowHeightControl({
           disabled={maximum === null || min === max}
           aria-label="Row height in pixels"
           aria-description="Applies to all rows and leaves full screen panes. The maximum follows the view height."
-          aria-valuetext={value === max ? "Full view height" : `${value} pixels`}
+          aria-valuetext={value === max && !capped ? "Full view height" : `${value} pixels`}
           value={value}
           style={
             {
@@ -580,8 +591,50 @@ function RowHeightControl({
         />
       </span>
       <span className="spatial-workspace-controls__height-value" aria-hidden="true">
-        {value === max ? "Full view" : `${value}px`}
+        {value === max && !capped ? "Full view" : `${value}px`}
       </span>
+    </label>
+  );
+}
+
+function MaxRowHeightControl({
+  height,
+  onChange,
+}: {
+  height: number;
+  onChange: (height: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const next = Number(draft);
+    if (!Number.isFinite(next) || next < 0) return;
+    const rounded = Math.round(next);
+    onChange(rounded === 0 ? 0 : Math.max(MIN_ROW_HEIGHT, rounded));
+  };
+  return (
+    <label className="spatial-workspace-controls__field">
+      <span>Max row height</span>
+      <Input
+        nativeInput
+        size="sm"
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step={1}
+        className="w-16 text-xs"
+        aria-label="Maximum row height in pixels"
+        aria-description="0 turns the limit off."
+        value={draft ?? String(height)}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+          if (event.key === "Escape") setDraft(null);
+        }}
+      />
+      <span aria-hidden="true">{height === 0 ? "Off" : "px"}</span>
     </label>
   );
 }
