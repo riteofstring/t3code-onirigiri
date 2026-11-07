@@ -370,7 +370,10 @@ export function createPaneLifecycleStore(
       if (focused && !panes.has(focused)) focused = null;
       if (capturing && !panes.has(capturing.paneId)) release(false);
       for (const id of mounted) if (!panes.has(id)) unmount(id);
-      for (const id of retryAt.keys()) if (!panes.has(id)) retryAt.delete(id);
+      for (const ids of [visible, loaded, deferred, pendingComposers])
+        for (const id of ids) if (!panes.has(id)) ids.delete(id);
+      for (const entries of [retryAt, motionDecisions])
+        for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);
       schedule();
     },
     setBackgroundPictures: (enabled: boolean) => {
@@ -434,7 +437,9 @@ export function usePaneMounted(paneId: string, visible: boolean): boolean {
     return store.subscribe(paneId, sync);
   }, [store, paneId]);
   useEffect(() => {
-    store?.setVisible(paneId, visible);
+    if (!store) return;
+    store.setVisible(paneId, visible);
+    return () => store.setVisible(paneId, false);
   }, [store, paneId, visible]);
   return mounted;
 }

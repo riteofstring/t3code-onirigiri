@@ -42,6 +42,36 @@ it("retains loaded panes through a tour and evicts the farthest clean trees only
   expect(store.isMounted("p0")).toBe(false);
 });
 
+it.each(["batch", "successive"])(
+  "releases removed visibility after %s closes and a later re-add",
+  (removal) => {
+    const store = make();
+    store.setPictures(() => true);
+    const removed = panes.slice(1, 15);
+    for (const pane of removed) store.setVisible(pane.paneId, true);
+    store.registerChat("p1", () => null);
+    let current = panes;
+    if (removal === "batch") {
+      current = panes.filter((pane) => !removed.includes(pane));
+      store.setPanes(current);
+    } else {
+      for (const pane of removed) {
+        current = current.filter((entry) => entry !== pane);
+        store.setPanes(current);
+      }
+    }
+    for (let i = 15; i < 40; i++) store.setFocus(`p${i}`);
+    vi.advanceTimersByTime(501);
+
+    expect(mounted(store)).toEqual(panes.slice(30).map((pane) => pane.paneId));
+    expect(store.timelineDeferred("p1")).toBe(false);
+    store.setPanes(panes);
+    expect(store.isMounted("p1")).toBe(false);
+    store.setVisible("p1", true);
+    expect(store.isMounted("p1")).toBe(true);
+  },
+);
+
 it("does not mount or release destinations while moving", () => {
   const store = make();
   store.setPictures(() => true);

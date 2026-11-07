@@ -356,6 +356,9 @@ function SpatialWorkspaceView({
   const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
     null,
   );
+  const [lifecycleSeed, setLifecycleSeed] = useState<Parameters<
+    typeof createPaneLifecycleStore
+  > | null>(null);
   const onSnapshotFailure = useCallback(
     (paneId: string, startedAt: number) => lifecycle?.pictureFailed(paneId, startedAt),
     [lifecycle],
@@ -445,8 +448,7 @@ function SpatialWorkspaceView({
     maxColumnWidth === null
       ? preferences.columnWidth
       : Math.max(MIN_COLUMN_WIDTH, Math.min(preferences.columnWidth, maxColumnWidth));
-  const maxRowHeight =
-    layoutMode === "strip" ? undefined : preferences.maxRowHeight || undefined;
+  const maxRowHeight = layoutMode === "strip" ? undefined : preferences.maxRowHeight || undefined;
   const workspacePaneDefaults = useMemo(
     () => ({
       height: preferences.rowHeight,
@@ -563,8 +565,8 @@ function SpatialWorkspaceView({
           })()
         : null;
 
-  if (!alwaysLive && lifecycle === null && initialLayout !== null) {
-    setLifecycle(createPaneLifecycleStore(threadLayoutPositions(initialLayout), routePaneId));
+  if (!alwaysLive && lifecycleSeed === null && initialLayout !== null) {
+    setLifecycleSeed([threadLayoutPositions(initialLayout), routePaneId]);
   }
 
   useEffect(() => {
@@ -645,7 +647,13 @@ function SpatialWorkspaceView({
     }
   }, [gridAxes, workspacePaneDefaults, panes]);
 
-  useEffect(() => () => lifecycle?.dispose(), [lifecycle]);
+  useLayoutEffect(() => {
+    if (lifecycleSeed === null) return;
+    const owned = createPaneLifecycleStore(...lifecycleSeed);
+    // oxlint-disable-next-line react/set-state-in-effect -- Publish the effect-owned scheduler so replay and unmount clean up the exact instance.
+    setLifecycle(owned);
+    return () => owned.dispose();
+  }, [lifecycleSeed]);
   useEffect(() => {
     lifecycle?.setFocus(overview ? null : focusedPaneIdRef.current);
   }, [lifecycle, overview]);
@@ -840,10 +848,11 @@ function SpatialWorkspaceView({
 
   const restoredRouteRef = useRef(false);
   useEffect(() => {
+    if (initialPanes === null || (!alwaysLive && lifecycle === null)) return;
     const restoring = !restoredRouteRef.current;
     restoredRouteRef.current = true;
     if (routePaneId) focusRoutePane(routePaneId, restoring);
-  }, [routePaneId]);
+  }, [alwaysLive, initialPanes, lifecycle, routePaneId]);
 
   useEffect(
     () =>

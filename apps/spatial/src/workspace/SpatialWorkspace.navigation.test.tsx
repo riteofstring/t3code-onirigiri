@@ -7,11 +7,17 @@ import {
 import type { DesktopPreviewHostKey, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { matchesPreviewHostShortcut } from "../../../../packages/shared/src/previewHostKeyboard";
 import type { BrowserSurfaceProjectionPolicy } from "@t3tools/web/src/browser/browserSurfaceProjection";
-import { act, type ReactNode } from "react";
+import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { SpatialWorkspace } from "./SpatialWorkspace";
+import {
+  createPaneLifecycleStore,
+  PaneLifecycleContext,
+  type PaneLifecycleStore,
+  usePaneMounted,
+} from "./paneLifecycle";
 import { readPaneLayout, threadLayoutPositions, writePaneLayout } from "./workspaceLayout";
 import { bindWorkspace, pictureLayoutChanged, stubWorkspaceFrames } from "./workspaceTestMocks";
 
@@ -26,6 +32,7 @@ const fixture = vi.hoisted(() => ({
   browserProjection: null as BrowserSurfaceProjectionPolicy | null,
   addEmpty: vi.fn(),
   threadRenders: [] as string[],
+  lifecycle: null as PaneLifecycleStore | null,
 }));
 
 vi.mock("@tanstack/react-router", () => {
@@ -85,7 +92,7 @@ vi.mock("@t3tools/web/src/hooks/useHandleNewThread", () => {
 vi.mock("./ThreadPane", async () => {
   const { createContext, use } = await import("react");
   const { useOnirigiriPaneContentReady } = await import("@riteofstring/onirigiri");
-  const { usePaneMounted } = await import("./paneLifecycle");
+  const { PaneLifecycleContext, usePaneMounted } = await import("./paneLifecycle");
   const { BrowserSurfaceProjectionContext } =
     await import("@t3tools/web/src/browser/browserSurfaceProjection");
   return {
@@ -102,6 +109,7 @@ vi.mock("./ThreadPane", async () => {
       onAddPane: (paneId: string) => void;
     }) => {
       fixture.threadRenders.push(thread.threadId);
+      fixture.lifecycle = use(PaneLifecycleContext);
       fixture.browserProjection = use(BrowserSurfaceProjectionContext);
       const mounted = usePaneMounted(paneId, visible);
       useOnirigiriPaneContentReady(mounted);
@@ -129,18 +137,17 @@ function pane(threadId: string, row: number, column: number): OnirigiriPaneDefin
   };
 }
 
-async function render(threadId = "origin") {
-  await act(() =>
-    root.render(
-      <SpatialWorkspace
-        active
-        target={{
-          kind: "server",
-          threadRef: { environmentId: "e" as EnvironmentId, threadId: threadId as ThreadId },
-        }}
-      />,
-    ),
+async function render(threadId = "origin", strict = false) {
+  const view = (
+    <SpatialWorkspace
+      active
+      target={{
+        kind: "server",
+        threadRef: { environmentId: "e" as EnvironmentId, threadId: threadId as ThreadId },
+      }}
+    />
   );
+  await act(() => root.render(strict ? <StrictMode>{view}</StrictMode> : view));
 }
 
 function workspace() {
@@ -230,6 +237,7 @@ beforeEach(() => {
   fixture.browserProjection = null;
   fixture.addEmpty.mockReset();
   fixture.threadRenders = [];
+  fixture.lifecycle = null;
   localStorage.clear();
   window.history.replaceState(null, "", "/?layout=rows");
   host = document.createElement("div");
@@ -264,6 +272,91 @@ it("keeps every chat mounted through navigation and overview in all-live builds"
   expect(workspace().dataset.presentationMode).toBe("normal");
   expect([...host.querySelectorAll('textarea[aria-label="Thread composer"]')]).toEqual(composers);
 });
+
+function VisiblePane({ paneId }: { paneId: string }) {
+  return <span>{usePaneMounted(paneId, true) ? "live" : "unmounted"}</span>;
+}
+
+it("releases visibility when its React owner leaves before layout membership changes", async () => {
+  const panes = Array.from({ length: 40 }, (_, slot) => ({ paneId: `p${slot}`, plane: 0, slot }));
+  const store = createPaneLifecycleStore(panes, "p0");
+  store.setPictures(() => true);
+  try {
+    await act(() =>
+      root.render(
+        <PaneLifecycleContext value={store}>
+          {panes.slice(1, 15).map((pane) => (
+            <VisiblePane key={pane.paneId} paneId={pane.paneId} />
+          ))}
+        </PaneLifecycleContext>,
+      ),
+    );
+    await act(() => root.render(<PaneLifecycleContext value={store} />));
+    for (let i = 15; i < 40; i++) store.setFocus(`p${i}`);
+    vi.advanceTimersByTime(501);
+    expect(panes.filter((pane) => store.isMounted(pane.paneId)).map((pane) => pane.paneId)).toEqual(
+      panes.slice(30).map((pane) => pane.paneId),
+    );
+  } finally {
+    store.dispose();
+  }
+});
+
+async function exerciseLifecycle(store: PaneLifecycleStore) {
+  const origin = "thread:e:origin";
+  const destination = "thread:e:right";
+  const unregister = [origin, destination].map((paneId) => store.registerChat(paneId, () => null));
+  const navigation = bindWorkspace.mock.calls.at(-1)![0]!;
+  try {
+    await act(() => {
+      store.setPictures(() => true);
+      navigation.focusPane(destination);
+    });
+    await act(() => vi.advanceTimersByTime(64));
+    expect(store.isMounted(origin)).toBe(false);
+    await act(() => vi.advanceTimersByTime(1000));
+    expect(store.isMounted(destination)).toBe(true);
+    await act(() => store.composerReady(destination));
+    await act(() => vi.advanceTimersByTime(64));
+    expect(store.timelineDeferred(destination)).toBe(false);
+    await act(() => navigation.focusPane(origin));
+    await act(() => vi.advanceTimersByTime(1000));
+    expect(store.isMounted(origin)).toBe(true);
+    expect(host.querySelector('textarea[data-thread="origin"]')).not.toBeNull();
+  } finally {
+    for (const release of unregister) release();
+  }
+}
+
+it.each([true, false])(
+  "keeps lifecycle ownership through Strict Mode with initial readiness %s",
+  async (ready) => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    fixture.loaded = ready;
+    await render("origin", true);
+    if (!ready) {
+      expect(fixture.lifecycle).toBeNull();
+      fixture.loaded = true;
+      await render("origin", true);
+    }
+    const store = fixture.lifecycle!;
+    await exerciseLifecycle(store);
+    await changeHeight("420");
+    expect(fixture.lifecycle).toBe(store);
+    await render("right", true);
+    expect(fixture.lifecycle).toBe(store);
+    await render("origin", true);
+    await act(() => {
+      host.querySelector<HTMLButtonElement>('[aria-label="Switch to strip layout"]')!.click();
+    });
+    expect(fixture.lifecycle).not.toBe(store);
+    await exerciseLifecycle(fixture.lifecycle!);
+  },
+);
 
 it("applies row height to manually sized rows without changing widths or selection", async () => {
   const { scene, cursor } = createWorkspaceScene({ id: "onirigiri-t3", panes: fixture.panes });
