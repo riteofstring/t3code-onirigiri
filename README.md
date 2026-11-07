@@ -12,8 +12,8 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 ## Onirigiri spatial workspace
 
-This fork adds a spatial workspace in `apps/spatial`. See
-[the Onirigiri guide](docs/onirigiri/README.md) to build and run it.
+This fork replaces the chat area with an [Onirigiri](https://github.com/riteofstring/onirigiri)
+spatial workspace (`apps/spatial`). See [the Onirigiri guide](docs/onirigiri/README.md) to try it.
 
 ## Installation
 

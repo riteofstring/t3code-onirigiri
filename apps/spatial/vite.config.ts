@@ -44,7 +44,7 @@ export default defineConfig(async (env) => {
       scopeAncestorSelectors(),
       webBootPage(),
     ],
-    test: { exclude: ["acceptance/**", "**/node_modules/**", "dist/**"] },
+    test: { exclude: ["**/node_modules/**", "dist/**"] },
     publicDir: new URL("../web/public", import.meta.url).pathname,
     server: {
       ...web.server,
