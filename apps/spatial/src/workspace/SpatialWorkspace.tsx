@@ -445,7 +445,8 @@ function SpatialWorkspaceView({
     maxColumnWidth === null
       ? preferences.columnWidth
       : Math.max(MIN_COLUMN_WIDTH, Math.min(preferences.columnWidth, maxColumnWidth));
-  const maxRowHeight = preferences.maxRowHeight || undefined;
+  const maxRowHeight =
+    layoutMode === "strip" ? undefined : preferences.maxRowHeight || undefined;
   const workspacePaneDefaults = useMemo(
     () => ({
       height: preferences.rowHeight,

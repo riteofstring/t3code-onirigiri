@@ -298,7 +298,7 @@ it("keeps settings usable when storage cannot be written", async () => {
   expect(settings().rowHeight).toBe(512);
 });
 
-it("sets a maximum row height that stays at least the minimum and turns off at 0", async () => {
+it("sets a 2D maximum row height that stays at least the minimum, turns off at 0 and hides in strip mode", async () => {
   await click("Workspace controls");
   await click("Advanced workspace controls");
   const maximum = host.querySelector<HTMLInputElement>(
@@ -320,6 +320,10 @@ it("sets a maximum row height that stays at least the minimum and turns off at 0
   expect(await enter("100")).toBe(300);
   expect(await enter("0")).toBe(0);
   expect(maximum.value).toBe("0");
+  await click("Switch to strip layout");
+  expect(host.querySelector('[aria-label="Maximum row height in pixels"]')).toBeNull();
+  await click("Switch to 2D layout");
+  expect(host.querySelector('[aria-label="Maximum row height in pixels"]')).not.toBeNull();
 });
 
 it("uses safe defaults for malformed saved preferences", async () => {

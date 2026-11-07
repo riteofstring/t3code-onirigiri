@@ -306,14 +306,18 @@ export function WorkspaceToolbar({
                   }
                   maximum={maxRowHeight}
                   capped={
-                    preferences.maxRowHeight > 0 && maxRowHeight === preferences.maxRowHeight
+                    layoutMode !== "strip" &&
+                    preferences.maxRowHeight > 0 &&
+                    maxRowHeight === preferences.maxRowHeight
                   }
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
                 />
-                <MaxRowHeightControl
-                  height={preferences.maxRowHeight}
-                  onChange={(maxRowHeight) => onPreferencesChange({ maxRowHeight })}
-                />
+                {layoutMode === "strip" ? null : (
+                  <MaxRowHeightControl
+                    height={preferences.maxRowHeight}
+                    onChange={(maxRowHeight) => onPreferencesChange({ maxRowHeight })}
+                  />
+                )}
                 <ColumnWidthControl
                   width={preferences.columnWidth}
                   maximum={maxColumnWidth}
