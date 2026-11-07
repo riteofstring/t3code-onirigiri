@@ -50,6 +50,7 @@ export function SavedPanePicture({
           height: shown?.height ?? height,
           maxWidth: "none",
           maxHeight: "none",
+          visibility: shown ? undefined : "hidden",
         }}
       />
       <div className={shown ? "sr-only" : "contents"}>{summary}</div>

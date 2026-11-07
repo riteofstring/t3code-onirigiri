@@ -93,13 +93,15 @@ it("keeps captured dimensions when the surrounding pane shrinks or grows", async
   expect(pictureUrl).not.toHaveBeenCalled();
 });
 
-it("shows the summary until the first picture decodes", async () => {
+it("shows the summary, not an empty image frame, until the first picture decodes", async () => {
   await replace();
   expect(shown().source).toBeNull();
+  expect(container.querySelector("img")!.style.visibility).toBe("hidden");
   expect(container.querySelector(".sr-only")).toBeNull();
   expect(container.textContent).toBe("Thread");
   await act(() => pending[0]!.resolve());
   expect(shown().source).toBe("blob:1");
+  expect(container.querySelector("img")!.style.visibility).toBe("");
   expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
 });
 
