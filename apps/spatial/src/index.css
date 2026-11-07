@@ -456,6 +456,13 @@
 .spatial-workspace
   [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"])
   .onirigiri-pane__heading
+  > small {
+  display: none;
+}
+
+.spatial-workspace
+  [data-onirigiri-surface-kind="empty"]:not([data-presentation-mode="overview"])
+  .onirigiri-pane__heading
   > small::after {
   content: "/";
   margin-inline-start: 0.5rem;
