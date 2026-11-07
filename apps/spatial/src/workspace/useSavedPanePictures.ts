@@ -317,6 +317,15 @@ export function useSavedPanePictures(
   const stageRef = useCallback(
     (element: HTMLElement | null) => {
       workspaceElementRef.current = element;
+      if (element) {
+        const { width, height } = element.getBoundingClientRect();
+        if (width > 0 && height > 0)
+          setStageViewport((previous) =>
+            previous.width > 0
+              ? previous
+              : { ...previous, width: Math.round(width), height: Math.round(height) },
+          );
+      }
       observeStage();
     },
     [observeStage],
