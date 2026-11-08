@@ -122,13 +122,17 @@ the thread shell, which is never stale.
   costly style and layout work; the live view returns at rest or during resizing. Threads awaiting
   their first picture, running turns, live producers and tool panes keep their live presentation.
   The cover uses the same geometry validation and layout-mode separation as an unmounted pane.
-- A record is keyed by pane and geometry: stage size, device pixel ratio, pane geometry (column
-  width, cell sizing, default row height) and the layout mode, `tiled` or `compact`. Pictures of
-  several displays and modes coexist, so returning to a display selects its stored pictures instead
-  of drawing every thread again. A picture already validated this session remains a cover during a
-  same-mode resize until an exact-geometry replacement decodes. Tiled and compact covers never cross
-  modes: compact layout, including full screen, draws every pane at the stage size while the layout
-  keeps its column widths, so reusing it in a tiled pane would clip the chat. A live producer deletes
+- A record is keyed by pane and applied geometry: stage size, device pixel ratio, column and cell
+  sizing, workspace defaults, the selected type defaults and per-pane defaults, plus `tiled` or
+  `compact` layout. Read sizing from the engine scene when its layout notification arrives:
+  serialized layouts omit workspace defaults, so they cannot distinguish capped pictures from
+  fullscreen pictures after a sizing change. Fullscreen omits the applied height cap; editing its
+  saved preference does not invalidate fullscreen pixels until the cap applies again on exit.
+  Viewport width and height changes invalidate compact pictures as well as tiled ones. Pictures
+  of different valid geometries coexist; returning to one can reuse its pixels. A picture from a
+  different geometry is unavailable until replacement pixels are captured. Tiled and compact
+  covers never cross modes: full screen uses viewport geometry while the saved layout keeps its
+  column widths, so reusing a compact picture in a tiled pane would clip the chat. A live producer deletes
   every record of its pane. The store is IndexedDB version 2; opening it drops the version 1
   per-pane records.
 - A record's revision holds the thread update and theme (palette, appearance and font settings),
@@ -142,7 +146,7 @@ the thread shell, which is never stale.
 - Local visual changes such as scrolling or typing bump a pane's visual revision, which discards
   in-flight captures and drawings but keeps the current cover and the persisted picture until
   replacement pixels are accepted. A picture validated this session stays the cover while its thread
-  refreshes or its same-mode geometry changes, but does not count as fresh. Keep supplying that cover
+  refreshes at the same geometry, but does not count as fresh. Keep supplying that cover
   to the placeholder: withdrawing a replaceable picture releases its image and submitting it again
   repeats decoding.
 - Stored pictures usually load before the stage is measured and the thread shells arrive, so

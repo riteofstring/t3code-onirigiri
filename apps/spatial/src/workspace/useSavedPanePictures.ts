@@ -1,5 +1,5 @@
 import { flushPaneVisualChanges } from "./paneVisualChanges";
-import type { OnirigiriLayout, PanePresentationResolver } from "@riteofstring/onirigiri";
+import type { PanePresentationResolver, WorkspaceScene } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import {
   createContext,
@@ -133,11 +133,19 @@ export function markPaneSynced(
   else syncedPanes.delete(paneId);
 }
 
-function paneGeometry(layout: OnirigiriLayout): Map<string, string> {
-  const defaults = new Map(layout.panes.map((pane) => [pane.paneId, pane.defaults]));
+type PictureScene = Pick<WorkspaceScene, "panes" | "columns" | "paneDefaults" | "paneTypeDefaults">;
+
+function paneGeometry(scene: PictureScene): Map<string, string> {
+  const defaults = new Map(
+    scene.panes.map((pane) => [
+      pane.paneId,
+      [scene.paneTypeDefaults?.[pane.surfaceKind], pane.defaults],
+    ]),
+  );
   return new Map(
-    layout.columns.flatMap((column) => {
+    scene.columns.flatMap((column) => {
       const sizing = JSON.stringify([
+        scene.paneDefaults,
         column.widthSpec,
         column.cells.map((cell) => [
           cell.heightPx,
@@ -153,15 +161,14 @@ function paneGeometry(layout: OnirigiriLayout): Map<string, string> {
 }
 
 export function useSavedPanePictures(
-  getLayout: () => OnirigiriLayout | null,
+  getScene: () => PictureScene | null,
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
-  defaultRowHeight: number | "viewport" = "viewport",
   pictureMount: (paneId: string) => PictureMount = () => "ordinary",
   enabled = true,
   motionDecision?: (paneId: string) => string | null | undefined,
 ): {
   getPanePresentation: PanePresentationResolver;
-  onLayoutChange: (layout: OnirigiriLayout) => void;
+  onLayoutChange: () => void;
   pictureFor: (paneId: string) => SavedPanePicture | null;
   displayedPictureFor: (paneId: string) => SavedPanePicture | null;
   preparedPictureUrl: (image: Blob) => string | null;
@@ -223,12 +230,6 @@ export function useSavedPanePictures(
   }, [pictureMount]);
   const [stageViewport, setStageViewport] = useState({ width: 0, height: 0, compact: false });
   const [geometryVersion, setGeometryVersion] = useState(0);
-  const defaultRowHeightRef = useRef(defaultRowHeight);
-  useLayoutEffect(() => {
-    if (defaultRowHeightRef.current === defaultRowHeight) return;
-    defaultRowHeightRef.current = defaultRowHeight;
-    setGeometryVersion((version) => version + 1);
-  }, [defaultRowHeight]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -346,43 +347,41 @@ export function useSavedPanePictures(
     [observeStage],
   );
 
-  const onLayoutChange = useCallback(
-    (layout: OnirigiriLayout) => {
-      observeStage();
-      if (!enabled) return;
-      const next = paneGeometry(layout);
-      const previous = paneGeometryRef.current;
-      paneGeometryRef.current = next;
-      if (
-        !previous ||
-        previous.size !== next.size ||
-        [...next].some(([paneId, sizing]) => previous.get(paneId) !== sizing)
-      )
-        setGeometryVersion((version) => version + 1);
-      if ([...liveProducersRef.current.keys()].some((paneId) => !next.has(paneId))) {
-        updateLiveProducers(
-          new Map([...liveProducersRef.current].filter(([paneId]) => next.has(paneId))),
-        );
-      }
-    },
-    [enabled, observeStage, updateLiveProducers],
-  );
+  const onLayoutChange = useCallback(() => {
+    observeStage();
+    if (!enabled) return;
+    const scene = getScene();
+    if (!scene) return;
+    const next = paneGeometry(scene);
+    const previous = paneGeometryRef.current;
+    paneGeometryRef.current = next;
+    if (
+      !previous ||
+      previous.size !== next.size ||
+      [...next].some(([paneId, sizing]) => previous.get(paneId) !== sizing)
+    )
+      setGeometryVersion((version) => version + 1);
+    if ([...liveProducersRef.current.keys()].some((paneId) => !next.has(paneId))) {
+      updateLiveProducers(
+        new Map([...liveProducersRef.current].filter(([paneId]) => next.has(paneId))),
+      );
+    }
+  }, [enabled, getScene, observeStage, updateLiveProducers]);
 
   const geometryRevision = useCallback(
     (paneId: string) => {
       if (!stageSizeRef.current) return null;
       if (!paneGeometryRef.current) {
-        const layout = getLayout();
-        if (!layout) return null;
-        paneGeometryRef.current = paneGeometry(layout);
+        const scene = getScene();
+        if (!scene) return null;
+        paneGeometryRef.current = paneGeometry(scene);
       }
       const sizing = paneGeometryRef.current.get(paneId);
-      const height = defaultRowHeightRef.current;
       return sizing
-        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${themeKey()}|${sizing}${height === "viewport" ? "" : `|row:${height}`}|${compactRef.current ? "compact" : "tiled"}`
+        ? `stage:${stageSizeRef.current}@${window.devicePixelRatio}|${themeKey()}|${sizing}|${compactRef.current ? "compact" : "tiled"}`
         : null;
     },
-    [getLayout],
+    [getScene],
   );
   const expectedRevision = useCallback(
     (paneId: string, contents: ReadonlyMap<string, PaneContentRevision>) => {

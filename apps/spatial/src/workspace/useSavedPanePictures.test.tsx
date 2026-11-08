@@ -3,6 +3,7 @@ import { observePaneVisualChanges } from "./paneVisualChanges";
 
 import type {
   OnirigiriLayout,
+  PaneDefaultsConfiguration,
   PanePresentationContext,
   WorkspacePane,
 } from "@riteofstring/onirigiri";
@@ -121,7 +122,7 @@ const layout = (width: number) =>
     })),
   }) as unknown as OnirigiriLayout;
 const geometry = (width: number) =>
-  `stage:800x600@1|light:|[{"unit":"px","value":${width}},[[null,1,null]]]|0|tiled`;
+  `stage:800x600@1|light:|[null,{"unit":"px","value":${width}},[[null,1,[null,null]]]]|0|tiled`;
 
 type ResizeEntry = { contentRect: { width: number; height: number } };
 const resizeObservers = new Map<Element, (entries: ResizeEntry[]) => void>();
@@ -139,10 +140,14 @@ let appearance: string;
 let shownPicture: Blob | null = null;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
-let defaultRowHeight: number | "viewport" = "viewport";
 let picturesEnabled = true;
 let motionDecision: string | null | undefined;
-const getLayout = () => currentLayout;
+let appliedDefaults: PaneDefaultsConfiguration = {};
+const getScene = () => ({ ...currentLayout, ...appliedDefaults });
+const publishLayout = (layout: OnirigiriLayout) => {
+  currentLayout = layout;
+  hook.onLayoutChange();
+};
 const snapshotFailures = vi.fn<(paneId: string, startedAt: number) => void>();
 const backgroundPanes = new Set<string>();
 let backgroundLifecycle: ReturnType<typeof createPaneLifecycleStore> | null = null;
@@ -156,9 +161,8 @@ const pictureMount = (id: string) =>
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
   const value = useSavedPanePictures(
-    getLayout,
+    getScene,
     snapshotFailures,
-    defaultRowHeight,
     pictureMount,
     picturesEnabled,
     () => motionDecision,
@@ -313,7 +317,7 @@ afterEach(async () => {
   store.themeHalves = null;
   store.fontSettings = { ...defaultFontSettings };
   currentLayout = layout(400);
-  defaultRowHeight = "viewport";
+  appliedDefaults = {};
   picturesEnabled = true;
   motionDecision = undefined;
   markPaneSynced(paneId, null);
@@ -359,11 +363,11 @@ it("excludes a previous geometry until matching replacement pixels arrive", asyn
     cssSize: { width: 400, height: 580 },
   });
 
-  await act(() => hook.onLayoutChange(layout(500)));
+  await act(() => publishLayout(layout(500)));
   expect(hook.pictureFor(paneId)?.image).toBeUndefined();
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   await act(() => {
-    hook.onLayoutChange(layout(400));
+    publishLayout(layout(400));
     resize(900, 600);
   });
   expect(hook.pictureFor(paneId)?.image).toBeUndefined();
@@ -446,7 +450,7 @@ it("releases compact ownership and ignores callbacks from replaced stages", asyn
   await act(() => {
     oldEngine.replaceWith(replacement);
     stage = nextStage;
-    hook.onLayoutChange(currentLayout);
+    publishLayout(currentLayout);
     resizeElement(stage, 700, 500);
   });
   expect(workspace.dataset.spatialCompact).toBe("false");
@@ -489,7 +493,7 @@ it("binds a stage that appears after its outer workspace", async () => {
   engine.append(stage);
   workspace.append(engine);
   await act(() => {
-    hook.onLayoutChange(currentLayout);
+    publishLayout(currentLayout);
     resizeElement(stage, 800, 600);
   });
   await act(() => drawPicture(pane, new Blob(["ready stage"])));
@@ -975,7 +979,7 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
     for (const width of [450, 500]) {
       const resized = structuredClone(currentLayout);
       resized.columns[0]!.widthSpec = { unit: "px", value: width };
-      await act(() => hook.onLayoutChange(resized));
+      await act(() => publishLayout(resized));
       hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
       hook.paneSnapshots.request("thread:e:t2", { isConnected: true } as HTMLElement);
       await advance(4000);
@@ -1028,7 +1032,7 @@ it("refreshes a covered background pane after resize with limited idle headroom"
   const old = new Blob(["old pixels"]);
   await act(() => drawPicture(pane, old, { width: 400, height: 580 }));
   backgroundPanes.add(paneId);
-  await act(() => hook.onLayoutChange(layout(500)));
+  await act(() => publishLayout(layout(500)));
   vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
     setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1),
   );
@@ -1305,7 +1309,7 @@ it.each(["content", "theme", "fonts", "stage", "column", "running"] as const)(
       if (change === "fonts") store.fontSettings.fontSmoothing = false;
       if (change === "running") store.runtimeStatus = "running";
       if (change === "stage") resize(900, 600);
-      if (change === "column") hook.onLayoutChange(layout(500));
+      if (change === "column") publishLayout(layout(500));
       renderer!.update(<Probe />);
     });
     expect(snapshot.mock.calls[0]![1]()).toBe(false);
@@ -1498,7 +1502,7 @@ it("refreshes resized content after active DOM changes without another request",
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   await act(() => {
     currentLayout = layout(500);
-    hook.onLayoutChange(currentLayout);
+    publishLayout(currentLayout);
   });
   const image = new Blob(["resized and scrolled"]);
   snapshot.mockResolvedValue({ image, cssSize: { width: 500, height: 580 } });
@@ -2070,7 +2074,7 @@ it("forgets unsupported producers when their panes leave the workspace", async (
   await act(() => {
     hook.paneSnapshots.setLiveProducer(paneId, true);
   });
-  await act(() => hook.onLayoutChange({ columns: [], panes: [] } as unknown as OnirigiriLayout));
+  await act(() => publishLayout({ columns: [], panes: [] } as unknown as OnirigiriLayout));
   expect(pictureImageFor(paneId)).toBeNull();
 });
 
@@ -2112,7 +2116,7 @@ it.each(["height", "weight", "sibling", "defaults"])(
     else if (change === "weight") resized.columns[0]!.cells[1]!.weight = 3;
     else if (change === "sibling") resized.columns[0]!.cells.pop();
     else resized.panes[1]!.defaults = { height: 170 };
-    await act(() => hook.onLayoutChange(resized));
+    await act(() => publishLayout(resized));
     expect(hook.hasFreshPicture(paneId)).toBe(false);
     expect(hook.pictureFor(paneId)?.image).toBeUndefined();
     hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
@@ -2129,8 +2133,8 @@ it("refreshes pictures when the default row height changes and validates it afte
   await act(() => drawPicture(pane, image));
   const version = hook.paneSnapshots.geometryVersion;
   await act(() => {
-    defaultRowHeight = 420;
-    renderer!.update(<Probe />);
+    appliedDefaults = { paneDefaults: { height: 420 } };
+    publishLayout(currentLayout);
   });
   expect(hook.paneSnapshots.geometryVersion).toBe(version + 1);
   expect(hook.hasFreshPicture(paneId)).toBe(false);
@@ -2145,31 +2149,34 @@ it("refreshes pictures when the default row height changes and validates it afte
   await mount();
   expect(hook.pictureFor(paneId)?.image).toBe(replacement.image);
   await act(() => renderer!.unmount());
-  defaultRowHeight = 600;
+  appliedDefaults = { paneDefaults: { height: 600 } };
   await mount();
   expect(hook.pictureFor(paneId)).toBeNull();
   expect(hook.hasFreshPicture(paneId)).toBe(false);
 });
 
-it("discards a snapshot completed after the default row height changes", async () => {
-  await mount();
-  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-  const pending = pendingPicture();
-  snapshot.mockReturnValueOnce(pending.promise);
-  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await advance(500);
-  expect(snapshot).toHaveBeenCalledTimes(1);
-  await act(() => {
-    defaultRowHeight = 420;
-    renderer!.update(<Probe />);
-  });
-  await act(async () => pending.resolve(new Blob(["old row height"])));
-  expect(store.writes).toHaveLength(0);
-  expect(hook.hasFreshPicture(paneId)).toBe(false);
-  await advance(3500);
-  expect(store.writes).toHaveLength(1);
-  expect(hook.hasFreshPicture(paneId)).toBe(true);
-});
+it.each(["height", "maxHeight"] as const)(
+  "discards a snapshot completed after applied %s changes",
+  async (dimension) => {
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const pending = pendingPicture();
+    snapshot.mockReturnValueOnce(pending.promise);
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+    await advance(500);
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    await act(() => {
+      appliedDefaults = { paneDefaults: { [dimension]: 420 } };
+      publishLayout(currentLayout);
+    });
+    await act(async () => pending.resolve(new Blob(["old row height"])));
+    expect(store.writes).toHaveLength(0);
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    await advance(3500);
+    expect(store.writes).toHaveLength(1);
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+  },
+);
 
 it("refreshes and re-arms picture preparation when only display density changes", async () => {
   await mount();
@@ -2300,5 +2307,119 @@ it.each(["motion", "overview-motion", "resize"] as const)(
         },
       ),
     ).toBe("dom");
+  },
+);
+
+it.each([880, undefined])(
+  "rejects and replaces saved pixels when the applied height cap becomes %s",
+  async (maxHeight) => {
+    appliedDefaults = { paneDefaults: { height: "viewport", maxHeight: 1200 } };
+    await mount({ compact: true });
+    await act(() => resize(3840, 2160));
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const oldImage = new Blob(["capped pane"]);
+    await act(() => drawPicture(pane, oldImage, { width: 3840, height: 1200 }));
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    const original = hook.pictureFor(paneId)!;
+
+    await act(() => {
+      appliedDefaults = {
+        paneDefaults: { height: "viewport", ...(maxHeight === undefined ? {} : { maxHeight }) },
+      };
+      publishLayout(currentLayout);
+    });
+    expect(hook.displayedPictureFor(paneId)).toBeNull();
+    expect(hook.hasFreshPicture(paneId)).toBe(false);
+    const replacement = new Blob(["current pane"]);
+    await act(() => drawPicture(pane, replacement, { width: 3840, height: maxHeight ?? 2160 }));
+    expect(hook.pictureFor(paneId)).toMatchObject({ image: replacement });
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    const resized = hook.pictureFor(paneId)!;
+    await act(() => {
+      appliedDefaults = { paneDefaults: { height: "viewport", maxHeight: 1200 } };
+      publishLayout(currentLayout);
+    });
+    expect(hook.pictureFor(paneId)?.image).toBe(oldImage);
+    store.saved.set(original.recordKey, original);
+    store.saved.set(resized.recordKey, resized);
+    await act(() => renderer!.unmount());
+    appliedDefaults = {
+      paneDefaults: { height: "viewport", ...(maxHeight === undefined ? {} : { maxHeight }) },
+    };
+    await mount({ compact: true });
+    await act(() => resize(3840, 2160));
+    expect(hook.pictureFor(paneId)?.image).toBe(replacement);
+  },
+);
+
+it.each(["width", "type-default", "type-selection", "sibling-type"])(
+  "refreshes pictures when applied %s changes without a stage resize",
+  async (change) => {
+    store.threadIds = ["t1", "t2"];
+    currentLayout = layout(400);
+    currentLayout.panes[0]!.surfaceKind = "thread";
+    currentLayout.panes[1]!.surfaceKind = "thread";
+    currentLayout.columns[0]!.cells.push(currentLayout.columns[1]!.cells[0]!);
+    currentLayout.columns.pop();
+    appliedDefaults = {
+      paneDefaults: { width: 400 },
+      paneTypeDefaults: { thread: { height: 600 }, files: { height: 400 } },
+    };
+    await mount();
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const image = new Blob(["original sizing"]);
+    await act(() => drawPicture(pane, image));
+    await act(() => {
+      if (change === "width") appliedDefaults.paneDefaults = { width: 500 };
+      else if (change === "type-default")
+        appliedDefaults.paneTypeDefaults = { thread: { height: 400 } };
+      else currentLayout.panes[change === "sibling-type" ? 1 : 0]!.surfaceKind = "files";
+      publishLayout(currentLayout);
+    });
+    expect(hook.displayedPictureFor(paneId)).toBeNull();
+    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+    await advance(3500);
+    expect(hook.hasFreshPicture(paneId)).toBe(true);
+    expect(hook.pictureFor(paneId)?.image).not.toBe(image);
+  },
+);
+
+it("rejects persisted compact pictures whose key omitted the applied defaults", async () => {
+  store.saved.set(
+    paneId,
+    savedPicture({
+      geometryRevision:
+        'stage:800x600@1|light:|[{"unit":"px","value":400},[[null,1,null]]]|0|compact',
+    }),
+  );
+  await mount({ compact: true });
+  expect(hook.displayedPictureFor(paneId)).toBeNull();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3500);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(store.writes).toHaveLength(1);
+});
+
+it.each([
+  { width: 3840, height: 1094 },
+  { width: 2000, height: 2160 },
+  { width: 2000, height: 1094 },
+])(
+  "regenerates fullscreen pixels after resizing to $width by $height",
+  async ({ width, height }) => {
+    await mount({ compact: true });
+    await act(() => resize(3840, 2160));
+    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+    const original = new Blob(["full screen at 4K"]);
+    await act(() => drawPicture(pane, original, { width: 3840, height: 2160 }));
+    await act(() => resize(width, height));
+    expect(hook.displayedPictureFor(paneId)).toBeNull();
+    const replacement = new Blob(["resized full screen"]);
+    await act(() => drawPicture(pane, replacement, { width, height }));
+    expect(hook.pictureFor(paneId)).toMatchObject({
+      image: replacement,
+      cssSize: { width, height },
+    });
   },
 );

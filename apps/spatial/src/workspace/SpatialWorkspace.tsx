@@ -353,6 +353,7 @@ function SpatialWorkspaceView({
   }, []);
   const [controlsContainer, setControlsContainer] = useState<HTMLDivElement | null>(null);
   const getLayout = useCallback(() => workspaceRef.current?.getLayout() ?? null, []);
+  const getScene = useCallback(() => workspaceRef.current?.getScene() ?? null, []);
   const [lifecycle, setLifecycle] = useState<ReturnType<typeof createPaneLifecycleStore> | null>(
     null,
   );
@@ -400,14 +401,7 @@ function SpatialWorkspaceView({
     setCaptureActivity,
     stageRef,
     stageViewport,
-  } = useSavedPanePictures(
-    getLayout,
-    onSnapshotFailure,
-    preferences.rowHeight,
-    pictureMount,
-    !alwaysLive,
-    motionDecision,
-  );
+  } = useSavedPanePictures(getScene, onSnapshotFailure, pictureMount, !alwaysLive, motionDecision);
   const {
     requested: fullScreenRequested,
     fullScreen,
@@ -501,7 +495,7 @@ function SpatialWorkspaceView({
       }, LAYOUT_SETTLE_MS);
       setWorkspacePadding(workspaceRef.current?.getScene().padding ?? 0);
       syncMaximized();
-      onPictureLayoutChange(layout);
+      onPictureLayoutChange();
       lifecycle?.setPanes(threadLayoutPositions(layout));
     },
     [layoutPersistence, lifecycle, onPictureLayoutChange, syncFocusedRowHeight, syncMaximized],
