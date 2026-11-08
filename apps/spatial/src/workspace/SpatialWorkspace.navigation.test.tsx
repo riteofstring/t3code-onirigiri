@@ -19,7 +19,12 @@ import {
   usePaneMounted,
 } from "./paneLifecycle";
 import { readPaneLayout, threadLayoutPositions, writePaneLayout } from "./workspaceLayout";
-import { bindWorkspace, pictureLayoutChanged, stubWorkspaceFrames } from "./workspaceTestMocks";
+import {
+  bindWorkspace,
+  pictureLayoutChanged,
+  savedPictures,
+  stubWorkspaceFrames,
+} from "./workspaceTestMocks";
 
 type RouteLocation = { environmentId: string; threadId: string };
 type NavigationEvent = { toLocation: RouteLocation };
@@ -168,6 +173,28 @@ function paneHeights() {
   );
 }
 
+function focusedPaneHeight() {
+  return Number.parseFloat(
+    host.querySelector<HTMLElement>('[data-onirigiri-slot="pane"][data-focused="true"]')!.style
+      .height,
+  );
+}
+
+function setViewport(width: number, height: number) {
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue({
+    width,
+    height,
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: width,
+    bottom: height,
+    toJSON: () => ({}),
+  });
+  Object.assign(savedPictures.useSavedPanePictures().stageViewport, { width, height });
+}
+
 async function changeHeight(value: string) {
   await act(() => {
     const input = rowHeight();
@@ -203,6 +230,7 @@ async function explicitRoute(threadId: string) {
 
 beforeEach(() => {
   stubWorkspaceFrames();
+  Object.assign(savedPictures.useSavedPanePictures().stageViewport, { width: 1200, height: 900 });
   vi.stubGlobal("PointerEvent", MouseEvent);
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
@@ -389,6 +417,89 @@ it("applies row height to manually sized rows without changing widths or selecti
   await render("right");
   expect(paneHeights()).toEqual([420, 420, 420]);
   expect(readPaneLayout("rows")!.columns.map((column) => column.widthSpec)).toEqual(widths);
+});
+
+it.each([
+  { width: 3840, height: 2160, cap: undefined },
+  { width: 3840, height: 2160, cap: 880 },
+  { width: 3840, height: 2160, cap: 0 },
+  { width: 2000, height: 1191, cap: 880 },
+])(
+  "ignores the height cap only in full screen at $width × $height with cap $cap",
+  async ({ width, height, cap }) => {
+    setViewport(width, height);
+    localStorage.setItem(
+      "onirigiri-t3:workspace-preferences",
+      JSON.stringify({
+        rowHeight: "viewport",
+        ...(cap === undefined ? {} : { maxRowHeight: cap }),
+      }),
+    );
+    const limitedHeight = Math.min((cap ?? 1200) || height, height - 20);
+    const toggleFullScreen = async () => {
+      await act(() => {
+        host.querySelector<HTMLButtonElement>('[aria-label="Full screen panes"]')!.click();
+      });
+      await act(() => vi.advanceTimersByTime(120));
+    };
+    await render("right");
+    expect(paneHeights()).toEqual([limitedHeight, limitedHeight, limitedHeight]);
+    await toggleFullScreen();
+    expect(focusedPaneHeight()).toBe(height);
+    expect(status()).toContain("right");
+
+    await act(() => root.unmount());
+    root = createRoot(host);
+    await render("right");
+    await act(() => vi.advanceTimersByTime(120));
+    expect(focusedPaneHeight()).toBe(height);
+    for (const label of ["Switch to strip layout", "Switch to 2D layout"]) {
+      await act(() => {
+        host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click();
+      });
+      await act(() => vi.advanceTimersByTime(120));
+      expect(focusedPaneHeight()).toBe(height);
+      expect(status()).toContain("right");
+    }
+    await toggleFullScreen();
+    expect(paneHeights()).toEqual([limitedHeight, limitedHeight, limitedHeight]);
+    expect(status()).toContain("right");
+    expect(
+      JSON.parse(localStorage.getItem("onirigiri-t3:workspace-preferences")!).maxRowHeight,
+    ).toBe(cap ?? 1200);
+  },
+);
+
+it("restores the height cap at the fullscreen exit geometry swap", async () => {
+  setViewport(3840, 2160);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  localStorage.setItem(
+    "onirigiri-t3:workspace-preferences",
+    JSON.stringify({ maximizeAll: true, maxRowHeight: 880 }),
+  );
+  await render("right");
+  expect(focusedPaneHeight()).toBe(2160);
+  const border = host.querySelector<HTMLElement>(".spatial-full-screen-border")!;
+  border.getAnimations = () => [];
+  for (const element of [border, ...border.children]) {
+    Object.defineProperty(element, "animate", {
+      value: () => ({ finished: Promise.resolve() }),
+    });
+  }
+  await act(() => {
+    host.querySelector<HTMLButtonElement>('[aria-label="Full screen panes"]')!.click();
+  });
+  expect(host.querySelector('[data-spatial-full-screen-transition="out"]')).not.toBeNull();
+  await act(() => vi.advanceTimersByTime(119));
+  expect(focusedPaneHeight()).toBe(2160);
+  await act(() => vi.advanceTimersByTime(1));
+  expect(host.querySelector('[data-spatial-full-screen-transition="swap"]')).not.toBeNull();
+  expect(paneHeights()).toEqual([880, 880, 880]);
+  expect(status()).toContain("right");
 });
 
 it("leaves full screen panes when committing a shorter row height", async () => {

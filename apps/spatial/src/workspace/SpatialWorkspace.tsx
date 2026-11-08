@@ -454,9 +454,9 @@ function SpatialWorkspaceView({
       height: preferences.rowHeight,
       width: columnWidth,
       minHeight: MIN_ROW_HEIGHT,
-      ...(maxRowHeight === undefined ? {} : { maxHeight: maxRowHeight }),
+      ...(fullScreen || maxRowHeight === undefined ? {} : { maxHeight: maxRowHeight }),
     }),
-    [preferences.rowHeight, columnWidth, maxRowHeight],
+    [preferences.rowHeight, columnWidth, maxRowHeight, fullScreen],
   );
   const rowHeightLimit = paneViewport
     ? Math.min(paneViewport.height, maxRowHeight ?? paneViewport.height)

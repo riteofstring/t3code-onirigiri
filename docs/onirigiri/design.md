@@ -45,6 +45,10 @@ This page records constraints that span files and are easy to break without noti
 
 ## Panes
 
+- Full screen panes omit the workspace maximum height while applied fullscreen is active. The saved
+  cap and control limits remain unchanged; the cap returns at the exit transition's geometry swap.
+  Single-pane maximize is separate and respects the height cap when fullscreen is off. The engine
+  resolves the same limit for chat, draft and tool-pane maximize entry points.
 - Pane membership changes rebuild the engine layout around the focused pane; renames and an empty
   pane's choice update panes in place, and surface ids follow pane ids, so live views and pictures
   survive. Live sidebar data is compared by content (`liveKey`) because its inputs are rebuilt on
