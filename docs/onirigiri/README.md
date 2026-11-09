@@ -5,12 +5,12 @@ workspace: a niri-style canvas where every conversation, terminal, browser, file
 pane you can arrange in rows and columns, pan across and zoom out to an overview. T3's sidebar,
 settings and providers are unchanged. The spatial app lives in `apps/spatial`.
 
-This is an alpha demo. Expect rough edges.
+This is a beta demo. Expect rough edges.
 
 ## Get it running
 
 You need Git, [Node](https://nodejs.org) at the versions pinned in each repository (`engines` in
-`package.json` here, `.nvmrc` in the engine) and Corepack for pnpm. Clone the engine beside this
+`package.json` here, `.node-version` in the engine) and Corepack for pnpm. Clone the engine beside this
 repository. The app finds it through the sibling directory name `onirigiri-beta`, so keep that name.
 
 This branch also requires the standalone `onirigiri-t3-adapter` repository beside both checkouts.
@@ -18,11 +18,12 @@ Use the adapter revision recorded in [design.md](design.md#build). The adapter h
 dependencies and exports TypeScript source, so consuming it needs no separate adapter build or
 dependency installation. Its own tests and Code Polishy checks run in that repository.
 
-With the adapter checkout in place, install and build the engine and application:
+Clone all three, then install and build the engine and application:
 
 ```bash
-git clone --branch update/t3-nightly https://github.com/riteofstring/onirigiri.git onirigiri-beta
-git clone --branch update/t3-nightly https://github.com/riteofstring/t3code-onirigiri.git
+git clone --branch beta https://github.com/riteofstring/onirigiri.git onirigiri-beta
+git clone --branch beta https://github.com/riteofstring/onirigiri-t3-adapter.git
+git clone --branch beta https://github.com/riteofstring/t3code-onirigiri.git
 
 cd onirigiri-beta
 corepack pnpm install --frozen-lockfile --ignore-scripts

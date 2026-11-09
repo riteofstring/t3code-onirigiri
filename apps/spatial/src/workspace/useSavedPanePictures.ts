@@ -645,7 +645,6 @@ export function useSavedPanePictures(
               const previous = savedRef.current?.get(key);
               return !previous || !isCurrentPicture(paneId, previous, content);
             },
-            // Missing pictures at the current geometry precede refreshes.
             (paneId) => {
               const key = recordKey(paneId);
               return key !== null && savedRef.current?.has(key) === true;

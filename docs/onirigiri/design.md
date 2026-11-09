@@ -11,7 +11,7 @@ This page records constraints that span files and are easy to break without noti
 
 ## Build
 
-- The sibling adapter is validated at commit `7df58c6eab2cd4b3302ec2bf29ab2e9c48e8c708`.
+- The sibling adapter is validated at commit `02f675942c6d8021451955d9f7cb3a56773ad734`.
   Its `link:` dependency reads that checkout directly; keep it on the recorded revision when
   reproducing this build. T3 worktrees that adopt the link share the same sibling checkout.
   Adapter tests and Code Polishy checks belong there; workspace integration tests remain here.
