@@ -147,7 +147,7 @@ the thread shell, which is never stale.
   different geometry is unavailable until replacement pixels are captured. Tiled and compact
   covers never cross modes: full screen uses viewport geometry while the saved layout keeps its
   column widths, so reusing a compact picture in a tiled pane would clip the chat. A live producer keeps
-  its pane's records but they are not shown while it is present. The store is IndexedDB version 2; opening it drops the version 1
+  its pane's records and blocks fresh captures; an existing record can still cover motion. The store is IndexedDB version 2; opening it drops the version 1
   per-pane records.
 - A record's revision holds the thread update and theme (palette, appearance and font settings),
   includes `chat-chrome-2`, and every picture adds `native-worker-9`; bump them when chat chrome or
@@ -175,8 +175,8 @@ the thread shell, which is never stale.
   ignored because pictures omit draft selection, and releasing the router does not invalidate the
   saved pixels.
 - Live producers (canvas, video, iframes, webviews, custom elements, shadow roots, browser slots)
-  cannot be drawn. While present the pane renders live and its stored picture is neither shown nor
-  refreshed, though the record is kept; after
+  cannot be drawn. While one is present the pane is never captured and its picture never counts as
+  fresh, so at rest the pane stays live; during motion its existing picture still covers it. After
   removal it keeps its live view until current static pixels exist.
 - Pictures are taken one at a time while idle and at least 250 ms after the last input. Missing
   pictures go first, then refreshes behind an existing cover, then panes mounted only to be pictured,
