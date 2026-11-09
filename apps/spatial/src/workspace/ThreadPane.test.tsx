@@ -1591,6 +1591,14 @@ it.each(["input", "expansion"])(
   },
 );
 
+it("keeps a chat that gains a live producer out of motion removal despite a stored picture", async () => {
+  const blocks = await mountInspectedChat();
+  await act(() => {
+    container.querySelector(".messages-timeline-scroll")!.append(document.createElement("video"));
+    expect(blocks()).toBe(true);
+  });
+});
+
 it.each(["approval", "question", "running turn"])(
   "shows a chat with a %s as its latest picture in motion",
   async (kind) => {

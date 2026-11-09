@@ -540,9 +540,10 @@ function SpatialWorkspaceView({
       interactive: (slot) =>
         !slot.closest('[data-onirigiri-shielded="true"], [data-runtime-state="frozen"]'),
       focus: (slot) => {
-        slot.dispatchEvent(
-          new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-        );
+        for (const type of ["pointerdown", "pointerup"])
+          slot.dispatchEvent(
+            new PointerEvent(type, { bubbles: true, button: 0, pointerType: "mouse" }),
+          );
       },
       keyboard: {
         shortcuts: BROWSER_SHORTCUTS,

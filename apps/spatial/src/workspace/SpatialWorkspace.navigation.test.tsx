@@ -629,6 +629,22 @@ it("keeps mounted chat content stable across a shell refresh and uses the clicke
   );
 });
 
+it("releases the pointer press it sends to focus a browser pane", async () => {
+  fixture.panes = [pane("origin", 0, 0)];
+  await render();
+  const slot = host.querySelector<HTMLElement>(
+    '[data-onirigiri-pane-id="thread:e:origin"] [data-browser-keyboard-slot]',
+  )!;
+  const seen: string[] = [];
+  const record = (event: Event) => seen.push(event.type);
+  window.addEventListener("pointerdown", record, true);
+  window.addEventListener("pointerup", record, true);
+  await act(() => fixture.browserProjection!.focus!(slot));
+  window.removeEventListener("pointerdown", record, true);
+  window.removeEventListener("pointerup", record, true);
+  expect(seen).toEqual(["pointerdown", "pointerup"]);
+});
+
 it("routes guest keys through the engine and returns keyboard focus to the destination pane", async () => {
   fixture.panes = [pane("origin", 0, 0), pane("right", 0, 1)];
   await render();
