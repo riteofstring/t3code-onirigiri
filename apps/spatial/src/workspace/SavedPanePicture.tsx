@@ -31,7 +31,12 @@ export function SavedPanePicture({
         if (cancelled) return;
         setShown({ url, width, height });
       },
-      () => {},
+      () => {
+        if (cancelled) return;
+        setShown((current) =>
+          current?.width === width && current.height === height ? current : null,
+        );
+      },
     );
     return () => {
       cancelled = true;

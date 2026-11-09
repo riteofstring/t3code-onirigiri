@@ -16,7 +16,6 @@ import type { PanePictureSnapshot } from "./panePictureSnapshot";
 import { pictureRecordKey, type SavedPanePicture } from "./panePictureStore";
 import { createPaneLifecycleStore } from "./paneLifecycle";
 import { markPaneSynced, usePanePictureTheme, useSavedPanePictures } from "./useSavedPanePictures";
-import { simulatePicturePressure } from "./picturePressure.test-support";
 
 const defaultFontSettings = {
   fontFamilySans: "",
@@ -141,7 +140,7 @@ let shownPicture: Blob | null = null;
 let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 let picturesEnabled = true;
-let motionDecision: string | null | undefined;
+let holdsLive: boolean | undefined;
 let appliedDefaults: PaneDefaultsConfiguration = {};
 const getScene = () => ({ ...currentLayout, ...appliedDefaults });
 const publishLayout = (layout: OnirigiriLayout) => {
@@ -160,13 +159,10 @@ const pictureMount = (id: string) =>
 
 function Probe() {
   const pictureAppearance = usePanePictureTheme();
-  const value = useSavedPanePictures(
-    getScene,
-    snapshotFailures,
-    pictureMount,
-    picturesEnabled,
-    () => motionDecision,
-  );
+  const value = useSavedPanePictures(getScene, snapshotFailures, pictureMount, picturesEnabled, {
+    holdsLive: () => holdsLive,
+    moving: false,
+  });
   const { pictureFor } = value;
   const shown = useMemo(() => pictureFor(paneId)?.image ?? null, [pictureFor]);
   useEffect(() => {
@@ -318,7 +314,7 @@ afterEach(async () => {
   currentLayout = layout(400);
   appliedDefaults = {};
   picturesEnabled = true;
-  motionDecision = undefined;
+  holdsLive = undefined;
   markPaneSynced(paneId, null);
   backgroundPanes.clear();
   backgroundLifecycle?.dispose();
@@ -1041,36 +1037,31 @@ it("refreshes a covered background pane after resize with limited idle headroom"
   expect(store.writes.at(-1)?.geometryRevision).toBe(geometry(500));
 });
 
-it.each(["longtask", "long-animation-frame"])(
-  "fills visible missing pictures before neighbours and refreshes despite %s pressure",
-  async (type) => {
-    const busy = simulatePicturePressure();
-    store.threadIds = ["t1", "t2", "t3"];
-    currentLayout = layout(400);
-    store.saved.set(paneId, savedPicture());
-    await mount();
-    const visible = "thread:e:t2",
-      neighbour = "thread:e:t3";
-    backgroundPanes.add(neighbour);
-    hook.paneSnapshots.invalidate(paneId, true);
-    const drawn: string[] = [];
-    snapshot.mockImplementation(async (element, canSnapshot) => {
-      if (!canSnapshot()) return null;
-      drawn.push(element.id);
-      return { image: new Blob([element.id]), cssSize: { width: 400, height: 580 } };
-    });
-    for (const id of [paneId, neighbour, visible]) {
-      const revision = hook.paneSnapshots.request(id, { id, isConnected: true } as HTMLElement);
-      markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance }, revision);
-    }
-    busy(type);
-    await advance(240);
-    expect(drawn).toEqual([]);
-    await advance(30);
-    expect(drawn).toEqual([visible, paneId, neighbour]);
-    for (const id of [paneId, neighbour, visible]) expect(hook.hasFreshPicture(id)).toBe(true);
-  },
-);
+it("fills visible missing pictures before refreshes and neighbours", async () => {
+  store.threadIds = ["t1", "t2", "t3"];
+  currentLayout = layout(400);
+  store.saved.set(paneId, savedPicture());
+  await mount();
+  const visible = "thread:e:t2",
+    neighbour = "thread:e:t3";
+  backgroundPanes.add(neighbour);
+  hook.paneSnapshots.invalidate(paneId, true);
+  const drawn: string[] = [];
+  snapshot.mockImplementation(async (element, canSnapshot) => {
+    if (!canSnapshot()) return null;
+    drawn.push(element.id);
+    return { image: new Blob([element.id]), cssSize: { width: 400, height: 580 } };
+  });
+  for (const id of [paneId, neighbour, visible]) {
+    const revision = hook.paneSnapshots.request(id, { id, isConnected: true } as HTMLElement);
+    markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance }, revision);
+  }
+  await advance(240);
+  expect(drawn).toEqual([]);
+  await advance(30);
+  expect(drawn).toEqual([visible, paneId, neighbour]);
+  for (const id of [paneId, neighbour, visible]) expect(hook.hasFreshPicture(id)).toBe(true);
+});
 
 it("releases an abandoned drawing even when idle headroom is exhausted", async () => {
   await mount();
@@ -2249,25 +2240,20 @@ it("does not persist a snapshot completed after leaving its display density", as
   expect(pictureImageFor(paneId)).not.toBe(image);
 });
 
-it.each(["longtask", "long-animation-frame"])(
-  "finishes an admitted background picture after its own %s work without restarting the quiet wait",
-  async (type) => {
-    const busy = simulatePicturePressure();
-    backgroundPanes.add(paneId);
-    await mount();
-    markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
-    snapshot.mockImplementationOnce(async (_element, canSnapshot, waitToDraw) => {
-      busy(type);
-      if (!canSnapshot() || !(await waitToDraw!()) || !canSnapshot()) return null;
-      return { image: new Blob(["snapshot"]), cssSize: { width: 400, height: 580 } };
-    });
-    hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-    await advance(3100);
-    expect(hook.hasFreshPicture(paneId)).toBe(true);
-    expect(store.writes).toHaveLength(1);
-    expect(snapshot).toHaveBeenCalledOnce();
-  },
-);
+it("finishes an admitted background picture without restarting the quiet wait", async () => {
+  backgroundPanes.add(paneId);
+  await mount();
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  snapshot.mockImplementationOnce(async (_element, canSnapshot, waitToDraw) => {
+    if (!canSnapshot() || !(await waitToDraw!()) || !canSnapshot()) return null;
+    return { image: new Blob(["snapshot"]), cssSize: { width: 400, height: 580 } };
+  });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(3100);
+  expect(hook.hasFreshPicture(paneId)).toBe(true);
+  expect(store.writes).toHaveLength(1);
+  expect(snapshot).toHaveBeenCalledOnce();
+});
 
 it("recaptures committed visible changes without a fixed quiet embargo", async () => {
   await mount();
@@ -2287,24 +2273,24 @@ it("recaptures committed visible changes without a fixed quiet embargo", async (
 });
 
 it.each(["overview", "overview-motion"] as const)(
-  "keeps a latched or unpictured chat on its card during %s",
+  "keeps a held or unpictured chat on its card during %s",
   async (phase) => {
     await mount();
     expect(presentationAt("motion")).toBe("dom");
     expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
-    motionDecision = "in-progress-turn";
+    holdsLive = true;
     expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
     expect(presentationAt("rest")).toBe("dom");
   },
 );
 
 it.each(["motion", "resize"] as const)(
-  "honors the latched removal decision during %s, then returns live at rest",
+  "honors the held-live removal decision during %s, then returns live at rest",
   async (phase) => {
     await mount();
-    motionDecision = "local-ui-interaction";
+    holdsLive = true;
     expect(presentationAt(phase)).toBe("dom");
-    motionDecision = null;
+    holdsLive = false;
     expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
     expect(presentationAt("rest")).toBe("dom");
     expect(

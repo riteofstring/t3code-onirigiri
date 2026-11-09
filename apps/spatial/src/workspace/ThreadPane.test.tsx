@@ -234,7 +234,6 @@ let requestSnapshot: ReturnType<typeof vi.fn<RequestPaneSnapshot>>;
 let invalidateSnapshot: ReturnType<typeof vi.fn<(paneId: string) => void>>;
 let snapshots: {
   hasFreshPicture: (paneId: string) => boolean;
-  pictureMiss: (paneId: string) => string | null;
   geometryVersion: number;
   timelinePicture: () => { url: string; width: number; height: number } | null;
   request: RequestPaneSnapshot;
@@ -341,7 +340,6 @@ beforeEach(() => {
   liveProducer = false;
   snapshots = {
     hasFreshPicture: () => true,
-    pictureMiss: () => null,
     geometryVersion: 0,
     timelinePicture: () => null,
     request: requestSnapshot,
@@ -1546,37 +1544,50 @@ const mountInspectedChat = async () => {
   snapshots.timelinePicture = () => ({ url: "blob:current", width: 800, height: 600 });
   live();
   await render(true);
-  const inspect = registration.mock.calls.at(-1)![1];
-  expect(inspect()).toBeNull();
-  return inspect;
+  const blocks = () => registration.mock.calls.at(-1)![1].blocksRemoval();
+  expect(blocks()).toBe(false);
+  return blocks;
 };
-const dispatchSignal = (target: Element, signal: string) =>
+const dispatchSignal = (target: Element, signal: string, key = "a") =>
   target.dispatchEvent(
     signal === "keydown"
-      ? new KeyboardEvent("keydown", { key: "a", bubbles: true })
+      ? new KeyboardEvent("keydown", { key, bubbles: true })
       : new Event(signal, { bubbles: true }),
   );
 
-it.each(["input", "pointerdown", "click", "keydown", "drop", "paste"])(
+it.each(["input", "pointerdown", "click", "keydown", "drop", "paste", "expansion"])(
   "keeps a chat on its picture after a composer %s, whose draft survives removal",
   async (signal) => {
-    const inspect = await mountInspectedChat();
+    const blocks = await mountInspectedChat();
     await act(() => {
-      dispatchSignal(container.querySelector("textarea")!, signal);
-      expect(inspect()).toBeNull();
+      const editor = container.querySelector("textarea")!;
+      if (signal === "expansion") editor.setAttribute("aria-expanded", "true");
+      else dispatchSignal(editor, signal);
+      expect(blocks()).toBe(false);
     });
   },
 );
 
-it.each(["input", "keydown", "drop", "paste", "expansion"])(
+it.each(["keydown", "drop", "paste", "click"])(
+  "keeps a chat on its picture after a timeline %s that changes no local state",
+  async (signal) => {
+    const blocks = await mountInspectedChat();
+    await act(() => {
+      dispatchSignal(container.querySelector(".messages-timeline-scroll")!, signal, "PageDown");
+      expect(blocks()).toBe(false);
+    });
+  },
+);
+
+it.each(["input", "expansion"])(
   "keeps local %s state outside the composer live, including queued descendant mutations",
   async (signal) => {
-    const inspect = await mountInspectedChat();
+    const blocks = await mountInspectedChat();
     await act(() => {
       const timeline = container.querySelector(".messages-timeline-scroll")!;
       if (signal === "expansion") timeline.setAttribute("aria-expanded", "true");
       else dispatchSignal(timeline, signal);
-      expect(inspect()).toBe("local-ui-interaction");
+      expect(blocks()).toBe(true);
     });
   },
 );
@@ -1595,9 +1606,10 @@ it.each(["approval", "question", "running turn"])(
     snapshots.timelinePicture = () => ({ url: "blob:latest", width: 800, height: 600 });
     live();
     await render(true);
-    expect(registration.mock.calls.at(-1)![1]()).toBeNull();
+    const chat = registration.mock.calls.at(-1)![1];
+    expect(chat.blocksRemoval()).toBe(false);
     snapshots.timelinePicture = () => null;
-    expect(registration.mock.calls.at(-1)![1]()).toMatch(/^no-picture:/);
+    expect(chat.blocksRemoval()).toBe(true);
   },
 );
 

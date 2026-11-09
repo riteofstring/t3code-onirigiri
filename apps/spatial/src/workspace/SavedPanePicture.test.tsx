@@ -105,12 +105,12 @@ it("shows the summary, not an empty image frame, until the first picture decodes
   expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
 });
 
-it("keeps the decoded picture and its size while a replacement loads or fails", async () => {
+it("keeps the decoded picture while a replacement loads, and through a failed same-size refresh", async () => {
   await replace();
   await act(() => pending[0]!.resolve());
   const previous = { source: "blob:1", width: "520px", height: "923px" };
   expect(shown()).toEqual(previous);
-  await replace(null, { width: 720, height: 961 });
+  await replace(null, captureSize, new Blob(["refresh"]));
   expect(shown()).toEqual(previous);
   await act(() => pending[1]!.reject());
   expect(shown()).toEqual(previous);
@@ -134,12 +134,19 @@ it("keeps both the visible cover and size while a prepared replacement decodes a
   await replace("blob:prepared", { width: 720, height: 961 });
   const previous = { source: "blob:previous", width: "520px", height: "923px" };
   expect(shown()).toEqual(previous);
-  await act(() => pending[0]!.reject());
-  expect(shown()).toEqual(previous);
   await replace("blob:replacement", { width: 480, height: 640 });
   expect(shown()).toEqual(previous);
   await act(() => pending[1]!.resolve());
   expect(shown()).toEqual({ source: "blob:replacement", width: "480px", height: "640px" });
+});
+
+it("shows the summary instead of an old size when a resized replacement fails", async () => {
+  await replace("blob:previous");
+  await replace("blob:resized", { width: 720, height: 961 });
+  expect(shown().source).toBe("blob:previous");
+  await act(() => pending[0]!.reject());
+  expect(shown().source).toBeNull();
+  expect(container.textContent).toBe("Thread");
 });
 
 it("ignores a successful decode after unmount and leaves URL release to its owner", async () => {

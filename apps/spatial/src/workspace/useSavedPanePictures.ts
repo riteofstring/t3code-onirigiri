@@ -28,6 +28,7 @@ import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { threadPaneId } from "./useWorkspacePanes";
+import { readItem, writeItem } from "./useWorkspacePreferences";
 
 interface PaneContentRevision {
   updatedAt: string;
@@ -68,11 +69,15 @@ function paneHasCommittedContent(
   );
 }
 
+export interface PictureMotion {
+  readonly holdsLive: (paneId: string) => boolean | undefined;
+  readonly moving: boolean;
+}
+
 export type RequestPaneSnapshot = (paneId: string, element: HTMLElement) => number;
 
 interface PaneSnapshots {
   hasFreshPicture: (paneId: string) => boolean;
-  pictureMiss: (paneId: string) => string | null;
   geometryVersion: number;
   timelinePicture: (paneId: string) => { url: string; width: number; height: number } | null;
   request: RequestPaneSnapshot;
@@ -86,9 +91,8 @@ const OTHER_PANES_KEY = "onirigiri.otherPanes";
 const otherPanePictures = (() => {
   if (typeof window === "undefined") return false;
   const requested = new URLSearchParams(window.location.search).get("otherPanes");
-  if (requested === "pictures" || requested === "live")
-    window.localStorage.setItem(OTHER_PANES_KEY, requested);
-  return window.localStorage.getItem(OTHER_PANES_KEY) === "pictures";
+  if (requested === "pictures" || requested === "live") writeItem(OTHER_PANES_KEY, requested);
+  return readItem(OTHER_PANES_KEY) === "pictures";
 })();
 export function usePanePictureTheme(): string {
   const { theme, resolvedTheme, themeHalves } = useTheme();
@@ -165,7 +169,7 @@ export function useSavedPanePictures(
   onSnapshotFailure: (paneId: string, startedAt: number) => void,
   pictureMount: (paneId: string) => PictureMount = () => "ordinary",
   enabled = true,
-  motionDecision?: (paneId: string) => string | null | undefined,
+  motion?: PictureMotion,
 ): {
   getPanePresentation: PanePresentationResolver;
   onLayoutChange: () => void;
@@ -183,6 +187,8 @@ export function useSavedPanePictures(
   stageViewport: { width: number; height: number; compact: boolean };
 } {
   "use no memo";
+  const holdsLiveInMotion = motion?.holdsLive;
+  const cameraMoving = motion?.moving ?? false;
   const threads = useThreadShells();
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
@@ -457,28 +463,20 @@ export function useSavedPanePictures(
     runningPanesRef.current = runningPanes;
   }, [contentRevisions, runningPanes]);
 
-  const pictureMiss = useCallback(
-    (paneId: string): string | null => {
-      if (liveProducersRef.current.get(paneId) === "live") return "live-producer";
-      const key = recordKey(paneId);
-      if (key === null) return "no-key";
-      const picture = saved?.get(key);
-      if (!picture) return saved ? "not-saved" : "not-loaded";
-      const content = contentRevisions.get(paneId);
-      if (!content) return "no-content";
-      if (picture.revision !== pictureRevision(contentKey(content))) return "content-changed";
-      if (!pictureMatchesVisualRevision(paneId, picture.image)) return "visual-changed";
-      return null;
-    },
-    [contentRevisions, pictureMatchesVisualRevision, recordKey, saved],
-  );
   const freshPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
-      if (pictureMiss(paneId) !== null) return null;
+      if (liveProducersRef.current.get(paneId) === "live") return null;
       const key = recordKey(paneId);
-      return (key !== null && saved?.get(key)) || null;
+      const picture = key === null ? undefined : saved?.get(key);
+      const content = contentRevisions.get(paneId);
+      return picture &&
+        content &&
+        picture.revision === pictureRevision(contentKey(content)) &&
+        pictureMatchesVisualRevision(paneId, picture.image)
+        ? picture
+        : null;
     },
-    [pictureMiss, recordKey, saved],
+    [contentRevisions, pictureMatchesVisualRevision, recordKey, saved],
   );
 
   const [pictureUrls] = useState(createPanePictureUrls);
@@ -528,12 +526,9 @@ export function useSavedPanePictures(
   ]);
   useEffect(() => () => pictureUrls.dispose(), [pictureUrls]);
   const hasFreshPicture = useCallback(
-    (paneId: string) => {
-      const picture = freshPictureFor(paneId);
-      return picture !== null && pictureMatchesVisualRevision(paneId, picture.image);
-    },
+    (paneId: string) => freshPictureFor(paneId) !== null,
     // oxlint-disable-next-line react/memo-dependencies -- Observer refs need to publish geometry changes to the lifecycle.
-    [freshPictureFor, geometryVersion, pictureMatchesVisualRevision],
+    [freshPictureFor, geometryVersion],
   );
   const getPanePresentation = useCallback<PanePresentationResolver>(
     (pane, { phase, visible, maximized, capabilities }) => {
@@ -546,18 +541,19 @@ export function useSavedPanePictures(
           : "dom";
       if (
         visible &&
-        (phase === "rest" || (phase === "resize" && motionDecision?.(pane.paneId) === undefined))
+        (phase === "rest" || (phase === "resize" && holdsLiveInMotion?.(pane.paneId) === undefined))
       )
         return "dom";
       if (phase === "motion" || phase === "resize") {
-        const decision = motionDecision?.(pane.paneId);
-        if (decision !== undefined) return decision === null ? { kind: "placeholder" } : "dom";
+        const holds = holdsLiveInMotion?.(pane.paneId);
+        if (holds !== undefined) return holds ? "dom" : { kind: "placeholder" };
         flushPaneVisualChanges(pane.paneId);
         if (pictureMount(pane.paneId) !== null && !displayedPictureFor(pane.paneId)) return "dom";
       }
       return { kind: "placeholder" };
     },
-    [enabled, displayedPictureFor, pictureMount, motionDecision],
+    // oxlint-disable-next-line react/memo-dependencies -- Motion changes which chats hold their DOM, so the engine must resolve presentations again.
+    [enabled, displayedPictureFor, pictureMount, holdsLiveInMotion, cameraMoving],
   );
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {
@@ -694,7 +690,6 @@ export function useSavedPanePictures(
     () => ({
       geometryVersion,
       hasFreshPicture,
-      pictureMiss,
       timelinePicture: (paneId) => {
         const picture = displayedPictureFor(paneId);
         const url =
@@ -732,7 +727,6 @@ export function useSavedPanePictures(
       enabled,
       geometryVersion,
       hasFreshPicture,
-      pictureMiss,
       pictureFor,
       displayedPictureFor,
       pictureUrls,

@@ -8,7 +8,6 @@ const QUIET_MS = 500;
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 const STORED_PICTURES_WAIT_MS = 2000;
-const HISTORY_LIMIT = 200;
 
 export interface PanePosition {
   readonly paneId: string;
@@ -17,6 +16,11 @@ export interface PanePosition {
 }
 
 export type PictureMount = "background" | "ordinary" | null;
+
+export interface ChatRemoval {
+  readonly blocksRemoval: () => boolean;
+  readonly prepareRemoval: () => void;
+}
 
 export function createPaneLifecycleStore(
   initialPanes: readonly PanePosition[],
@@ -34,23 +38,10 @@ export function createPaneLifecycleStore(
   const motionListeners = new Set<() => void>();
   const pointers = new Set<number>();
   const retryAt = new Map<string, number>();
-  const chats = new Map<string, () => string | null>();
-  const motionDecisions = new Map<string, string | null>();
+  const chats = new Map<string, ChatRemoval>();
+  const motionHolds = new Map<string, boolean>();
   const deferred = new Set<string>();
   const pendingComposers = new Set<string>();
-  const arrivals: {
-    paneId: string;
-    inputAt: number;
-    composerTypeableAt?: number;
-    timelineInteractiveAt?: number;
-  }[] = [];
-  const moves: {
-    inputAt: number;
-    removed: string[];
-    latched: { paneId: string; reason: string }[];
-  }[] = [];
-  let inputAt = performance.now();
-  let arrivalInputAt = inputAt;
   let arrivalFrame: number | null = null;
   let removalFrame: number | null = null;
   let moving = false;
@@ -76,11 +67,14 @@ export function createPaneLifecycleStore(
       if (chats.has(paneId) && retained().has(paneId)) {
         deferred.add(paneId);
         pendingComposers.add(paneId);
-        arrivals.push({ paneId, inputAt: arrivalInputAt });
-        if (arrivals.length > HISTORY_LIMIT) arrivals.shift();
       } else deferred.delete(paneId);
       startTransition(() => notify(paneId));
     }
+  };
+  const releasable = (paneId: string) => !chats.get(paneId)?.blocksRemoval();
+  const evict = (paneId: string) => {
+    chats.get(paneId)?.prepareRemoval();
+    unmount(paneId);
   };
   const unmount = (paneId: string) => {
     loaded.delete(paneId);
@@ -113,8 +107,7 @@ export function createPaneLifecycleStore(
     if (performance.now() - quietSince < QUIET_MS) return;
     for (const id of [...mounted].sort((a, b) => distance(b) - distance(a))) {
       if (mounted.size <= Math.max(maxMounted, keep.size)) break;
-      if (!keep.has(id) && id !== capturing?.paneId && hasPicture(id) && !chats.get(id)?.())
-        unmount(id);
+      if (!keep.has(id) && id !== capturing?.paneId && hasPicture(id) && releasable(id)) evict(id);
     }
   };
   const release = (retry: boolean) => {
@@ -209,9 +202,9 @@ export function createPaneLifecycleStore(
         const farthest = [...mounted]
           .filter((id) => !keep.has(id) && hasPicture(id) && distance(id) > distance(paneId))
           .sort((a, b) => distance(b) - distance(a))
-          .find((id) => !chats.get(id)?.());
+          .find(releasable);
         if (!farthest) return;
-        unmount(farthest);
+        evict(farthest);
       }
       const since = performance.now();
       capturing = { paneId, since };
@@ -226,8 +219,7 @@ export function createPaneLifecycleStore(
     else if (event.type === "blur") pointers.clear();
     else if (["pointerup", "pointercancel", "lostpointercapture"].includes(event.type))
       pointers.delete((event as PointerEvent).pointerId);
-    inputAt = performance.now();
-    quietSince = inputAt;
+    quietSince = performance.now();
     cancel();
     release(true);
     for (const listener of motionListeners) listener();
@@ -247,8 +239,8 @@ export function createPaneLifecycleStore(
 
   reconcile();
   const store = {
-    registerChat: (paneId: string, prepare: () => string | null) => {
-      chats.set(paneId, prepare);
+    registerChat: (paneId: string, chat: ChatRemoval) => {
+      chats.set(paneId, chat);
       return () => {
         chats.delete(paneId);
         deferred.delete(paneId);
@@ -256,24 +248,12 @@ export function createPaneLifecycleStore(
         schedule();
       };
     },
-    motionDecision: (paneId: string) => motionDecisions.get(paneId),
+    holdsLiveInMotion: (paneId: string) => motionHolds.get(paneId),
     timelineDeferred: (paneId: string) => deferred.has(paneId),
     composerReady: (paneId: string) => {
       if (!pendingComposers.delete(paneId)) return;
       schedule();
     },
-    recordReady: (paneId: string, kind: "composerTypeableAt" | "timelineInteractiveAt") => {
-      const arrival = arrivals.findLast((entry) => entry.paneId === paneId);
-      if (arrival && arrival[kind] === undefined) arrival[kind] = performance.now();
-    },
-    measurements: () => ({
-      arrivals: arrivals.map((entry) => ({ ...entry })),
-      moves: moves.map((entry) => ({
-        ...entry,
-        removed: [...entry.removed],
-        latched: entry.latched.map((item) => ({ ...item })),
-      })),
-    }),
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving || pointers.size > 0,
     isCameraMoving: () => moving,
@@ -307,35 +287,25 @@ export function createPaneLifecycleStore(
       moving = next;
       quietSince = performance.now();
       if (moving) {
-        arrivalInputAt = inputAt;
         if (arrivalFrame !== null) cancelAnimationFrame(arrivalFrame);
         arrivalFrame = null;
-        motionDecisions.clear();
-        const move = {
-          inputAt,
-          removed: [] as string[],
-          latched: [] as { paneId: string; reason: string }[],
-        };
+        motionHolds.clear();
         const removable: string[] = [];
         for (const id of mounted) {
-          const prepare = chats.get(id);
-          if (!prepare) continue;
-          const reason = prepare();
-          motionDecisions.set(id, reason);
-          if (reason === null) removable.push(id);
-          else move.latched.push({ paneId: id, reason });
+          const chat = chats.get(id);
+          if (!chat) continue;
+          const holds = chat.blocksRemoval();
+          motionHolds.set(id, holds);
+          if (!holds) {
+            chat.prepareRemoval();
+            removable.push(id);
+          }
         }
-        moves.push(move);
-        if (moves.length > HISTORY_LIMIT) moves.shift();
         if (removable.length > 0)
           removalFrame = requestAnimationFrame(() => {
             removalFrame = requestAnimationFrame(() => {
               removalFrame = null;
-              if (moving)
-                for (const id of removable) {
-                  unmount(id);
-                  move.removed.push(id);
-                }
+              if (moving) for (const id of removable) unmount(id);
             });
           });
         cancel();
@@ -343,11 +313,7 @@ export function createPaneLifecycleStore(
       } else {
         if (removalFrame !== null) cancelAnimationFrame(removalFrame);
         removalFrame = null;
-        const move = moves.at(-1);
-        for (const [paneId, reason] of motionDecisions)
-          if (reason === null && mounted.has(paneId))
-            move?.latched.push({ paneId, reason: "motion-ended-before-removal" });
-        motionDecisions.clear();
+        motionHolds.clear();
         schedule();
       }
       for (const listener of motionListeners) listener();
@@ -379,7 +345,7 @@ export function createPaneLifecycleStore(
       for (const id of mounted) if (!panes.has(id)) unmount(id);
       for (const ids of [visible, loaded, deferred, pendingComposers])
         for (const id of ids) if (!panes.has(id)) ids.delete(id);
-      for (const entries of [retryAt, motionDecisions])
+      for (const entries of [retryAt, motionHolds])
         for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);
       schedule();
     },

@@ -384,9 +384,9 @@ function SpatialWorkspaceView({
   }, [interacted]);
   const [hasMoved, setHasMoved] = useState(false);
   if (cameraMoving && interacted && !hasMoved) setHasMoved(true);
-  const motionDecision = useCallback(
-    (id: string) => lifecycle?.motionDecision(id),
-    [lifecycle, cameraMoving],
+  const holdsLiveInMotion = useCallback(
+    (id: string) => lifecycle?.holdsLiveInMotion(id),
+    [lifecycle],
   );
   const {
     getPanePresentation,
@@ -401,7 +401,10 @@ function SpatialWorkspaceView({
     setCaptureActivity,
     stageRef,
     stageViewport,
-  } = useSavedPanePictures(getScene, onSnapshotFailure, pictureMount, !alwaysLive, motionDecision);
+  } = useSavedPanePictures(getScene, onSnapshotFailure, pictureMount, !alwaysLive, {
+    holdsLive: holdsLiveInMotion,
+    moving: cameraMoving,
+  });
   const {
     requested: fullScreenRequested,
     fullScreen,
@@ -1116,10 +1119,10 @@ function SpatialWorkspaceView({
     setDismissedPaneIds((current) => withoutPane(current, paneId));
   }, []);
   useEffect(() => {
-    if (!active || !initialPanes || !lifecycle || !workspaceRef.current) return;
+    if (!active || !initialPanes || (!alwaysLive && !lifecycle) || !workspaceRef.current) return;
     bindWorkspace({ focusPane: focusSurfacePane, isPaneClosing });
     return () => bindWorkspace(null);
-  }, [active, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
+  }, [active, alwaysLive, bindWorkspace, focusSurfacePane, initialPanes, isPaneClosing, lifecycle]);
 
   const renderPane = useCallback(
     (pane: WorkspacePane, state: OnirigiriPaneRenderState) => {

@@ -17,7 +17,7 @@ export const DEFAULT_COLUMN_WIDTH = 840;
 export const MIN_ROW_HEIGHT = 300;
 export const DEFAULT_MAX_ROW_HEIGHT = 1200;
 
-function readItem(key: string): string | null {
+export function readItem(key: string): string | null {
   try {
     return window.localStorage.getItem(key);
   } catch {
@@ -25,7 +25,7 @@ function readItem(key: string): string | null {
   }
 }
 
-function writeItem(key: string, value: string) {
+export function writeItem(key: string, value: string) {
   try {
     window.localStorage.setItem(key, value);
   } catch {}

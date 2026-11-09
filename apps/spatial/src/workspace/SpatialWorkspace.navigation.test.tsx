@@ -333,7 +333,9 @@ it("releases visibility when its React owner leaves before layout membership cha
 async function exerciseLifecycle(store: PaneLifecycleStore) {
   const origin = "thread:e:origin";
   const destination = "thread:e:right";
-  const unregister = [origin, destination].map((paneId) => store.registerChat(paneId, () => null));
+  const unregister = [origin, destination].map((paneId) =>
+    store.registerChat(paneId, { blocksRemoval: () => false, prepareRemoval: () => {} }),
+  );
   const navigation = bindWorkspace.mock.calls.at(-1)![0]!;
   try {
     await act(() => {
@@ -524,17 +526,21 @@ it("leaves full screen panes when committing a shorter row height", async () => 
   expect(paneHeights()).toEqual([maximum, maximum, maximum]);
 });
 
-it("delivers global surface focus only after the initial workspace and route are ready", async () => {
-  fixture.loaded = false;
-  bindWorkspace.mockImplementation((target) => target?.focusPane("thread:e:right"));
-  await render();
-  expect(bindWorkspace).not.toHaveBeenCalled();
-  fixture.loaded = true;
-  await render();
-  await act(() => vi.advanceTimersByTime(120));
-  expect(status()).toContain("right");
-  expect(status()).not.toContain("origin");
-});
+it.each(["pictures", "all-live"])(
+  "delivers global surface focus only after the initial workspace and route are ready in %s builds",
+  async (mode) => {
+    if (mode === "all-live") vi.stubEnv("MODE", "all-live");
+    fixture.loaded = false;
+    bindWorkspace.mockImplementation((target) => target?.focusPane("thread:e:right"));
+    await render();
+    expect(bindWorkspace).not.toHaveBeenCalled();
+    fixture.loaded = true;
+    await render();
+    await act(() => vi.advanceTimersByTime(120));
+    expect(status()).toContain("right");
+    expect(status()).not.toContain("origin");
+  },
+);
 
 it("mounts a distant pane on arrival from overview without retaining it offscreen", async () => {
   fixture.panes = [pane("origin", 0, 0), pane("distant", 0, 20)];

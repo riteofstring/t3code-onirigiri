@@ -52,7 +52,7 @@ import {
 } from "@t3tools/web/src/panelAnimations";
 
 import { usePaneActivity } from "./paneActivity";
-import { PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
+import { type ChatRemoval, PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
@@ -349,32 +349,39 @@ const PaneBody = memo(function PaneBody({
   const snapshots = use(PaneSnapshotContext);
   const maximizedRef = useRef(maximized);
   maximizedRef.current = maximized;
-  const prepareRemoval = useRef<() => string | null>(() => "not-ready");
-  prepareRemoval.current = () => {
-    flushPaneVisualChanges(paneId);
-    if (localStateAtRisk.current || arrivalText.current) return "local-ui-interaction";
-    if (maximizedRef.current) return "full-screen";
-    if (!snapshots?.timelinePicture(paneId))
-      return mounted ? `no-picture:${snapshots?.pictureMiss(paneId)}` : "not-ready";
-    if (!preparing) saveScroll.current?.();
-    const element = contentRef.current;
-    if (element?.contains(document.activeElement))
-      element.closest<HTMLElement>('[data-onirigiri-slot="pane"]')?.focus({ preventScroll: true });
-    return null;
+  const removal = useRef<ChatRemoval>({ blocksRemoval: () => true, prepareRemoval: () => {} });
+  removal.current = {
+    blocksRemoval: () => {
+      flushPaneVisualChanges(paneId);
+      return (
+        !mounted ||
+        localStateAtRisk.current ||
+        arrivalText.current !== "" ||
+        maximizedRef.current ||
+        !snapshots?.timelinePicture(paneId)
+      );
+    },
+    prepareRemoval: () => {
+      if (!preparing) saveScroll.current?.();
+      const element = contentRef.current;
+      if (element?.contains(document.activeElement))
+        element
+          .closest<HTMLElement>('[data-onirigiri-slot="pane"]')
+          ?.focus({ preventScroll: true });
+    },
   };
   useLayoutEffect(
-    () => lifecycle?.registerChat?.(paneId, () => prepareRemoval.current()),
+    () =>
+      lifecycle?.registerChat?.(paneId, {
+        blocksRemoval: () => removal.current.blocksRemoval(),
+        prepareRemoval: () => removal.current.prepareRemoval(),
+      }),
     [lifecycle, paneId],
   );
   useLayoutEffect(() => {
     if (!mounted || (!composerReady && preparing)) return;
     lifecycle?.composerReady?.(paneId);
-    if (!interactive) return;
-    const editor = contentRef.current?.querySelector<HTMLElement>(COMPOSER_EDITOR);
-    if (editor && (!editor.isContentEditable || editor.closest("[inert]"))) return;
-    if (editor) lifecycle?.recordReady?.(paneId, "composerTypeableAt");
-    if (!preparing) lifecycle?.recordReady?.(paneId, "timelineInteractiveAt");
-  }, [composerReady, interactive, lifecycle, mounted, paneId, preparing]);
+  }, [composerReady, lifecycle, mounted, paneId, preparing]);
   const [pictureLeaving, setPictureLeaving] = useState(false);
   const wasPreparing = useRef(preparing);
   useLayoutEffect(() => {
@@ -599,6 +606,7 @@ const PaneBody = memo(function PaneBody({
             ["aria-expanded", "data-user-message-collapsed", "open"].includes(
               record.attributeName ?? "",
             ) &&
+            (record.target as Element).closest(".messages-timeline-scroll") !== null &&
             record.oldValue !== (record.target as Element).getAttribute(record.attributeName!),
         )
       )
@@ -655,21 +663,8 @@ const PaneBody = memo(function PaneBody({
           <div
             ref={contentRef}
             onInputCapture={noteLocalEdit}
-            onDropCapture={noteLocalEdit}
-            onPasteCapture={noteLocalEdit}
-            onKeyDownCapture={(event) => {
-              if (
-                !event.altKey &&
-                !["Escape", "Tab", "Shift", "Control", "Meta", "Alt"].includes(event.key)
-              )
-                noteLocalEdit(event);
-              leaveComposerOnEscape(event);
-            }}
+            onKeyDownCapture={leaveComposerOnEscape}
             className="spatial-thread-pane h-full w-full"
-            data-spatial-thread={thread.threadId}
-            data-spatial-composer-ready={String(composerReady)}
-            data-spatial-timeline-ready={String(mounted && !preparing)}
-            data-spatial-active={String(active)}
             data-spatial-preparing={preparing ? "" : undefined}
             data-spatial-capturing={
               mounted && lifecycle?.pictureMount(paneId) === "background" ? "" : undefined

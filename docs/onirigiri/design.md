@@ -3,7 +3,9 @@
 `apps/spatial` runs T3's own router and app shell and replaces only the chat area with an Onirigiri
 workspace of thread panes and the tool panes users add beside them. The standalone sibling repository
 `onirigiri-t3-adapter` owns `@riteofstring/onirigiri-t3` and its pure row reconciliation; its README
-states those rules. The spatial package links its unchanged TypeScript source exports directly into
+states those rules. The adapter keeps saved row order; `useWorkspacePanes` then orders rows by the
+sidebar's project order, so the sidebar decides row order and the saved layout decides the panes
+within each row. The spatial package links its unchanged TypeScript source exports directly into
 the application bundle. T3 retains ownership of selectors, persistence, routes and pane lifecycle.
 This page records constraints that span files and are easy to break without noticing.
 
@@ -26,11 +28,9 @@ This page records constraints that span files and are easy to break without noti
 
 ## Routes and covering
 
-- The workspace stays mounted for every chat route. A draft, a thread its draft view still carries,
-  and the pull-requests page cover it (`active` is false); the index shows the workspace, whose focus
-  then sets the route, and T3's landing shows only when there are no threads.
-- A promoted draft stays in T3's draft view until its turn has settled and the draft record is gone
-  (`useCarriedThread`), so its first response streams without remounting the ChatView.
+- The workspace stays mounted for every chat route. Only the pull-requests page, or having no
+  threads, covers it and shows T3's own page instead. Drafts open as draft panes inside the
+  workspace; a sent draft keeps its pane while its first turn streams and is released once hidden.
 - The app route follows the focused pane once the camera has rested (`ROUTE_SETTLE_MS`), so T3's
   global surfaces act on that thread; a tool pane routes to its thread. Any input other than
   workspace navigation follows at once, because the palette or a click may act on the thread.
@@ -114,9 +114,6 @@ This page records constraints that span files and are easy to break without noti
   to exclude layout and paint. Its React subscriptions remain attached; hiding does not suspend
   store updates. This is why the mounted set is capped: every mounted chat re-renders on shell
   updates.
-- `measurements()` keeps the last 200 arrivals (input, composer typeable and timeline interactive
-  times) and moves (chats that kept their DOM and why). Hardware acceptance runs read it to report
-  input readiness and the share of chats live in motion; keep its shape stable.
 
 ## Pictures
 
@@ -128,9 +125,9 @@ the thread shell, which is never stale.
   geometry stays live until one is taken. At rest every visible chat is live again. Tool panes are
   live unless the other-panes setting (below) selects pictures.
 - A chat leaves its DOM during motion unless removal would lose state that lives only in that DOM:
-  opened sections, edits outside the composer, or arrival typing not yet delivered. Composer text,
-  attachments and pending answers live in the composer draft store, so composer edits and clicks do
-  not keep a chat live.
+  sections opened in the timeline, edits outside the composer, or arrival typing not yet delivered. Composer text,
+  attachments and pending answers live in the composer draft store, so composer edits, clicks and
+  keys do not keep a chat live.
 - Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
   (project icon, project and thread title) with no spinner or status. Leaving overview restores
   focus and visibility admission together, so the destination composer still loads first.
@@ -173,13 +170,15 @@ the thread shell, which is never stale.
   ignored because pictures omit draft selection, and releasing the router does not invalidate the
   saved pixels.
 - Live producers (canvas, video, iframes, webviews, custom elements, shadow roots, browser slots)
-  cannot be drawn. While present the pane renders live and its stored picture is deleted; after
+  cannot be drawn. While present the pane renders live and its stored picture is neither shown nor
+  refreshed, though the record is kept; after
   removal it keeps its live view until current static pixels exist.
 - Pictures are taken one at a time while idle and at least 250 ms after the last input. Missing
   pictures go first, then refreshes behind an existing cover, then panes mounted only to be pictured,
   which yield to any other due request. Failures back off from 3 s, doubling up to five minutes.
-  Camera motion and full-screen transitions count as input when they start and when they end, and
-  nothing is taken or prepared during a full-screen transition.
+  Option+arrow navigation keys do not count as input. Nothing is taken while the camera moves or
+  during a full-screen transition, and a capture in progress is abandoned when either starts; once
+  motion ends, due pictures resume without a further quiet wait.
 - A pane is only pictured while it is off screen. Capturing on-screen chats was tried and produced
   one-frame blank panes, so a chat you are looking at gets its picture after it scrolls away.
 - Picture URLs are decoded during idle time. Each selected cover retains its decoder so a ready URL

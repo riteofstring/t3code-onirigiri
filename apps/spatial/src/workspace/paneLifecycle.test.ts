@@ -5,6 +5,7 @@ const stores: PaneLifecycleStore[] = [];
 const panes = Array.from({ length: 40 }, (_, slot) => ({ paneId: `p${slot}`, plane: 0, slot }));
 const mounted = (store: PaneLifecycleStore) =>
   panes.filter((p) => store.isMounted(p.paneId)).map((p) => p.paneId);
+const releasable = () => ({ blocksRemoval: () => false, prepareRemoval: vi.fn() });
 const make = () => {
   const store = createPaneLifecycleStore(panes, "p0");
   stores.push(store);
@@ -49,7 +50,7 @@ it.each(["batch", "successive"])(
     store.setPictures(() => true);
     const removed = panes.slice(1, 15);
     for (const pane of removed) store.setVisible(pane.paneId, true);
-    store.registerChat("p1", () => null);
+    store.registerChat("p1", releasable());
     let current = panes;
     if (removal === "batch") {
       current = panes.filter((pane) => !removed.includes(pane));
@@ -166,8 +167,8 @@ it("removes eligible chat DOM after a covered frame, then admits focused and pee
   store.setVisible("p0", true);
   store.setVisible("p1", true);
   store.setPictures(() => true);
-  store.registerChat("p0", () => null);
-  store.registerChat("p1", () => null);
+  store.registerChat("p0", releasable());
+  store.registerChat("p1", releasable());
   store.setMoving(true);
   expect(store.isMounted("p0")).toBe(true);
   vi.advanceTimersByTime(16);
@@ -189,36 +190,35 @@ it("removes eligible chat DOM after a covered frame, then admits focused and pee
   expect(store.timelineDeferred("p1")).toBe(true);
   vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p1")).toBe(false);
-  expect(store.measurements().moves[0]).toMatchObject({ removed: ["p0", "p1"], latched: [] });
 });
 
-it.each(["local-ui-interaction", "full-screen", "not-ready", "no-picture:not-saved"])(
-  "latches %s for the entire move",
-  (reason) => {
-    const store = make();
-    store.setPictures(() => true);
-    let risk: string | null = reason;
-    const inspect = vi.fn(() => risk);
-    store.registerChat("p0", inspect);
-    store.setMoving(true);
-    risk = null;
-    store.setPictures(() => true);
-    vi.advanceTimersByTime(1000);
-    expect(store.isMounted("p0")).toBe(true);
-    expect(inspect).toHaveBeenCalledOnce();
-    expect(store.motionDecision("p0")).toBe(reason);
-    expect(store.measurements().moves[0]?.latched).toEqual([{ paneId: "p0", reason }]);
-    store.setMoving(false);
-    store.setMoving(true);
-    vi.advanceTimersByTime(32);
-    expect(store.isMounted("p0")).toBe(false);
-  },
-);
+it("holds a blocked chat live for the entire move and prepares only removable chats", () => {
+  const store = make();
+  store.setPictures(() => true);
+  let blocked = true;
+  const held = { blocksRemoval: vi.fn(() => blocked), prepareRemoval: vi.fn() };
+  store.registerChat("p0", held);
+  store.setMoving(true);
+  blocked = false;
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(1000);
+  expect(store.isMounted("p0")).toBe(true);
+  expect(held.blocksRemoval).toHaveBeenCalledOnce();
+  expect(held.prepareRemoval).not.toHaveBeenCalled();
+  expect(store.holdsLiveInMotion("p0")).toBe(true);
+  store.setMoving(false);
+  expect(store.holdsLiveInMotion("p0")).toBeUndefined();
+  store.setMoving(true);
+  expect(store.holdsLiveInMotion("p0")).toBe(false);
+  expect(held.prepareRemoval).toHaveBeenCalledOnce();
+  vi.advanceTimersByTime(32);
+  expect(store.isMounted("p0")).toBe(false);
+});
 
 it("cancels removal on a short reversal and releases no timeline during a second move", () => {
   const store = make();
   store.setVisible("p0", true);
-  store.registerChat("p0", () => null);
+  store.registerChat("p0", releasable());
   store.setMoving(true);
   vi.advanceTimersByTime(16);
   store.setMoving(false);
@@ -240,7 +240,7 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   store.setFocus("p0");
   store.setVisible("p0", true);
   store.setVisible("p1", true);
-  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, () => null);
+  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, releasable());
   store.setPictures(() => true);
   store.setBackgroundPictures(true);
   store.setMoving(true);
@@ -259,8 +259,8 @@ it("keeps background picture preparation behind the visible arrival and mounts i
 
 it("stages a cold visible chat behind the focused composer", () => {
   const store = make();
-  store.registerChat("p0", () => null);
-  store.registerChat("p1", () => null);
+  store.registerChat("p0", releasable());
+  store.registerChat("p1", releasable());
   store.setMoving(true);
   store.setVisible("p1", true);
   vi.advanceTimersByTime(32);
@@ -282,7 +282,7 @@ it("stages a cold visible chat behind the focused composer", () => {
 it("does not wait for a pending composer that leaves the destination", () => {
   const store = make();
   for (const id of ["p0", "p1"]) {
-    store.registerChat(id, () => null);
+    store.registerChat(id, releasable());
     store.setVisible(id, true);
   }
   store.setMoving(true);
@@ -309,7 +309,7 @@ it("mounts only visible chats without a current picture while overview has no fo
 
 it("admits no chat in overview and restores composer-first admission when it ends", () => {
   const store = make();
-  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, () => null);
+  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, releasable());
   store.setOverview(true, null);
   store.setMoving(true);
   for (const id of ["p1", "p2"]) store.setVisible(id, true);
