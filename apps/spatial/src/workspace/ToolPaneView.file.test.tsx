@@ -52,8 +52,7 @@ vi.mock("@t3tools/web/src/components/DiffWorkerPoolProvider", () => ({
   DiffWorkerPoolProvider: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@pierre/diffs/react", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("@pierre/diffs/react")>();
+  const original = await importOriginal<typeof import("@pierre/diffs/react")>();
   return {
     ...original,
     EditProvider: (props: EditProviderProps<unknown, unknown> & { children: ReactNode }) => {

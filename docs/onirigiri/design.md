@@ -9,7 +9,7 @@ This page records constraints that span files and are easy to break without noti
 
 ## Build
 
-- The sibling adapter is validated at commit `a529cce47d07ebfa1c1c82e0aecb133539c9db9e`.
+- The sibling adapter is validated at commit `7df58c6eab2cd4b3302ec2bf29ab2e9c48e8c708`.
   Its `link:` dependency reads that checkout directly; keep it on the recorded revision when
   reproducing this build. T3 worktrees that adopt the link share the same sibling checkout.
   Adapter tests and Code Polishy checks belong there; workspace integration tests remain here.
@@ -97,31 +97,36 @@ This page records constraints that span files and are easy to break without noti
 
 `paneLifecycle.ts` decides which thread panes mount a live ChatView; mounting is the expensive step.
 
-- Loaded trees remain mounted across focus and visibility changes. The prior 32-tree retention cap
-  bounds the ordinary mounted set; eviction is least recently visible or focused, protects the whole
-  visible set and dirty panes without a current picture, and runs only after the 500 ms quiet tail.
-  This count bounds retained trees, not measured per-tree heap usage. The retained-peer rig measures
-  heap growth and store-driven work before this experiment can be treated as a memory guarantee.
-- Motion admits no new trees and releases none. Retained destinations reveal their existing DOM at
-  rest. Cold destinations still pay stock ChatView admission cost and remain subject to the same
-  acceptance limits.
-- Spare slots fill nearest-first, one mount per browser idle opportunity after quiet. A prepared
-  picture does not exclude its unloaded tree from this fill. Preparation waits for the admitted
-  content and its picture before filling another slot; input cancels pending speculative work.
+- The focused pane and every visible pane are retained; in full screen the four adjacent panes are
+  retained too. At most ten trees stay mounted. After a 500 ms quiet tail, the trees
+  farthest from the focused pane are evicted first, and only when they have a current picture and
+  no state that removal would lose.
+- When the camera starts moving, every mounted chat is asked whether it can leave its DOM. Chats
+  with a picture and nothing to lose are removed after two frames, so the first frame of motion is
+  already covered; the others keep their DOM for the whole move. Motion admits no new trees.
+- At rest the focused chat mounts first. Its composer must report ready before visible peers mount,
+  and timelines are revealed one per frame, nearest first, only after every pending composer is
+  ready. Retained chats reveal their existing DOM at once.
+- In overview the lifecycle admits nothing and background preparation stops.
+- When idle, one offscreen chat at a time is mounted only to take its picture, nearest first; it
+  waits behind every arrival and gives up after 10 s, retrying after five minutes.
 - Offscreen retained content uses the engine's hidden runtime and content visibility containment
   to exclude layout and paint. Its React subscriptions remain attached; hiding does not suspend
-  store updates. Current pictures cover motion; a dirty pane without current pixels remains live.
+  store updates. This is why the mounted set is capped: every mounted chat re-renders on shell
+  updates.
+- `measurements()` keeps the last 200 arrivals (input, composer typeable and timeline interactive
+  times) and moves (chats that kept their DOM and why). Hardware acceptance runs read it to report
+  input readiness and the share of chats live in motion; keep its shape stable.
 
 ## Pictures
 
 Unmounted thread panes show a picture of their last synchronized content, or a `ThreadCard` built from
 the thread shell, which is never stale.
 
-- Static threads with a usable picture keep that image during navigation and overview, including
-  when their live view is still mounted. Revealing retained chat DOM during camera movement forces
-  costly style and layout work; the live view returns at rest or during resizing. Threads awaiting
-  their first picture, running turns, live producers and tool panes keep their live presentation.
-  The cover uses the same geometry validation and layout-mode separation as an unmounted pane.
+- During motion a chat with a usable picture shows that picture, even when slightly out of date,
+  including a chat with a running turn or a pending request. A chat with no picture at its current
+  geometry stays live until one is taken. At rest every visible chat is live again. Tool panes are
+  live unless the other-panes setting (below) selects pictures.
 - A chat leaves its DOM during motion unless removal would lose state that lives only in that DOM:
   opened sections, edits outside the composer, or arrival typing not yet delivered. Composer text,
   attachments and pending answers live in the composer draft store, so composer edits and clicks do
@@ -143,9 +148,8 @@ the thread shell, which is never stale.
   every record of its pane. The store is IndexedDB version 2; opening it drops the version 1
   per-pane records.
 - A record's revision holds the thread update and theme (palette, appearance and font settings),
-  includes `chat-chrome-2`, and drawn pictures add `responsive-css-5`; bump them when chat chrome or
-  the drawing changes so old pictures stop matching. Revision 5 invalidates pictures saved under the
-  former raster-size cap even when their display geometry still matches. Geometry starts with
+  includes `chat-chrome-2`, and every picture adds `native-worker-9`; bump them when chat chrome or
+  the capture changes so old pictures stop matching. Geometry starts with
   `stage:` because older records measured the outer workspace, including its toolbar.
 - Pictures come only from panes whose committed detail has caught up with the thread shell
   (`markPaneSynced`), never during a running turn, and only at the current device pixel ratio.
@@ -171,43 +175,35 @@ the thread shell, which is never stale.
 - Live producers (canvas, video, iframes, webviews, custom elements, shadow roots, browser slots)
   cannot be drawn. While present the pane renders live and its stored picture is deleted; after
   removal it keeps its live view until current static pixels exist.
-- Pictures are drawn one at a time while idle, after 400 ms without input for a first picture, 3 s
-  for a refresh behind an existing cover and 3 s for a pane mounted only to be pictured; a drawing
-  of that kind interrupted midway yields to a waiting first picture. Failures back off up to five
-  minutes. Camera motion and full-screen transitions count as input when they start and when they
-  end, and nothing is drawn or prepared during a full-screen transition.
-- Browser drawing rasterizes the cloned pane on the main thread at the device pixel ratio. Its
-  synchronous raster flush can exceed an idle budget and cannot be interrupted once started. The
-  gates limit when new work starts and pause subsequent passive work after observed pressure; they
-  cannot guarantee a stall-free capture. Keep timing the full preparation and export on hardware.
-  Lowering picture density would blur the cover on the display it was drawn for.
+- Pictures are taken one at a time while idle and at least 250 ms after the last input. Missing
+  pictures go first, then refreshes behind an existing cover, then panes mounted only to be pictured,
+  which yield to any other due request. Failures back off from 3 s, doubling up to five minutes.
+  Camera motion and full-screen transitions count as input when they start and when they end, and
+  nothing is taken or prepared during a full-screen transition.
+- A pane is only pictured while it is off screen. Capturing on-screen chats was tried and produced
+  one-frame blank panes, so a chat you are looking at gets its picture after it scrolls away.
 - Picture URLs are decoded during idle time. Each selected cover retains its decoder so a ready URL
   keeps its loaded image resource when the live view temporarily replaces its image element.
   Removing the cover releases both the URL and decoder; decoded pixels remain browser-managed.
   `SavedPanePicture` keeps the current cover until a replacement decodes, including same-mode geometry
   changes, since warmed pixels may have been discarded, and shows the thread card until its first
   picture decodes rather than an empty frame. Only the selected cover per pane retains a warmed URL.
+- The other-panes setting chooses pictures or live for non-chat panes during motion and resizing. It defaults to
+  live, is set with `?otherPanes=pictures` or `?otherPanes=live`, and is remembered under
+  `onirigiri.otherPanes`.
 - Saved pictures are capped at 200 records and 128 MiB; the least recently saved go first. Background
   preparation counts only current-geometry records against its budget, so pictures of older displays
   cannot prevent the current display from acquiring pictures.
 
-### Drawn fallback
+### Capture
 
-`panePictureSnapshot.ts` clones a pane into an SVG `foreignObject` with the page's styles and theme
-variables. Only same-document styles and system fonts reach the image, which is what T3 uses.
+`panePictureSnapshot.ts` hands the live pane element to the engine's `captureOnirigiriPanePicture`,
+which records it, returns the content to its slot as soon as it is recorded, and rasterizes and
+encodes in a worker. Nothing is cloned and draft text is kept.
 
-- It waits two frames so hidden content and its resize observers settle, and lifts
-  `content-visibility` only for the pane being drawn.
-- Media rules are resolved against the live window, not the smaller SVG viewport.
-- Unsent drafts are blanked out.
-- Rem units resolve against the SVG root, so the root copies the document's font size.
-- SVG text can round mixed-font line boxes differently from live text. A sample is drawn with
-  `auto` and `geometricPrecision` text rendering, and the latter is applied only when it alone
-  reproduces the native height and width.
-- Image load and error handlers are both removed after either fires, because either can retain the
-  encoded SVG.
-- The desktop app rasterizes through `desktopBridge.rasterizePanePicture`; a failure falls back to
-  decoding in the page.
+- Panes with a live producer are never captured.
+- The pane's live-content host carries `data-spatial-snapshot` only while it is being recorded.
+- The capture is abandoned if the pane disconnects, its revision changes or the signal aborts.
 
 ## T3 web seams
 

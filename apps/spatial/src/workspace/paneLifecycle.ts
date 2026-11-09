@@ -207,9 +207,10 @@ export function createPaneLifecycleStore(
       if (mounted.size >= maxMounted) {
         const keep = retained();
         const farthest = [...mounted]
-          .filter((id) => !keep.has(id) && hasPicture(id) && !chats.get(id)?.())
-          .sort((a, b) => distance(b) - distance(a))[0];
-        if (!farthest || distance(farthest) <= distance(paneId)) return;
+          .filter((id) => !keep.has(id) && hasPicture(id) && distance(id) > distance(paneId))
+          .sort((a, b) => distance(b) - distance(a))
+          .find((id) => !chats.get(id)?.());
+        if (!farthest) return;
         unmount(farthest);
       }
       const since = performance.now();
@@ -276,7 +277,6 @@ export function createPaneLifecycleStore(
     isMounted: (paneId: string) => mounted.has(paneId),
     isMoving: () => moving || pointers.size > 0,
     isCameraMoving: () => moving,
-    currentPicture: (paneId: string) => hasPicture(paneId),
     contentMounted: (paneId: string) => {
       loaded.add(paneId);
     },

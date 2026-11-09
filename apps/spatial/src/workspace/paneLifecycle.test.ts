@@ -192,32 +192,28 @@ it("removes eligible chat DOM after a covered frame, then admits focused and pee
   expect(store.measurements().moves[0]).toMatchObject({ removed: ["p0", "p1"], latched: [] });
 });
 
-it.each([
-  "pending-approval",
-  "pending-question",
-  "in-progress-turn",
-  "local-ui-interaction",
-  "no-current-picture",
-  "picture-not-decoded",
-])("latches %s for the entire move", (reason) => {
-  const store = make();
-  store.setPictures(() => true);
-  let risk: string | null = reason;
-  const inspect = vi.fn(() => risk);
-  store.registerChat("p0", inspect);
-  store.setMoving(true);
-  risk = null;
-  store.setPictures(() => true);
-  vi.advanceTimersByTime(1000);
-  expect(store.isMounted("p0")).toBe(true);
-  expect(inspect).toHaveBeenCalledOnce();
-  expect(store.motionDecision("p0")).toBe(reason);
-  expect(store.measurements().moves[0]?.latched).toEqual([{ paneId: "p0", reason }]);
-  store.setMoving(false);
-  store.setMoving(true);
-  vi.advanceTimersByTime(32);
-  expect(store.isMounted("p0")).toBe(false);
-});
+it.each(["local-ui-interaction", "full-screen", "not-ready", "no-picture:not-saved"])(
+  "latches %s for the entire move",
+  (reason) => {
+    const store = make();
+    store.setPictures(() => true);
+    let risk: string | null = reason;
+    const inspect = vi.fn(() => risk);
+    store.registerChat("p0", inspect);
+    store.setMoving(true);
+    risk = null;
+    store.setPictures(() => true);
+    vi.advanceTimersByTime(1000);
+    expect(store.isMounted("p0")).toBe(true);
+    expect(inspect).toHaveBeenCalledOnce();
+    expect(store.motionDecision("p0")).toBe(reason);
+    expect(store.measurements().moves[0]?.latched).toEqual([{ paneId: "p0", reason }]);
+    store.setMoving(false);
+    store.setMoving(true);
+    vi.advanceTimersByTime(32);
+    expect(store.isMounted("p0")).toBe(false);
+  },
+);
 
 it("cancels removal on a short reversal and releases no timeline during a second move", () => {
   const store = make();

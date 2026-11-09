@@ -664,9 +664,9 @@ function SpatialWorkspaceView({
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
     const pictures = !alwaysLive && active && fullScreenPhase === null;
-    lifecycle?.setBackgroundPictures(pictures);
+    lifecycle?.setBackgroundPictures(pictures && !overview);
     setCaptureActivity(pictures, lifecycle?.isMoving() ?? false);
-  }, [active, alwaysLive, fullScreenPhase, lifecycle, setCaptureActivity]);
+  }, [active, alwaysLive, fullScreenPhase, lifecycle, overview, setCaptureActivity]);
 
   const requestedRoutesRef = useRef(new Set<string>());
   const pendingNavigationPaneRef = useRef<string | null>(null);

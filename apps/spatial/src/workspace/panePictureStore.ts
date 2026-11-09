@@ -14,7 +14,6 @@ export interface SavedPanePicture {
   readonly image: Blob;
   readonly cssSize: { readonly width: number; readonly height: number };
   readonly savedAt: number;
-  readonly source: "capture" | "snapshot";
 }
 
 export function pictureRecordKey(paneId: string, geometryRevision: string): string {

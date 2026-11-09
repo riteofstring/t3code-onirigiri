@@ -349,8 +349,8 @@ const PaneBody = memo(function PaneBody({
   const snapshots = use(PaneSnapshotContext);
   const maximizedRef = useRef(maximized);
   maximizedRef.current = maximized;
-  const motionState = useRef<() => string | null>(() => "not-ready");
-  motionState.current = () => {
+  const prepareRemoval = useRef<() => string | null>(() => "not-ready");
+  prepareRemoval.current = () => {
     flushPaneVisualChanges(paneId);
     if (localStateAtRisk.current || arrivalText.current) return "local-ui-interaction";
     if (maximizedRef.current) return "full-screen";
@@ -363,7 +363,7 @@ const PaneBody = memo(function PaneBody({
     return null;
   };
   useLayoutEffect(
-    () => lifecycle?.registerChat?.(paneId, () => motionState.current()),
+    () => lifecycle?.registerChat?.(paneId, () => prepareRemoval.current()),
     [lifecycle, paneId],
   );
   useLayoutEffect(() => {

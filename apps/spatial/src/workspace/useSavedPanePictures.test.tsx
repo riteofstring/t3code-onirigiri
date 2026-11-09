@@ -211,11 +211,10 @@ const savedPicture = (picture: Partial<SavedPanePicture> = {}): SavedPanePicture
     recordKey: pictureRecordKey(id, geometryRevision),
     paneId: id,
     geometryRevision,
-    revision: contentRevision,
+    revision: `${contentRevision}|native-worker-9`,
     image: new Blob(["png"]),
     cssSize: { width: 400, height: 580 },
     savedAt: 1,
-    source: "capture",
     ...picture,
   };
 };
@@ -906,7 +905,7 @@ it.each(["motion", "input", "content", "readiness", "disconnect"])(
 
 it("does not show a picture from an old drawing style, refreshes it and keeps the replacement current after a reload", async () => {
   const image = new Blob(["previous picture"]);
-  store.saved.set(paneId, savedPicture({ image, source: "snapshot" }));
+  store.saved.set(paneId, savedPicture({ image, revision: contentRevision }));
   await mount();
   expect(hook.hasFreshPicture(paneId)).toBe(false);
   expect(pictureImageFor(paneId)).toBeNull();
@@ -935,7 +934,6 @@ it("replaces pictures drawn under the old raster cap with full-density pixels", 
   store.saved.set(
     paneId,
     savedPicture({
-      source: "snapshot",
       revision: `${contentRevision}|responsive-css-4`,
       image: new Blob(["capped raster"]),
     }),
@@ -1235,7 +1233,6 @@ it("retries an interrupted refresh with the latest pane element", async () => {
     savedPicture({
       revision: `${contentRevision}|native-worker-9`,
       image: old,
-      source: "snapshot",
     }),
   );
   const layout = pendingPicture();
@@ -1381,7 +1378,10 @@ it("displays a stale stored picture until a fresh capture replaces it", async ()
   const stale = new Blob(["earlier content"]);
   store.saved.set(
     paneId,
-    savedPicture({ revision: `u0|dark|dark|${fontRevision}|chat-chrome-2`, image: stale }),
+    savedPicture({
+      revision: `u0|dark|dark|${fontRevision}|chat-chrome-2|native-worker-9`,
+      image: stale,
+    }),
   );
   await mount();
   await advance(5);
@@ -1488,7 +1488,7 @@ it("excludes a previous picture after local scrolling until committed pixels arr
   markPaneSynced(paneId, content, revision);
   await advance(10_000);
   expect(snapshot).toHaveBeenCalledOnce();
-  expect(store.writes.at(-1)?.source).toBe("snapshot");
+  expect(store.writes.at(-1)?.revision).toMatch(/\|native-worker-9$/);
   expect(pictureImageFor(paneId)).not.toBe(old);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });

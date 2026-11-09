@@ -46,12 +46,12 @@ function contentKey(content: PaneContentRevision): string {
 
 const SNAPSHOT_REVISION = "native-worker-9";
 
-function pictureRevision(revision: string, source: SavedPanePicture["source"]): string {
-  return source === "capture" ? revision : `${revision}|${SNAPSHOT_REVISION}`;
+function pictureRevision(revision: string): string {
+  return `${revision}|${SNAPSHOT_REVISION}`;
 }
 
 function currentImplementation(picture: SavedPanePicture): boolean {
-  return picture.source === "capture" || picture.revision.endsWith(`|${SNAPSHOT_REVISION}`);
+  return picture.revision.endsWith(`|${SNAPSHOT_REVISION}`);
 }
 
 function paneHasCommittedContent(
@@ -466,8 +466,7 @@ export function useSavedPanePictures(
       if (!picture) return saved ? "not-saved" : "not-loaded";
       const content = contentRevisions.get(paneId);
       if (!content) return "no-content";
-      if (picture.revision !== pictureRevision(contentKey(content), picture.source))
-        return "content-changed";
+      if (picture.revision !== pictureRevision(contentKey(content))) return "content-changed";
       if (!pictureMatchesVisualRevision(paneId, picture.image)) return "visual-changed";
       return null;
     },
@@ -491,7 +490,7 @@ export function useSavedPanePictures(
       const picture = key === null ? undefined : saved?.get(key);
       if (liveProducersRef.current.get(paneId) === "live" || !content) return null;
       return picture &&
-        picture.revision === pictureRevision(contentKey(content), picture.source) &&
+        picture.revision === pictureRevision(contentKey(content)) &&
         pictureMatchesVisualRevision(paneId, picture.image)
         ? picture
         : null;
@@ -611,7 +610,7 @@ export function useSavedPanePictures(
       const previous = savedRef.current?.get(record);
       if (
         previous &&
-        previous.revision === pictureRevision(contentBefore, previous.source) &&
+        previous.revision === pictureRevision(contentBefore) &&
         pictureMatchesVisualRevision(paneId, previous.image)
       )
         return;
@@ -634,11 +633,10 @@ export function useSavedPanePictures(
         recordKey: record,
         paneId,
         geometryRevision: geometry,
-        revision: pictureRevision(contentBefore, "snapshot"),
+        revision: pictureRevision(contentBefore),
         image: snapshot.image,
         cssSize: snapshot.cssSize,
         savedAt: Date.now(),
-        source: "snapshot" as const,
       };
       const keep = () =>
         current() && element.isConnected ? keepPicture(picture, beforeVisualRevision) : undefined;
@@ -678,7 +676,7 @@ export function useSavedPanePictures(
               const previous = savedRef.current?.get(key);
               return (
                 !previous ||
-                previous.revision !== pictureRevision(contentKey(content), previous.source) ||
+                previous.revision !== pictureRevision(contentKey(content)) ||
                 !pictureMatchesVisualRevision(paneId, previous.image)
               );
             },
@@ -842,7 +840,6 @@ export function createSnapshotQueue() {
     "wheel",
     "blur",
   ] as const;
-  const quietTime = () => FIRST_PICTURE_INPUT_QUIET_MS;
   const cancelScheduled = () => {
     if (idle !== null) cancelIdleCallback(idle);
     if (timer !== null) clearTimeout(timer);
@@ -890,9 +887,9 @@ export function createSnapshotQueue() {
       }
       const now = performance.now();
       const due = ([_paneId, request]: [string, { after: number; background: boolean }]) =>
-        Math.max(lastInput + quietTime(), request.after);
+        Math.max(lastInput + FIRST_PICTURE_INPUT_QUIET_MS, request.after);
       if (continuation) {
-        const resumeAt = lastInput + quietTime();
+        const resumeAt = lastInput + FIRST_PICTURE_INPUT_QUIET_MS;
         if (
           continuation.background &&
           [...pending].some((candidate) => !candidate[1].background && due(candidate) <= resumeAt)
@@ -961,7 +958,7 @@ export function createSnapshotQueue() {
           !enabled ||
           moving ||
           pointers.size > 0 ||
-          performance.now() - lastInput < quietTime()
+          performance.now() - lastInput < FIRST_PICTURE_INPUT_QUIET_MS
         )
           deferred = true;
         return !deferred && !dropped && draw === current;
@@ -1062,10 +1059,5 @@ export function createSnapshotQueue() {
     cancelScheduled();
     next();
   };
-  const pause = () => {
-    const previous = { enabled, moving };
-    setActivity(false, moving);
-    return () => setActivity(previous.enabled, previous.moving);
-  };
-  return { request, setDraw, setActivity, pause };
+  return { request, setDraw, setActivity };
 }
