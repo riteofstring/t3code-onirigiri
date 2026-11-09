@@ -122,6 +122,10 @@ the thread shell, which is never stale.
   costly style and layout work; the live view returns at rest or during resizing. Threads awaiting
   their first picture, running turns, live producers and tool panes keep their live presentation.
   The cover uses the same geometry validation and layout-mode separation as an unmounted pane.
+- A chat leaves its DOM during motion unless removal would lose state that lives only in that DOM:
+  opened sections, edits outside the composer, or arrival typing not yet delivered. Composer text,
+  attachments and pending answers live in the composer draft store, so composer edits and clicks do
+  not keep a chat live.
 - Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
   (project icon, project and thread title) with no spinner or status. Leaving overview restores
   focus and visibility admission together, so the destination composer still loads first.

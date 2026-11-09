@@ -1538,30 +1538,44 @@ it("keeps immediate composer activity with a null lifecycle", async () => {
   expect(state.activeKeys).toBe(1);
 });
 
-it.each(["input", "pointerdown", "click", "keydown", "drop", "paste", "expansion"])(
-  "keeps local %s state live, including queued descendant mutations",
+const mountInspectedChat = async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
+  const registration = vi.spyOn(lifecycle, "registerChat");
+  snapshots.timelinePicture = () => ({ url: "blob:current", width: 800, height: 600 });
+  live();
+  await render(true);
+  const inspect = registration.mock.calls.at(-1)![1];
+  expect(inspect()).toBeNull();
+  return inspect;
+};
+const dispatchSignal = (target: Element, signal: string) =>
+  target.dispatchEvent(
+    signal === "keydown"
+      ? new KeyboardEvent("keydown", { key: "a", bubbles: true })
+      : new Event(signal, { bubbles: true }),
+  );
+
+it.each(["input", "pointerdown", "click", "keydown", "drop", "paste"])(
+  "keeps a chat on its picture after a composer %s, whose draft survives removal",
   async (signal) => {
-    const { createPaneLifecycleStore } =
-      await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
-    lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-    const registration = vi.spyOn(lifecycle, "registerChat");
-    snapshots.timelinePicture = () => ({ url: "blob:current", width: 800, height: 600 });
-    live();
-    await render(true);
-    const inspect = registration.mock.calls.at(-1)![1];
-    expect(inspect()).toBeNull();
+    const inspect = await mountInspectedChat();
     await act(() => {
-      const editor = container.querySelector("textarea")!;
-      if (signal === "expansion") {
-        const child = container.querySelector(".messages-timeline-scroll")!;
-        child.setAttribute("aria-expanded", "true");
-      } else {
-        editor.dispatchEvent(
-          signal === "keydown"
-            ? new KeyboardEvent("keydown", { key: "a", bubbles: true })
-            : new Event(signal, { bubbles: true }),
-        );
-      }
+      dispatchSignal(container.querySelector("textarea")!, signal);
+      expect(inspect()).toBeNull();
+    });
+  },
+);
+
+it.each(["input", "keydown", "drop", "paste", "expansion"])(
+  "keeps local %s state outside the composer live, including queued descendant mutations",
+  async (signal) => {
+    const inspect = await mountInspectedChat();
+    await act(() => {
+      const timeline = container.querySelector(".messages-timeline-scroll")!;
+      if (signal === "expansion") timeline.setAttribute("aria-expanded", "true");
+      else dispatchSignal(timeline, signal);
       expect(inspect()).toBe("local-ui-interaction");
     });
   },

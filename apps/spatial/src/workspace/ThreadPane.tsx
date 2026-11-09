@@ -99,6 +99,7 @@ const PaneRouter = memo(function PaneRouter({
 const NEIGHBOUR_MOUNT_DELAY_MS = 300;
 const STATUS_WAIT_MS = 1000;
 const PICTURE_FADE_MS = 100;
+const COMPOSER_EDITOR = '[data-testid="composer-editor"]';
 
 function usePaneContent(
   paneId: string,
@@ -339,6 +340,11 @@ const PaneBody = memo(function PaneBody({
   const scrollPositions = useRef<{ top: number; atEnd: boolean }[]>([]);
   const saveScroll = useRef<(() => void) | null>(null);
   const localStateAtRisk = useRef(false);
+  const arrivalText = useRef("");
+  const noteLocalEdit = (event: { target: EventTarget }) => {
+    if (!(event.target instanceof Element && event.target.closest(COMPOSER_EDITOR)))
+      localStateAtRisk.current = true;
+  };
   const shell = useThreadShell(thread);
   const snapshots = use(PaneSnapshotContext);
   const maximizedRef = useRef(maximized);
@@ -346,7 +352,7 @@ const PaneBody = memo(function PaneBody({
   const motionState = useRef<() => string | null>(() => "not-ready");
   motionState.current = () => {
     flushPaneVisualChanges(paneId);
-    if (localStateAtRisk.current) return "local-ui-interaction";
+    if (localStateAtRisk.current || arrivalText.current) return "local-ui-interaction";
     if (maximizedRef.current) return "full-screen";
     if (!snapshots?.timelinePicture(paneId))
       return mounted ? `no-picture:${snapshots?.pictureMiss(paneId)}` : "not-ready";
@@ -364,9 +370,7 @@ const PaneBody = memo(function PaneBody({
     if (!mounted || (!composerReady && preparing)) return;
     lifecycle?.composerReady?.(paneId);
     if (!interactive) return;
-    const editor = contentRef.current?.querySelector<HTMLElement>(
-      '[data-testid="composer-editor"]',
-    );
+    const editor = contentRef.current?.querySelector<HTMLElement>(COMPOSER_EDITOR);
     if (editor && (!editor.isContentEditable || editor.closest("[inert]"))) return;
     if (editor) lifecycle?.recordReady?.(paneId, "composerTypeableAt");
     if (!preparing) lifecycle?.recordReady?.(paneId, "timelineInteractiveAt");
@@ -396,7 +400,6 @@ const PaneBody = memo(function PaneBody({
   const storedPicture = mounted ? null : (snapshots?.timelinePicture(paneId)?.url ?? null);
 
   const focusOnArrival = useRef(false);
-  const arrivalText = useRef("");
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const editing =
@@ -451,7 +454,6 @@ const PaneBody = memo(function PaneBody({
       focusOnArrival.current = true;
       event.preventDefault();
       event.stopImmediatePropagation();
-      localStateAtRisk.current = true;
       if (
         active &&
         composerReady &&
@@ -516,7 +518,7 @@ const PaneBody = memo(function PaneBody({
       );
     if (picturable !== null && !snapshotPrepared.current) {
       for (const scroller of element.querySelectorAll<HTMLElement>(
-        '.messages-timeline-scroll, [data-tool-group-scroll], [data-testid="composer-editor"]',
+        `.messages-timeline-scroll, [data-tool-group-scroll], ${COMPOSER_EDITOR}`,
       ))
         scrollOffsets.current.set(scroller, `${scroller.scrollLeft}|${scroller.scrollTop}`);
       snapshotPrepared.current = true;
@@ -575,7 +577,7 @@ const PaneBody = memo(function PaneBody({
               .join(";");
           return pictureStyle(oldValue) !== pictureStyle(currentValue);
         }
-        if (attributeName === "class" && target.matches('[data-testid="composer-editor"]')) {
+        if (attributeName === "class" && target.matches(COMPOSER_EDITOR)) {
           const pictureClasses = (value: string | null) =>
             (value ?? "")
               .split(/\s+/)
@@ -652,27 +654,15 @@ const PaneBody = memo(function PaneBody({
         <ComposerHandleContext value={paneComposerRef}>
           <div
             ref={contentRef}
-            onPointerDownCapture={() => {
-              localStateAtRisk.current = true;
-            }}
-            onInputCapture={() => {
-              localStateAtRisk.current = true;
-            }}
-            onDropCapture={() => {
-              localStateAtRisk.current = true;
-            }}
-            onPasteCapture={() => {
-              localStateAtRisk.current = true;
-            }}
-            onClickCapture={() => {
-              localStateAtRisk.current = true;
-            }}
+            onInputCapture={noteLocalEdit}
+            onDropCapture={noteLocalEdit}
+            onPasteCapture={noteLocalEdit}
             onKeyDownCapture={(event) => {
               if (
                 !event.altKey &&
                 !["Escape", "Tab", "Shift", "Control", "Meta", "Alt"].includes(event.key)
               )
-                localStateAtRisk.current = true;
+                noteLocalEdit(event);
               leaveComposerOnEscape(event);
             }}
             className="spatial-thread-pane h-full w-full"
@@ -836,7 +826,7 @@ function leaveComposerOnEscape(event: React.KeyboardEvent<HTMLDivElement>) {
   if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  const editor = target.closest<HTMLElement>('[data-testid="composer-editor"]');
+  const editor = target.closest<HTMLElement>(COMPOSER_EDITOR);
   if (!editor || editor.hasAttribute("aria-controls")) return;
   event.preventDefault();
   editor.blur();
