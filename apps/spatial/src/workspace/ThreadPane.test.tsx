@@ -1591,11 +1591,11 @@ it.each(["input", "expansion"])(
   },
 );
 
-it("keeps a chat that gains a live producer out of motion removal despite a stored picture", async () => {
+it("moves a chat that gains a live producer as its stored picture", async () => {
   const blocks = await mountInspectedChat();
   await act(() => {
     container.querySelector(".messages-timeline-scroll")!.append(document.createElement("video"));
-    expect(blocks()).toBe(true);
+    expect(blocks()).toBe(false);
   });
 });
 

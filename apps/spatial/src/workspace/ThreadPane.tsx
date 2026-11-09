@@ -349,18 +349,15 @@ const PaneBody = memo(function PaneBody({
   const snapshots = use(PaneSnapshotContext);
   const maximizedRef = useRef(maximized);
   maximizedRef.current = maximized;
-  const liveProducer = useRef(false);
   const removal = useRef<ChatRemoval>({ blocksRemoval: () => true, prepareRemoval: () => {} });
   removal.current = {
     blocksRemoval: () => {
       flushPaneVisualChanges(paneId);
       return (
-        !mounted ||
         localStateAtRisk.current ||
         arrivalText.current !== "" ||
         maximizedRef.current ||
-        !snapshots?.timelinePicture(paneId) ||
-        liveProducer.current
+        !snapshots?.timelinePicture(paneId)
       );
     },
     prepareRemoval: () => {
@@ -513,8 +510,8 @@ const PaneBody = memo(function PaneBody({
       return;
     }
     const inspectProducer = () => {
-      liveProducer.current = hasLivePaneProducer(element);
-      if (snapshots) setVisualRevision(snapshots.setLiveProducer(paneId, liveProducer.current));
+      if (snapshots)
+        setVisualRevision(snapshots.setLiveProducer(paneId, hasLivePaneProducer(element)));
     };
     if (!producerInspected.current) {
       inspectProducer();

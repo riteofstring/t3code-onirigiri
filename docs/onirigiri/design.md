@@ -129,8 +129,8 @@ the thread shell, which is never stale.
 - A chat leaves its DOM during motion unless removal would lose state that lives only in that DOM:
   sections opened in the timeline, edits outside the composer, or arrival typing not yet delivered. Composer text,
   attachments and pending answers live in the composer draft store, so composer edits, clicks and
-  keys do not keep a chat live. A chat that currently holds a live producer also keeps its DOM,
-  because its stored picture cannot show that content.
+  keys do not keep a chat live. A chat with a live producer also moves as its stored picture,
+  even though that picture cannot show the producer.
   Once a chat holds state of its own, it keeps its DOM until it unmounts, so it also stays
   exempt from eviction; reload or close it to release the hold.
 - Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
