@@ -372,7 +372,7 @@ const PaneBody = memo(function PaneBody({
   };
   useLayoutEffect(
     () =>
-      lifecycle?.registerChat?.(paneId, {
+      lifecycle?.registerChat(paneId, {
         blocksRemoval: () => removal.current.blocksRemoval(),
         prepareRemoval: () => removal.current.prepareRemoval(),
       }),
@@ -380,7 +380,7 @@ const PaneBody = memo(function PaneBody({
   );
   useLayoutEffect(() => {
     if (!mounted || (!composerReady && preparing)) return;
-    lifecycle?.composerReady?.(paneId);
+    lifecycle?.composerReady(paneId);
   }, [composerReady, lifecycle, mounted, paneId, preparing]);
   const [pictureLeaving, setPictureLeaving] = useState(false);
   const wasPreparing = useRef(preparing);

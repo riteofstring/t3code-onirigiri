@@ -47,7 +47,7 @@ import { useAtomCommand } from "@t3tools/web/src/state/use-atom-command";
 import type { ThreadRouteTarget } from "@t3tools/web/src/threadRoutes";
 import { useComposerDraftStore, type DraftId } from "@t3tools/web/src/composerDraftStore";
 import { useNewThreadHandler } from "@t3tools/web/src/hooks/useHandleNewThread";
-import { readThreadShell } from "@t3tools/web/src/state/entities";
+import { readThreadShell, readThreadShells } from "@t3tools/web/src/state/entities";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useThreadShells } from "@t3tools/web/src/state/entities";
 
@@ -224,10 +224,11 @@ function SpatialWorkspaceView({
   );
   const threadShells = useThreadShells();
   const [heldDraftPaneIds, setHeldDraftPaneIds] = useState<ReadonlySet<string>>(() => new Set());
+  const shownThreadKey = threadShells
+    .map((thread) => threadPaneId(thread.environmentId, thread.id))
+    .join("\n");
   const { drafts, sentDraftPaneIds, sentHeldDraftPaneIds } = useMemo(() => {
-    const shown = new Set(
-      threadShells.map((thread) => threadPaneId(thread.environmentId, thread.id)),
-    );
+    const shown = new Set(shownThreadKey.split("\n"));
     const sent = new Set<string>();
     const sentHeld = new Set<string>();
     const open = (JSON.parse(draftKey) as (WorkspaceDraft & { promoted: boolean })[]).flatMap(
@@ -246,7 +247,7 @@ function SpatialWorkspaceView({
       },
     );
     return { drafts: open, sentDraftPaneIds: sent, sentHeldDraftPaneIds: sentHeld };
-  }, [dismissedPaneIds, draftKey, heldDraftPaneIds, threadShells]);
+  }, [dismissedPaneIds, draftKey, heldDraftPaneIds, shownThreadKey]);
   const unsentDraftPaneIds = (JSON.parse(draftKey) as (WorkspaceDraft & { promoted: boolean })[])
     .filter((draft) => !draft.promoted)
     .map((draft) => draftPaneId(draft));
@@ -655,12 +656,11 @@ function SpatialWorkspaceView({
     lifecycle?.setOverview(overview, overview ? null : focusedPaneIdRef.current);
   }, [lifecycle, overview]);
   useEffect(() => {
-    lifecycle?.setPictures(
-      hasFreshPicture,
-      picturesLoaded,
-      canBackgroundPicture,
-      (id) => displayedPictureFor(id) !== null,
-    );
+    lifecycle?.setPictures(hasFreshPicture, {
+      loaded: picturesLoaded,
+      eligible: canBackgroundPicture,
+      covered: (id) => displayedPictureFor(id) !== null,
+    });
   }, [hasFreshPicture, lifecycle, picturesLoaded, canBackgroundPicture, displayedPictureFor]);
   useEffect(() => lifecycle?.setKeepNeighbours(fullScreen), [fullScreen, lifecycle]);
   const fullScreenPhaseRef = useRef(fullScreenPhase);
@@ -903,7 +903,7 @@ function SpatialWorkspaceView({
   const newThread = useNewThreadHandler();
   const selectPaneProject = useCallback(
     (tool: ToolPane, project: { environmentId: EnvironmentId; id: ProjectId }) => {
-      const latest = threadShells
+      const latest = readThreadShells()
         .filter(
           (thread) =>
             thread.environmentId === project.environmentId &&
@@ -924,7 +924,7 @@ function SpatialWorkspaceView({
         });
       }
     },
-    [threadShells, toolController],
+    [toolController],
   );
   const startChatInPane = useCallback(
     async (tool: ToolPane) => {

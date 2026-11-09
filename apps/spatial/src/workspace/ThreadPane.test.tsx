@@ -1409,12 +1409,11 @@ it("does not mount a stale transit pane until motion stops", async () => {
   expect(container.querySelector("textarea")).toBeNull();
   snapshots.hasFreshPicture = () => false;
   await act(() =>
-    lifecycle!.setPictures(
-      () => false,
-      true,
-      () => true,
-      () => true,
-    ),
+    lifecycle!.setPictures(() => false, {
+      loaded: true,
+      eligible: () => true,
+      covered: () => true,
+    }),
   );
   expect(container.querySelector("textarea")).toBeNull();
   await act(() => lifecycle!.setMoving(false));

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { captureOnirigiriPanePicture } from "@riteofstring/onirigiri";
 import { snapshotPanePicture } from "./panePictureSnapshot";
-import { createSnapshotQueue } from "./useSavedPanePictures";
+import { createSnapshotQueue } from "./panePictureQueue";
 
 vi.mock("@riteofstring/onirigiri", () => ({ captureOnirigiriPanePicture: vi.fn() }));
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({ useTheme: vi.fn() }));

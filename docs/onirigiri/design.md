@@ -75,7 +75,7 @@ This page records constraints that span files and are easy to break without noti
   null, including after the composer is replaced.
 - Background panes fetch their projection before creating their router shell, and only the focused
   pane mounts content during camera motion. A pane is prepared once its thread is synchronized, its
-  ChatView and history report ready, and two frames have passed. After it has been presented, later
+  ChatView and history report ready, and the browser has had an idle period. After it has been presented, later
   readiness work postpones its next picture without covering the live editor again.
 
 ## Keyboard
@@ -98,14 +98,15 @@ This page records constraints that span files and are easy to break without noti
 `paneLifecycle.ts` decides which thread panes mount a live ChatView; mounting is the expensive step.
 
 - The focused pane and every visible pane are retained; in full screen the four adjacent panes are
-  retained too. At most ten trees stay mounted. After a 500 ms quiet tail, the trees
+  retained too. Retention is capped at ten trees, but the retained set itself is never evicted, so
+  a large visible set can exceed the cap. After a 500 ms quiet tail, the trees
   farthest from the focused pane are evicted first, and only when they have a current picture and
   no state that removal would lose.
 - When the camera starts moving, every mounted chat is asked whether it can leave its DOM. Chats
   with a picture and nothing to lose are removed after two frames, so the first frame of motion is
   already covered; the others keep their DOM for the whole move. Motion admits no new trees.
 - At rest the focused chat mounts first. Its composer must report ready before visible peers mount,
-  and timelines are revealed one per frame, nearest first, only after every pending composer is
+  and timelines are revealed one at a time, two frames apart, nearest first, only after every pending composer is
   ready. Retained chats reveal their existing DOM at once.
 - In overview the lifecycle admits nothing and background preparation stops.
 - When idle, one offscreen chat at a time is mounted only to take its picture, nearest first; it
@@ -141,8 +142,8 @@ the thread shell, which is never stale.
   of different valid geometries coexist; returning to one can reuse its pixels. A picture from a
   different geometry is unavailable until replacement pixels are captured. Tiled and compact
   covers never cross modes: full screen uses viewport geometry while the saved layout keeps its
-  column widths, so reusing a compact picture in a tiled pane would clip the chat. A live producer deletes
-  every record of its pane. The store is IndexedDB version 2; opening it drops the version 1
+  column widths, so reusing a compact picture in a tiled pane would clip the chat. A live producer keeps
+  its pane's records but they are not shown while it is present. The store is IndexedDB version 2; opening it drops the version 1
   per-pane records.
 - A record's revision holds the thread update and theme (palette, appearance and font settings),
   includes `chat-chrome-2`, and every picture adds `native-worker-9`; bump them when chat chrome or

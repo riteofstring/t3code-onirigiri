@@ -90,8 +90,8 @@ export function createPaneLifecycleStore(
   };
   const retained = () => {
     if (overview) return new Set<string>();
-    if (!focused) return new Set([...visible].filter((id) => !hasPicture(id)));
     const ids = new Set(visible);
+    if (!focused) return ids;
     ids.add(focused);
     if (keepNeighbours)
       for (const id of panes.keys()) if ([1, 1000].includes(distance(id))) ids.add(id);
@@ -274,6 +274,7 @@ export function createPaneLifecycleStore(
       entries.add(listener);
       return () => {
         entries.delete(listener);
+        if (entries.size === 0) listeners.delete(paneId);
       };
     },
     pictureFailed: (paneId: string, startedAt: number) => {
@@ -343,7 +344,7 @@ export function createPaneLifecycleStore(
       if (focused && !panes.has(focused)) focused = null;
       if (capturing && !panes.has(capturing.paneId)) release(false);
       for (const id of mounted) if (!panes.has(id)) unmount(id);
-      for (const ids of [visible, loaded, deferred, pendingComposers])
+      for (const ids of [visible, visited, loaded, deferred, pendingComposers])
         for (const id of ids) if (!panes.has(id)) ids.delete(id);
       for (const entries of [retryAt, motionHolds])
         for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);
@@ -356,9 +357,15 @@ export function createPaneLifecycleStore(
     },
     setPictures: (
       pictured: (paneId: string) => boolean,
-      loaded = true,
-      eligible: (paneId: string, visited: boolean) => boolean = () => true,
-      covered: (paneId: string) => boolean = pictured,
+      {
+        loaded = true,
+        eligible = () => true,
+        covered = pictured,
+      }: {
+        loaded?: boolean;
+        eligible?: (paneId: string, visited: boolean) => boolean;
+        covered?: (paneId: string) => boolean;
+      } = {},
     ) => {
       hasPicture = pictured;
       hasCover = covered;

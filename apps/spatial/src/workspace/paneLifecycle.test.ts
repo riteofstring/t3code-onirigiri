@@ -296,15 +296,16 @@ it("does not wait for a pending composer that leaves the destination", () => {
   expect(store.timelineDeferred("p0")).toBe(false);
 });
 
-it("mounts only visible chats without a current picture while overview has no focus", () => {
+it("remounts every visible chat when motion ends on an empty cell, pictured or not", () => {
   const store = make();
   store.setPictures((id) => id !== "p26");
+  for (const id of ["p25", "p26", "p27"]) store.registerChat(id, releasable());
+  store.setMoving(true);
   store.setFocus(null);
   for (const id of ["p25", "p26", "p27"]) store.setVisible(id, true);
+  store.setMoving(false);
   vi.advanceTimersByTime(600);
-  expect(store.isMounted("p26")).toBe(true);
-  expect(store.isMounted("p25")).toBe(false);
-  expect(store.isMounted("p27")).toBe(false);
+  for (const id of ["p25", "p26", "p27"]) expect(store.isMounted(id)).toBe(true);
 });
 
 it("admits no chat in overview and restores composer-first admission when it ends", () => {
