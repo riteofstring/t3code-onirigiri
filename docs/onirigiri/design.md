@@ -122,6 +122,9 @@ the thread shell, which is never stale.
   costly style and layout work; the live view returns at rest or during resizing. Threads awaiting
   their first picture, running turns, live producers and tool panes keep their live presentation.
   The cover uses the same geometry validation and layout-mode separation as an unmounted pane.
+- Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
+  (project icon, project and thread title) with no spinner or status. Leaving overview restores
+  focus and visibility admission together, so the destination composer still loads first.
 - A record is keyed by pane and applied geometry: stage size, device pixel ratio, column and cell
   sizing, workspace defaults, the selected type defaults and per-pane defaults, plus `tiled` or
   `compact` layout. Read sizing from the engine scene when its layout notification arrives:

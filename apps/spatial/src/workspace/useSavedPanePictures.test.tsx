@@ -2286,7 +2286,19 @@ it("recaptures committed visible changes without a fixed quiet embargo", async (
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
 
-it.each(["motion", "overview-motion", "resize"] as const)(
+it.each(["overview", "overview-motion"] as const)(
+  "keeps a latched or unpictured chat on its card during %s",
+  async (phase) => {
+    await mount();
+    expect(presentationAt("motion")).toBe("dom");
+    expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
+    motionDecision = "in-progress-turn";
+    expect(presentationAt(phase)).toEqual({ kind: "placeholder" });
+    expect(presentationAt("rest")).toBe("dom");
+  },
+);
+
+it.each(["motion", "resize"] as const)(
   "honors the latched removal decision during %s, then returns live at rest",
   async (phase) => {
     await mount();

@@ -55,6 +55,7 @@ export function createPaneLifecycleStore(
   let removalFrame: number | null = null;
   let moving = false;
   let keepNeighbours = false;
+  let overview = false;
   let backgroundPictures = false;
   let picturesReady = true;
   let storedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,6 +95,7 @@ export function createPaneLifecycleStore(
     idle = null;
   };
   const retained = () => {
+    if (overview) return new Set<string>();
     if (!focused) return new Set([...visible].filter((id) => !hasPicture(id)));
     const ids = new Set(visible);
     ids.add(focused);
@@ -349,6 +351,11 @@ export function createPaneLifecycleStore(
         schedule();
       }
       for (const listener of motionListeners) listener();
+    },
+    setOverview: (active: boolean, paneId: string | null) => {
+      overview = active;
+      store.setFocus(paneId);
+      schedule();
     },
     setKeepNeighbours: (next: boolean) => {
       if (keepNeighbours === next) return;

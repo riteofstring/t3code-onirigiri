@@ -310,3 +310,20 @@ it("mounts only visible chats without a current picture while overview has no fo
   expect(store.isMounted("p25")).toBe(false);
   expect(store.isMounted("p27")).toBe(false);
 });
+
+it("admits no chat in overview and restores composer-first admission when it ends", () => {
+  const store = make();
+  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, () => null);
+  store.setOverview(true, null);
+  store.setMoving(true);
+  for (const id of ["p1", "p2"]) store.setVisible(id, true);
+  store.setMoving(false);
+  vi.advanceTimersByTime(1000);
+  expect(mounted(store)).toEqual(["p0"]);
+  store.setOverview(false, "p1");
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  expect(store.timelineDeferred("p1")).toBe(true);
+  expect(store.isMounted("p2")).toBe(false);
+  store.composerReady("p1");
+  expect(store.isMounted("p2")).toBe(true);
+});

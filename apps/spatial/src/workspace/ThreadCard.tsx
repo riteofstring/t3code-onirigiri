@@ -30,11 +30,11 @@ export function PaneLoading() {
 export function ThreadCard({
   environmentId,
   threadId,
-  loading = false,
+  variant,
 }: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
-  loading?: boolean;
+  variant: "title" | "summary" | "loading";
 }) {
   const thread = useThreadShell({ environmentId, threadId });
   const project = useProject(thread ? { environmentId, projectId: thread.projectId } : null);
@@ -59,12 +59,14 @@ export function ThreadCard({
           {thread.title}
         </div>
       </div>
-      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        {statusLabel ? <span>{statusLabel}</span> : null}
-        {thread.branch ? <span>{thread.branch}</span> : null}
-        <span>Updated {new Date(thread.updatedAt).toLocaleString()}</span>
-      </div>
-      {loading ? <Spinner size="lg" className="text-muted-foreground" /> : null}
+      {variant === "title" ? null : (
+        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {statusLabel ? <span>{statusLabel}</span> : null}
+          {thread.branch ? <span>{thread.branch}</span> : null}
+          <span>Updated {new Date(thread.updatedAt).toLocaleString()}</span>
+        </div>
+      )}
+      {variant === "loading" ? <Spinner size="lg" className="text-muted-foreground" /> : null}
     </div>
   );
 }

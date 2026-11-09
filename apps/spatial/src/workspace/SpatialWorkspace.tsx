@@ -649,7 +649,7 @@ function SpatialWorkspaceView({
     return () => owned.dispose();
   }, [lifecycleSeed]);
   useEffect(() => {
-    lifecycle?.setFocus(overview ? null : focusedPaneIdRef.current);
+    lifecycle?.setOverview(overview, overview ? null : focusedPaneIdRef.current);
   }, [lifecycle, overview]);
   useEffect(() => {
     lifecycle?.setPictures(
@@ -1234,17 +1234,18 @@ function SpatialWorkspaceView({
       if (pane.surfaceKind !== "thread") return null;
       const data = pane.data as ThreadPaneData;
       const picture = displayedPictureFor(pane.paneId);
-      const card = hasMoved ? (
-        <ThreadCard
-          environmentId={data.environmentId}
-          threadId={data.threadId}
-          loading={!picture}
-        />
-      ) : (
-        <div className="relative h-full w-full bg-background">
-          {picture ? null : <PaneLoading />}
-        </div>
-      );
+      const card =
+        hasMoved || overview ? (
+          <ThreadCard
+            environmentId={data.environmentId}
+            threadId={data.threadId}
+            variant={overview ? "title" : picture ? "summary" : "loading"}
+          />
+        ) : (
+          <div className="relative h-full w-full bg-background">
+            {picture ? null : <PaneLoading />}
+          </div>
+        );
       return picture ? (
         <SavedPanePicture
           key={picture.geometryRevision.endsWith("|compact") ? "compact" : "tiled"}
@@ -1258,7 +1259,7 @@ function SpatialWorkspaceView({
         card
       );
     },
-    [displayedPictureFor, hasMoved, pictureUrl, preparedPictureUrl],
+    [displayedPictureFor, hasMoved, overview, pictureUrl, preparedPictureUrl],
   );
 
   const [stageElement, setStageElement] = useState<HTMLElement | null>(null);
