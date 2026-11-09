@@ -15,7 +15,6 @@ const pictures = {
   pictureUrl: () => "",
   hasFreshPicture: () => false,
   canBackgroundPicture: () => false,
-  runningPanes: new Set(),
   picturesLoaded: true,
   paneSnapshots: {},
   setCaptureActivity: vi.fn(),

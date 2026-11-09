@@ -129,6 +129,8 @@ the thread shell, which is never stale.
   sections opened in the timeline, edits outside the composer, or arrival typing not yet delivered. Composer text,
   attachments and pending answers live in the composer draft store, so composer edits, clicks and
   keys do not keep a chat live.
+  Once a chat holds state of its own, it keeps its DOM until it unmounts, so it also stays
+  exempt from eviction; reload or close it to release the hold.
 - Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
   (project icon, project and thread title) with no spinner or status. Leaving overview restores
   focus and visibility admission together, so the destination composer still loads first.

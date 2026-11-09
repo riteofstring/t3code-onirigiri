@@ -159,6 +159,17 @@ function withoutPane(paneIds: ReadonlySet<string>, paneId: string) {
   return next;
 }
 
+function latestThread(environmentId: EnvironmentId, projectId?: ProjectId) {
+  return readThreadShells()
+    .filter(
+      (thread) =>
+        thread.environmentId === environmentId &&
+        (projectId === undefined || thread.projectId === projectId) &&
+        thread.archivedAt === null,
+    )
+    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
 export function SpatialWorkspace({
   target,
   active,
@@ -675,6 +686,23 @@ function SpatialWorkspaceView({
   const pendingNavigationPaneRef = useRef<string | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRouteRef = useRef<(() => void) | null>(null);
+  const clearRouteFollow = useCallback(() => {
+    if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
+    routeTimerRef.current = null;
+    pendingRouteRef.current = null;
+  }, []);
+  const scheduleRouteFollow = useCallback(
+    (follow: () => void) => {
+      clearRouteFollow();
+      const run = () => {
+        clearRouteFollow();
+        follow();
+      };
+      pendingRouteRef.current = run;
+      routeTimerRef.current = setTimeout(run, ROUTE_SETTLE_MS);
+    },
+    [clearRouteFollow],
+  );
   const routePaneIdRef = useRef(routePaneId);
   useEffect(() => {
     const coveredChanged = activeRef.current !== active;
@@ -683,18 +711,9 @@ function SpatialWorkspaceView({
     activeRef.current = active;
     const requested = routePaneId !== null && requestedRoutesRef.current.has(routePaneId);
     if (!coveredChanged && requested) return;
-    if (routeTimerRef.current !== null) {
-      clearTimeout(routeTimerRef.current);
-      routeTimerRef.current = null;
-    }
-    pendingRouteRef.current = null;
-  }, [routePaneId, active]);
-  useEffect(
-    () => () => {
-      if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
-    },
-    [],
-  );
+    clearRouteFollow();
+  }, [routePaneId, active, clearRouteFollow]);
+  useEffect(() => clearRouteFollow, [clearRouteFollow]);
   useEffect(() => {
     if (!active) useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
     return () => useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
@@ -719,37 +738,26 @@ function SpatialWorkspaceView({
       if (paneId === null) {
         lifecycle?.setFocus(null);
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
-        if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
-        const leaveRoute = () => {
-          routeTimerRef.current = null;
-          pendingRouteRef.current = null;
+        scheduleRouteFollow(() => {
           if (focusedPaneIdRef.current !== null || routePaneIdRef.current === null) return;
           void router.navigate({ to: "/" });
-        };
-        pendingRouteRef.current = leaveRoute;
-        routeTimerRef.current = setTimeout(leaveRoute, ROUTE_SETTLE_MS);
+        });
         return;
       }
       const tool = getPanes().find((pane) => pane.paneId === paneId);
       const routeTarget = tool ? threadPaneId(tool.environmentId, tool.threadId) : paneId;
       if (pendingNavigationPaneRef.current !== routeTarget) pendingNavigationPaneRef.current = null;
-      if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
-      routeTimerRef.current = null;
-      pendingRouteRef.current = null;
+      clearRouteFollow();
       const draftId = draftIdByPaneIdRef.current.get(paneId);
       if (draftId !== undefined) {
         lifecycle?.setFocus(null);
         useWorkspaceFocusedThreadStore.getState().setFocusedThreadKey(null);
         if (paneId === routePaneIdRef.current) return;
-        const followDraft = () => {
-          routeTimerRef.current = null;
-          pendingRouteRef.current = null;
+        scheduleRouteFollow(() => {
           if (focusedPaneIdRef.current !== paneId) return;
           requestedRoutesRef.current.add(paneId);
           void router.navigate({ to: "/draft/$draftId", params: { draftId } });
-        };
-        pendingRouteRef.current = followDraft;
-        routeTimerRef.current = setTimeout(followDraft, ROUTE_SETTLE_MS);
+        });
         return;
       }
       const data = paneData.get(routeTarget);
@@ -758,11 +766,7 @@ function SpatialWorkspaceView({
         .getState()
         .setFocusedThreadKey(scopedThreadKey(scopeThreadRef(data.environmentId, data.threadId)));
       if (!tool) lifecycle?.setFocus(paneId);
-      if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
-      const follow = () => {
-        if (routeTimerRef.current !== null) clearTimeout(routeTimerRef.current);
-        routeTimerRef.current = null;
-        pendingRouteRef.current = null;
+      scheduleRouteFollow(() => {
         if (
           routeTarget === routePaneIdRef.current ||
           routeTarget === pendingNavigationPaneRef.current ||
@@ -771,9 +775,7 @@ function SpatialWorkspaceView({
           return;
         requestedRoutesRef.current.add(routeTarget);
         void router.navigate({ to: "/$environmentId/$threadId", params: data });
-      };
-      pendingRouteRef.current = follow;
-      routeTimerRef.current = setTimeout(follow, ROUTE_SETTLE_MS);
+      });
     },
     [
       alwaysLive,
@@ -783,6 +785,8 @@ function SpatialWorkspaceView({
       lifecycle,
       paneData,
       router,
+      scheduleRouteFollow,
+      clearRouteFollow,
       setCaptureActivity,
     ],
   );
@@ -883,46 +887,59 @@ function SpatialWorkspaceView({
     [router],
   );
 
+  const resolvePaneOwner = useCallback(
+    (
+      paneId: string | null | undefined,
+    ): { owner: ThreadPaneData; after: string | null } | undefined => {
+      if (!paneId) return undefined;
+      const tool = getPanes().find((pane) => pane.paneId === paneId);
+      if (tool) return { owner: tool, after: tool.paneId };
+      const pane = workspaceRef.current?.getScene().paneById.get(paneId);
+      if (pane?.surfaceKind === "thread")
+        return { owner: pane.data as ThreadPaneData, after: null };
+      if (pane?.surfaceKind !== "draft") return undefined;
+      const draft = pane.data as WorkspaceDraft;
+      const latest = latestThread(draft.environmentId, draft.projectId);
+      return latest
+        ? { owner: { environmentId: latest.environmentId, threadId: latest.id }, after: null }
+        : undefined;
+    },
+    [getPanes],
+  );
   const addPaneBeside = useCallback(
     (paneId: string | null) => {
-      if (!paneId) return;
-      const tool = getPanes().find((pane) => pane.paneId === paneId);
-      const pane = workspaceRef.current?.getScene().paneById.get(paneId);
-      const owner =
-        tool ?? (pane?.surfaceKind === "thread" ? (pane.data as ThreadPaneData) : undefined);
-      if (!owner) return;
+      const resolved = resolvePaneOwner(paneId);
+      if (!resolved) return;
       pendingFocusPaneIdRef.current = addEmpty(
-        { environmentId: owner.environmentId, threadId: owner.threadId },
-        tool?.paneId ?? null,
+        { environmentId: resolved.owner.environmentId, threadId: resolved.owner.threadId },
+        resolved.after,
       );
     },
-    [addEmpty, getPanes],
+    [addEmpty, resolvePaneOwner],
   );
   const addPane = useCallback(() => addPaneBeside(focusedPaneIdRef.current), [addPaneBeside]);
   const pendingPlacementRef = useRef(new Map<string, PanePlacement>());
   const newThread = useNewThreadHandler();
   const selectPaneProject = useCallback(
     (tool: ToolPane, project: { environmentId: EnvironmentId; id: ProjectId }) => {
-      const latest = readThreadShells()
-        .filter(
-          (thread) =>
-            thread.environmentId === project.environmentId &&
-            thread.projectId === project.id &&
-            thread.archivedAt === null,
-        )
-        .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      const latest = latestThread(project.environmentId, project.id);
       if (latest) {
         toolController.attachEmpty(tool.paneId, {
           environmentId: latest.environmentId,
           threadId: latest.id,
         });
-      } else if (project.environmentId === tool.environmentId) {
+        return;
+      }
+      const owner =
+        project.environmentId === tool.environmentId
+          ? tool.threadId
+          : latestThread(project.environmentId)?.id;
+      if (owner)
         toolController.attachEmpty(tool.paneId, {
-          environmentId: tool.environmentId,
-          threadId: tool.threadId,
+          environmentId: project.environmentId,
+          threadId: owner,
           projectId: project.id,
         });
-      }
     },
     [toolController],
   );
@@ -953,20 +970,10 @@ function SpatialWorkspaceView({
   );
   const addPaneAt = useCallback(
     (spot: EmptySpot) => {
-      const scene = workspaceRef.current?.getScene();
-      const ownerOf = (paneId: string | null | undefined) => {
-        if (!paneId) return undefined;
-        const tool = getPanes().find((pane) => pane.paneId === paneId);
-        if (tool) return { owner: tool as ThreadPaneData, after: tool.paneId };
-        const pane = scene?.paneById.get(paneId);
-        return pane?.surfaceKind === "thread"
-          ? { owner: pane.data as ThreadPaneData, after: null }
-          : undefined;
-      };
       const resolved =
-        ownerOf(spot.ownerPaneId) ??
-        ownerOf(focusedPaneIdRef.current) ??
-        ownerOf(panesRef.current?.find((pane) => pane.surfaceKind === "thread")?.paneId);
+        resolvePaneOwner(spot.ownerPaneId) ??
+        resolvePaneOwner(focusedPaneIdRef.current) ??
+        resolvePaneOwner(panesRef.current?.find((pane) => pane.surfaceKind === "thread")?.paneId);
       if (!resolved) return;
       const paneId = addEmpty(
         { environmentId: resolved.owner.environmentId, threadId: resolved.owner.threadId },
@@ -979,7 +986,7 @@ function SpatialWorkspaceView({
       )
         pendingFocusPaneIdRef.current = paneId;
     },
-    [addEmpty, getPanes, preferences.focusOnClick],
+    [addEmpty, preferences.focusOnClick, resolvePaneOwner],
   );
 
   useEffect(() => {
@@ -1107,11 +1114,14 @@ function SpatialWorkspaceView({
     },
     [changeWorkspacePreferences, growFullScreenBorder, preferences.maximizeAll, syncMaximized],
   );
+  const fullScreenBeforeMaximize = useRef(preferences.maximizeAll);
   useEffect(() => {
+    const wasFullScreen = fullScreenBeforeMaximize.current;
+    fullScreenBeforeMaximize.current = preferences.maximizeAll;
     if (!preferences.maximizeAll || maximizedPaneId === null) return;
     workspaceRef.current?.togglePaneMaximized(maximizedPaneId);
     syncMaximized();
-    changeWorkspacePreferences({ maximizeAll: false });
+    if (wasFullScreen) changeWorkspacePreferences({ maximizeAll: false });
   }, [changeWorkspacePreferences, maximizedPaneId, preferences.maximizeAll, syncMaximized]);
   const focusSurfacePane = useCallback((paneId: string) => {
     if (workspaceRef.current?.focusPane(paneId, { exitOverview: true })) return;

@@ -37,6 +37,13 @@ const fixture = vi.hoisted(() => ({
   browserProjection: null as BrowserSurfaceProjectionPolicy | null,
   addEmpty: vi.fn(),
   threadRenders: [] as string[],
+  shells: [] as {
+    environmentId: string;
+    id: string;
+    projectId: string;
+    archivedAt: null;
+    updatedAt: string;
+  }[],
   lifecycle: null as PaneLifecycleStore | null,
 }));
 
@@ -89,7 +96,15 @@ vi.mock("@t3tools/web/src/components/pullRequest/LinkPullRequestDialog", () => (
 vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({ PaneLoading: () => null, ThreadCard: () => null }));
-vi.mock("./DraftPane", () => ({ DraftPane: () => null }));
+vi.mock("./DraftPane", () => ({
+  DraftPane: ({ paneId, onAddPane }: { paneId: string; onAddPane: (paneId: string) => void }) => (
+    <button onClick={() => onAddPane(paneId)}>Add beside draft</button>
+  ),
+}));
+vi.mock("@t3tools/web/src/state/entities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/web/src/state/entities")>()),
+  readThreadShells: () => fixture.shells,
+}));
 vi.mock("@t3tools/web/src/hooks/useHandleNewThread", () => {
   const newThread = vi.fn();
   return { useNewThreadHandler: () => newThread };
@@ -107,11 +122,13 @@ vi.mock("./ThreadPane", async () => {
       paneId,
       visible,
       onAddPane,
+      onToggleMaximized,
     }: {
       thread: { threadId: string };
       paneId: string;
       visible: boolean;
       onAddPane: (paneId: string) => void;
+      onToggleMaximized: (paneId: string) => void;
     }) => {
       fixture.threadRenders.push(thread.threadId);
       fixture.lifecycle = use(PaneLifecycleContext);
@@ -121,6 +138,7 @@ vi.mock("./ThreadPane", async () => {
       return (
         <div data-browser-keyboard-slot>
           <button onClick={() => onAddPane(paneId)}>Add beside {thread.threadId}</button>
+          <button onClick={() => onToggleMaximized(paneId)}>Maximize {thread.threadId}</button>
           {mounted ? <textarea aria-label="Thread composer" data-thread={thread.threadId} /> : null}
         </div>
       );
@@ -264,6 +282,7 @@ beforeEach(() => {
   pictureLayoutChanged.mockClear();
   fixture.browserProjection = null;
   fixture.addEmpty.mockReset();
+  fixture.shells = [];
   fixture.threadRenders = [];
   fixture.lifecycle = null;
   localStorage.clear();
@@ -793,6 +812,67 @@ it("returns to a focused tool pane after a reload whose route names its chat", a
   root = createRoot(host);
   await render("origin");
   expect(status()).toContain("Owned terminal");
+});
+
+it("adds a pane beside a draft, owned by the latest thread of the draft's project", async () => {
+  fixture.shells = [
+    { environmentId: "e", id: "older", projectId: "p", archivedAt: null, updatedAt: "2026-01-01" },
+    { environmentId: "e", id: "newer", projectId: "p", archivedAt: null, updatedAt: "2026-02-01" },
+    { environmentId: "e", id: "other", projectId: "q", archivedAt: null, updatedAt: "2026-03-01" },
+  ];
+  fixture.panes = [
+    pane("origin", 0, 0),
+    {
+      paneId: "draft:e:d1",
+      surfaceKind: "draft",
+      title: "New thread",
+      planeIndex: 0,
+      slotIndex: 1,
+      data: { draftId: "d1", environmentId: "e", projectId: "p", threadId: "unsent" },
+    },
+  ];
+  await render();
+  const add = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Add beside draft",
+  );
+  expect(add).toBeDefined();
+  await act(() => add!.click());
+  expect(fixture.addEmpty).toHaveBeenCalledExactlyOnceWith(
+    { environmentId: "e", threadId: "newer" },
+    null,
+  );
+});
+
+it("switches a maximized pane to full screen instead of cancelling both", async () => {
+  await render("right");
+  const fullScreen = () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Full screen panes"]')!;
+  const button = (label: string) =>
+    Array.from(host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === label,
+    )!;
+  await act(() => button("Maximize right").click());
+  await act(() => vi.advanceTimersByTime(120));
+  expect(host.querySelector<HTMLElement>(".spatial-workspace")!.dataset.spatialMaximized).toBe(
+    "true",
+  );
+  await act(() => fullScreen().click());
+  await act(() => vi.advanceTimersByTime(400));
+  expect(fullScreen().getAttribute("aria-pressed")).toBe("true");
+  await act(() => button("Maximize right").click());
+  await act(() => vi.advanceTimersByTime(400));
+  expect(fullScreen().getAttribute("aria-pressed")).toBe("false");
+});
+
+it("follows the route once when input arrives before the settle timer", async () => {
+  await render();
+  await key("ArrowRight");
+  expect(status()).toContain("Empty cell.");
+  expect(fixture.navigate).not.toHaveBeenCalled();
+  await act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true })));
+  expect(fixture.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+  await act(() => vi.advanceTimersByTime(1000));
+  expect(fixture.navigate).toHaveBeenCalledOnce();
 });
 
 it("visits empty cells within and beyond the pane bounds, leaving the chat route, without invalidating pane pictures", async () => {

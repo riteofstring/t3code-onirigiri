@@ -161,7 +161,6 @@ export function useSavedPanePictures(
   pictureUrl: (image: Blob) => string;
   hasFreshPicture: (paneId: string) => boolean;
   canBackgroundPicture: (paneId: string, visited?: boolean) => boolean;
-  runningPanes: ReadonlySet<string>;
   picturesLoaded: boolean;
   paneSnapshots: PaneSnapshots;
   setCaptureActivity: (enabled: boolean, moving: boolean) => void;
@@ -445,37 +444,34 @@ export function useSavedPanePictures(
     runningPanesRef.current = runningPanes;
   }, [contentRevisions, runningPanes]);
 
+  const isCurrentPicture = useCallback(
+    (paneId: string, picture: SavedPanePicture, content: PaneContentRevision) =>
+      picture.revision === pictureRevision(contentKey(content)) &&
+      pictureMatchesVisualRevision(paneId, picture.image),
+    [pictureMatchesVisualRevision],
+  );
   const freshPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
       if (liveProducersRef.current.get(paneId) === "live") return null;
       const key = recordKey(paneId);
       const picture = key === null ? undefined : saved?.get(key);
       const content = contentRevisions.get(paneId);
-      return picture &&
-        content &&
-        picture.revision === pictureRevision(contentKey(content)) &&
-        pictureMatchesVisualRevision(paneId, picture.image)
-        ? picture
-        : null;
+      return picture && content && isCurrentPicture(paneId, picture, content) ? picture : null;
     },
-    [contentRevisions, pictureMatchesVisualRevision, recordKey, saved],
+    [contentRevisions, isCurrentPicture, recordKey, saved],
   );
 
   const [pictureUrls] = useState(createPanePictureUrls);
   const pictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
-      if (!enabled) return null;
+      if (!enabled || liveProducersRef.current.get(paneId) === "live") return null;
       const key = recordKey(paneId);
-      const content = contentRevisionsRef.current.get(paneId);
       const picture = key === null ? undefined : saved?.get(key);
-      if (liveProducersRef.current.get(paneId) === "live" || !content) return null;
-      return picture &&
-        picture.revision === pictureRevision(contentKey(content)) &&
-        pictureMatchesVisualRevision(paneId, picture.image)
-        ? picture
-        : null;
+      const content = contentRevisionsRef.current.get(paneId);
+      return picture && content && isCurrentPicture(paneId, picture, content) ? picture : null;
     },
-    [enabled, geometryVersion, pictureMatchesVisualRevision, recordKey, saved],
+    // oxlint-disable-next-line react/memo-dependencies -- Observer geometry changes which record is current.
+    [enabled, geometryVersion, isCurrentPicture, recordKey, saved],
   );
   const displayedPictureFor = useCallback(
     (paneId: string): SavedPanePicture | null => {
@@ -586,12 +582,7 @@ export function useSavedPanePictures(
       };
       if (!canSnapshot()) return;
       const previous = savedRef.current?.get(record);
-      if (
-        previous &&
-        previous.revision === pictureRevision(contentBefore) &&
-        pictureMatchesVisualRevision(paneId, previous.image)
-      )
-        return;
+      if (previous && isCurrentPicture(paneId, previous, beforeContent)) return;
       const current = () =>
         liveProducersRef.current.get(paneId) !== "live" &&
         !runningPanesRef.current.has(paneId) &&
@@ -624,9 +615,9 @@ export function useSavedPanePictures(
     [
       expectedRevision,
       geometryRevision,
+      isCurrentPicture,
       keepPicture,
       onSnapshotFailure,
-      pictureMatchesVisualRevision,
       visualRevision,
     ],
   );
@@ -652,11 +643,7 @@ export function useSavedPanePictures(
               )
                 return false;
               const previous = savedRef.current?.get(key);
-              return (
-                !previous ||
-                previous.revision !== pictureRevision(contentKey(content)) ||
-                !pictureMatchesVisualRevision(paneId, previous.image)
-              );
+              return !previous || !isCurrentPicture(paneId, previous, content);
             },
             // Missing pictures at the current geometry precede refreshes.
             (paneId) => {
@@ -666,7 +653,7 @@ export function useSavedPanePictures(
             (paneId) => pictureMountRef.current(paneId),
           )
         : undefined,
-    [enabled, pictureMatchesVisualRevision, recordKey, snapshots],
+    [enabled, isCurrentPicture, recordKey, snapshots],
   );
   const paneSnapshots = useMemo<PaneSnapshots>(
     () => ({
@@ -726,7 +713,6 @@ export function useSavedPanePictures(
     pictureUrl: pictureUrls.urlFor,
     hasFreshPicture,
     canBackgroundPicture,
-    runningPanes,
     picturesLoaded: !enabled || saved !== null,
     paneSnapshots,
     setCaptureActivity: snapshots.setActivity,

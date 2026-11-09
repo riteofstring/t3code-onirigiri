@@ -1320,7 +1320,6 @@ it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
     await advance(3500);
     expect(snapshot).not.toHaveBeenCalled();
     expect(hook.canBackgroundPicture(paneId)).toBe(false);
-    expect(hook.runningPanes).toEqual(new Set([paneId]));
     store.runtimeStatus = null;
     store.updatedAt = "u2";
     await act(() => renderer!.update(<Probe />));
@@ -1329,7 +1328,6 @@ it.each(["preparing", "queued", "starting", "running", "waiting"] as const)(
     await advance(3500);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(hook.canBackgroundPicture(paneId)).toBe(true);
-    expect(hook.runningPanes.size).toBe(0);
   },
 );
 

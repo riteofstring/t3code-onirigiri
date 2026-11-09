@@ -93,8 +93,7 @@ export function createPaneLifecycleStore(
     const ids = new Set(visible);
     if (!focused) return ids;
     ids.add(focused);
-    if (keepNeighbours)
-      for (const id of panes.keys()) if ([1, 1000].includes(distance(id))) ids.add(id);
+    if (keepNeighbours) for (const id of panes.keys()) if (adjacent(id)) ids.add(id);
     return ids;
   };
   const reconcile = () => {
@@ -116,6 +115,7 @@ export function createPaneLifecycleStore(
     capturing = null;
     if (hasPicture(paneId) || retry) retryAt.delete(paneId);
   };
+  const adjacent = (paneId: string) => [1, 1000].includes(distance(paneId));
   const distance = (paneId: string) => {
     const center = focused ? panes.get(focused) : undefined;
     const pane = panes.get(paneId)!;
