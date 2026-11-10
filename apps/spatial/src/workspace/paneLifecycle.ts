@@ -3,6 +3,8 @@ import { createContext, startTransition, use, useEffect, useState } from "react"
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 
 const MAX_MOUNTED = 10;
+const DATA_READY = 6;
+const DATA_IDLE_BUDGET_MS = PICTURE_IDLE_BUDGET_MS;
 const QUIET_MS = 500;
 
 const PICTURE_TIMEOUT_MS = 10_000;
@@ -35,6 +37,7 @@ export function createPaneLifecycleStore(
   let quietSince = performance.now();
   const visited = new Set<string>();
   const listeners = new Map<string, Set<() => void>>();
+  const dataListeners = new Map<string, Set<() => void>>();
   const motionListeners = new Set<() => void>();
   const pointers = new Set<number>();
   const retryAt = new Map<string, number>();
@@ -42,6 +45,7 @@ export function createPaneLifecycleStore(
   const motionHolds = new Map<string, boolean>();
   const deferred = new Set<string>();
   const pendingComposers = new Set<string>();
+  const dataReady = new Set<string>();
   let arrivalFrame: number | null = null;
   let removalFrame: number | null = null;
   let moving = false;
@@ -52,12 +56,16 @@ export function createPaneLifecycleStore(
   let storedTimer: ReturnType<typeof setTimeout> | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let idle: number | null = null;
+  let dataIdle: number | null = null;
   let hasPicture: (paneId: string) => boolean = () => false;
   let hasCover: (paneId: string) => boolean = () => false;
   let canPicture: (paneId: string, visited: boolean) => boolean = () => true;
   let capturing: { paneId: string; since: number } | null = null;
   let disposed = false;
 
+  const notifyData = (paneId: string) => {
+    for (const listener of dataListeners.get(paneId) ?? []) listener();
+  };
   const notify = (paneId: string) => {
     for (const listener of listeners.get(paneId) ?? []) listener();
   };
@@ -85,8 +93,10 @@ export function createPaneLifecycleStore(
   const cancel = () => {
     if (timer !== null) clearTimeout(timer);
     if (idle !== null) cancelIdleCallback(idle);
+    if (dataIdle !== null) cancelIdleCallback(dataIdle);
     timer = null;
     idle = null;
+    dataIdle = null;
   };
   const retained = () => {
     if (overview) return new Set<string>();
@@ -134,6 +144,32 @@ export function createPaneLifecycleStore(
           (retryAt.get(id) ?? 0) <= performance.now(),
       )
       .sort((a, b) => distance(a) - distance(b) || Number(hasCover(a)) - Number(hasCover(b)))[0];
+  const nearestOffscreen = () =>
+    [...panes.keys()]
+      .filter((id) => id !== focused && !visible.has(id) && !mounted.has(id))
+      .sort((a, b) => distance(a) - distance(b))
+      .slice(0, DATA_READY);
+  const keepDataReady = () => {
+    if (overview) return;
+    const near = nearestOffscreen();
+    for (const id of dataReady)
+      if (!near.includes(id)) {
+        dataReady.delete(id);
+        notifyData(id);
+      }
+    if (near.every((id) => dataReady.has(id))) return;
+    dataIdle = requestIdleCallback((deadline) => {
+      dataIdle = null;
+      if (moving || pointers.size > 0) return;
+      if (deadline.timeRemaining() >= DATA_IDLE_BUDGET_MS) {
+        const next = nearestOffscreen().find((id) => !dataReady.has(id));
+        if (!next) return;
+        dataReady.add(next);
+        notifyData(next);
+      }
+      keepDataReady();
+    });
+  };
   const revealTimelines = () => {
     if (![...mounted].some((id) => deferred.has(id))) return;
     if (moving || pendingComposers.size > 0 || arrivalFrame !== null) return;
@@ -168,6 +204,7 @@ export function createPaneLifecycleStore(
       !picturesReady
     )
       return;
+    keepDataReady();
     if (capturing) {
       if (
         (loaded.has(capturing.paneId) && hasPicture(capturing.paneId)) ||
@@ -251,6 +288,16 @@ export function createPaneLifecycleStore(
     },
     holdsLiveInMotion: (paneId: string) => motionHolds.get(paneId),
     timelineDeferred: (paneId: string) => deferred.has(paneId),
+    keepsDataReady: (paneId: string) => dataReady.has(paneId),
+    subscribeDataReady: (paneId: string, listener: () => void) => {
+      let entries = dataListeners.get(paneId);
+      if (!entries) dataListeners.set(paneId, (entries = new Set()));
+      entries.add(listener);
+      return () => {
+        entries.delete(listener);
+        if (entries.size === 0) dataListeners.delete(paneId);
+      };
+    },
     composerReady: (paneId: string) => {
       if (!pendingComposers.delete(paneId)) return;
       schedule();
@@ -345,7 +392,7 @@ export function createPaneLifecycleStore(
       if (focused && !panes.has(focused)) focused = null;
       if (capturing && !panes.has(capturing.paneId)) release(false);
       for (const id of mounted) if (!panes.has(id)) unmount(id);
-      for (const ids of [visible, visited, loaded, deferred, pendingComposers])
+      for (const ids of [visible, visited, loaded, deferred, pendingComposers, dataReady])
         for (const id of ids) if (!panes.has(id)) ids.delete(id);
       for (const entries of [retryAt, motionHolds])
         for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);

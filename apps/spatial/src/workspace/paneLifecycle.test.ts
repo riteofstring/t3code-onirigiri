@@ -148,6 +148,102 @@ it("mounts no offscreen chat that already has a current picture", () => {
   expect(mounted(store)).toEqual(["p0"]);
 });
 
+const dataReady = (store: PaneLifecycleStore) =>
+  panes.filter((p) => store.keepsDataReady(p.paneId)).map((p) => p.paneId);
+
+it("keeps the six nearest offscreen chats' data ready after the quiet tail without mounting them", () => {
+  const store = make();
+  store.setVisible("p0", true);
+  store.setVisible("p1", true);
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(499);
+  expect(dataReady(store)).toEqual([]);
+  vi.advanceTimersByTime(3);
+  expect(dataReady(store).length).toBeGreaterThan(0);
+  expect(dataReady(store).length).toBeLessThan(6);
+  vi.advanceTimersByTime(100);
+  expect(dataReady(store)).toEqual(["p2", "p3", "p4", "p5", "p6", "p7"]);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+});
+
+it("moves the ready data with the focus", () => {
+  const store = make();
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
+  store.setFocus("p20");
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toEqual(["p17", "p18", "p19", "p21", "p22", "p23"]);
+});
+
+it("readies no data without background pictures or while moving", () => {
+  const store = make();
+  store.setPictures(() => true);
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toEqual([]);
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toEqual([]);
+  store.setMoving(false);
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toHaveLength(6);
+});
+
+it("stops readying data on entering overview and resumes at rest", () => {
+  const store = make();
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(502);
+  const before = dataReady(store);
+  expect(before.length).toBeGreaterThan(0);
+  expect(before.length).toBeLessThan(6);
+  store.setOverview(true, null);
+  store.setBackgroundPictures(false);
+  vi.advanceTimersByTime(2000);
+  expect(dataReady(store)).toEqual(before);
+  store.setOverview(false, "p0");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toHaveLength(6);
+});
+
+it("spends a ready slot on no chat that is already mounted", () => {
+  const store = make();
+  store.setPictures((id) => id !== "p1");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(1500);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  expect(dataReady(store)).toEqual(["p2", "p3", "p4", "p5", "p6", "p7"]);
+});
+
+it("waits for an idle slot with time to spare before readying data", () => {
+  const store = make();
+  let remaining = 0;
+  vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+    setTimeout(() => callback({ didTimeout: false, timeRemaining: () => remaining }), 1),
+  );
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(700);
+  expect(dataReady(store)).toEqual([]);
+  remaining = 50;
+  vi.advanceTimersByTime(100);
+  expect(dataReady(store)).toHaveLength(6);
+});
+
+it("forgets ready data for panes that are removed", () => {
+  const store = make();
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(700);
+  expect(store.keepsDataReady("p1")).toBe(true);
+  store.setPanes(panes.filter((pane) => pane.paneId !== "p1"));
+  expect(store.keepsDataReady("p1")).toBe(false);
+});
+
 it("mounts only the retained chats after a move when every picture is current", () => {
   const store = make();
   store.setVisible("p0", true);

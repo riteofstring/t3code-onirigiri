@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   interactive: false,
   composerVersion: 0,
   composerActions: [] as number[],
+  dataReadyThreads: new Set<string>(),
   activeKeys: 0,
   showClock: false,
   shellUpdatedAt: "2026-10-15T12:00:00.000Z",
@@ -69,6 +70,12 @@ vi.mock("./paneLifecycle", async () => {
   const { createContext } = await import("react");
   return { PaneLifecycleContext: createContext(null), usePaneMounted: () => state.mounted };
 });
+vi.mock("./ThreadDataReady", () => ({
+  ThreadDataReady: ({ thread }: { thread: { threadId: string } }) => {
+    state.dataReadyThreads.add(thread.threadId);
+    return null;
+  },
+}));
 vi.mock("@t3tools/web/src/state/entities", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
@@ -309,6 +316,7 @@ beforeEach(() => {
   state.interactive = false;
   state.composerVersion = 0;
   state.composerActions = [];
+  state.dataReadyThreads.clear();
   state.activeKeys = 0;
   state.showClock = false;
   appComposerRef = { current: null };
@@ -1485,6 +1493,29 @@ it("keeps a focused retained composer inactive during camera motion", async () =
   expect(state.activeKeys).toBe(0);
   expect(appComposerRef.current).toBeNull();
   expect(container.querySelector("textarea")).toBe(editor);
+});
+
+it("loads an offscreen chat's thread data once the lifecycle keeps it ready, with nothing mounted", async () => {
+  const { createPaneLifecycleStore } =
+    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
+  lifecycle = createPaneLifecycleStore(
+    [
+      { paneId: "focused", plane: 0, slot: 0 },
+      { paneId, plane: 0, slot: 1 },
+    ],
+    "focused",
+  );
+  lifecycle.setPictures(() => true);
+  lifecycle.setBackgroundPictures(true);
+  state.mounted = false;
+  live();
+  await render(false, false, false);
+  expect(state.dataReadyThreads.size).toBe(0);
+  await act(() => vi.advanceTimersByTimeAsync(700));
+  expect(lifecycle.keepsDataReady(paneId)).toBe(true);
+  expect(lifecycle.isMounted(paneId)).toBe(false);
+  expect([...state.dataReadyThreads]).toEqual(["thread-one"]);
+  expect(container.querySelector("textarea")).toBeNull();
 });
 
 it("binds the destination and admits three keys on the camera stop edge", async () => {

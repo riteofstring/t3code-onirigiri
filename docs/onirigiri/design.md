@@ -117,8 +117,13 @@ This page records constraints that span files and are easy to break without noti
   chat that can be pictured. A chat whose picture is current is never mounted to take a picture:
   a chat with a current picture and nothing to lose leaves its DOM when the camera moves, so a
   tree mounted for it in advance would be discarded by the next move, and mounting it costs
-  frames. The price is that a pictured neighbour's thread
-  data is no longer loaded before its first visit in a page load.
+  frames.
+- The six nearest offscreen chats that are not mounted keep their thread data loaded, with
+  nothing of theirs mounted, so the first visit to a neighbour does not wait for its data. One
+  more is added per idle period that has time to spare. That runs only where background pictures
+  run and after the arrival's timelines are revealed, so not while the camera moves, a pointer is
+  held, or in overview or full screen, where the set already loaded is kept. The set follows the
+  focus.
 - Offscreen retained content uses the engine's hidden runtime and content visibility containment
   to exclude layout and paint. Its React subscriptions remain attached; hiding does not suspend
   store updates. This is why the mounted set is capped: every mounted chat re-renders on shell

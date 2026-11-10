@@ -52,6 +52,7 @@ import {
 } from "@t3tools/web/src/panelAnimations";
 
 import { usePaneActivity } from "./paneActivity";
+import { ThreadDataReady } from "./ThreadDataReady";
 import { type ChatRemoval, PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer } from "./panePictureSnapshot";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
@@ -320,6 +321,13 @@ const PaneBody = memo(function PaneBody({
       [lifecycle, paneId],
     ),
     () => lifecycle?.timelineDeferred(paneId) ?? false,
+  );
+  const dataReady = useSyncExternalStore(
+    useCallback(
+      (notify) => lifecycle?.subscribeDataReady(paneId, notify) ?? (() => {}),
+      [lifecycle, paneId],
+    ),
+    () => lifecycle?.keepsDataReady(paneId) ?? false,
   );
   const [handoff, setHandoff] = useState(fromDraft);
   const { mounted, lifecycleMounted, preparing, picturable, onContentReadyChange } = usePaneContent(
@@ -678,6 +686,8 @@ const PaneBody = memo(function PaneBody({
                   <PaneScrollState positions={scrollPositions} save={saveScroll} ready={!preparing}>
                     <PaneRouter router={router} threadPath={threadPath} />
                   </PaneScrollState>
+                ) : dataReady ? (
+                  <ThreadDataReady thread={thread} />
                 ) : null}
               </ChatViewContentReadyProvider>
             </ChatViewHostContext>
