@@ -49,24 +49,28 @@ export function ThreadCard({
           ? RUN_STATUS_LABEL[runStatus]
           : null;
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-background p-8 text-center text-foreground">
-      {project ? (
-        <ProjectFavicon project={project} className="size-12! [&_svg]:size-full!" />
-      ) : null}
-      <div className="flex max-w-sm flex-col items-center gap-1.5">
-        {project ? <div className="text-xs text-muted-foreground">{project.title}</div> : null}
-        <div className="line-clamp-3 text-lg font-medium leading-snug text-balance">
-          {thread.title}
+    <div className="flex h-full w-full flex-col items-center justify-center bg-background p-8 text-center text-foreground">
+      <div className="relative flex w-full flex-col items-center gap-6">
+        {project ? (
+          <ProjectFavicon project={project} className="size-12! [&_svg]:size-full!" />
+        ) : null}
+        <div className="flex max-w-sm flex-col items-center gap-1.5">
+          {project ? <div className="text-xs text-muted-foreground">{project.title}</div> : null}
+          <div className="line-clamp-3 text-lg font-medium leading-snug text-balance">
+            {thread.title}
+          </div>
         </div>
+        {variant === "title" ? null : (
+          <div className="absolute inset-x-0 top-full flex flex-col items-center gap-6 pt-6">
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {statusLabel ? <span>{statusLabel}</span> : null}
+              {thread.branch ? <span>{thread.branch}</span> : null}
+              <span>Updated {new Date(thread.updatedAt).toLocaleString()}</span>
+            </div>
+            {variant === "loading" ? <Spinner size="lg" className="text-muted-foreground" /> : null}
+          </div>
+        )}
       </div>
-      {variant === "title" ? null : (
-        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {statusLabel ? <span>{statusLabel}</span> : null}
-          {thread.branch ? <span>{thread.branch}</span> : null}
-          <span>Updated {new Date(thread.updatedAt).toLocaleString()}</span>
-        </div>
-      )}
-      {variant === "loading" ? <Spinner size="lg" className="text-muted-foreground" /> : null}
     </div>
   );
 }
