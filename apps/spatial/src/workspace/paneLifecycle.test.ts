@@ -301,6 +301,41 @@ it("skips pictured neighbours for the nearest chat that lacks a picture", () => 
   expect(mounted(store)).toEqual(["p0", "p2"]);
 });
 
+it("pictures the chats focused most recently before nearer ones", () => {
+  const store = make();
+  store.setPictures((id) => id === "p0");
+  vi.advanceTimersByTime(1);
+  store.setFocus("p20");
+  vi.advanceTimersByTime(1);
+  store.setFocus("p30");
+  vi.advanceTimersByTime(1);
+  store.setFocus("p0");
+  store.setPictures((id) => id === "p0");
+  store.setMoving(true);
+  for (const id of ["p20", "p30"]) store.registerChat(id, releasable());
+  store.setMoving(false);
+  store.setMoving(true);
+  vi.advanceTimersByTime(40);
+  store.setMoving(false);
+  const pictured = new Set<string>();
+  const take = (id: string) => {
+    store.contentMounted(id);
+    pictured.add(id);
+    store.setPictures((pane) => pictured.has(pane));
+  };
+  store.setPictures((pane) => pictured.has(pane));
+  expect(mounted(store)).toEqual(["p0"]);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(501);
+  expect(mounted(store)).toEqual(["p0", "p30"]);
+  take("p30");
+  vi.advanceTimersByTime(101);
+  expect(mounted(store)).toEqual(["p0", "p20", "p30"]);
+  take("p20");
+  vi.advanceTimersByTime(101);
+  expect(mounted(store)).toEqual(["p0", "p1", "p20", "p30"]);
+});
+
 it("keeps dirty mounted panes beyond ten until their pictures become current", () => {
   const store = make();
   for (let i = 1; i < 15; i++) store.setFocus(`p${i}`);

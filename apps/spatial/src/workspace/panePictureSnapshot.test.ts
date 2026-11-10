@@ -149,6 +149,58 @@ it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion
     finishes[1]!();
   },
 );
+function onScreenPane() {
+  const element = pane();
+  element.getBoundingClientRect = () => new DOMRect(10, 10, 100, 100);
+  return element;
+}
+it("takes an on-screen chat's picture only while a cover hides it, and stops when the cover goes", async () => {
+  const queue = createSnapshotQueue();
+  const active: AbortSignal[] = [];
+  const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(
+    async (_id, _element, _can, _wait, signal) => {
+      active.push(signal);
+      await new Promise<void>(() => {});
+    },
+  );
+  dispose = queue.setDraw(
+    draw,
+    () => false,
+    () => false,
+  );
+  const element = onScreenPane();
+  queue.request("first", element);
+  await vi.advanceTimersByTimeAsync(300);
+  expect(draw).not.toHaveBeenCalled();
+  expect(queue.shown(element)).toBe(true);
+  queue.setCovered(true);
+  expect(queue.shown(element)).toBe(false);
+  await vi.advanceTimersByTimeAsync(300);
+  expect(draw).toHaveBeenCalledOnce();
+  queue.setCovered(false);
+  expect(active[0]!.aborted).toBe(true);
+});
+it("pictures the most recently focused chat first", async () => {
+  const queue = createSnapshotQueue();
+  const order: string[] = [];
+  const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(async (id) => {
+    order.push(id);
+  });
+  const focusedAt = new Map([
+    ["second", 2],
+    ["third", 3],
+  ]);
+  dispose = queue.setDraw(
+    draw,
+    () => false,
+    () => false,
+    () => "ordinary",
+    (id) => focusedAt.get(id) ?? 0,
+  );
+  for (const id of ["first", "second", "third"]) queue.request(id, pane());
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(order).toEqual(["third", "second", "first"]);
+});
 it("saves a picture that finished encoding during motion once the camera stops", async () => {
   const queue = createSnapshotQueue();
   let finish!: () => void;

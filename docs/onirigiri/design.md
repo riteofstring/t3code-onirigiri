@@ -110,8 +110,9 @@ This page records constraints that span files and are easy to break without noti
   and timelines are revealed one at a time, two frames apart, nearest first, only after every pending composer is
   ready. Retained chats reveal their existing DOM at once.
 - In overview the lifecycle admits nothing and background preparation stops.
-- When idle, one offscreen chat at a time is mounted only to take its picture, nearest first and,
-  at equal distance, a chat with no cover at all before one with a stale cover; it waits behind
+- When idle, one offscreen chat at a time is mounted only to take its picture: the chat focused
+  most recently first, then the nearest and, at equal distance, a chat with no cover at all before
+  one with a stale cover; it waits behind
   every arrival and gives up after 10 s, retrying after five minutes. At the retention cap the
   farthest tree with a current picture is evicted to make room, so one long rest reaches every
   chat that can be pictured. A chat whose picture is current is never mounted to take a picture:
@@ -146,7 +147,9 @@ the thread shell, which is never stale.
   Once a chat holds state of its own, it keeps its DOM until it unmounts, so it also stays
   exempt from eviction; reload or close it to release the hold.
 - Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
-  (project icon, project and thread title) with no spinner or status. Leaving overview restores
+  (project icon, project and thread title) with no spinner or status. The card's icon and title
+  sit at the same height in every variant, with status and spinner hung below them, so a card that
+  changes variant as overview opens does not jump. Leaving overview restores
   focus and visibility admission together, so the destination composer still loads first.
 - A record is keyed by pane and applied geometry: stage size, device pixel ratio, column and cell
   sizing, workspace defaults, the selected type defaults and per-pane defaults, plus `tiled` or
@@ -192,12 +195,16 @@ the thread shell, which is never stale.
   removal it keeps its live view until current static pixels exist.
 - Pictures are taken one at a time while idle and at least 250 ms after the last input. Missing
   pictures go first, then refreshes behind an existing cover, then panes mounted only to be pictured,
-  which yield to any other due request. Failures back off from 3 s, doubling up to five minutes.
+  which yield to any other due request; within each group the chat focused most recently goes
+  first. Failures back off from 3 s, doubling up to five minutes.
   Option+arrow navigation keys do not count as input. Nothing is taken while the camera moves or
   during a full-screen transition, and a capture in progress is abandoned when either starts; once
   motion ends, due pictures resume without a further quiet wait.
-- A pane is only pictured while it is off screen. Capturing on-screen chats was tried and produced
-  one-frame blank panes, so a chat you are looking at gets its picture after it scrolls away.
+- A pane is only pictured while it is off screen or covered. Capturing on-screen chats was tried
+  and produced one-frame blank panes, so a chat you are looking at gets its picture after it
+  scrolls away, or in overview, where a card covers every chat: there the chats still mounted are
+  pictured in place, so the chat you came from has its picture within a few seconds. Leaving
+  overview abandons a capture in progress.
 - Picture URLs are decoded during idle time. Each selected cover retains its decoder so a ready URL
   keeps its loaded image resource when the live view temporarily replaces its image element.
   Removing the cover releases both the URL and decoder; decoded pixels remain browser-managed.

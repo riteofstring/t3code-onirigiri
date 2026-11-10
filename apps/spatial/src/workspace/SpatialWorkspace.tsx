@@ -396,6 +396,7 @@ function SpatialWorkspaceView({
   }, [interacted]);
   const [hasMoved, setHasMoved] = useState(false);
   if (cameraMoving && interacted && !hasMoved) setHasMoved(true);
+  const focusedAt = useCallback((id: string) => lifecycle?.focusedAt(id) ?? 0, [lifecycle]);
   const holdsLiveInMotion = useCallback(
     (id: string) => lifecycle?.holdsLiveInMotion(id),
     [lifecycle],
@@ -411,10 +412,12 @@ function SpatialWorkspaceView({
     picturesLoaded,
     paneSnapshots,
     setCaptureActivity,
+    setPicturesCovered,
     stageRef,
     stageViewport,
   } = useSavedPanePictures(getScene, onSnapshotFailure, pictureMount, !alwaysLive, {
     holdsLive: holdsLiveInMotion,
+    focusedAt,
     moving: cameraMoving,
   });
   const {
@@ -681,7 +684,16 @@ function SpatialWorkspaceView({
     const pictures = !alwaysLive && active && fullScreenPhase === null;
     lifecycle?.setBackgroundPictures(pictures && !overview);
     setCaptureActivity(pictures, lifecycle?.isMoving() ?? false);
-  }, [active, alwaysLive, fullScreenPhase, lifecycle, overview, setCaptureActivity]);
+    setPicturesCovered(overview);
+  }, [
+    active,
+    alwaysLive,
+    fullScreenPhase,
+    lifecycle,
+    overview,
+    setCaptureActivity,
+    setPicturesCovered,
+  ]);
 
   const requestedRoutesRef = useRef(new Set<string>());
   const pendingNavigationPaneRef = useRef<string | null>(null);

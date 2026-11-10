@@ -48,8 +48,10 @@ export function createSnapshotQueue() {
   let needsPicture: (paneId: string) => boolean = () => false;
   let hasSavedPixels: (paneId: string) => boolean = () => false;
   let mountOf: (paneId: string) => PictureMount = () => "ordinary";
+  let focusedAt: (paneId: string) => number = () => 0;
   let enabled = true;
   let moving = false;
+  let covered = false;
   let drawing = false;
   let continuation: {
     paneId: string;
@@ -98,6 +100,7 @@ export function createSnapshotQueue() {
     "wheel",
     "blur",
   ] as const;
+  const shown = (element: HTMLElement) => !covered && onScreen(element);
   const cancelScheduled = () => {
     if (idle !== null) cancelIdleCallback(idle);
     if (timer !== null) clearTimeout(timer);
@@ -173,7 +176,7 @@ export function createSnapshotQueue() {
         resume.resolve(true);
         return;
       }
-      const offScreen = [...pending].filter(([, request]) => !onScreen(request.element));
+      const offScreen = [...pending].filter(([, request]) => !shown(request.element));
       if (offScreen.length === 0) return;
       const dueRequests = offScreen.filter((candidate) => due(candidate) <= now);
       const priority = ([paneId, request]: (typeof dueRequests)[number]) =>
@@ -182,6 +185,7 @@ export function createSnapshotQueue() {
         ? dueRequests.sort(
             (a, b) =>
               priority(a) - priority(b) ||
+              focusedAt(b[0]) - focusedAt(a[0]) ||
               distanceFromCenter(a[1].element) - distanceFromCenter(b[1].element),
           )[0]!
         : offScreen.reduce((first, candidate) => (due(candidate) < due(first) ? candidate : first));
@@ -281,11 +285,13 @@ export function createSnapshotQueue() {
     nextNeedsPicture: (paneId: string) => boolean,
     nextHasSavedPixels: (paneId: string) => boolean,
     nextMountOf: (paneId: string) => PictureMount = () => "ordinary",
+    nextFocusedAt: (paneId: string) => number = () => 0,
   ) => {
     draw = nextDraw;
     needsPicture = nextNeedsPicture;
     hasSavedPixels = nextHasSavedPixels;
     mountOf = nextMountOf;
+    focusedAt = nextFocusedAt;
     for (const type of inputEvents) {
       window.addEventListener(type, noteInput, { capture: true, passive: true });
     }
@@ -305,17 +311,25 @@ export function createSnapshotQueue() {
       }
     };
   };
+  const stop = () => {
+    activeCapture?.abort();
+    continuation?.cancel();
+    continuation = null;
+  };
   const setActivity = (nextEnabled: boolean, nextMoving: boolean) => {
     if (enabled === nextEnabled && moving === nextMoving) return;
     enabled = nextEnabled;
     moving = nextMoving;
-    if (!enabled || moving) {
-      activeCapture?.abort();
-      continuation?.cancel();
-      continuation = null;
-    }
+    if (!enabled || moving) stop();
     cancelScheduled();
     next();
   };
-  return { request, setDraw, setActivity };
+  const setCovered = (nextCovered: boolean) => {
+    if (covered === nextCovered) return;
+    covered = nextCovered;
+    if (!covered) stop();
+    cancelScheduled();
+    next();
+  };
+  return { request, setDraw, setActivity, setCovered, shown };
 }

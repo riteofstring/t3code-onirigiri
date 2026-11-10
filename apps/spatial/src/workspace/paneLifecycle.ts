@@ -36,6 +36,7 @@ export function createPaneLifecycleStore(
   const loaded = new Set<string>();
   let quietSince = performance.now();
   const visited = new Set<string>();
+  const focusedAt = new Map<string, number>(focused ? [[focused, performance.now()]] : []);
   const listeners = new Map<string, Set<() => void>>();
   const dataListeners = new Map<string, Set<() => void>>();
   const motionListeners = new Set<() => void>();
@@ -143,7 +144,12 @@ export function createPaneLifecycleStore(
           canPicture(id, visited.has(id)) &&
           (retryAt.get(id) ?? 0) <= performance.now(),
       )
-      .sort((a, b) => distance(a) - distance(b) || Number(hasCover(a)) - Number(hasCover(b)))[0];
+      .sort(
+        (a, b) =>
+          (focusedAt.get(b) ?? 0) - (focusedAt.get(a) ?? 0) ||
+          distance(a) - distance(b) ||
+          Number(hasCover(a)) - Number(hasCover(b)),
+      )[0];
   const nearestOffscreen = () =>
     [...panes.keys()]
       .filter((id) => id !== focused && !visible.has(id) && !mounted.has(id))
@@ -287,6 +293,7 @@ export function createPaneLifecycleStore(
       };
     },
     holdsLiveInMotion: (paneId: string) => motionHolds.get(paneId),
+    focusedAt: (paneId: string) => focusedAt.get(paneId) ?? 0,
     timelineDeferred: (paneId: string) => deferred.has(paneId),
     keepsDataReady: (paneId: string) => dataReady.has(paneId),
     subscribeDataReady: (paneId: string, listener: () => void) => {
@@ -380,6 +387,7 @@ export function createPaneLifecycleStore(
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
       focused = paneId;
+      if (paneId !== null) focusedAt.set(paneId, performance.now());
       if (capturing?.paneId === focused) {
         capturing = null;
         retryAt.delete(paneId!);
@@ -394,7 +402,7 @@ export function createPaneLifecycleStore(
       for (const id of mounted) if (!panes.has(id)) unmount(id);
       for (const ids of [visible, visited, loaded, deferred, pendingComposers, dataReady])
         for (const id of ids) if (!panes.has(id)) ids.delete(id);
-      for (const entries of [retryAt, motionHolds])
+      for (const entries of [retryAt, motionHolds, focusedAt])
         for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);
       schedule();
     },

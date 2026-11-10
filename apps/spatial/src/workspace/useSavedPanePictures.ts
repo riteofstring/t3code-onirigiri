@@ -26,7 +26,7 @@ import {
 import type { PictureMount } from "./paneLifecycle";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createPanePictureUrls } from "./panePictureUrls";
-import { createSnapshotQueue, onScreen } from "./panePictureQueue";
+import { createSnapshotQueue } from "./panePictureQueue";
 import { threadPaneId } from "./useWorkspacePanes";
 import { readItem, writeItem } from "./useWorkspacePreferences";
 
@@ -71,6 +71,7 @@ function paneHasCommittedContent(
 
 export interface PictureMotion {
   readonly holdsLive: (paneId: string) => boolean | undefined;
+  readonly focusedAt?: (paneId: string) => number;
   readonly moving: boolean;
 }
 
@@ -164,6 +165,7 @@ export function useSavedPanePictures(
   picturesLoaded: boolean;
   paneSnapshots: PaneSnapshots;
   setCaptureActivity: (enabled: boolean, moving: boolean) => void;
+  setPicturesCovered: (covered: boolean) => void;
   stageRef: (element: HTMLElement | null) => void;
   stageViewport: { width: number; height: number; compact: boolean };
 } {
@@ -212,9 +214,11 @@ export function useSavedPanePictures(
   const stageSizeRef = useRef("");
   const compactRef = useRef(false);
   const pictureMountRef = useRef(pictureMount);
+  const focusedAtRef = useRef(motion?.focusedAt);
   useLayoutEffect(() => {
     pictureMountRef.current = pictureMount;
-  }, [pictureMount]);
+    focusedAtRef.current = motion?.focusedAt;
+  }, [motion?.focusedAt, pictureMount]);
   const [stageViewport, setStageViewport] = useState({ width: 0, height: 0, compact: false });
   const [geometryVersion, setGeometryVersion] = useState(0);
 
@@ -549,6 +553,7 @@ export function useSavedPanePictures(
     [updateSaved, visualRevision],
   );
 
+  const [snapshots] = useState(createSnapshotQueue);
   const drawSnapshot = useCallback(
     async (
       paneId: string,
@@ -576,7 +581,7 @@ export function useSavedPanePictures(
           visualRevision(paneId) === beforeVisualRevision &&
           content !== undefined &&
           paneHasCommittedContent(paneId, content, beforeVisualRevision) &&
-          !onScreen(element) &&
+          !snapshots.shown(element) &&
           canStart()
         );
       };
@@ -618,6 +623,7 @@ export function useSavedPanePictures(
       isCurrentPicture,
       keepPicture,
       onSnapshotFailure,
+      snapshots,
       visualRevision,
     ],
   );
@@ -625,7 +631,6 @@ export function useSavedPanePictures(
   useLayoutEffect(() => {
     drawSnapshotRef.current = drawSnapshot;
   }, [drawSnapshot]);
-  const [snapshots] = useState(createSnapshotQueue);
   useEffect(
     () =>
       enabled
@@ -650,6 +655,7 @@ export function useSavedPanePictures(
               return key !== null && savedRef.current?.has(key) === true;
             },
             (paneId) => pictureMountRef.current(paneId),
+            (paneId) => focusedAtRef.current?.(paneId) ?? 0,
           )
         : undefined,
     [enabled, isCurrentPicture, recordKey, snapshots],
@@ -715,6 +721,7 @@ export function useSavedPanePictures(
     picturesLoaded: !enabled || saved !== null,
     paneSnapshots,
     setCaptureActivity: snapshots.setActivity,
+    setPicturesCovered: snapshots.setCovered,
     stageRef,
     stageViewport,
   };

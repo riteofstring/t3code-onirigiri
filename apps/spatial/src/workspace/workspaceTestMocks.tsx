@@ -18,6 +18,7 @@ const pictures = {
   picturesLoaded: true,
   paneSnapshots: {},
   setCaptureActivity: vi.fn(),
+  setPicturesCovered: vi.fn(),
   stageRef: vi.fn(),
   stageViewport: { width: 1200, height: 900, compact: false },
 };
