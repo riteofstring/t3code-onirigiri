@@ -129,7 +129,8 @@ export function createPaneLifecycleStore(
         (id) =>
           !mounted.has(id) &&
           !visible.has(id) &&
-          (hasPicture(id) || canPicture(id, visited.has(id))) &&
+          !hasPicture(id) &&
+          canPicture(id, visited.has(id)) &&
           (retryAt.get(id) ?? 0) <= performance.now(),
       )
       .sort((a, b) => distance(a) - distance(b) || Number(hasCover(a)) - Number(hasCover(b)))[0];
@@ -200,7 +201,7 @@ export function createPaneLifecycleStore(
       if (mounted.size >= maxMounted) {
         const keep = retained();
         const farthest = [...mounted]
-          .filter((id) => !keep.has(id) && hasPicture(id) && distance(id) > distance(paneId))
+          .filter((id) => !keep.has(id) && hasPicture(id))
           .sort((a, b) => distance(b) - distance(a))
           .find(releasable);
         if (!farthest) return;

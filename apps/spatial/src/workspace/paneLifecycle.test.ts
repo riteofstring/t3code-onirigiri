@@ -93,9 +93,10 @@ it("retains dirty departures even beyond the retention cap", () => {
   expect(mounted(store)).toHaveLength(39);
 });
 
-it("fills one nearest unloaded tree per idle slot, including panes with saved pictures", () => {
+it("mounts one nearest unpictured tree per idle slot and waits for its picture", () => {
   const store = make();
-  store.setPictures(() => true);
+  const pictured = new Set(["p0", "p2"]);
+  store.setPictures((id) => pictured.has(id));
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(499);
   expect(mounted(store)).toEqual(["p0"]);
@@ -104,13 +105,80 @@ it("fills one nearest unloaded tree per idle slot, including panes with saved pi
   vi.advanceTimersByTime(1000);
   expect(mounted(store)).toEqual(["p0", "p1"]);
   store.contentMounted("p1");
+  pictured.add("p1");
+  store.setPictures((id) => pictured.has(id));
   vi.advanceTimersByTime(101);
-  expect(mounted(store)).toEqual(["p0", "p1", "p2"]);
+  expect(mounted(store)).toEqual(["p0", "p1", "p3"]);
 });
 
-it("input restarts the quiet interval and leaves retained trees intact", () => {
+it("pictures every offscreen chat during one long rest, past the retention cap", () => {
+  const store = make();
+  const pictured = new Set(["p0"]);
+  store.setPictures((id) => pictured.has(id));
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(501);
+  for (let step = 0; step < 60 && pictured.size < panes.length; step++) {
+    for (const id of mounted(store))
+      if (!pictured.has(id)) {
+        store.contentMounted(id);
+        pictured.add(id);
+      }
+    store.setPictures((id) => pictured.has(id));
+    vi.advanceTimersByTime(101);
+  }
+  expect(pictured.size).toBe(panes.length);
+  expect(mounted(store).length).toBeLessThanOrEqual(10);
+});
+
+it("keeps the adjacent chats mounted in full screen even when their pictures are current", () => {
   const store = make();
   store.setPictures(() => true);
+  store.setFocus("p5");
+  store.setKeepNeighbours(true);
+  vi.advanceTimersByTime(5000);
+  expect(store.isMounted("p4")).toBe(true);
+  expect(store.isMounted("p6")).toBe(true);
+});
+
+it("mounts no offscreen chat that already has a current picture", () => {
+  const store = make();
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(5000);
+  expect(mounted(store)).toEqual(["p0"]);
+});
+
+it("mounts only the retained chats after a move when every picture is current", () => {
+  const store = make();
+  store.setVisible("p0", true);
+  store.setVisible("p1", true);
+  for (const id of ["p0", "p1"]) store.registerChat(id, releasable());
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  store.setMoving(true);
+  vi.advanceTimersByTime(48);
+  expect(mounted(store)).toEqual([]);
+  store.setMoving(false);
+  store.composerReady("p0");
+  store.composerReady("p1");
+  vi.advanceTimersByTime(5000);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+});
+
+it("mounts an offscreen chat once its picture stops being current", () => {
+  const store = make();
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(5000);
+  expect(mounted(store)).toEqual(["p0"]);
+  store.setPictures((id) => id !== "p3");
+  vi.advanceTimersByTime(501);
+  expect(mounted(store)).toEqual(["p0", "p3"]);
+});
+
+it("input restarts the quiet interval before the next picture mount", () => {
+  const store = make();
+  store.setPictures((id) => id === "p0");
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(400);
   window.dispatchEvent(new Event("keydown"));
@@ -129,12 +197,12 @@ it("protects the entire visible set when it exceeds the retained cap", () => {
   expect(mounted(store)).toEqual(["p0", "p1", "p2", "p3"]);
 });
 
-it("fills the nearest spare tree even when a farther tree lacks a picture", () => {
+it("skips pictured neighbours for the nearest chat that lacks a picture", () => {
   const store = make();
   store.setPictures((id) => id === "p0" || id === "p1");
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(501);
-  expect(mounted(store)).toEqual(["p0", "p1"]);
+  expect(mounted(store)).toEqual(["p0", "p2"]);
 });
 
 it("keeps dirty mounted panes beyond ten until their pictures become current", () => {
@@ -146,17 +214,22 @@ it("keeps dirty mounted panes beyond ten until their pictures become current", (
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${5 + i}`));
 });
 
-it("replaces distant clean trees with nearest neighbours after a focus jump", () => {
+it("replaces distant clean trees with the nearest stale neighbours after a focus jump", () => {
   const store = make();
-  store.setPictures(() => true);
+  const stale = new Set<string>();
+  store.setPictures((id) => !stale.has(id));
   for (let i = 1; i < 40; i++) store.setFocus(`p${i}`);
   vi.advanceTimersByTime(501);
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${30 + i}`));
+  for (let i = 1; i < 10; i++) stale.add(`p${i}`);
+  store.setPictures((id) => !stale.has(id));
   store.setFocus("p0");
   store.setBackgroundPictures(true);
   for (let i = 1; i < 10; i++) {
     vi.advanceTimersByTime(101);
     store.contentMounted(`p${i}`);
+    stale.delete(`p${i}`);
+    store.setPictures((id) => !stale.has(id));
   }
   vi.advanceTimersByTime(101);
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}`));
@@ -241,7 +314,7 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   store.setVisible("p0", true);
   store.setVisible("p1", true);
   for (const id of ["p0", "p1", "p2"]) store.registerChat(id, releasable());
-  store.setPictures(() => true);
+  store.setPictures((id) => id !== "p2");
   store.setBackgroundPictures(true);
   store.setMoving(true);
   vi.advanceTimersByTime(32);

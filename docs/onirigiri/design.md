@@ -110,8 +110,15 @@ This page records constraints that span files and are easy to break without noti
   and timelines are revealed one at a time, two frames apart, nearest first, only after every pending composer is
   ready. Retained chats reveal their existing DOM at once.
 - In overview the lifecycle admits nothing and background preparation stops.
-- When idle, one offscreen chat at a time is mounted only to take its picture, nearest first; it
-  waits behind every arrival and gives up after 10 s, retrying after five minutes.
+- When idle, one offscreen chat at a time is mounted only to take its picture, nearest first and,
+  at equal distance, a chat with no cover at all before one with a stale cover; it waits behind
+  every arrival and gives up after 10 s, retrying after five minutes. At the retention cap the
+  farthest tree with a current picture is evicted to make room, so one long rest reaches every
+  chat that can be pictured. A chat whose picture is current is never mounted to take a picture:
+  a chat with a current picture and nothing to lose leaves its DOM when the camera moves, so a
+  tree mounted for it in advance would be discarded by the next move, and mounting it costs
+  frames. The price is that a pictured neighbour's thread
+  data is no longer loaded before its first visit in a page load.
 - Offscreen retained content uses the engine's hidden runtime and content visibility containment
   to exclude layout and paint. Its React subscriptions remain attached; hiding does not suspend
   store updates. This is why the mounted set is capped: every mounted chat re-renders on shell
