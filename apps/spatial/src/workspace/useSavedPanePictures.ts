@@ -515,12 +515,19 @@ export function useSavedPanePictures(
   const getPanePresentation = useCallback<PanePresentationResolver>(
     (pane, { phase, visible, maximized, capabilities }) => {
       if (!enabled || maximized) return "dom";
-      if (pane.surfaceKind !== "thread")
+      if (pane.surfaceKind !== "thread") {
+        if (
+          (phase === "overview" || phase === "overview-motion") &&
+          pane.surfaceKind !== "draft" &&
+          pane.surfaceKind !== "empty-frame"
+        )
+          return { kind: "placeholder" };
         return otherPanePictures &&
           capabilities.canCapture === true &&
           (phase === "motion" || phase === "resize")
           ? { kind: "texture" }
           : "dom";
+      }
       if (
         visible &&
         (phase === "rest" || (phase === "resize" && holdsLiveInMotion?.(pane.paneId) === undefined))

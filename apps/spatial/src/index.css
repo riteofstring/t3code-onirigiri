@@ -394,17 +394,8 @@
 }
 
 .spatial-workspace
-  :is([data-onirigiri-surface-kind="thread"], [data-onirigiri-surface-kind="draft"])
-  > .onirigiri-pane__titlebar,
-.spatial-workspace
-  [data-onirigiri-slot="pane"]:not(
-    [data-onirigiri-surface-kind="empty-frame"],
-    [data-presentation-mode="overview"]
-  )
-  > .onirigiri-pane__titlebar,
-.spatial-workspace
-  [data-onirigiri-slot="pane"][data-presentation-mode="overview"]
-  [data-tool-pane-header] {
+  [data-onirigiri-slot="pane"]:not([data-onirigiri-surface-kind="empty-frame"])
+  > .onirigiri-pane__titlebar {
   display: none;
 }
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vite-plus/test";
 
-import { ThreadCard } from "./ThreadCard";
+import { ThreadCard, ToolCard } from "./ThreadCard";
 
 vi.mock("@t3tools/web/src/state/entities", () => ({
   useThreadShell: () => ({
@@ -48,3 +48,17 @@ it.each([
     expect(markup.includes("data-spinner")).toBe(spinner);
   },
 );
+
+it("shows a non-chat pane as the project icon, its thread and its title", () => {
+  const markup = renderToStaticMarkup(
+    <ToolCard
+      environmentId={"e" as never}
+      threadId={"t" as never}
+      projectId={undefined}
+      title="Terminal"
+      subtitle="Fix the release"
+    />,
+  );
+  expect(markup).toContain('alt="Project icon"');
+  expect(text(markup)).toBe("Fix the releaseTerminal");
+});

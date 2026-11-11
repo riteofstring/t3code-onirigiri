@@ -2306,6 +2306,31 @@ it.each(["motion", "resize"] as const)(
   },
 );
 
+it.each([
+  ["terminal", "overview", { kind: "placeholder" }],
+  ["terminal", "overview-motion", { kind: "placeholder" }],
+  ["terminal", "rest", "dom"],
+  ["draft", "overview", "dom"],
+  ["empty-frame", "overview", "dom"],
+] as const)(
+  "presents a %s pane in %s as its card or live content",
+  async (surfaceKind, phase, expected) => {
+    await mount();
+    expect(
+      hook.getPanePresentation(
+        { ...threadPane, surfaceKind },
+        {
+          phase,
+          focused: false,
+          maximized: false,
+          visible: true,
+          capabilities: { canCapture: true, hasVideo: false },
+        },
+      ),
+    ).toEqual(expected);
+  },
+);
+
 it.each([880, undefined])(
   "rejects and replaces saved pixels when the applied height cap becomes %s",
   async (maxHeight) => {

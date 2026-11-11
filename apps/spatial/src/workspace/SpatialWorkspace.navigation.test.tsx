@@ -95,7 +95,11 @@ vi.mock("@t3tools/web/src/components/pullRequest/LinkPullRequestDialog", () => (
 }));
 vi.mock("@t3tools/web/src/localApi", () => ({ readLocalApi: vi.fn() }));
 vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
-vi.mock("./ThreadCard", () => ({ PaneLoading: () => null, ThreadCard: () => null }));
+vi.mock("./ThreadCard", () => ({
+  PaneLoading: () => null,
+  ThreadCard: () => null,
+  ToolCard: () => null,
+}));
 vi.mock("./DraftPane", () => ({
   DraftPane: ({ paneId, onAddPane }: { paneId: string; onAddPane: (paneId: string) => void }) => (
     <button onClick={() => onAddPane(paneId)}>Add beside draft</button>

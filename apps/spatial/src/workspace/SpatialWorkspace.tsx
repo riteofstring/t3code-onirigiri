@@ -77,10 +77,11 @@ import {
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
-import { PaneLoading, ThreadCard } from "./ThreadCard";
+import { PaneLoading, ThreadCard, ToolCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { beginFullScreenGrow, FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
+import { beginMaximizeReveal } from "./maximizeReveal";
 import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
 import {
@@ -1119,9 +1120,18 @@ function SpatialWorkspaceView({
         return;
       }
       const entering = workspaceRef.current?.getSnapshot().maximizedPaneId !== paneId;
-      if (entering) flushSync(() => setSnapMaximize(true));
-      workspaceRef.current?.togglePaneMaximized(paneId);
-      syncMaximized();
+      if (!entering) {
+        workspaceRef.current?.togglePaneMaximized(paneId);
+        syncMaximized();
+        return;
+      }
+      const reveal = beginMaximizeReveal(paneId);
+      flushSync(() => setSnapMaximize(true));
+      flushSync(() => {
+        workspaceRef.current?.togglePaneMaximized(paneId);
+        syncMaximized();
+      });
+      reveal();
     },
     [changeWorkspacePreferences, preferences.maximizeAll, syncMaximized],
   );
@@ -1267,7 +1277,19 @@ function SpatialWorkspaceView({
   }, [overview]);
   const renderPanePlaceholder = useCallback(
     (pane: WorkspacePane) => {
-      if (pane.surfaceKind !== "thread") return null;
+      if (pane.surfaceKind === "draft" || pane.surfaceKind === "empty-frame") return null;
+      if (pane.surfaceKind !== "thread") {
+        const tool = pane.data as ToolPane;
+        return overview ? (
+          <ToolCard
+            environmentId={tool.environmentId}
+            threadId={tool.threadId}
+            projectId={tool.projectId}
+            title={pane.title}
+            subtitle={pane.subtitle}
+          />
+        ) : null;
+      }
       const data = pane.data as ThreadPaneData;
       const picture = displayedPictureFor(pane.paneId);
       const card =
