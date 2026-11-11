@@ -404,11 +404,11 @@ const PaneBody = memo(function PaneBody({
       deferTimeline: deferred && !handoff,
       timelineFallback:
         !handoff && (preparing || pictureLeaving) ? (
-          <TimelinePicture paneId={paneId} leaving={!preparing} />
+          <TimelinePicture paneId={paneId} leaving={!preparing} resized={maximized} />
         ) : null,
       onComposerReady: setComposerReady,
     }),
-    [deferred, handoff, paneId, pictureLeaving, preparing],
+    [deferred, handoff, maximized, paneId, pictureLeaving, preparing],
   );
   const activity = usePaneActivity(active, liveVisible, contentRef);
   const storedPicture = mounted ? null : (snapshots?.timelinePicture(paneId)?.url ?? null);
@@ -678,7 +678,12 @@ const PaneBody = memo(function PaneBody({
             }
           >
             {storedPicture ? (
-              <TimelinePicture key={storedPicture} paneId={paneId} leaving={false} />
+              <TimelinePicture
+                key={storedPicture}
+                paneId={paneId}
+                leaving={false}
+                resized={maximized}
+              />
             ) : null}
             <ChatViewHostContext value={lifecycle ? host : null}>
               <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
@@ -698,9 +703,19 @@ const PaneBody = memo(function PaneBody({
   );
 });
 
-function TimelinePicture({ paneId, leaving }: { paneId: string; leaving: boolean }) {
+function TimelinePicture({
+  paneId,
+  leaving,
+  resized,
+}: {
+  paneId: string;
+  leaving: boolean;
+  resized: boolean;
+}) {
   const snapshots = use(PaneSnapshotContext);
-  const [picture] = useState(() => snapshots?.timelinePicture(paneId));
+  const [stored] = useState(() => snapshots?.timelinePicture(paneId));
+  const current = leaving ? stored : snapshots?.timelinePicture(paneId);
+  const picture = resized || current?.url !== stored?.url ? null : stored;
   const ref = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   useLayoutEffect(() => {

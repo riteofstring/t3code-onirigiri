@@ -791,7 +791,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   });
   const [findListReady, setFindListReady] = useState(false);
   if (onReadyChange && findListReady && showsEmptyState) setFindListReady(false);
-  const timelineReady = showsEmptyState || (findListReady && !restoringThreadPosition);
+  const timelineReady = rows.length === 0 || (findListReady && !restoringThreadPosition);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the list's readiness to the hosting pane before paint
   useLayoutEffect(() => {
     onReadyChange?.(timelineReady, listIdentityKey);

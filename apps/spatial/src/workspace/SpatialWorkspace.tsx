@@ -1119,13 +1119,11 @@ function SpatialWorkspaceView({
         return;
       }
       const entering = workspaceRef.current?.getSnapshot().maximizedPaneId !== paneId;
-      const grow = entering ? growFullScreenBorder() : null;
       if (entering) flushSync(() => setSnapMaximize(true));
       workspaceRef.current?.togglePaneMaximized(paneId);
       syncMaximized();
-      grow?.();
     },
-    [changeWorkspacePreferences, growFullScreenBorder, preferences.maximizeAll, syncMaximized],
+    [changeWorkspacePreferences, preferences.maximizeAll, syncMaximized],
   );
   const fullScreenBeforeMaximize = useRef(preferences.maximizeAll);
   useEffect(() => {
