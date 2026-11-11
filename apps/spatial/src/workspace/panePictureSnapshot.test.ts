@@ -110,7 +110,7 @@ it("does not start native work after cancelled phase admission or for live produ
   expect(native).not.toHaveBeenCalled();
 });
 it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion", "disable"])(
-  "cancels in-flight work on %s and keeps captures serial",
+  "cancels in-flight work on %s, keeps captures serial and resumes only after a few seconds of rest",
   async (input) => {
     const queue = createSnapshotQueue();
     const active: AbortSignal[] = [];
@@ -145,6 +145,8 @@ it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion
     queue.setActivity(true, false);
     if (input === "pointerdown") window.dispatchEvent(new Event("pointerup"));
     await vi.advanceTimersByTimeAsync(300);
+    expect(active).toHaveLength(input === "disable" ? 2 : 1);
+    await vi.advanceTimersByTimeAsync(1800);
     expect(active).toHaveLength(2);
     finishes[1]!();
   },
@@ -225,7 +227,7 @@ it("saves a picture that finished encoding during motion once the camera stops",
   await vi.advanceTimersByTimeAsync(300);
   expect(save).toHaveBeenCalledOnce();
 });
-it("starts a missing visible picture within the half-second route interval", async () => {
+it("waits for a few seconds of rest after a navigation key before starting a missing picture", async () => {
   const queue = createSnapshotQueue();
   const draw = vi.fn(async () => {});
   dispose = queue.setDraw(
@@ -235,7 +237,9 @@ it("starts a missing visible picture within the half-second route interval", asy
   );
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true }));
   queue.request("first", pane());
-  await vi.advanceTimersByTimeAsync(300);
+  await vi.advanceTimersByTimeAsync(1900);
+  expect(draw).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(200);
   expect(draw).toHaveBeenCalledOnce();
 });
 
@@ -280,6 +284,9 @@ it("cancels scheduled phase admission without starting another capture early", a
   expect(draw).toHaveBeenCalledOnce();
   finish();
   await vi.advanceTimersByTimeAsync(0);
+  flush();
+  expect(draw).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1800);
   flush();
   expect(draw).toHaveBeenCalledTimes(2);
   dispose();

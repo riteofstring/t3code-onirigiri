@@ -185,3 +185,24 @@ it("fades a late picture in over the card once, and keeps the card until the fad
   expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
   expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
 });
+
+it("ends the fade at once when it is cancelled, as when the camera starts moving", async () => {
+  await act(() => {
+    root!.render(
+      <SavedPanePicture
+        image={new Blob(["png"])}
+        cssSize={captureSize}
+        preparedUrl={null}
+        pictureUrl={pictureUrl}
+        summary="Thread"
+        fadeIn
+      />,
+    );
+  });
+  const image = container.querySelector("img")!;
+  await act(() => pending[0]!.resolve());
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(true);
+  await act(() => image.dispatchEvent(new Event("animationcancel", { bubbles: true })));
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
+});

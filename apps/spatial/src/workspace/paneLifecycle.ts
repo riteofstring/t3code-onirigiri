@@ -1,15 +1,11 @@
 import { createContext, startTransition, use, useEffect, useState } from "react";
 
-import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
+import { PICTURE_IDLE_BUDGET_MS, PICTURE_REST_MS } from "./panePictureIdle";
 
 const MAX_MOUNTED = 10;
 const DATA_READY = 6;
 const DATA_IDLE_BUDGET_MS = PICTURE_IDLE_BUDGET_MS;
 const QUIET_MS = 500;
-// Stepping around overview pauses longer between keys than a glide does, and a chat mounted between
-// two steps stutters the second one.
-const OVERVIEW_QUIET_MS = 1500;
-
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 const STORED_PICTURES_WAIT_MS = 2000;
@@ -103,7 +99,6 @@ export function createPaneLifecycleStore(
     idle = null;
     dataIdle = null;
   };
-  const pictureQuiet = () => (overview ? OVERVIEW_QUIET_MS : QUIET_MS);
   const retained = () => {
     if (overview) return new Set<string>();
     const ids = new Set(visible);
@@ -205,7 +200,7 @@ export function createPaneLifecycleStore(
     reconcile();
     revealTimelines();
     if (moving || pointers.size > 0) return;
-    const quietRemaining = pictureQuiet() - (performance.now() - quietSince);
+    const quietRemaining = QUIET_MS - (performance.now() - quietSince);
     if (quietRemaining > 0) {
       timer = setTimeout(schedule, quietRemaining);
       return;
@@ -231,6 +226,11 @@ export function createPaneLifecycleStore(
         return;
       }
     }
+    const restRemaining = PICTURE_REST_MS - (performance.now() - quietSince);
+    if (restRemaining > 0) {
+      timer = setTimeout(schedule, restRemaining);
+      return;
+    }
     const paneId = nextPicture();
     if (!paneId) {
       const retry = Math.min(
@@ -244,7 +244,7 @@ export function createPaneLifecycleStore(
     }
     idle = requestIdleCallback((deadline) => {
       idle = null;
-      if (moving || pointers.size > 0 || performance.now() - quietSince < pictureQuiet()) return;
+      if (moving || pointers.size > 0 || performance.now() - quietSince < PICTURE_REST_MS) return;
       if (deadline.didTimeout || deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) {
         timer = setTimeout(schedule, 100);
         return;

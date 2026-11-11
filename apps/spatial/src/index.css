@@ -549,6 +549,11 @@
   }
 }
 
+/* A picture never fades while the camera moves: the fade stops and the picture is simply there. */
+.spatial-workspace[data-spatial-camera-moving] .spatial-pane-picture-in {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spatial-pane-picture-in {
     animation-duration: 1ms;

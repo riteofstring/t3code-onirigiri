@@ -1,5 +1,5 @@
 import type { PictureMount } from "./paneLifecycle";
-import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
+import { PICTURE_IDLE_BUDGET_MS, PICTURE_REST_MS } from "./panePictureIdle";
 
 // Measuring inside a pane whose contents are unrendered forces the browser to style them all, so a
 // chat is placed by its pane's box.
@@ -69,6 +69,9 @@ export function createSnapshotQueue() {
   let idle: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
+  // Pictures wait for a few seconds of rest after any input or camera motion.
+  let restSince = Number.NEGATIVE_INFINITY;
+  const restedAt = () => restSince + PICTURE_REST_MS;
   let activeCapture: AbortController | null = null;
   const pointers = new Set<number>();
   const noteInput = (event?: Event) => {
@@ -80,6 +83,7 @@ export function createSnapshotQueue() {
       !event.metaKey &&
       event.key.startsWith("Arrow");
     if (!navigation) lastInput = performance.now();
+    restSince = performance.now();
     activeCapture?.abort();
     continuation?.cancel();
     continuation = null;
@@ -154,9 +158,9 @@ export function createSnapshotQueue() {
       }
       const now = performance.now();
       const due = ([_paneId, request]: [string, { after: number; background: boolean }]) =>
-        Math.max(lastInput + FIRST_PICTURE_INPUT_QUIET_MS, request.after);
+        Math.max(lastInput + FIRST_PICTURE_INPUT_QUIET_MS, request.after, restedAt());
       if (continuation) {
-        const resumeAt = lastInput + FIRST_PICTURE_INPUT_QUIET_MS;
+        const resumeAt = Math.max(lastInput + FIRST_PICTURE_INPUT_QUIET_MS, restedAt());
         if (
           continuation.background &&
           [...pending].some((candidate) => !candidate[1].background && due(candidate) <= resumeAt)
@@ -226,7 +230,8 @@ export function createSnapshotQueue() {
           !enabled ||
           moving ||
           pointers.size > 0 ||
-          performance.now() - lastInput < FIRST_PICTURE_INPUT_QUIET_MS
+          performance.now() - lastInput < FIRST_PICTURE_INPUT_QUIET_MS ||
+          performance.now() < restedAt()
         )
           deferred = true;
         return !deferred && !dropped && draw === current;
@@ -324,6 +329,7 @@ export function createSnapshotQueue() {
   };
   const setActivity = (nextEnabled: boolean, nextMoving: boolean) => {
     if (enabled === nextEnabled && moving === nextMoving) return;
+    if (moving && !nextMoving) restSince = performance.now();
     enabled = nextEnabled;
     moving = nextMoving;
     if (!enabled || moving) stop();

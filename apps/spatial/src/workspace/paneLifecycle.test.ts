@@ -98,7 +98,7 @@ it("mounts one nearest unpictured tree per idle slot and waits for its picture",
   const pictured = new Set(["p0", "p2"]);
   store.setPictures((id) => pictured.has(id));
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(499);
+  vi.advanceTimersByTime(1999);
   expect(mounted(store)).toEqual(["p0"]);
   vi.advanceTimersByTime(2);
   expect(mounted(store)).toEqual(["p0", "p1"]);
@@ -214,7 +214,7 @@ it("spends a ready slot on no chat that is already mounted", () => {
   const store = make();
   store.setPictures((id) => id !== "p1");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(1500);
+  vi.advanceTimersByTime(2500);
   expect(mounted(store)).toEqual(["p0", "p1"]);
   expect(dataReady(store)).toEqual(["p2", "p3", "p4", "p5", "p6", "p7"]);
 });
@@ -272,13 +272,13 @@ it("mounts an offscreen chat once its picture stops being current", () => {
   expect(mounted(store)).toEqual(["p0", "p3"]);
 });
 
-it("input restarts the quiet interval before the next picture mount", () => {
+it("input restarts the rest interval before the next picture mount", () => {
   const store = make();
   store.setPictures((id) => id === "p0");
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(400);
   window.dispatchEvent(new Event("keydown"));
-  vi.advanceTimersByTime(499);
+  vi.advanceTimersByTime(1999);
   expect(mounted(store)).toEqual(["p0"]);
   vi.advanceTimersByTime(2);
   expect(mounted(store)).toEqual(["p0", "p1"]);
@@ -297,7 +297,7 @@ it("skips pictured neighbours for the nearest chat that lacks a picture", () => 
   const store = make();
   store.setPictures((id) => id === "p0" || id === "p1");
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(501);
+  vi.advanceTimersByTime(2001);
   expect(mounted(store)).toEqual(["p0", "p2"]);
 });
 
@@ -326,7 +326,7 @@ it("pictures the chats focused most recently before nearer ones", () => {
   store.setPictures((pane) => pictured.has(pane));
   expect(mounted(store)).toEqual(["p0"]);
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(501);
+  vi.advanceTimersByTime(2001);
   expect(mounted(store)).toEqual(["p0", "p30"]);
   take("p30");
   vi.advanceTimersByTime(101);
@@ -350,7 +350,7 @@ it("replaces distant clean trees with the nearest stale neighbours after a focus
   const stale = new Set<string>();
   store.setPictures((id) => !stale.has(id));
   for (let i = 1; i < 40; i++) store.setFocus(`p${i}`);
-  vi.advanceTimersByTime(501);
+  vi.advanceTimersByTime(2001);
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${30 + i}`));
   for (let i = 1; i < 10; i++) stale.add(`p${i}`);
   store.setPictures((id) => !stale.has(id));
@@ -450,7 +450,7 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   store.setMoving(true);
   vi.advanceTimersByTime(32);
   store.setMoving(false);
-  vi.advanceTimersByTime(1000);
+  vi.advanceTimersByTime(2000);
   expect(store.isMounted("p2")).toBe(false);
   store.composerReady("p0");
   store.composerReady("p1");
@@ -529,7 +529,7 @@ it("admits no chat in overview and restores composer-first admission when it end
   expect(store.isMounted("p2")).toBe(true);
 });
 
-it("pictures unpictured chats behind their overview cards after a longer quiet, on-screen and nearest first", () => {
+it("pictures unpictured chats behind their overview cards, on-screen and nearest the overview focus first", () => {
   const store = make();
   const pictured = new Set(["p0"]);
   store.setPictures((id) => pictured.has(id));
@@ -543,7 +543,7 @@ it("pictures unpictured chats behind their overview cards after a longer quiet, 
     store.setPictures((candidate) => pictured.has(candidate));
     vi.advanceTimersByTime(102);
   };
-  vi.advanceTimersByTime(1499);
+  vi.advanceTimersByTime(1999);
   expect(mounted(store)).toEqual(["p0"]);
   vi.advanceTimersByTime(2);
   expect(mounted(store)).toEqual(["p0", "p21"]);
@@ -561,7 +561,7 @@ it("still pictures no chat that is on screen outside overview", () => {
   store.setPictures(() => false);
   store.setBackgroundPictures(true);
   store.setVisible("p1", true);
-  vi.advanceTimersByTime(501);
+  vi.advanceTimersByTime(2001);
   expect(store.isMounted("p1")).toBe(true);
   expect(store.pictureMount("p1")).toBe("ordinary");
   expect(store.pictureMount("p2")).toBe("background");

@@ -1411,6 +1411,7 @@ function SpatialWorkspaceView({
         className="spatial-workspace relative flex h-full w-full flex-col"
         data-spatial-navigation-bar={String(preferences.navigationBar)}
         data-spatial-maximized={String(maximizedPaneId !== null)}
+        data-spatial-camera-moving={cameraMoving ? "" : undefined}
         data-spatial-full-screen-transition={fullScreenPhase ?? undefined}
       >
         <WorkspaceToolbar

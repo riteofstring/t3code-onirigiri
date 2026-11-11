@@ -31,7 +31,11 @@ export function SavedPanePicture({
     if (!fading || !element) return;
     const end = () => setFading(false);
     element.addEventListener("animationend", end);
-    return () => element.removeEventListener("animationend", end);
+    element.addEventListener("animationcancel", end);
+    return () => {
+      element.removeEventListener("animationend", end);
+      element.removeEventListener("animationcancel", end);
+    };
   }, [fading]);
   useEffect(() => {
     const element = ref.current;

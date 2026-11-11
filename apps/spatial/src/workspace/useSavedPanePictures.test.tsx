@@ -981,7 +981,7 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
       expect(hook.pictureFor(paneId)?.image).toBeUndefined();
     }
     window.dispatchEvent(new Event(end));
-    await advance(249);
+    await advance(1999);
     expect(snapshot).not.toHaveBeenCalled();
     await advance(10);
     expect(snapshot).toHaveBeenCalledOnce();
@@ -1004,7 +1004,7 @@ it("lets a newly opened workspace settle even when the page has been open a whil
   expect(store.writes).toHaveLength(1);
 });
 
-it("captures first pixels between ordinary navigation inputs, once motion has stayed stopped", async () => {
+it("captures first pixels only once motion has stayed stopped for a few seconds", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   hook.setCaptureActivity(true, true);
@@ -1013,6 +1013,8 @@ it("captures first pixels between ordinary navigation inputs, once motion has st
   await advance(550);
   expect(snapshot).not.toHaveBeenCalled();
   hook.setCaptureActivity(true, false);
+  await advance(1990);
+  expect(snapshot).not.toHaveBeenCalled();
   await advance(20);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(hook.hasFreshPicture(paneId)).toBe(true);
@@ -1090,7 +1092,7 @@ it("releases an abandoned drawing even when idle headroom is exhausted", async (
 });
 
 it.each([false, true])(
-  "captures promptly after uncover with previous pixels: %s",
+  "captures a few seconds after motion stops, with previous pixels: %s",
   async (covered) => {
     await mount();
     markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
@@ -1103,13 +1105,15 @@ it.each([false, true])(
     await advance(100);
     expect(snapshot).not.toHaveBeenCalled();
     hook.setCaptureActivity(true, false);
-    await advance(10);
+    await advance(1990);
+    expect(snapshot).not.toHaveBeenCalled();
+    await advance(20);
     expect(snapshot).toHaveBeenCalledOnce();
     expect(hook.hasFreshPicture(paneId)).toBe(true);
   },
 );
 
-it("refreshes a usable cover between navigation inputs with 250 ms quiet", async () => {
+it("refreshes a usable cover only after navigation inputs stop for a few seconds", async () => {
   await mount();
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
   const cover = new Blob(["cover"]);
@@ -1121,9 +1125,7 @@ it("refreshes a usable cover between navigation inputs with 250 ms quiet", async
     window.dispatchEvent(new Event("keydown"));
     await advance(900);
   }
-  expect(snapshot).toHaveBeenCalledOnce();
-  expect(pictureImageFor(paneId)).not.toBe(cover);
-  expect(presentationAt("rest", false)).toEqual({ kind: "placeholder" });
+  expect(snapshot).not.toHaveBeenCalled();
   await advance(3000);
   expect(snapshot).toHaveBeenCalledOnce();
   expect(pictureImageFor(paneId)).not.toBe(cover);
@@ -1150,7 +1152,7 @@ it("requeues a first picture interrupted by camera motion before cloning", async
   expect(store.writes).toHaveLength(0);
   expect(snapshot).toHaveBeenCalledOnce();
   hook.setCaptureActivity(true, false);
-  await advance(20);
+  await advance(2020);
   expect(snapshot).toHaveBeenCalledTimes(2);
   expect(hook.hasFreshPicture(paneId)).toBe(true);
 });
@@ -1188,7 +1190,7 @@ it("reuses a matching snapshot until a departed pane needs its scroll position r
 });
 
 it.each(["keydown", "pointerdown", "wheel"])(
-  "postpones a picture when %s arrives before cloning, then retries after quiet input",
+  "postpones a picture when %s arrives before cloning, then retries after a few seconds of rest",
   async (type) => {
     const layout = pendingPicture();
     snapshot.mockImplementationOnce(async (_element, canSnapshot) => {
@@ -1208,7 +1210,7 @@ it.each(["keydown", "pointerdown", "wheel"])(
     await advance(250);
     window.dispatchEvent(new Event(type));
     if (type === "pointerdown") window.dispatchEvent(new Event("pointerup"));
-    await advance(249);
+    await advance(1999);
     expect(snapshot).toHaveBeenCalledOnce();
     await advance(2);
     expect(snapshot).toHaveBeenCalledTimes(2);
