@@ -313,8 +313,11 @@ export function WorkspaceToolbar({
                   onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
                 />
                 {layoutMode === "strip" ? null : (
-                  <MaxRowHeightControl
-                    height={preferences.maxRowHeight}
+                  <MaxSizeControl
+                    label="Max row height"
+                    ariaLabel="Maximum row height in pixels"
+                    minimum={MIN_ROW_HEIGHT}
+                    size={preferences.maxRowHeight}
                     onChange={(maxRowHeight) => onPreferencesChange({ maxRowHeight })}
                   />
                 )}
@@ -324,6 +327,13 @@ export function WorkspaceToolbar({
                   onChange={(columnWidth) =>
                     onPreferencesChange({ columnWidth, maximizeAll: false })
                   }
+                />
+                <MaxSizeControl
+                  label="Max column width"
+                  ariaLabel="Maximum column width in pixels"
+                  minimum={MIN_COLUMN_WIDTH}
+                  size={preferences.maxColumnWidth}
+                  onChange={(maxColumnWidth) => onPreferencesChange({ maxColumnWidth })}
                 />
                 <span className="spatial-workspace-controls__options">
                   <Button
@@ -601,12 +611,18 @@ function RowHeightControl({
   );
 }
 
-function MaxRowHeightControl({
-  height,
+function MaxSizeControl({
+  label,
+  ariaLabel,
+  minimum,
+  size,
   onChange,
 }: {
-  height: number;
-  onChange: (height: number) => void;
+  label: string;
+  ariaLabel: string;
+  minimum: number;
+  size: number;
+  onChange: (size: number) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const commit = () => {
@@ -615,11 +631,11 @@ function MaxRowHeightControl({
     const next = Number(draft);
     if (!Number.isFinite(next) || next < 0) return;
     const rounded = Math.round(next);
-    onChange(rounded === 0 ? 0 : Math.max(MIN_ROW_HEIGHT, rounded));
+    onChange(rounded === 0 ? 0 : Math.max(minimum, rounded));
   };
   return (
     <label className="spatial-workspace-controls__field">
-      <span>Max row height</span>
+      <span>{label}</span>
       <Input
         nativeInput
         size="sm"
@@ -628,9 +644,9 @@ function MaxRowHeightControl({
         min={0}
         step={1}
         className="w-16 text-xs"
-        aria-label="Maximum row height in pixels"
+        aria-label={ariaLabel}
         aria-description="0 turns the limit off."
-        value={draft ?? String(height)}
+        value={draft ?? String(size)}
         onChange={(event) => setDraft(event.currentTarget.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -638,7 +654,7 @@ function MaxRowHeightControl({
           if (event.key === "Escape") setDraft(null);
         }}
       />
-      <span aria-hidden="true">{height === 0 ? "Off" : "px"}</span>
+      <span aria-hidden="true">{size === 0 ? "Off" : "px"}</span>
     </label>
   );
 }

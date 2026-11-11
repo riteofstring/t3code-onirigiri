@@ -108,12 +108,38 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("sets a maximum column width that stays at least the minimum and turns off at 0", async () => {
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
+  const maximum = host.querySelector<HTMLInputElement>(
+    '[aria-label="Maximum column width in pixels"]',
+  )!;
+  const enter = async (value: string) => {
+    await act(() => {
+      maximum.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        maximum,
+        value,
+      );
+      maximum.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await key(maximum, "Enter");
+    return settings().maxColumnWidth;
+  };
+  expect(maximum.value).toBe("1100");
+  expect(await enter("900")).toBe(900);
+  expect(await enter("100")).toBe(442);
+  expect(await enter("0")).toBe(0);
+  expect(maximum.value).toBe("0");
+});
+
 it("remembers overview and row defaults across reloads, with a way back to viewport height", async () => {
   expect(settings()).toEqual({
     overviewZoom: "auto",
     rowHeight: "viewport",
     maxRowHeight: 1200,
     columnWidth: 840,
+    maxColumnWidth: 1100,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -139,6 +165,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: 384,
     maxRowHeight: 1200,
     columnWidth: 840,
+    maxColumnWidth: 1100,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -154,6 +181,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: 384,
     maxRowHeight: 1200,
     columnWidth: 840,
+    maxColumnWidth: 1100,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -168,6 +196,7 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
     rowHeight: "viewport",
     maxRowHeight: 1200,
     columnWidth: 840,
+    maxColumnWidth: 1100,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,
@@ -339,6 +368,7 @@ it("uses safe defaults for malformed saved preferences", async () => {
     rowHeight: "viewport",
     maxRowHeight: 1200,
     columnWidth: 840,
+    maxColumnWidth: 1100,
     navigationBar: true,
     maximizeAll: false,
     showGrid: false,

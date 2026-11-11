@@ -61,7 +61,6 @@ import {
   useFocusAnchorPreference,
   useLayoutModePreference,
   useMinimapPlacement,
-  MAX_PANE_WIDTH,
   MIN_COLUMN_WIDTH,
   MIN_ROW_HEIGHT,
   useWorkspacePreferences,
@@ -465,8 +464,9 @@ function SpatialWorkspaceView({
       height: Math.max(0, stageViewport.height - workspacePadding * 2),
     };
   }, [stageViewport, workspacePadding]);
+  const columnWidthCap = preferences.maxColumnWidth || undefined;
   const maxColumnWidth = paneViewport
-    ? Math.min(MAX_PANE_WIDTH, Math.floor(paneViewport.width / 2))
+    ? Math.min(columnWidthCap ?? Infinity, Math.floor(paneViewport.width / 2))
     : null;
   const columnWidth =
     maxColumnWidth === null
@@ -478,10 +478,10 @@ function SpatialWorkspaceView({
       height: preferences.rowHeight,
       width: columnWidth,
       minHeight: MIN_ROW_HEIGHT,
-      ...(fullScreen ? {} : { maxWidth: MAX_PANE_WIDTH }),
+      ...(fullScreen || columnWidthCap === undefined ? {} : { maxWidth: columnWidthCap }),
       ...(fullScreen || maxRowHeight === undefined ? {} : { maxHeight: maxRowHeight }),
     }),
-    [preferences.rowHeight, columnWidth, maxRowHeight, fullScreen],
+    [preferences.rowHeight, columnWidth, columnWidthCap, maxRowHeight, fullScreen],
   );
   const rowHeightLimit = paneViewport
     ? Math.min(paneViewport.height, maxRowHeight ?? paneViewport.height)

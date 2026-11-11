@@ -16,7 +16,7 @@ export const MIN_COLUMN_WIDTH = 442;
 export const DEFAULT_COLUMN_WIDTH = 840;
 export const MIN_ROW_HEIGHT = 300;
 export const DEFAULT_MAX_ROW_HEIGHT = 1200;
-export const MAX_PANE_WIDTH = 1100;
+export const DEFAULT_MAX_COLUMN_WIDTH = 1100;
 
 export function readItem(key: string): string | null {
   try {
@@ -44,6 +44,7 @@ export interface WorkspacePreferences {
   rowHeight: number | "viewport";
   maxRowHeight: number;
   columnWidth: number;
+  maxColumnWidth: number;
   navigationBar: boolean;
   maximizeAll: boolean;
   showGrid: boolean;
@@ -56,6 +57,7 @@ const defaults: WorkspacePreferences = {
   rowHeight: "viewport",
   maxRowHeight: DEFAULT_MAX_ROW_HEIGHT,
   columnWidth: DEFAULT_COLUMN_WIDTH,
+  maxColumnWidth: DEFAULT_MAX_COLUMN_WIDTH,
   navigationBar: true,
   maximizeAll: false,
   showGrid: false,
@@ -71,6 +73,7 @@ function readPreferences(): WorkspacePreferences {
     const height = "rowHeight" in value ? value.rowHeight : null;
     const maxHeight = "maxRowHeight" in value ? value.maxRowHeight : null;
     const width = "columnWidth" in value ? value.columnWidth : null;
+    const maxWidth = "maxColumnWidth" in value ? value.maxColumnWidth : null;
     const navigationBar = "navigationBar" in value ? value.navigationBar : null;
     const maximizeAll = "maximizeAll" in value ? value.maximizeAll : null;
     const showGrid = "showGrid" in value ? value.showGrid : null;
@@ -92,6 +95,12 @@ function readPreferences(): WorkspacePreferences {
         typeof width === "number" && Number.isSafeInteger(width) && width >= MIN_COLUMN_WIDTH
           ? width
           : DEFAULT_COLUMN_WIDTH,
+      maxColumnWidth:
+        typeof maxWidth === "number" &&
+        Number.isSafeInteger(maxWidth) &&
+        (maxWidth === 0 || maxWidth >= MIN_COLUMN_WIDTH)
+          ? maxWidth
+          : DEFAULT_MAX_COLUMN_WIDTH,
       navigationBar: navigationBar !== false,
       maximizeAll: maximizeAll === true,
       showGrid: showGrid === true,
