@@ -1,4 +1,9 @@
-import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
+import {
+  memo,
+  useSyncExternalStore,
+  type MouseEventHandler,
+  type PointerEventHandler,
+} from "react";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -7,6 +12,7 @@ import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
+import { useChatViewActivity } from "../chatViewActivity";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
@@ -114,7 +120,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     ? { onPointerDown: preventPointerFocus }
     : undefined;
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const shortcutModifiers = useShortcutModifierState();
+  const activity = useChatViewActivity();
+  const shortcutModifiers = useShortcutModifierState(
+    false,
+    useSyncExternalStore(activity.subscribe, activity.isActive, activity.isActive),
+  );
   const isQueuing =
     !isEditingQueuedMessage &&
     resolveComposerDispatchMode({

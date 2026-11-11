@@ -27,7 +27,11 @@ function areShortcutModifierStatesEqual(
   );
 }
 
-export function useShortcutModifierState(ignoreEditable = false): ShortcutModifierState {
+/** `enabled` false stops tracking, so a view that is not the active one skips every key press. */
+export function useShortcutModifierState(
+  ignoreEditable = false,
+  enabled = true,
+): ShortcutModifierState {
   const [state, setState] = useState(EMPTY_SHORTCUT_MODIFIER_STATE);
   const stateRef = useRef(EMPTY_SHORTCUT_MODIFIER_STATE);
 
@@ -50,6 +54,10 @@ export function useShortcutModifierState(ignoreEditable = false): ShortcutModifi
       updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
     };
 
+    if (!enabled) {
+      onResetEvent();
+      return;
+    }
     const onFocus = (event: FocusEvent) => {
       if (ignoreEditable && isEditableFocused(event.target)) onResetEvent();
     };
@@ -65,7 +73,7 @@ export function useShortcutModifierState(ignoreEditable = false): ShortcutModifi
       window.removeEventListener("paste", onResetEvent, true);
       window.removeEventListener("blur", onResetEvent);
     };
-  }, [ignoreEditable]);
+  }, [enabled, ignoreEditable]);
 
   return state;
 }
