@@ -6,18 +6,33 @@ export function SavedPanePicture({
   preparedUrl,
   pictureUrl,
   summary,
+  fadeIn = false,
+  onFadeIn,
 }: {
   image: Blob;
   cssSize: { readonly width: number; readonly height: number };
   preparedUrl: string | null;
   pictureUrl: (image: Blob) => string;
   summary: ReactNode;
+  fadeIn?: boolean;
+  onFadeIn?: () => void;
 }) {
   const ref = useRef<HTMLImageElement>(null);
   const { width, height } = cssSize;
   const [shown, setShown] = useState(() =>
     preparedUrl ? { url: preparedUrl, width, height } : null,
   );
+  const [fading, setFading] = useState(fadeIn);
+  useEffect(() => {
+    if (fading && shown) onFadeIn?.();
+  }, [fading, onFadeIn, shown]);
+  useEffect(() => {
+    const element = ref.current;
+    if (!fading || !element) return;
+    const end = () => setFading(false);
+    element.addEventListener("animationend", end);
+    return () => element.removeEventListener("animationend", end);
+  }, [fading]);
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -49,7 +64,7 @@ export function SavedPanePicture({
         src={shown?.url}
         alt=""
         draggable={false}
-        className="pointer-events-none absolute top-0 left-0 block select-none"
+        className={`pointer-events-none absolute top-0 left-0 block select-none${fading && shown ? " z-1 spatial-pane-picture-in" : ""}`}
         style={{
           width: shown?.width ?? width,
           height: shown?.height ?? height,
@@ -58,7 +73,7 @@ export function SavedPanePicture({
           visibility: shown ? undefined : "hidden",
         }}
       />
-      <div className={shown ? "sr-only" : "contents"}>{summary}</div>
+      <div className={shown && !fading ? "sr-only" : "contents"}>{summary}</div>
     </>
   );
 }

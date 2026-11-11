@@ -1255,6 +1255,10 @@ function SpatialWorkspaceView({
     ],
   );
 
+  const cardsAwaitingPicture = useRef(new Set<string>());
+  useEffect(() => {
+    if (!overview) cardsAwaitingPicture.current.clear();
+  }, [overview]);
   const renderPanePlaceholder = useCallback(
     (pane: WorkspacePane) => {
       if (pane.surfaceKind !== "thread") return null;
@@ -1272,7 +1276,12 @@ function SpatialWorkspaceView({
             {picture ? null : <PaneLoading />}
           </div>
         );
-      return picture ? (
+      if (!picture) {
+        if (overview) cardsAwaitingPicture.current.add(pane.paneId);
+        return card;
+      }
+      const fadeIn = overview && cardsAwaitingPicture.current.has(pane.paneId);
+      return (
         <SavedPanePicture
           key={picture.geometryRevision.endsWith("|compact") ? "compact" : "tiled"}
           image={picture.image}
@@ -1280,9 +1289,9 @@ function SpatialWorkspaceView({
           preparedUrl={preparedPictureUrl(picture.image)}
           pictureUrl={pictureUrl}
           summary={card}
+          fadeIn={fadeIn}
+          onFadeIn={() => cardsAwaitingPicture.current.delete(pane.paneId)}
         />
-      ) : (
-        card
       );
     },
     [displayedPictureFor, hasMoved, overview, pictureUrl, preparedPictureUrl],

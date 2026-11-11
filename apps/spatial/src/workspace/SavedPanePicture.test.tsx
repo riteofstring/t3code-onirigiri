@@ -158,3 +158,30 @@ it("ignores a successful decode after unmount and leaves URL release to its owne
   expect(image.getAttribute("src")).toBeNull();
   expect(revoked).toEqual([]);
 });
+
+it("fades a late picture in over the card once, and keeps the card until the fade ends", async () => {
+  const onFadeIn = vi.fn();
+  await act(() => {
+    root!.render(
+      <SavedPanePicture
+        image={new Blob(["png"])}
+        cssSize={captureSize}
+        preparedUrl={null}
+        pictureUrl={pictureUrl}
+        summary="Thread"
+        fadeIn
+        onFadeIn={onFadeIn}
+      />,
+    );
+  });
+  const image = container.querySelector("img")!;
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
+  expect(onFadeIn).not.toHaveBeenCalled();
+  await act(() => pending[0]!.resolve());
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(true);
+  expect(container.querySelector(".sr-only")).toBeNull();
+  expect(onFadeIn).toHaveBeenCalled();
+  await act(() => image.dispatchEvent(new Event("animationend", { bubbles: true })));
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
+});

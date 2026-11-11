@@ -573,3 +573,19 @@
   outline: none;
   box-shadow: none;
 }
+
+.spatial-pane-picture-in {
+  animation: spatial-pane-picture-in 140ms ease-out;
+}
+
+@keyframes spatial-pane-picture-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-pane-picture-in {
+    animation-duration: 1ms;
+  }
+}
