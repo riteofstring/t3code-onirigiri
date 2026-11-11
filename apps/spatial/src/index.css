@@ -559,8 +559,16 @@
   }
 }
 
-/* Lines a terminal pane's text up with its header title; the terminal insets its text 4px. */
+/* Lines a terminal pane's text and split buttons up with its header title and pane buttons; the
+   terminal insets its text 4px. */
 .spatial-workspace [data-spatial-surface="terminal"] [data-thread-terminal-drawer] {
-  padding-inline-start: calc(var(--workspace-gutter-start) - 4px);
+  padding-inline: calc(var(--workspace-gutter-start) - 4px);
   background: var(--terminal-background);
+}
+
+.spatial-workspace
+  [data-spatial-surface="terminal"]
+  [data-thread-terminal-drawer]
+  > .absolute.top-2.right-2 {
+  right: 1rem;
 }
