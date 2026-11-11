@@ -54,7 +54,8 @@ import {
 import { usePaneActivity } from "./paneActivity";
 import { ThreadDataReady } from "./ThreadDataReady";
 import { type ChatRemoval, PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
-import { hasLivePaneProducer } from "./panePictureSnapshot";
+import { hasLivePaneProducer, livePaneProducer } from "./panePictureSnapshot";
+import { describeElement, pictureLog } from "./PictureStatusPanel";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
@@ -518,8 +519,11 @@ const PaneBody = memo(function PaneBody({
       return;
     }
     const inspectProducer = () => {
-      if (snapshots)
-        setVisualRevision(snapshots.setLiveProducer(paneId, hasLivePaneProducer(element)));
+      if (!snapshots) return;
+      const producer = livePaneProducer(element);
+      if (producer) pictureLog.producers.set(paneId, describeElement(producer));
+      else pictureLog.producers.delete(paneId);
+      setVisualRevision(snapshots.setLiveProducer(paneId, producer !== null));
     };
     if (!producerInspected.current) {
       inspectProducer();

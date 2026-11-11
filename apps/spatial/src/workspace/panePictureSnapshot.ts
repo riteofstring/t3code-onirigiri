@@ -1,18 +1,23 @@
 import { captureOnirigiriPanePicture } from "@riteofstring/onirigiri";
 
-export function hasLivePaneProducer(element: Element): boolean {
+/** The first element in a pane that keeps drawing on its own, which a picture cannot stand in for. */
+export function livePaneProducer(element: Element): Element | null {
   const visit = (node: Element) =>
     node.matches("canvas, video, iframe, object, embed, webview, [data-browser-surface-slot]") ||
     node.localName.includes("-") ||
     node.shadowRoot !== null;
-  if (visit(element)) return true;
+  if (visit(element)) return element;
   const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
   let child = walker.nextNode();
   while (child) {
-    if (visit(child as Element)) return true;
+    if (visit(child as Element)) return child as Element;
     child = walker.nextNode();
   }
-  return false;
+  return null;
+}
+
+export function hasLivePaneProducer(element: Element): boolean {
+  return livePaneProducer(element) !== null;
 }
 
 export interface PanePictureSnapshot {

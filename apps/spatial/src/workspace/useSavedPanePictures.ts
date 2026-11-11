@@ -1,3 +1,4 @@
+import { pictureLog } from "./PictureStatusPanel";
 import { isDeferredPane } from "./deferredPanes";
 import { flushPaneVisualChanges } from "./paneVisualChanges";
 import type { PanePresentationResolver, WorkspaceScene } from "@riteofstring/onirigiri";
@@ -595,16 +596,26 @@ export function useSavedPanePictures(
         !runningPanesRef.current.has(paneId) &&
         revision() === before &&
         visualRevision(paneId) === beforeVisualRevision;
+      pictureLog.started += 1;
       const snapshot = await snapshotPanePicture(
         element,
         canSnapshot,
         async () => (await waitToDraw()) && canSnapshot(),
         signal,
-      ).catch(() => null);
+      ).catch((error: unknown) => {
+        pictureLog.last = `error: ${String(error).slice(0, 80)}`;
+        return null;
+      });
       if (!snapshot) {
-        if (current() && canSnapshot()) onSnapshotFailure(paneId, startedAt);
+        if (current() && canSnapshot()) {
+          pictureLog.failed += 1;
+          if (!pictureLog.last.startsWith("error")) pictureLog.last = "no picture returned";
+          onSnapshotFailure(paneId, startedAt);
+        }
         return;
       }
+      pictureLog.saved += 1;
+      pictureLog.last = `saved ${snapshot.image.size} bytes`;
       const picture = {
         recordKey: record,
         paneId,
@@ -711,7 +722,19 @@ export function useSavedPanePictures(
     ],
   );
 
+  const pictureStatus = useCallback(() => {
+    const chats = [...contentRevisionsRef.current.keys()];
+    return {
+      "pictures enabled": enabled,
+      "stage measured": stageSizeRef.current !== null,
+      "chats with a current picture": `${chats.filter((id) => pictureFor(id) !== null).length} of ${chats.length}`,
+      "pictures stored": savedRef.current?.size ?? "loading",
+      "chats running": runningPanesRef.current.size,
+    };
+  }, [enabled, pictureFor]);
+
   return {
+    pictureStatus,
     getPanePresentation,
     onLayoutChange,
     pictureFor,

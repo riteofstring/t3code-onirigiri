@@ -82,6 +82,7 @@ import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { beginFullScreenGrow, FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
 import { deferOtherPanes, releaseDeferredPanes } from "./deferredPanes";
+import { PictureStatusPanel, pictureStatusRequested } from "./PictureStatusPanel";
 import { beginMaximizeReveal } from "./maximizeReveal";
 import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
@@ -404,6 +405,7 @@ function SpatialWorkspaceView({
     [lifecycle],
   );
   const {
+    pictureStatus,
     getPanePresentation,
     onLayoutChange: onPictureLayoutChange,
     displayedPictureFor,
@@ -422,6 +424,10 @@ function SpatialWorkspaceView({
     focusedAt,
     moving: cameraMoving,
   });
+  const readPictureStatus = useCallback(
+    () => ({ ...pictureStatus(), ...lifecycle?.status() }),
+    [lifecycle, pictureStatus],
+  );
   const {
     requested: fullScreenRequested,
     fullScreen,
@@ -1488,6 +1494,7 @@ function SpatialWorkspaceView({
           onAdd={addPaneAt}
         />
         <FullScreenBorder ref={fullScreenBorderRef} />
+        {pictureStatusRequested ? <PictureStatusPanel read={readPictureStatus} /> : null}
       </div>
     </WorkspaceTooltips>
   );

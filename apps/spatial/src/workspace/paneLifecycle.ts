@@ -318,6 +318,12 @@ export function createPaneLifecycleStore(
       schedule();
     },
     isMounted: (paneId: string) => mounted.has(paneId),
+    status: () => ({
+      "chats loaded": mounted.size,
+      "background pictures": backgroundPictures && picturesReady,
+      "picturing now": capturing?.paneId.slice(-8) ?? "nothing",
+      "at rest for": `${Math.round((performance.now() - quietSince) / 100) / 10} s${moving ? " (moving)" : ""}`,
+    }),
     isMoving: () => moving || pointers.size > 0,
     isCameraMoving: () => moving,
     contentMounted: (paneId: string) => {
