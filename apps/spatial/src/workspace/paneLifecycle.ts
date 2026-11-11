@@ -6,6 +6,9 @@ const MAX_MOUNTED = 10;
 const DATA_READY = 6;
 const DATA_IDLE_BUDGET_MS = PICTURE_IDLE_BUDGET_MS;
 const QUIET_MS = 500;
+// Stepping around overview pauses longer between keys than a glide does, and a chat mounted between
+// two steps stutters the second one.
+const OVERVIEW_QUIET_MS = 1500;
 
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
@@ -100,6 +103,7 @@ export function createPaneLifecycleStore(
     idle = null;
     dataIdle = null;
   };
+  const pictureQuiet = () => (overview ? OVERVIEW_QUIET_MS : QUIET_MS);
   const retained = () => {
     if (overview) return new Set<string>();
     const ids = new Set(visible);
@@ -201,7 +205,7 @@ export function createPaneLifecycleStore(
     reconcile();
     revealTimelines();
     if (moving || pointers.size > 0) return;
-    const quietRemaining = QUIET_MS - (performance.now() - quietSince);
+    const quietRemaining = pictureQuiet() - (performance.now() - quietSince);
     if (quietRemaining > 0) {
       timer = setTimeout(schedule, quietRemaining);
       return;
@@ -240,7 +244,7 @@ export function createPaneLifecycleStore(
     }
     idle = requestIdleCallback((deadline) => {
       idle = null;
-      if (moving || pointers.size > 0 || performance.now() - quietSince < QUIET_MS) return;
+      if (moving || pointers.size > 0 || performance.now() - quietSince < pictureQuiet()) return;
       if (deadline.didTimeout || deadline.timeRemaining() < PICTURE_IDLE_BUDGET_MS) {
         timer = setTimeout(schedule, 100);
         return;

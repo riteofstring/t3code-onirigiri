@@ -529,7 +529,7 @@ it("admits no chat in overview and restores composer-first admission when it end
   expect(store.isMounted("p2")).toBe(true);
 });
 
-it("pictures unpictured chats behind their overview cards, on-screen and nearest the overview focus first", () => {
+it("pictures unpictured chats behind their overview cards after a longer quiet, on-screen and nearest first", () => {
   const store = make();
   const pictured = new Set(["p0"]);
   store.setPictures((id) => pictured.has(id));
@@ -543,7 +543,9 @@ it("pictures unpictured chats behind their overview cards, on-screen and nearest
     store.setPictures((candidate) => pictured.has(candidate));
     vi.advanceTimersByTime(102);
   };
-  vi.advanceTimersByTime(501);
+  vi.advanceTimersByTime(1499);
+  expect(mounted(store)).toEqual(["p0"]);
+  vi.advanceTimersByTime(2);
   expect(mounted(store)).toEqual(["p0", "p21"]);
   picture("p21");
   expect(store.isMounted("p18")).toBe(true);
