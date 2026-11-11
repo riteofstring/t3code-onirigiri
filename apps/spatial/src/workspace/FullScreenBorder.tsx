@@ -97,6 +97,7 @@ function move(
   stop(border);
   if (!from || !to) return;
   border.dataset.motion = motion;
+  border.parentElement?.setAttribute("data-spatial-border-motion", "");
   border.style.setProperty("--spatial-border-color", style.getPropertyValue("--onirigiri-focus"));
   border.style.setProperty("--spatial-border-line", `${line}px`);
   border.style.setProperty("--spatial-border-radius", `${radius}px`);
@@ -122,6 +123,7 @@ function move(
 function stop(border: HTMLElement) {
   for (const animation of border.getAnimations({ subtree: true })) animation.cancel();
   delete border.dataset.motion;
+  border.parentElement?.removeAttribute("data-spatial-border-motion");
 }
 
 function grow(border: HTMLElement, start?: Box) {

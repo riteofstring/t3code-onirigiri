@@ -1,10 +1,16 @@
 import type { PictureMount } from "./paneLifecycle";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 
+// Measuring inside a pane whose contents are unrendered forces the browser to style them all, so a
+// chat is placed by its pane's box.
+function paneBox(element: HTMLElement) {
+  return (element.closest?.('[data-onirigiri-slot="pane"]') ?? element).getBoundingClientRect();
+}
+
 export function onScreen(element: HTMLElement): boolean {
   const view = element.ownerDocument?.defaultView;
   if (!view || typeof element.getBoundingClientRect !== "function") return false;
-  const box = element.getBoundingClientRect();
+  const box = paneBox(element);
   const stage = element.closest?.('[data-onirigiri-slot="stage"]')?.getBoundingClientRect() ?? {
     left: 0,
     top: 0,
@@ -24,7 +30,7 @@ const FIRST_PICTURE_INPUT_QUIET_MS = 250;
 const SNAPSHOT_RETRY_LIMIT_MS = 5 * 60_000;
 
 function distanceFromCenter(element: HTMLElement) {
-  const { left, top, width, height } = element.getBoundingClientRect();
+  const { left, top, width, height } = paneBox(element);
   return Math.hypot(
     left + width / 2 - window.innerWidth / 2,
     top + height / 2 - window.innerHeight / 2,

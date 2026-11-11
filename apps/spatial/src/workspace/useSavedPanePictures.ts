@@ -1,3 +1,4 @@
+import { isDeferredPane } from "./deferredPanes";
 import { flushPaneVisualChanges } from "./paneVisualChanges";
 import type { PanePresentationResolver, WorkspaceScene } from "@riteofstring/onirigiri";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
@@ -582,6 +583,7 @@ export function useSavedPanePictures(
         const content = contentRevisionsRef.current.get(paneId);
         return (
           element.isConnected &&
+          !isDeferredPane(element) &&
           liveProducersRef.current.get(paneId) !== "live" &&
           !runningPanesRef.current.has(paneId) &&
           revision() === before &&

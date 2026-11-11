@@ -150,10 +150,8 @@
   transition-duration: 120ms;
 }
 
-.spatial-workspace:is(
-    [data-spatial-full-screen-transition],
-    :has(> .spatial-full-screen-border[data-motion])
-  )
+/* The border marks the workspace itself: matching it with :has() restyled every pane's contents. */
+.spatial-workspace:is([data-spatial-full-screen-transition], [data-spatial-border-motion])
   .onirigiri-workspace__grid-cursor {
   visibility: hidden;
 }
@@ -161,6 +159,13 @@
 .spatial-workspace[data-spatial-full-screen-transition]
   [data-onirigiri-slot="pane"][data-visible="false"]
   .onirigiri-pane__content {
+  content-visibility: hidden;
+}
+
+/* A held pane stays unrendered at its old size until released or focused. */
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-spatial-deferred]:not([data-focused="true"])
+  > .onirigiri-pane__content {
   content-visibility: hidden;
 }
 

@@ -81,6 +81,7 @@ import { PaneLoading, ThreadCard, ToolCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { beginFullScreenGrow, FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
+import { deferOtherPanes, releaseDeferredPanes } from "./deferredPanes";
 import { beginMaximizeReveal } from "./maximizeReveal";
 import { useFullScreenTransition } from "./useFullScreenTransition";
 import { PaneSnapshotContext, useSavedPanePictures } from "./useSavedPanePictures";
@@ -436,11 +437,18 @@ function SpatialWorkspaceView({
     (change: Partial<WorkspacePreferences>) => {
       const grow =
         change.maximizeAll === true && !preferences.maximizeAll ? growFullScreenBorder() : null;
+      if (change.maximizeAll === true && !preferences.maximizeAll)
+        deferOtherPanes(fullScreenBorderRef.current?.parentElement ?? null);
       changePreferences(change);
       grow?.();
     },
-    [changePreferences, growFullScreenBorder, preferences.maximizeAll],
+    [changePreferences, fullScreenBorderRef, growFullScreenBorder, preferences.maximizeAll],
   );
+  useEffect(() => {
+    if (fullScreenPhase !== null) return;
+    return releaseDeferredPanes(fullScreenBorderRef.current?.parentElement ?? null);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Without the animation the phase never changes, so the switch itself releases the held panes.
+  }, [fullScreen, fullScreenBorderRef, fullScreenPhase]);
   const [snapMaximize, setSnapMaximize] = useState(false);
   useEffect(() => {
     if (!snapMaximize) return;

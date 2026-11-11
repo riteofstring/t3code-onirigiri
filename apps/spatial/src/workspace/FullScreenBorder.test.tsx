@@ -63,6 +63,7 @@ it("grows the focus border from where the pane was before it filled the screen",
   pane.getBoundingClientRect = rect(0, 0, 1600, 1000) as never;
   grow();
   expect(border.dataset.motion).toBe("grow");
+  expect(border.parentElement?.hasAttribute("data-spatial-border-motion")).toBe(true);
   const topLeft = animations.find(
     ({ element }) => (element as HTMLElement).dataset.piece === "top-left",
   );
