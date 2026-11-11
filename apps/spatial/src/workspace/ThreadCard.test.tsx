@@ -18,6 +18,9 @@ vi.mock("@t3tools/web/src/state/entities", () => ({
 vi.mock("@t3tools/web/src/components/ProjectFavicon", () => ({
   ProjectFavicon: () => <img alt="Project icon" />,
 }));
+vi.mock("@t3tools/web/src/components/paneKindIcon", () => ({
+  PaneKindIcon: ({ kind }: { kind: string }) => <i data-pane-kind={kind} />,
+}));
 vi.mock("@t3tools/web/src/components/ui/spinner", () => ({
   Spinner: () => <i data-spinner="" />,
 }));
@@ -30,6 +33,7 @@ const text = (markup: string) => markup.replace(/<[^>]*>/g, "");
 
 it("shows only the icon, project and thread title in the title variant", () => {
   const markup = render("title");
+  expect(markup).toContain('data-pane-kind="chat"');
   expect(markup).toContain('alt="Project icon"');
   expect(text(markup)).toBe("OnirigiriFix the release");
   expect(markup).not.toContain("data-spinner");

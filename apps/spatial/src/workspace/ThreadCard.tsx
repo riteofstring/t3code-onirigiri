@@ -1,6 +1,7 @@
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
+import { PaneKindIcon } from "@t3tools/web/src/components/paneKindIcon";
 import { ProjectFavicon } from "@t3tools/web/src/components/ProjectFavicon";
 import { Spinner } from "@t3tools/web/src/components/ui/spinner";
 import { useProject, useThreadShell } from "@t3tools/web/src/state/entities";
@@ -51,9 +52,12 @@ export function ThreadCard({
   return (
     <div className="flex h-full w-full flex-col items-center justify-center bg-background p-8 text-center text-foreground">
       <div className="relative flex w-full flex-col items-center gap-6">
-        {project ? (
-          <ProjectFavicon project={project} className="size-12! [&_svg]:size-full!" />
-        ) : null}
+        <div className="flex items-center gap-4">
+          <PaneKindIcon kind="chat" className="size-12! stroke-[1.5] text-muted-foreground" />
+          {project ? (
+            <ProjectFavicon project={project} className="size-12! [&_svg]:size-full!" />
+          ) : null}
+        </div>
         <div className="flex max-w-sm flex-col items-center gap-1.5">
           {project ? <div className="text-xs text-muted-foreground">{project.title}</div> : null}
           <div className="line-clamp-3 text-lg font-medium leading-snug text-balance">
