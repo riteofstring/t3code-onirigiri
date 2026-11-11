@@ -52,6 +52,7 @@ export function createPaneLifecycleStore(
   let moving = false;
   let keepNeighbours = false;
   let overview = false;
+  let overviewFocus: string | null = null;
   let backgroundPictures = false;
   let picturesReady = true;
   let storedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -128,7 +129,8 @@ export function createPaneLifecycleStore(
   };
   const adjacent = (paneId: string) => [1, 1000].includes(distance(paneId));
   const distance = (paneId: string) => {
-    const center = focused ? panes.get(focused) : undefined;
+    const centerId = focused ?? (overview ? overviewFocus : null);
+    const center = centerId ? panes.get(centerId) : undefined;
     const pane = panes.get(paneId)!;
     return (
       Math.abs(pane.plane - (center?.plane ?? 0)) * 1000 + Math.abs(pane.slot - (center?.slot ?? 0))
@@ -139,7 +141,8 @@ export function createPaneLifecycleStore(
       .filter(
         (id) =>
           !mounted.has(id) &&
-          !visible.has(id) &&
+          // Overview covers every chat with its card, so a chat on screen can be pictured behind it.
+          (overview || !visible.has(id)) &&
           !hasPicture(id) &&
           canPicture(id, visited.has(id)) &&
           (retryAt.get(id) ?? 0) <= performance.now(),
@@ -147,6 +150,7 @@ export function createPaneLifecycleStore(
       .sort(
         (a, b) =>
           (focusedAt.get(b) ?? 0) - (focusedAt.get(a) ?? 0) ||
+          Number(visible.has(b)) - Number(visible.has(a)) ||
           distance(a) - distance(b) ||
           Number(hasCover(a)) - Number(hasCover(b)),
       )[0];
@@ -378,6 +382,11 @@ export function createPaneLifecycleStore(
       overview = active;
       store.setFocus(paneId);
       schedule();
+    },
+    setOverviewFocus: (paneId: string | null) => {
+      if (overviewFocus === paneId) return;
+      overviewFocus = paneId;
+      if (overview) schedule();
     },
     setKeepNeighbours: (next: boolean) => {
       if (keepNeighbours === next) return;

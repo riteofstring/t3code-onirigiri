@@ -681,6 +681,7 @@ function SpatialWorkspaceView({
     return () => owned.dispose();
   }, [lifecycleSeed]);
   useEffect(() => {
+    lifecycle?.setOverviewFocus(focusedPaneIdRef.current);
     lifecycle?.setOverview(overview, overview ? null : focusedPaneIdRef.current);
   }, [lifecycle, overview]);
   useEffect(() => {
@@ -695,7 +696,7 @@ function SpatialWorkspaceView({
   useEffect(() => {
     fullScreenPhaseRef.current = fullScreenPhase;
     const pictures = !alwaysLive && active && fullScreenPhase === null;
-    lifecycle?.setBackgroundPictures(pictures && !overview);
+    lifecycle?.setBackgroundPictures(pictures);
     setCaptureActivity(pictures, lifecycle?.isMoving() ?? false);
     setPicturesCovered(overview);
   }, [
@@ -753,7 +754,9 @@ function SpatialWorkspaceView({
         moving,
       );
       lifecycle?.setMoving(activeRef.current && moving);
-      if (workspaceRef.current?.getSnapshot().presentationMode === "overview") {
+      const snapshot = workspaceRef.current?.getSnapshot();
+      if (snapshot?.presentationMode === "overview") {
+        lifecycle?.setOverviewFocus(frame?.paneId ?? snapshot.focusedPaneId ?? null);
         lifecycle?.setFocus(null);
         return;
       }
@@ -845,6 +848,7 @@ function SpatialWorkspaceView({
     const paneId = workspaceRef.current?.getSnapshot().focusedPaneId;
     if (paneId && paneId !== focusedPaneIdRef.current && paneData.has(paneId)) {
       focusedPaneIdRef.current = paneId;
+      lifecycle.setOverviewFocus(paneId);
       lifecycle.setFocus(overview ? null : paneId);
     }
   }, [active, lifecycle, paneData, overview]);

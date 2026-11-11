@@ -528,3 +528,39 @@ it("admits no chat in overview and restores composer-first admission when it end
   store.composerReady("p1");
   expect(store.isMounted("p2")).toBe(true);
 });
+
+it("pictures unpictured chats behind their overview cards, on-screen and nearest the overview focus first", () => {
+  const store = make();
+  const pictured = new Set(["p0"]);
+  store.setPictures((id) => pictured.has(id));
+  store.setBackgroundPictures(true);
+  store.setOverviewFocus("p20");
+  store.setOverview(true, null);
+  for (const id of ["p18", "p21", "p22"]) store.setVisible(id, true);
+  const picture = (id: string) => {
+    store.contentMounted(id);
+    pictured.add(id);
+    store.setPictures((candidate) => pictured.has(candidate));
+    vi.advanceTimersByTime(102);
+  };
+  vi.advanceTimersByTime(501);
+  expect(mounted(store)).toEqual(["p0", "p21"]);
+  picture("p21");
+  expect(store.isMounted("p18")).toBe(true);
+  picture("p18");
+  expect(store.isMounted("p22")).toBe(true);
+  picture("p22");
+  expect(store.isMounted("p20")).toBe(true);
+  expect(store.isMounted("p19")).toBe(false);
+});
+
+it("still pictures no chat that is on screen outside overview", () => {
+  const store = make();
+  store.setPictures(() => false);
+  store.setBackgroundPictures(true);
+  store.setVisible("p1", true);
+  vi.advanceTimersByTime(501);
+  expect(store.isMounted("p1")).toBe(true);
+  expect(store.pictureMount("p1")).toBe("ordinary");
+  expect(store.pictureMount("p2")).toBe("background");
+});
