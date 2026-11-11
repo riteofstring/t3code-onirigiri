@@ -1,5 +1,5 @@
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import { ProjectFavicon } from "@t3tools/web/src/components/ProjectFavicon";
 import { Spinner } from "@t3tools/web/src/components/ui/spinner";
@@ -70,36 +70,6 @@ export function ThreadCard({
             {variant === "loading" ? <Spinner size="lg" className="text-muted-foreground" /> : null}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-/** The overview card of a pane that is not a chat, laid out like a chat's title card. */
-export function ToolCard({
-  environmentId,
-  threadId,
-  projectId,
-  title,
-  subtitle,
-}: {
-  environmentId: EnvironmentId;
-  threadId: ThreadId;
-  projectId: ProjectId | undefined;
-  title: string;
-  subtitle: string | undefined;
-}) {
-  const thread = useThreadShell({ environmentId, threadId });
-  const cardProjectId = projectId ?? thread?.projectId;
-  const project = useProject(cardProjectId ? { environmentId, projectId: cardProjectId } : null);
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-background p-8 text-center text-foreground">
-      {project ? (
-        <ProjectFavicon project={project} className="size-12! [&_svg]:size-full!" />
-      ) : null}
-      <div className="flex max-w-sm flex-col items-center gap-1.5">
-        {subtitle ? <div className="text-xs text-muted-foreground">{subtitle}</div> : null}
-        <div className="line-clamp-3 text-lg font-medium leading-snug text-balance">{title}</div>
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ export const MIN_COLUMN_WIDTH = 442;
 export const DEFAULT_COLUMN_WIDTH = 840;
 export const MIN_ROW_HEIGHT = 300;
 export const DEFAULT_MAX_ROW_HEIGHT = 1200;
+export const MAX_PANE_WIDTH = 1100;
 
 export function readItem(key: string): string | null {
   try {
@@ -51,7 +52,7 @@ export interface WorkspacePreferences {
 }
 
 const defaults: WorkspacePreferences = {
-  overviewZoom: "medium",
+  overviewZoom: "auto",
   rowHeight: "viewport",
   maxRowHeight: DEFAULT_MAX_ROW_HEIGHT,
   columnWidth: DEFAULT_COLUMN_WIDTH,
@@ -76,7 +77,7 @@ function readPreferences(): WorkspacePreferences {
     const focusOnClick = "focusOnClick" in value ? value.focusOnClick : null;
     const showMinimap = "showMinimap" in value ? value.showMinimap : null;
     return {
-      overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "medium",
+      overviewZoom: overviewZoomChoices.find((choice) => choice.value === zoom)?.value ?? "auto",
       rowHeight:
         typeof height === "number" && Number.isSafeInteger(height) && height >= MIN_ROW_HEIGHT
           ? height

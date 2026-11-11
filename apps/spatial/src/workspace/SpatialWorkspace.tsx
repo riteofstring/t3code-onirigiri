@@ -61,6 +61,7 @@ import {
   useFocusAnchorPreference,
   useLayoutModePreference,
   useMinimapPlacement,
+  MAX_PANE_WIDTH,
   MIN_COLUMN_WIDTH,
   MIN_ROW_HEIGHT,
   useWorkspacePreferences,
@@ -77,7 +78,7 @@ import {
 import { PaneLifecycleContext, createPaneLifecycleStore } from "./paneLifecycle";
 import { SavedPanePicture } from "./SavedPanePicture";
 import { spatialBrowserOccluders } from "./spatialBrowserOccluders";
-import { PaneLoading, ThreadCard, ToolCard } from "./ThreadCard";
+import { PaneLoading, ThreadCard } from "./ThreadCard";
 import { SpatialWorkspaceActiveContext, ThreadPane } from "./ThreadPane";
 import { toolPaneSurface, type ToolPane } from "./useToolPanes";
 import { beginFullScreenGrow, FullScreenBorder, useFullScreenBorder } from "./FullScreenBorder";
@@ -464,7 +465,9 @@ function SpatialWorkspaceView({
       height: Math.max(0, stageViewport.height - workspacePadding * 2),
     };
   }, [stageViewport, workspacePadding]);
-  const maxColumnWidth = paneViewport ? Math.floor(paneViewport.width / 2) : null;
+  const maxColumnWidth = paneViewport
+    ? Math.min(MAX_PANE_WIDTH, Math.floor(paneViewport.width / 2))
+    : null;
   const columnWidth =
     maxColumnWidth === null
       ? preferences.columnWidth
@@ -475,6 +478,7 @@ function SpatialWorkspaceView({
       height: preferences.rowHeight,
       width: columnWidth,
       minHeight: MIN_ROW_HEIGHT,
+      ...(fullScreen ? {} : { maxWidth: MAX_PANE_WIDTH }),
       ...(fullScreen || maxRowHeight === undefined ? {} : { maxHeight: maxRowHeight }),
     }),
     [preferences.rowHeight, columnWidth, maxRowHeight, fullScreen],
@@ -1285,19 +1289,7 @@ function SpatialWorkspaceView({
   }, [overview]);
   const renderPanePlaceholder = useCallback(
     (pane: WorkspacePane) => {
-      if (pane.surfaceKind === "draft" || pane.surfaceKind === "empty-frame") return null;
-      if (pane.surfaceKind !== "thread") {
-        const tool = pane.data as ToolPane;
-        return overview ? (
-          <ToolCard
-            environmentId={tool.environmentId}
-            threadId={tool.threadId}
-            projectId={tool.projectId}
-            title={pane.title}
-            subtitle={pane.subtitle}
-          />
-        ) : null;
-      }
+      if (pane.surfaceKind !== "thread") return null;
       const data = pane.data as ThreadPaneData;
       const picture = displayedPictureFor(pane.paneId);
       const card =
