@@ -193,10 +193,20 @@ let host: HTMLDivElement;
 let attached: Promise<void>;
 let onAttach: () => void;
 
+const paneControls = {
+  maximized: false,
+  addPane: () => {},
+  closePane: () => {},
+  toggleMaximized: () => {},
+};
+
 function render(focused = true, visible = true) {
   root.render(
     <ToolPaneView
       pane={filePane}
+      title="Terminal"
+      subtitle="Thread one"
+      controls={paneControls}
       focused={focused}
       visible={visible}
       onNavigate={() => false}

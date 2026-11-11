@@ -1197,6 +1197,14 @@ function SpatialWorkspaceView({
             <div className="h-full min-h-0" inert={closingToolPanes.has(pane.paneId)}>
               <ToolPaneView
                 pane={tool}
+                title={pane.title}
+                subtitle={pane.subtitle}
+                controls={{
+                  maximized: state.maximized,
+                  addPane: () => addPaneBeside(pane.paneId),
+                  closePane: () => closeChatPane(pane.paneId),
+                  toggleMaximized: () => togglePaneMaximized(pane.paneId),
+                }}
                 isPresent={() =>
                   !isPaneClosing(tool.paneId) &&
                   toolController.getPanes().some((candidate) => candidate.paneId === tool.paneId)

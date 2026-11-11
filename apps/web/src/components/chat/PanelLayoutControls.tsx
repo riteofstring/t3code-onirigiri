@@ -249,10 +249,41 @@ function ChatPaneLayoutControls({
   | "terminalShortcutLabel"
   | "onToggleTerminal"
 > & { controls: ChatPaneControls }) {
-  const maximizeLabel = controls.maximized ? "Restore pane" : "Maximize pane";
   const terminalLabel = terminalAvailable
     ? `Toggle terminal drawer${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
     : "Terminal drawer is unavailable";
+  return (
+    <PaneWindowControls controls={controls}>
+      {showTerminalControl ? (
+        <TooltipTrigger
+          payload={terminalLabel}
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Toggle terminal drawer"
+              aria-pressed={terminalOpen}
+              disabled={!terminalAvailable}
+              onClick={onToggleTerminal}
+            />
+          }
+        >
+          <PanelBottomIcon className="size-4" />
+        </TooltipTrigger>
+      ) : null}
+    </PaneWindowControls>
+  );
+}
+
+/** The add, maximize and close buttons every workspace pane header ends with. */
+export function PaneWindowControls({
+  controls,
+  children,
+}: {
+  controls: ChatPaneControls;
+  children?: ReactNode;
+}) {
+  const maximizeLabel = controls.maximized ? "Restore pane" : "Maximize pane";
   return (
     <TooltipProvider delay={350} closeDelay={100} timeout={400}>
       <Tooltip<string>>
@@ -261,23 +292,7 @@ function ChatPaneLayoutControls({
             className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
             data-panel-layout-controls
           >
-            {showTerminalControl ? (
-              <TooltipTrigger
-                payload={terminalLabel}
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Toggle terminal drawer"
-                    aria-pressed={terminalOpen}
-                    disabled={!terminalAvailable}
-                    onClick={onToggleTerminal}
-                  />
-                }
-              >
-                <PanelBottomIcon className="size-4" />
-              </TooltipTrigger>
-            ) : null}
+            {children}
             <TooltipTrigger
               payload="Add pane to the right"
               render={

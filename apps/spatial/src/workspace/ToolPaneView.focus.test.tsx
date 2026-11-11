@@ -145,6 +145,13 @@ const splitPane: ToolPane = {
   threadId: ThreadId.make("thread"),
 };
 
+const paneControls = {
+  maximized: false,
+  addPane: vi.fn(),
+  closePane: vi.fn(),
+  toggleMaximized: vi.fn(),
+};
+
 let host: HTMLDivElement;
 let root: Root;
 let pane = splitPane;
@@ -156,6 +163,9 @@ function render(nextFocused = focused) {
     <>
       <ToolPaneView
         pane={pane}
+        title="Terminal"
+        subtitle="Thread one"
+        controls={paneControls}
         focused={focused}
         visible
         onNavigate={() => false}
@@ -209,6 +219,22 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("heads the pane with its title and the add, maximize and close buttons", async () => {
+  await act(() => render());
+  const header = host.querySelector("[data-tool-pane-header]")!;
+  expect(header.textContent).toBe("Thread one/Terminal");
+  const buttons = [...header.querySelectorAll("button")];
+  expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+    "Add pane to the right",
+    "Maximize pane",
+    "Close pane",
+  ]);
+  for (const button of buttons) await act(async () => button.click());
+  expect(paneControls.addPane).toHaveBeenCalledOnce();
+  expect(paneControls.toggleMaximized).toHaveBeenCalledOnce();
+  expect(paneControls.closePane).toHaveBeenCalledOnce();
 });
 
 it("returns focus to an already-selected terminal when its native sidebar tab is clicked", async () => {

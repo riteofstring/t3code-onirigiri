@@ -4,6 +4,8 @@ import {
 } from "@riteofstring/onirigiri";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { ChatViewActivityContext } from "@t3tools/web/src/components/chatViewActivity";
+import { PaneWindowControls } from "@t3tools/web/src/components/chat/PanelLayoutControls";
+import type { ChatPaneControls } from "@t3tools/web/src/components/chatPaneControls";
 import { RightPanelEmptyState } from "@t3tools/web/src/components/RightPanelTabs";
 import {
   ThreadSurfaceContent,
@@ -12,6 +14,12 @@ import {
 import { openPreviewSession } from "@t3tools/web/src/components/preview/openPreviewSession";
 import { closePreviewSession } from "@t3tools/web/src/components/preview/closePreviewSession";
 import { Button } from "@t3tools/web/src/components/ui/button";
+import {
+  WorkspaceBreadcrumb,
+  WorkspaceBreadcrumbItem,
+  WorkspaceBreadcrumbSeparator,
+  WorkspaceBreadcrumbText,
+} from "@t3tools/web/src/components/WorkspaceBreadcrumb";
 import { toastManager } from "@t3tools/web/src/components/ui/toast";
 import { useDiffPanelStore } from "@t3tools/web/src/diffPanelStore";
 import { isElectron } from "@t3tools/web/src/env";
@@ -65,6 +73,9 @@ const NO_THREAD_AVAILABILITY = {
 
 export function ToolPaneView({
   pane,
+  title,
+  subtitle,
+  controls,
   focused,
   visible,
   onNavigate,
@@ -75,6 +86,9 @@ export function ToolPaneView({
   isPresent,
 }: {
   pane: ToolPane;
+  title: string;
+  subtitle: string | undefined;
+  controls: ChatPaneControls;
   focused: boolean;
   visible: boolean;
   onNavigate: OnirigiriWorkspaceHandle["focus"];
@@ -391,6 +405,29 @@ export function ToolPaneView({
           }
         }}
       >
+        <header
+          className="flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-2 bg-background pr-[calc(var(--workspace-controls-right)+1px)] pl-(--workspace-gutter-start)"
+          data-tool-pane-header
+        >
+          <WorkspaceBreadcrumb ariaLabel="Pane breadcrumb" className="flex-1 overflow-clip">
+            {subtitle ? (
+              <>
+                <WorkspaceBreadcrumbItem className="shrink">
+                  <WorkspaceBreadcrumbText className="max-w-40">{subtitle}</WorkspaceBreadcrumbText>
+                </WorkspaceBreadcrumbItem>
+                <WorkspaceBreadcrumbSeparator>
+                  <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+                </WorkspaceBreadcrumbSeparator>
+              </>
+            ) : null}
+            <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+              <h2 className="min-w-0">
+                <WorkspaceBreadcrumbText>{title}</WorkspaceBreadcrumbText>
+              </h2>
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+          <PaneWindowControls controls={controls} />
+        </header>
         {error ? (
           <div role="alert" className="flex items-center gap-2 px-3 py-2 text-sm text-destructive">
             <span className="min-w-0 flex-1">{error}</span>

@@ -149,6 +149,13 @@ vi.mock("@t3tools/web/src/components/ThreadSurfaceContent", async () => {
   };
 });
 
+const paneControls = {
+  maximized: false,
+  addPane: () => {},
+  closePane: () => {},
+  toggleMaximized: () => {},
+};
+
 let host: HTMLDivElement;
 let root: Root;
 let navigate: ReturnType<typeof vi.fn<(direction: string) => boolean>>;
@@ -168,6 +175,9 @@ async function render(focused = true, pane: ToolPane = terminalPane) {
       <>
         <ToolPaneView
           pane={pane}
+          title="Terminal"
+          subtitle="Thread one"
+          controls={paneControls}
           focused={focused}
           visible
           onNavigate={navigate}
