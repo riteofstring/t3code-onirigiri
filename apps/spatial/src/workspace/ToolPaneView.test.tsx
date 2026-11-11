@@ -138,8 +138,8 @@ vi.mock("@t3tools/web/src/components/ThreadSurfaceContent", async () => {
         return () => input.removeEventListener("keydown", consume);
       }, []);
       useEffect(() => {
-        if (autoFocus) ref.current?.focus();
-      }, [autoFocus]);
+        if (autoFocus && surface.kind === "terminal") ref.current?.focus();
+      }, [autoFocus, surface.kind]);
       return surface.kind === "preview" ? (
         <div data-browser-surface-slot="runtime-one" />
       ) : (
@@ -332,6 +332,24 @@ it("preserves Option word movement in chat fields and releases only the inactive
   chat.focus();
   await render(false);
   expect(document.activeElement).toBe(chat);
+});
+
+it("puts the cursor in a non-terminal pane's text field on arrival, and not while inactive", async () => {
+  const filesPane = {
+    ...terminalPane,
+    kind: "surface",
+    surface: { id: "files", kind: "files" },
+  } as unknown as ToolPane;
+  const frame = () =>
+    act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await render(false, filesPane);
+  const composer = host.querySelector<HTMLTextAreaElement>('[aria-label="Chat composer"]')!;
+  composer.focus();
+  await frame();
+  expect(document.activeElement).toBe(composer);
+  await render(true, filesPane);
+  await frame();
+  expect(document.activeElement).toBe(host.querySelector('[aria-label="Terminal input"]'));
 });
 
 it("does not navigate the workspace from a modal terminal", async () => {
