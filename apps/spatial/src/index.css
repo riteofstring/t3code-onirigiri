@@ -558,3 +558,9 @@
     animation-duration: 1ms;
   }
 }
+
+/* Lines a terminal pane's text up with its header title; the terminal insets its text 4px. */
+.spatial-workspace [data-spatial-surface="terminal"] [data-thread-terminal-drawer] {
+  padding-inline-start: calc(var(--workspace-gutter-start) - 4px);
+  background: var(--terminal-background);
+}
