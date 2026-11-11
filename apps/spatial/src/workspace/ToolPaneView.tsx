@@ -137,6 +137,12 @@ export function ToolPaneView({
     [selectedFilePath],
   );
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    // Arriving at a terminal puts the cursor in it, so typing works without a click.
+    if (active && surface?.kind === "terminal") setTerminalFocusRequestId((value) => value + 1);
+  }
   const rootRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, interactive, rootRef);
   useEffect(() => {

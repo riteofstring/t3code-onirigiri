@@ -270,6 +270,15 @@ it("does not reclaim focus on ordinary updates or while its pane is inactive", a
   expect(document.activeElement).toBe(composer);
 });
 
+it("puts the cursor in the terminal when its pane becomes active again", async () => {
+  const input = await openSplit();
+  const composer = host.querySelector<HTMLTextAreaElement>('[aria-label="Chat composer"]')!;
+  await act(() => render(false));
+  composer.focus();
+  await act(() => render(true));
+  expect(document.activeElement).toBe(input);
+});
+
 it("preserves the composer's focus when a split closes after its pane becomes inactive", async () => {
   let resolveClose!: (result: { _tag: "Success" }) => void;
   const closing = new Promise<{ _tag: "Success" }>((resolve) => {
