@@ -7,6 +7,7 @@ export const pictureLog = {
   saved: 0,
   failed: 0,
   last: "none yet",
+  arrival: "none yet",
 };
 
 /** `?pictureStatus=1` shows the readout for this tab; `?pictureStatus=0` hides it again. */
@@ -53,6 +54,7 @@ export function PictureStatusPanel({ read }: { read: () => Status }) {
     ...status,
     "captures started / saved / failed": `${pictureLog.started} / ${pictureLog.saved} / ${pictureLog.failed}`,
     "last capture": pictureLog.last,
+    "focused chat (ms after focus)": pictureLog.arrival,
     "chats kept live by": [...new Set(pictureLog.producers.values())].join(", ") || "nothing",
   };
   return (

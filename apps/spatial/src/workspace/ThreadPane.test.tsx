@@ -1446,6 +1446,7 @@ it.each([false, true])("restores the timeline after content release, at end: %s"
     clientHeight: { value: 200 },
   });
   scroller.scrollTop = atEnd ? 800 : 320;
+  scroller.dispatchEvent(new Event("scroll"));
   state.mounted = false;
   await render(false);
   expect(container.querySelector(".messages-timeline-scroll")).toBeNull();

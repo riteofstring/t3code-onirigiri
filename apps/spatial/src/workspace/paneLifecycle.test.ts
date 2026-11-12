@@ -315,7 +315,7 @@ it("pictures the chats focused most recently before nearer ones", () => {
   for (const id of ["p20", "p30"]) store.registerChat(id, releasable());
   store.setMoving(false);
   store.setMoving(true);
-  vi.advanceTimersByTime(40);
+  vi.advanceTimersByTime(72);
   store.setMoving(false);
   const pictured = new Set<string>();
   const take = (id: string) => {
@@ -366,7 +366,7 @@ it("replaces distant clean trees with the nearest stale neighbours after a focus
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}`));
 });
 
-it("removes eligible chat DOM after a covered frame, then admits focused and peer composers before timelines", () => {
+it("removes eligible chat DOM one chat per frame after a covered frame, then admits focused and peer composers before timelines", () => {
   const store = make();
   store.setVisible("p0", true);
   store.setVisible("p1", true);
@@ -377,6 +377,8 @@ it("removes eligible chat DOM after a covered frame, then admits focused and pee
   expect(store.isMounted("p0")).toBe(true);
   vi.advanceTimersByTime(16);
   expect(store.isMounted("p0")).toBe(true);
+  vi.advanceTimersByTime(16);
+  expect(mounted(store)).toEqual(["p1"]);
   vi.advanceTimersByTime(16);
   expect(mounted(store)).toEqual([]);
   store.setMoving(false);
@@ -448,7 +450,7 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   store.setPictures((id) => id !== "p2");
   store.setBackgroundPictures(true);
   store.setMoving(true);
-  vi.advanceTimersByTime(32);
+  vi.advanceTimersByTime(72);
   store.setMoving(false);
   vi.advanceTimersByTime(2000);
   expect(store.isMounted("p2")).toBe(false);
@@ -565,4 +567,19 @@ it("still pictures no chat that is on screen outside overview", () => {
   expect(store.isMounted("p1")).toBe(true);
   expect(store.pictureMount("p1")).toBe("ordinary");
   expect(store.pictureMount("p2")).toBe("background");
+});
+
+it("drops a chat still loading for its picture when input arrives, and keeps one that has loaded", () => {
+  const store = make();
+  store.setPictures((id) => id === "p0");
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(2001);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  window.dispatchEvent(new Event("keydown"));
+  expect(mounted(store)).toEqual(["p0"]);
+  vi.advanceTimersByTime(2001);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  store.contentMounted("p1");
+  window.dispatchEvent(new Event("keydown"));
+  expect(mounted(store)).toEqual(["p0", "p1"]);
 });

@@ -55,7 +55,7 @@ import { usePaneActivity } from "./paneActivity";
 import { ThreadDataReady } from "./ThreadDataReady";
 import { type ChatRemoval, PaneLifecycleContext, usePaneMounted } from "./paneLifecycle";
 import { hasLivePaneProducer, livePaneProducer } from "./panePictureSnapshot";
-import { describeElement, pictureLog } from "./PictureStatusPanel";
+import { describeElement, pictureLog, pictureStatusRequested } from "./PictureStatusPanel";
 import { PICTURE_IDLE_BUDGET_MS } from "./panePictureIdle";
 import { PaneSnapshotContext, markPaneSynced, usePanePictureTheme } from "./useSavedPanePictures";
 
@@ -205,6 +205,31 @@ function usePaneContent(
   if (presented && !renderContent) setPresented(false);
   else if (!presented && prepared) setPresented(true);
 
+  const arrival = useRef<{ start: number; marks: Record<string, number> } | null>(null);
+  useEffect(() => {
+    if (!pictureStatusRequested) return;
+    if (!focused) {
+      arrival.current = null;
+      return;
+    }
+    const { start, marks } = (arrival.current ??= { start: performance.now(), marks: {} });
+    const stages = {
+      loaded: renderContent,
+      synced,
+      history: !history.loading,
+      view: viewReady,
+      settled,
+      shown: presented,
+    };
+    pictureLog.arrival = `${Object.entries(stages)
+      .map(([stage, done]) =>
+        done
+          ? `${stage} +${Math.round((marks[stage] ??= performance.now()) - start)}`
+          : `${stage} …`,
+      )
+      .join(", ")} (server status: ${status ?? "none"})`;
+  }, [focused, history.loading, presented, renderContent, settled, status, synced, viewReady]);
+
   useLayoutEffect(() => {
     markPaneSynced(
       paneId,
@@ -351,7 +376,6 @@ const PaneBody = memo(function PaneBody({
 
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollPositions = useRef<{ top: number; atEnd: boolean }[]>([]);
-  const saveScroll = useRef<(() => void) | null>(null);
   const localStateAtRisk = useRef(false);
   const arrivalText = useRef("");
   const noteLocalEdit = (event: { target: EventTarget }) => {
@@ -374,7 +398,6 @@ const PaneBody = memo(function PaneBody({
       );
     },
     prepareRemoval: () => {
-      if (!preparing) saveScroll.current?.();
       const element = contentRef.current;
       if (element?.contains(document.activeElement))
         element
@@ -696,7 +719,7 @@ const PaneBody = memo(function PaneBody({
             <ChatViewHostContext value={lifecycle ? host : null}>
               <ChatViewContentReadyProvider onReadyChange={onContentReadyChange}>
                 {mounted ? (
-                  <PaneScrollState positions={scrollPositions} save={saveScroll} ready={!preparing}>
+                  <PaneScrollState positions={scrollPositions} ready={!preparing}>
                     <PaneRouter router={router} threadPath={threadPath} />
                   </PaneScrollState>
                 ) : dataReady ? (
@@ -768,12 +791,10 @@ function TimelinePicture({
 
 function PaneScrollState({
   positions,
-  save,
   ready,
   children,
 }: {
   positions: React.RefObject<{ top: number; atEnd: boolean }[]>;
-  save: React.RefObject<(() => void) | null>;
   ready: boolean;
   children: React.ReactNode;
 }) {
@@ -791,10 +812,13 @@ function PaneScrollState({
     });
     restored.current = true;
   }, [positions, ready]);
+  // Positions are remembered as the chat scrolls. Reading them when the camera starts moving or when
+  // the chat unmounts made the browser restyle the page at the worst moment.
   useLayoutEffect(() => {
     const element = root.current;
+    if (!element) return;
     const remember = () => {
-      if (!element || !restored.current) return;
+      if (!restored.current) return;
       positions.current = [
         ...element.querySelectorAll<HTMLElement>(
           ".messages-timeline-scroll, [data-tool-group-scroll]",
@@ -804,13 +828,12 @@ function PaneScrollState({
         atEnd: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1,
       }));
     };
-    save.current = remember;
+    element.addEventListener("scroll", remember, { capture: true, passive: true });
     return () => {
-      remember();
+      element.removeEventListener("scroll", remember, true);
       restored.current = false;
-      save.current = null;
     };
-  }, [positions, save]);
+  }, [positions]);
   return (
     <div ref={root} className="h-full w-full">
       {children}

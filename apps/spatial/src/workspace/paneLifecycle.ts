@@ -125,6 +125,9 @@ export function createPaneLifecycleStore(
     const { paneId } = capturing;
     capturing = null;
     if (hasPicture(paneId) || retry) retryAt.delete(paneId);
+    // Input arrived while this chat was still loading for its picture. Drop the half-built tree, or
+    // it finishes mounting during the move that the input starts.
+    if (retry && !loaded.has(paneId) && !retained().has(paneId)) unmount(paneId);
   };
   const adjacent = (paneId: string) => [1, 1000].includes(distance(paneId));
   const distance = (paneId: string) => {
@@ -371,13 +374,18 @@ export function createPaneLifecycleStore(
             removable.push(id);
           }
         }
-        if (removable.length > 0)
+        if (removable.length > 0) {
+          // One chat per frame: removing every covered chat in one frame froze the start of the move.
+          const removeNext = () => {
+            removalFrame = null;
+            if (!moving) return;
+            unmount(removable.shift()!);
+            if (removable.length > 0) removalFrame = requestAnimationFrame(removeNext);
+          };
           removalFrame = requestAnimationFrame(() => {
-            removalFrame = requestAnimationFrame(() => {
-              removalFrame = null;
-              if (moving) for (const id of removable) unmount(id);
-            });
+            removalFrame = requestAnimationFrame(removeNext);
           });
+        }
         cancel();
         release(true);
       } else {
