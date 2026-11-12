@@ -509,7 +509,17 @@ export function createPaneLifecycleStore(
       if (focused && !panes.has(focused)) focused = null;
       if (capturing && !panes.has(capturing.paneId)) release(false);
       for (const id of mounted) if (!panes.has(id)) unmount(id);
-      for (const ids of [visible, visited, loaded, deferred, pendingComposers, dataReady, covered])
+      for (const ids of [
+        visible,
+        visited,
+        loaded,
+        deferred,
+        pendingComposers,
+        dataReady,
+        covered,
+        presented,
+        overdue,
+      ])
         for (const id of ids) if (!panes.has(id)) ids.delete(id);
       for (const entries of [retryAt, motionHolds, focusedAt])
         for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);

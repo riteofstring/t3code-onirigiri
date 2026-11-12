@@ -167,8 +167,8 @@ export function ToolPaneView({
     if (focusField()) return;
     root.focus({ preventScroll: true });
     // The field can be there but not focusable until the pane is interactive a few frames later,
-    // which no mutation inside the pane reports; or it can mount later still. A click anywhere
-    // means the user has chosen where the cursor goes.
+    // which no mutation inside the pane reports; or it can mount later still. A click anywhere,
+    // or Tab or Escape, means the user has chosen where the cursor goes.
     let frames = 30;
     let frame = requestAnimationFrame(function retry() {
       if (focusField()) stop();
@@ -181,6 +181,10 @@ export function ToolPaneView({
       cancelAnimationFrame(frame);
       fields.disconnect();
       window.removeEventListener("pointerdown", stop, true);
+      window.removeEventListener("keydown", leave, true);
+    };
+    const leave = (event: KeyboardEvent) => {
+      if (event.key === "Tab" || event.key === "Escape") stop();
     };
     fields.observe(root, {
       childList: true,
@@ -189,6 +193,7 @@ export function ToolPaneView({
       attributeFilter: ["disabled"],
     });
     window.addEventListener("pointerdown", stop, true);
+    window.addEventListener("keydown", leave, true);
     return stop;
   }, [active, surface?.kind]);
   useEffect(() => {

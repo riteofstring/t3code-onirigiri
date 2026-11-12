@@ -393,6 +393,14 @@ it("leaves the cursor where a click put it when a field mounts afterwards", asyn
   expect(document.activeElement).toBe(composer);
 });
 
+it("leaves the cursor where Tab put it when a field mounts afterwards", async () => {
+  const { composer, slot } = await arriveFromComposer();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+  composer.focus();
+  await act(async () => slot.append(document.createElement("input")));
+  expect(document.activeElement).toBe(composer);
+});
+
 it("does not navigate the workspace from a modal terminal", async () => {
   await render();
   host.setAttribute("role", "dialog");

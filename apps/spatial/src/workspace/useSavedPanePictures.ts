@@ -533,7 +533,7 @@ export function useSavedPanePictures(
         visible &&
         (phase === "rest" || (phase === "resize" && holdsLiveInMotion?.(pane.paneId) === undefined))
       )
-        return phase === "rest" && coveredAtRest?.(pane.paneId) && displayedPictureFor(pane.paneId)
+        return phase === "rest" && coveredAtRest?.(pane.paneId) && freshPictureFor(pane.paneId)
           ? { kind: "placeholder" }
           : "dom";
       if (phase === "motion" || phase === "resize") {
@@ -548,6 +548,7 @@ export function useSavedPanePictures(
     [
       enabled,
       displayedPictureFor,
+      freshPictureFor,
       pictureMount,
       holdsLiveInMotion,
       coveredAtRest,

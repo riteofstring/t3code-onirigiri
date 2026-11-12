@@ -824,14 +824,17 @@ function PaneScrollState({
       });
     };
     const heights = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(rememberSoon);
+    let observed = new Set<Element>();
     remember.current = () => {
       const scrollers = [
         ...element.querySelectorAll<HTMLElement>(
           ".messages-timeline-scroll, [data-tool-group-scroll]",
         ),
       ];
-      for (const scroller of scrollers)
-        if (scroller.firstElementChild) heights?.observe(scroller.firstElementChild);
+      const contents = new Set(scrollers.flatMap((scroller) => scroller.firstElementChild ?? []));
+      for (const content of observed) if (!contents.has(content)) heights?.unobserve(content);
+      for (const content of contents) if (!observed.has(content)) heights?.observe(content);
+      observed = contents;
       if (!restored.current) return;
       positions.current = scrollers.map((scroller) => ({
         top: scroller.scrollTop,
