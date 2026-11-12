@@ -387,6 +387,14 @@ function SpatialWorkspaceView({
     lifecycle?.subscribeMotion ?? (() => () => {}),
     lifecycle?.isCameraMoving ?? (() => false),
   );
+  const coveredAtRest = useCallback(
+    (id: string) => lifecycle?.coveredAtRest(id) ?? false,
+    [lifecycle],
+  );
+  const revealStep = useSyncExternalStore(
+    lifecycle?.subscribeMotion ?? (() => () => {}),
+    lifecycle?.revealStep ?? (() => 0),
+  );
   const [interacted, setInteracted] = useState(false);
   useEffect(() => {
     if (interacted) return;
@@ -421,6 +429,8 @@ function SpatialWorkspaceView({
     stageViewport,
   } = useSavedPanePictures(getScene, onSnapshotFailure, pictureMount, !alwaysLive, {
     holdsLive: holdsLiveInMotion,
+    coveredAtRest,
+    revealStep,
     focusedAt,
     moving: cameraMoving,
   });

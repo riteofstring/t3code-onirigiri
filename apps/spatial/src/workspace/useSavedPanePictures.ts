@@ -73,6 +73,9 @@ function paneHasCommittedContent(
 
 export interface PictureMotion {
   readonly holdsLive: (paneId: string) => boolean | undefined;
+  /** At rest, a chat still under its picture until its turn to reappear. */
+  readonly coveredAtRest?: (paneId: string) => boolean;
+  readonly revealStep?: number;
   readonly focusedAt?: (paneId: string) => number;
   readonly moving: boolean;
 }
@@ -175,6 +178,8 @@ export function useSavedPanePictures(
   "use no memo";
   const holdsLiveInMotion = motion?.holdsLive;
   const cameraMoving = motion?.moving ?? false;
+  const coveredAtRest = motion?.coveredAtRest;
+  const revealStep = motion?.revealStep ?? 0;
   const threads = useThreadShells();
   const pictureTheme = usePanePictureTheme();
   const [saved, setSaved] = useState<ReadonlyMap<string, SavedPanePicture> | null>(null);
@@ -528,7 +533,9 @@ export function useSavedPanePictures(
         visible &&
         (phase === "rest" || (phase === "resize" && holdsLiveInMotion?.(pane.paneId) === undefined))
       )
-        return "dom";
+        return phase === "rest" && coveredAtRest?.(pane.paneId) && displayedPictureFor(pane.paneId)
+          ? { kind: "placeholder" }
+          : "dom";
       if (phase === "motion" || phase === "resize") {
         const holds = holdsLiveInMotion?.(pane.paneId);
         if (holds !== undefined) return holds ? "dom" : { kind: "placeholder" };
@@ -538,7 +545,15 @@ export function useSavedPanePictures(
       return { kind: "placeholder" };
     },
     // oxlint-disable-next-line react/memo-dependencies -- Motion changes which chats hold their DOM, so the engine must resolve presentations again.
-    [enabled, displayedPictureFor, pictureMount, holdsLiveInMotion, cameraMoving],
+    [
+      enabled,
+      displayedPictureFor,
+      pictureMount,
+      holdsLiveInMotion,
+      coveredAtRest,
+      cameraMoving,
+      revealStep,
+    ],
   );
   const keepPicture = useCallback(
     (picture: SavedPanePicture, revision: number) => {

@@ -365,7 +365,7 @@ async function exerciseLifecycle(store: PaneLifecycleStore) {
       navigation.focusPane(destination);
     });
     await act(() => vi.advanceTimersByTime(64));
-    expect(store.isMounted(origin)).toBe(false);
+    expect(store.isMounted(origin)).toBe(true);
     await act(() => vi.advanceTimersByTime(1000));
     expect(store.isMounted(destination)).toBe(true);
     await act(() => store.composerReady(destination));

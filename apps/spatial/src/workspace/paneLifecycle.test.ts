@@ -140,12 +140,34 @@ it("keeps the adjacent chats mounted in full screen even when their pictures are
   expect(store.isMounted("p6")).toBe(true);
 });
 
-it("mounts no offscreen chat that already has a current picture", () => {
+it("loads the four nearest offscreen chats under their pictures, one per idle slot, once rested", () => {
   const store = make();
   store.setPictures(() => true);
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(5000);
+  vi.advanceTimersByTime(1999);
   expect(mounted(store)).toEqual(["p0"]);
+  vi.advanceTimersByTime(2);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  for (const id of ["p1", "p2", "p3", "p4"]) {
+    store.contentMounted(id);
+    vi.advanceTimersByTime(101);
+  }
+  vi.advanceTimersByTime(5000);
+  expect(mounted(store)).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+});
+
+it("evicts no nearer chat to load a neighbour at the retention cap", () => {
+  const store = createPaneLifecycleStore(panes, "p0", 3);
+  stores.push(store);
+  store.setPictures(() => true);
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(2001);
+  for (const id of ["p1", "p2", "p3", "p4"]) {
+    store.contentMounted(id);
+    vi.advanceTimersByTime(101);
+  }
+  vi.advanceTimersByTime(5000);
+  expect(mounted(store)).toEqual(["p0", "p1", "p2"]);
 });
 
 const dataReady = (store: PaneLifecycleStore) =>
@@ -244,7 +266,7 @@ it("forgets ready data for panes that are removed", () => {
   expect(store.keepsDataReady("p1")).toBe(false);
 });
 
-it("mounts only the retained chats after a move when every picture is current", () => {
+it("keeps loaded chats through a move and loads no other before the rest", () => {
   const store = make();
   store.setVisible("p0", true);
   store.setVisible("p1", true);
@@ -253,11 +275,9 @@ it("mounts only the retained chats after a move when every picture is current", 
   store.setBackgroundPictures(true);
   store.setMoving(true);
   vi.advanceTimersByTime(48);
-  expect(mounted(store)).toEqual([]);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
   store.setMoving(false);
-  store.composerReady("p0");
-  store.composerReady("p1");
-  vi.advanceTimersByTime(5000);
+  vi.advanceTimersByTime(1900);
   expect(mounted(store)).toEqual(["p0", "p1"]);
 });
 
@@ -265,11 +285,11 @@ it("mounts an offscreen chat once its picture stops being current", () => {
   const store = make();
   store.setPictures(() => true);
   store.setBackgroundPictures(true);
-  vi.advanceTimersByTime(5000);
+  vi.advanceTimersByTime(1500);
   expect(mounted(store)).toEqual(["p0"]);
-  store.setPictures((id) => id !== "p3");
+  store.setPictures((id) => id !== "p7");
   vi.advanceTimersByTime(501);
-  expect(mounted(store)).toEqual(["p0", "p3"]);
+  expect(mounted(store)).toEqual(["p0", "p7"]);
 });
 
 it("input restarts the rest interval before the next picture mount", () => {
@@ -305,17 +325,12 @@ it("pictures the chats focused most recently before nearer ones", () => {
   const store = make();
   store.setPictures((id) => id === "p0");
   vi.advanceTimersByTime(1);
+  store.setMoving(true);
   store.setFocus("p20");
   vi.advanceTimersByTime(1);
   store.setFocus("p30");
   vi.advanceTimersByTime(1);
   store.setFocus("p0");
-  store.setPictures((id) => id === "p0");
-  store.setMoving(true);
-  for (const id of ["p20", "p30"]) store.registerChat(id, releasable());
-  store.setMoving(false);
-  store.setMoving(true);
-  vi.advanceTimersByTime(72);
   store.setMoving(false);
   const pictured = new Set<string>();
   const take = (id: string) => {
@@ -366,39 +381,83 @@ it("replaces distant clean trees with the nearest stale neighbours after a focus
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}`));
 });
 
-it("removes eligible chat DOM one chat per frame after a covered frame, then admits the focused chat whole before its peer", () => {
+it("keeps chat DOM through a move, then admits a cold focused chat whole before its peer", () => {
   const store = make();
   store.setVisible("p0", true);
-  store.setVisible("p1", true);
   store.setPictures(() => true);
-  store.registerChat("p0", releasable());
-  store.registerChat("p1", releasable());
+  const departing = releasable();
+  store.registerChat("p0", departing);
+  for (const id of ["p5", "p6"]) store.registerChat(id, releasable());
   store.setMoving(true);
-  expect(store.isMounted("p0")).toBe(true);
-  vi.advanceTimersByTime(16);
-  expect(store.isMounted("p0")).toBe(true);
-  vi.advanceTimersByTime(16);
-  expect(mounted(store)).toEqual(["p1"]);
-  vi.advanceTimersByTime(16);
-  expect(mounted(store)).toEqual([]);
+  store.setVisible("p0", false);
+  store.setFocus("p5");
+  for (const id of ["p5", "p6"]) store.setVisible(id, true);
+  vi.advanceTimersByTime(48);
+  expect(departing.prepareRemoval).toHaveBeenCalledOnce();
+  expect(store.holdsLiveInMotion("p0")).toBe(false);
+  expect(mounted(store)).toEqual(["p0"]);
   store.setMoving(false);
-  expect(mounted(store)).toEqual(["p0"]);
-  expect(store.timelineDeferred("p0")).toBe(true);
-  store.composerReady("p0");
+  expect(mounted(store)).toEqual(["p0", "p5"]);
+  expect(store.timelineDeferred("p5")).toBe(true);
+  store.composerReady("p5");
   vi.advanceTimersByTime(16);
-  expect(store.timelineDeferred("p0")).toBe(true);
+  expect(store.timelineDeferred("p5")).toBe(true);
   vi.advanceTimersByTime(16);
-  expect(store.timelineDeferred("p0")).toBe(false);
-  expect(mounted(store)).toEqual(["p0"]);
-  store.setPresented("p0", true);
-  expect(mounted(store)).toEqual(["p0", "p1"]);
-  expect(store.timelineDeferred("p1")).toBe(true);
-  store.composerReady("p1");
+  expect(store.timelineDeferred("p5")).toBe(false);
+  expect(mounted(store)).toEqual(["p0", "p5"]);
+  store.setPresented("p5", true);
+  expect(mounted(store)).toEqual(["p0", "p5", "p6"]);
+  expect(store.timelineDeferred("p6")).toBe(true);
+  store.composerReady("p6");
   vi.advanceTimersByTime(32);
-  expect(store.timelineDeferred("p1")).toBe(false);
+  expect(store.timelineDeferred("p6")).toBe(false);
 });
 
-it("holds a blocked chat live for the entire move and prepares only removable chats", () => {
+it("brings loaded chats back from under their pictures one at a time, the focused chat at once", () => {
+  const store = make();
+  store.setPictures(() => true);
+  for (const id of ["p0", "p1", "p2", "p3"]) {
+    store.registerChat(id, releasable());
+    store.setVisible(id, true);
+    store.setPresented(id, true);
+  }
+  expect(mounted(store)).toEqual(["p0", "p1", "p2", "p3"]);
+  store.setMoving(true);
+  store.setFocus("p1");
+  store.setVisible("p3", false);
+  const covered = () => ["p0", "p1", "p2", "p3"].filter((id) => store.coveredAtRest(id));
+  expect(covered()).toEqual(["p0", "p2", "p3"]);
+  store.setMoving(false);
+  expect(covered()).toEqual(["p0", "p2"]);
+  vi.advanceTimersByTime(32);
+  expect(covered()).toEqual(["p2"]);
+  vi.advanceTimersByTime(16);
+  expect(covered()).toEqual(["p2"]);
+  vi.advanceTimersByTime(16);
+  expect(covered()).toEqual([]);
+  expect(store.revealStep()).toBe(2);
+});
+
+it("covers no chat that was live for the move, and forgets the turns when the next move starts", () => {
+  const store = make();
+  store.setPictures(() => true);
+  store.registerChat("p0", { blocksRemoval: () => true, prepareRemoval: vi.fn() });
+  store.registerChat("p1", releasable());
+  for (const id of ["p0", "p1"]) store.setVisible(id, true);
+  store.setPresented("p0", true);
+  store.setPresented("p1", true);
+  store.setMoving(true);
+  store.setFocus("p5");
+  store.setMoving(false);
+  expect(store.coveredAtRest("p0")).toBe(false);
+  expect(store.coveredAtRest("p1")).toBe(true);
+  store.setMoving(true);
+  vi.advanceTimersByTime(64);
+  expect(store.coveredAtRest("p1")).toBe(true);
+  expect(store.revealStep()).toBe(0);
+});
+
+it("holds a blocked chat live for the entire move and covers the others, still loaded", () => {
   const store = make();
   store.setPictures(() => true);
   let blocked = true;
@@ -418,86 +477,83 @@ it("holds a blocked chat live for the entire move and prepares only removable ch
   expect(store.holdsLiveInMotion("p0")).toBe(false);
   expect(held.prepareRemoval).toHaveBeenCalledOnce();
   vi.advanceTimersByTime(32);
-  expect(store.isMounted("p0")).toBe(false);
+  expect(store.isMounted("p0")).toBe(true);
 });
 
-it("cancels removal on a short reversal and releases no timeline during a second move", () => {
+it("releases no timeline during a move that starts before its frame", () => {
   const store = make();
-  store.setVisible("p0", true);
-  store.registerChat("p0", releasable());
+  store.registerChat("p5", releasable());
   store.setMoving(true);
-  vi.advanceTimersByTime(16);
+  store.setFocus("p5");
+  store.setVisible("p5", true);
   store.setMoving(false);
-  vi.advanceTimersByTime(16);
-  expect(store.isMounted("p0")).toBe(true);
-  store.setMoving(true);
-  vi.advanceTimersByTime(32);
-  store.setMoving(false);
-  store.composerReady("p0");
+  store.composerReady("p5");
   vi.advanceTimersByTime(16);
   store.setMoving(true);
   vi.advanceTimersByTime(16);
-  expect(store.timelineDeferred("p0")).toBe(true);
+  expect(store.timelineDeferred("p5")).toBe(true);
 });
 
 it("keeps background picture preparation behind the visible arrival and mounts its full timeline", () => {
   const store = make();
-  store.setFocus("p2");
-  store.setFocus("p0");
-  store.setVisible("p0", true);
-  store.setVisible("p1", true);
-  for (const id of ["p0", "p1", "p2"]) store.registerChat(id, releasable());
-  store.setPictures((id) => id !== "p2");
+  for (const id of ["p5", "p6", "p7"]) store.registerChat(id, releasable());
+  store.setPictures((id) => id !== "p7");
   store.setBackgroundPictures(true);
   store.setMoving(true);
-  vi.advanceTimersByTime(72);
+  store.setFocus("p7");
+  store.setFocus("p5");
+  store.setVisible("p5", true);
+  store.setVisible("p6", true);
   store.setMoving(false);
   vi.advanceTimersByTime(2000);
-  expect(store.isMounted("p2")).toBe(false);
-  store.composerReady("p0");
+  expect(store.isMounted("p7")).toBe(false);
+  store.composerReady("p5");
   vi.advanceTimersByTime(33);
-  store.setPresented("p0", true);
-  store.composerReady("p1");
+  store.setPresented("p5", true);
+  store.composerReady("p6");
   vi.advanceTimersByTime(50);
-  expect(store.isMounted("p2")).toBe(false);
-  store.setPresented("p1", true);
+  expect(store.isMounted("p7")).toBe(false);
+  store.setPresented("p6", true);
   vi.advanceTimersByTime(50);
-  expect(store.isMounted("p2")).toBe(true);
-  expect(store.timelineDeferred("p2")).toBe(false);
+  expect(store.isMounted("p7")).toBe(true);
+  expect(store.timelineDeferred("p7")).toBe(false);
 });
 
-it("stages a cold visible chat behind the whole focused chat, or after a wait if its composer never reports ready", () => {
+it("stages a cold visible chat behind the whole focused chat, or after a wait if that one never shows", () => {
   const store = make();
-  store.registerChat("p0", releasable());
-  store.registerChat("p1", releasable());
+  const arrived = () => mounted(store).filter((id) => id !== "p0");
+  for (const id of ["p5", "p6", "p20", "p21"]) store.registerChat(id, releasable());
   store.setMoving(true);
-  store.setVisible("p1", true);
-  vi.advanceTimersByTime(32);
+  store.setFocus("p5");
+  store.setVisible("p5", true);
+  store.setVisible("p6", true);
   store.setMoving(false);
-  expect(mounted(store)).toEqual(["p0"]);
-  store.composerReady("p0");
+  expect(arrived()).toEqual(["p5"]);
+  store.composerReady("p5");
   vi.advanceTimersByTime(32);
-  expect(store.timelineDeferred("p0")).toBe(false);
+  expect(store.timelineDeferred("p5")).toBe(false);
   vi.advanceTimersByTime(1000);
-  expect(mounted(store)).toEqual(["p0"]);
-  store.setPresented("p0", true);
-  expect(mounted(store)).toEqual(["p0", "p1"]);
-  expect(store.timelineDeferred("p1")).toBe(true);
-  store.composerReady("p1");
+  expect(arrived()).toEqual(["p5"]);
+  store.setPresented("p5", true);
+  expect(arrived()).toEqual(["p5", "p6"]);
+  expect(store.timelineDeferred("p6")).toBe(true);
+  store.composerReady("p6");
   vi.advanceTimersByTime(32);
-  expect(store.timelineDeferred("p1")).toBe(false);
+  expect(store.timelineDeferred("p6")).toBe(false);
 
-  store.setPresented("p0", false);
   store.setMoving(true);
+  store.setFocus("p20");
+  for (const id of ["p5", "p6"]) store.setVisible(id, false);
+  for (const id of ["p20", "p21"]) store.setVisible(id, true);
   vi.advanceTimersByTime(100);
   store.setMoving(false);
   vi.advanceTimersByTime(2400);
-  expect(mounted(store)).toEqual(["p0"]);
+  expect(arrived()).toEqual(["p5", "p6", "p20"]);
   vi.advanceTimersByTime(200);
-  expect(mounted(store)).toEqual(["p0", "p1"]);
-  store.composerReady("p1");
+  expect(arrived()).toEqual(["p5", "p6", "p20", "p21"]);
+  store.composerReady("p21");
   vi.advanceTimersByTime(64);
-  expect(store.timelineDeferred("p1")).toBe(false);
+  expect(store.timelineDeferred("p21")).toBe(false);
 });
 
 it("does not wait for a pending composer that leaves the destination", () => {

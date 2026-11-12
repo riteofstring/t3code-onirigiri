@@ -142,6 +142,7 @@ let renderer: ReactTestRenderer | undefined;
 let currentLayout = layout(400);
 let picturesEnabled = true;
 let holdsLive: boolean | undefined;
+let coveredAtRest = false;
 let appliedDefaults: PaneDefaultsConfiguration = {};
 const getScene = () => ({ ...currentLayout, ...appliedDefaults });
 const publishLayout = (layout: OnirigiriLayout) => {
@@ -162,6 +163,7 @@ function Probe() {
   const pictureAppearance = usePanePictureTheme();
   const value = useSavedPanePictures(getScene, snapshotFailures, pictureMount, picturesEnabled, {
     holdsLive: () => holdsLive,
+    coveredAtRest: () => coveredAtRest,
     moving: false,
   });
   const { pictureFor } = value;
@@ -321,6 +323,7 @@ afterEach(async () => {
   appliedDefaults = {};
   picturesEnabled = true;
   holdsLive = undefined;
+  coveredAtRest = false;
   markPaneSynced(paneId, null);
   backgroundPanes.clear();
   backgroundLifecycle?.dispose();
@@ -2287,6 +2290,19 @@ it.each(["overview", "overview-motion"] as const)(
     expect(presentationAt("rest")).toBe("dom");
   },
 );
+
+it("keeps a chat under its picture at rest until its turn, or live when it has no picture", async () => {
+  await mount();
+  coveredAtRest = true;
+  expect(presentationAt("rest")).toBe("dom");
+  markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: appearance });
+  hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
+  await advance(260);
+  expect(hook.displayedPictureFor(paneId)).not.toBeNull();
+  expect(presentationAt("rest")).toEqual({ kind: "placeholder" });
+  coveredAtRest = false;
+  expect(presentationAt("rest")).toBe("dom");
+});
 
 it.each(["motion", "resize"] as const)(
   "honors the held-live removal decision during %s, then returns live at rest",

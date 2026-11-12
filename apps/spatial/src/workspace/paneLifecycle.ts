@@ -4,6 +4,8 @@ import { PICTURE_IDLE_BUDGET_MS, PICTURE_REST_MS } from "./panePictureIdle";
 
 const MAX_MOUNTED = 10;
 const DATA_READY = 6;
+// Offscreen chats kept loaded under their pictures, nearest first, so walking to one finds it live.
+const NEIGHBOURS_LOADED = 4;
 const DATA_IDLE_BUDGET_MS = PICTURE_IDLE_BUDGET_MS;
 const QUIET_MS = 500;
 // Visible chats load one at a time, the focused chat first and then the nearest: each starts once the
@@ -54,7 +56,9 @@ export function createPaneLifecycleStore(
   let arrivalTimer: ReturnType<typeof setTimeout> | null = null;
   const dataReady = new Set<string>();
   let arrivalFrame: number | null = null;
-  let removalFrame: number | null = null;
+  const covered = new Set<string>();
+  let revealFrame: number | null = null;
+  let revealStep = 0;
   let moving = false;
   let keepNeighbours = false;
   let overview = false;
@@ -199,6 +203,14 @@ export function createPaneLifecycleStore(
           distance(a) - distance(b) ||
           Number(hasCover(a)) - Number(hasCover(b)),
       )[0];
+  const nextNeighbour = () =>
+    overview
+      ? undefined
+      : [...panes.keys()]
+          .filter((id) => id !== focused && !visible.has(id))
+          .sort((a, b) => distance(a) - distance(b))
+          .slice(0, NEIGHBOURS_LOADED)
+          .find((id) => !mounted.has(id));
   const nearestOffscreen = () =>
     [...panes.keys()]
       .filter((id) => id !== focused && !visible.has(id) && !mounted.has(id))
@@ -242,6 +254,25 @@ export function createPaneLifecycleStore(
       });
     });
   };
+  // Chats that kept their DOM under a picture come back one at a time, nearest first: showing
+  // every visible chat in the frame the camera stops was one long stall.
+  const revealCovered = () => {
+    const keep = retained();
+    for (const id of covered) if (!keep.has(id) || id === focused) covered.delete(id);
+    if (revealFrame !== null || covered.size === 0) return;
+    revealFrame = requestAnimationFrame(() => {
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = null;
+        if (moving) return;
+        const next = [...covered].sort((a, b) => distance(a) - distance(b))[0];
+        if (next === undefined) return;
+        covered.delete(next);
+        revealStep += 1;
+        for (const listener of motionListeners) listener();
+        revealCovered();
+      });
+    });
+  };
   const schedule = () => {
     cancel();
     if (disposed) return;
@@ -280,7 +311,7 @@ export function createPaneLifecycleStore(
       timer = setTimeout(schedule, restRemaining);
       return;
     }
-    const paneId = nextPicture();
+    const paneId = nextPicture() ?? nextNeighbour();
     if (!paneId) {
       const retry = Math.min(
         ...[...retryAt]
@@ -304,7 +335,7 @@ export function createPaneLifecycleStore(
           .filter((id) => !keep.has(id) && hasPicture(id))
           .sort((a, b) => distance(b) - distance(a))
           .find(releasable);
-        if (!farthest) return;
+        if (!farthest || (hasPicture(paneId) && distance(farthest) <= distance(paneId))) return;
         evict(farthest);
       }
       const since = performance.now();
@@ -373,6 +404,9 @@ export function createPaneLifecycleStore(
       "picturing now": capturing?.paneId.slice(-8) ?? "nothing",
       "at rest for": `${Math.round((performance.now() - quietSince) / 100) / 10} s${moving ? " (moving)" : ""}`,
     }),
+    /** True while a chat that is back at rest still shows its picture, waiting its turn to reappear. */
+    coveredAtRest: (paneId: string) => covered.has(paneId) && paneId !== focused,
+    revealStep: () => revealStep,
     isMoving: () => moving || pointers.size > 0,
     isCameraMoving: () => moving,
     /** True once nothing has moved or been pressed for the rest that pictures wait for. */
@@ -417,11 +451,12 @@ export function createPaneLifecycleStore(
       quietSince = performance.now();
       if (moving) {
         if (arrivalFrame !== null) cancelAnimationFrame(arrivalFrame);
-        arrivalFrame = null;
+        if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+        arrivalFrame = revealFrame = null;
+        covered.clear();
         arriving = null;
         overdue.clear();
         motionHolds.clear();
-        const removable: string[] = [];
         for (const id of mounted) {
           const chat = chats.get(id);
           if (!chat) continue;
@@ -429,27 +464,14 @@ export function createPaneLifecycleStore(
           motionHolds.set(id, holds);
           if (!holds) {
             chat.prepareRemoval();
-            removable.push(id);
+            covered.add(id);
           }
-        }
-        if (removable.length > 0) {
-          // One chat per frame: removing every covered chat in one frame froze the start of the move.
-          const removeNext = () => {
-            removalFrame = null;
-            if (!moving) return;
-            unmount(removable.shift()!);
-            if (removable.length > 0) removalFrame = requestAnimationFrame(removeNext);
-          };
-          removalFrame = requestAnimationFrame(() => {
-            removalFrame = requestAnimationFrame(removeNext);
-          });
         }
         cancel();
         release(true);
       } else {
-        if (removalFrame !== null) cancelAnimationFrame(removalFrame);
-        removalFrame = null;
         motionHolds.clear();
+        revealCovered();
         schedule();
       }
       for (const listener of motionListeners) listener();
@@ -487,7 +509,7 @@ export function createPaneLifecycleStore(
       if (focused && !panes.has(focused)) focused = null;
       if (capturing && !panes.has(capturing.paneId)) release(false);
       for (const id of mounted) if (!panes.has(id)) unmount(id);
-      for (const ids of [visible, visited, loaded, deferred, pendingComposers, dataReady])
+      for (const ids of [visible, visited, loaded, deferred, pendingComposers, dataReady, covered])
         for (const id of ids) if (!panes.has(id)) ids.delete(id);
       for (const entries of [retryAt, motionHolds, focusedAt])
         for (const id of entries.keys()) if (!panes.has(id)) entries.delete(id);
@@ -536,7 +558,7 @@ export function createPaneLifecycleStore(
     dispose: () => {
       disposed = true;
       if (arrivalFrame !== null) cancelAnimationFrame(arrivalFrame);
-      if (removalFrame !== null) cancelAnimationFrame(removalFrame);
+      if (revealFrame !== null) cancelAnimationFrame(revealFrame);
       cancel();
       if (arrivalTimer !== null) clearTimeout(arrivalTimer);
       if (storedTimer !== null) clearTimeout(storedTimer);

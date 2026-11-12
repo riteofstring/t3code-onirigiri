@@ -103,15 +103,18 @@ This page records constraints that span files and are easy to break without noti
   a large visible set can exceed the cap. After a 500 ms quiet tail, the trees
   farthest from the focused pane are evicted first, and only when they have a current picture and
   no state that removal would lose.
-- When the camera starts moving, every mounted chat is asked whether it can leave its DOM. Chats
-  with a picture and nothing to lose are removed one per frame, starting after two frames, so the
-  first frame of motion is already covered and no single frame removes every chat; the others keep
-  their DOM for the whole move. Motion admits no new trees.
+- When the camera starts moving, every mounted chat is asked whether its picture can cover it.
+  Chats with a picture and nothing to lose hand the keyboard to their pane and move as their
+  picture, with their DOM kept but unrendered beneath it; the others stay live for the whole move.
+  Nothing is removed for a move, because rebuilding a chat on arrival costs most of a second and
+  removing several froze the start of the move. Motion admits no new trees.
 - At rest visible chats load one at a time: the focused chat first, then the nearest. Each mounts
   its composer, then its timeline two frames later, and the next chat starts once the one before
   it is interactive, or 2.5 s after that one started waiting if it never is. Other visible panes
-  mount at once. Pictures are not taken while a chat is still to load. Retained chats reveal their
-  existing DOM at once.
+  mount at once. Pictures are not taken while a chat is still to load. A chat that kept its DOM through
+  the move needs no loading: the focused one is live the moment the camera stops, and the other
+  visible ones leave their pictures one every two frames, nearest first, because rendering them
+  all in the stopping frame was one long stall.
 - In overview no chat is admitted for arrival and thread data preparation stops. Chats without a
   current picture are still mounted one at a time, hidden behind their cards, only to take their
   picture: the chat focused most recently first, then those on screen, then nearest the pane
@@ -122,10 +125,10 @@ This page records constraints that span files and are easy to break without noti
   one with a stale cover; it waits behind
   every arrival and gives up after 10 s, retrying after five minutes. At the retention cap the
   farthest tree with a current picture is evicted to make room, so one long rest reaches every
-  chat that can be pictured. A chat whose picture is current is never mounted to take a picture:
-  a chat with a current picture and nothing to lose leaves its DOM when the camera moves, so a
-  tree mounted for it in advance would be discarded by the next move, and mounting it costs
-  frames.
+  chat that can be pictured. A chat whose picture is current is never mounted to take a picture.
+  Once nothing is left to picture, the four nearest offscreen chats are loaded the same way, one
+  per idle period, so walking to a neighbour finds it loaded. At the cap one of those is loaded
+  only in place of a tree farther away.
 - The six nearest offscreen chats that are not mounted keep their thread data loaded, with
   nothing of theirs mounted, so the first visit to a neighbour does not wait for its data. One
   more is added per idle period that has time to spare. That runs only where background pictures
@@ -146,7 +149,7 @@ the thread shell, which is never stale.
   including a chat with a running turn or a pending request. A chat with no picture at its current
   geometry stays live until one is taken. At rest every visible chat is live again. Tool panes are
   live unless the other-panes setting (below) selects pictures.
-- A chat leaves its DOM during motion unless removal would lose state that lives only in that DOM:
+- A chat moves as its picture, and can be evicted at rest, unless it holds state that lives only in its DOM:
   sections opened in the timeline, edits outside the composer, or arrival typing not yet delivered. Composer text,
   attachments and pending answers live in the composer draft store, so composer edits, clicks and
   keys do not keep a chat live. A chat with a live producer also moves as its stored picture,
