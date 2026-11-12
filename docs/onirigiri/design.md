@@ -106,13 +106,16 @@ This page records constraints that span files and are easy to break without noti
 - When the camera starts moving, every mounted chat is asked whether its picture can cover it.
   Chats with a picture and nothing to lose hand the keyboard to their pane and move as their
   picture, with their DOM kept but unrendered beneath it; the others stay live for the whole move.
+  The focused chat always stays live, including a loaded chat that takes focus during the move, and
+  its composer keeps the keyboard, so typing lands while the camera is still gliding. Covering it
+  until the stop delayed the first key by about half a second and dropped keys pressed on the way.
   Nothing is removed for a move, because rebuilding a chat on arrival costs most of a second and
   removing several froze the start of the move. Motion admits no new trees.
 - At rest visible chats load one at a time: the focused chat first, then the nearest. Each mounts
   its composer, then its timeline two frames later, and the next chat starts once the one before
   it is interactive, or 2.5 s after that one started waiting if it never is. Other visible panes
   mount at once. Pictures are not taken while a chat is still to load. A chat that kept its DOM through
-  the move needs no loading: the focused one is live the moment the camera stops, and the other
+  the move needs no loading: the focused one never left the screen, and the other
   visible ones leave their pictures one every two frames, nearest first, because rendering them
   all in the stopping frame was one long stall.
 - In overview no chat is admitted for arrival and thread data preparation stops. Chats without a

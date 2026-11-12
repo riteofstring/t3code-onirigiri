@@ -393,8 +393,8 @@ it("keeps chat DOM through a move, then admits a cold focused chat whole before 
   store.setFocus("p5");
   for (const id of ["p5", "p6"]) store.setVisible(id, true);
   vi.advanceTimersByTime(48);
-  expect(departing.prepareRemoval).toHaveBeenCalledOnce();
-  expect(store.holdsLiveInMotion("p0")).toBe(false);
+  expect(departing.prepareRemoval).not.toHaveBeenCalled();
+  expect(store.holdsLiveInMotion("p0")).toBe(true);
   expect(mounted(store)).toEqual(["p0"]);
   store.setMoving(false);
   expect(mounted(store)).toEqual(["p0", "p5"]);
@@ -413,29 +413,34 @@ it("keeps chat DOM through a move, then admits a cold focused chat whole before 
   expect(store.timelineDeferred("p6")).toBe(false);
 });
 
-it("brings loaded chats back from under their pictures one at a time, the focused chat at once", () => {
+it("keeps the focused chats live through a move and brings the others back one at a time", () => {
   const store = make();
   store.setPictures(() => true);
-  for (const id of ["p0", "p1", "p2", "p3"]) {
+  const ids = ["p0", "p1", "p2", "p3", "p4"];
+  for (const id of ids) {
     store.registerChat(id, releasable());
     store.setVisible(id, true);
     store.setPresented(id, true);
   }
-  expect(mounted(store)).toEqual(["p0", "p1", "p2", "p3"]);
+  expect(mounted(store)).toEqual(ids);
   store.setMoving(true);
+  expect(store.holdsLiveInMotion("p0")).toBe(true);
+  expect(store.holdsLiveInMotion("p1")).toBe(false);
   store.setFocus("p1");
-  store.setVisible("p3", false);
-  const covered = () => ["p0", "p1", "p2", "p3"].filter((id) => store.coveredAtRest(id));
-  expect(covered()).toEqual(["p0", "p2", "p3"]);
+  expect(store.holdsLiveInMotion("p1")).toBe(true);
+  expect(store.revealStep()).toBe(1);
+  store.setVisible("p4", false);
+  const covered = () => ids.filter((id) => store.coveredAtRest(id));
+  expect(covered()).toEqual(["p2", "p3", "p4"]);
   store.setMoving(false);
-  expect(covered()).toEqual(["p0", "p2"]);
+  expect(covered()).toEqual(["p2", "p3"]);
   vi.advanceTimersByTime(32);
-  expect(covered()).toEqual(["p2"]);
+  expect(covered()).toEqual(["p3"]);
   vi.advanceTimersByTime(16);
-  expect(covered()).toEqual(["p2"]);
+  expect(covered()).toEqual(["p3"]);
   vi.advanceTimersByTime(16);
   expect(covered()).toEqual([]);
-  expect(store.revealStep()).toBe(2);
+  expect(store.revealStep()).toBe(3);
 });
 
 it("covers no chat that was live for the move, and forgets the turns when the next move starts", () => {
@@ -462,22 +467,24 @@ it("holds a blocked chat live for the entire move and covers the others, still l
   store.setPictures(() => true);
   let blocked = true;
   const held = { blocksRemoval: vi.fn(() => blocked), prepareRemoval: vi.fn() };
-  store.registerChat("p0", held);
+  store.setVisible("p1", true);
+  store.registerChat("p1", held);
+  held.blocksRemoval.mockClear();
   store.setMoving(true);
   blocked = false;
   store.setPictures(() => true);
   vi.advanceTimersByTime(1000);
-  expect(store.isMounted("p0")).toBe(true);
+  expect(store.isMounted("p1")).toBe(true);
   expect(held.blocksRemoval).toHaveBeenCalledOnce();
   expect(held.prepareRemoval).not.toHaveBeenCalled();
-  expect(store.holdsLiveInMotion("p0")).toBe(true);
+  expect(store.holdsLiveInMotion("p1")).toBe(true);
   store.setMoving(false);
-  expect(store.holdsLiveInMotion("p0")).toBeUndefined();
+  expect(store.holdsLiveInMotion("p1")).toBeUndefined();
   store.setMoving(true);
-  expect(store.holdsLiveInMotion("p0")).toBe(false);
+  expect(store.holdsLiveInMotion("p1")).toBe(false);
   expect(held.prepareRemoval).toHaveBeenCalledOnce();
   vi.advanceTimersByTime(32);
-  expect(store.isMounted("p0")).toBe(true);
+  expect(store.isMounted("p1")).toBe(true);
 });
 
 it("releases no timeline during a move that starts before its frame", () => {

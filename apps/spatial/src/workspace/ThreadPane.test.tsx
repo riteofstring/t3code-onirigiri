@@ -1490,20 +1490,22 @@ it("finishes preparation after one idle slice even with little time remaining", 
   expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
 });
 
-it("keeps a focused retained composer inactive during camera motion", async () => {
+it("keeps the focused chat's composer active through camera motion", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
   live();
   state.interactive = true;
-  await render(false);
-  const editor = container.querySelector("textarea");
+  await render(true);
+  const handle = appComposerRef.current;
+  expect(handle).not.toBeNull();
   await act(() => lifecycle!.setMoving(true));
-  await render(true, false);
+  expect(lifecycle.holdsLiveInMotion(paneId)).toBe(true);
+  expect(appComposerRef.current).toBe(handle);
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
-  expect(state.activeKeys).toBe(0);
-  expect(appComposerRef.current).toBeNull();
-  expect(container.querySelector("textarea")).toBe(editor);
+  expect(state.activeKeys).toBe(1);
+  await act(() => lifecycle!.setMoving(false));
+  expect(appComposerRef.current).toBe(handle);
 });
 
 it("loads an offscreen chat's thread data once the lifecycle keeps it ready, with nothing mounted", async () => {
@@ -1529,7 +1531,7 @@ it("loads an offscreen chat's thread data once the lifecycle keeps it ready, wit
   expect(container.querySelector("textarea")).toBeNull();
 });
 
-it("binds the destination and admits three keys on the camera stop edge", async () => {
+it("binds a destination focused during a move and admits keys before the stop", async () => {
   const { createPaneLifecycleStore } =
     await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
   lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
@@ -1537,35 +1539,13 @@ it("binds the destination and admits three keys on the camera stop edge", async 
   state.interactive = true;
   await render(false);
   await act(() => lifecycle!.setMoving(true));
+  expect(appComposerRef.current).toBeNull();
   await render(true, false);
   await act(() => window.dispatchEvent(new Event(COMPOSER_NAVIGATION)));
-  expect(appComposerRef.current).toBeNull();
-  await act(() => lifecycle!.setMoving(false));
   expect(appComposerRef.current).not.toBeNull();
   expect(state.composerActions).toEqual([0]);
   for (const key of "xyz") window.dispatchEvent(new KeyboardEvent("keydown", { key }));
   expect(state.activeKeys).toBe(3);
-});
-
-it("deactivates and reactivates same-focus motion without pointer motion", async () => {
-  const { createPaneLifecycleStore } =
-    await vi.importActual<typeof import("./paneLifecycle")>("./paneLifecycle");
-  lifecycle = createPaneLifecycleStore([{ paneId, plane: 0, slot: 0 }], paneId);
-  live();
-  state.interactive = true;
-  await render(true);
-  const handle = appComposerRef.current;
-  await act(() => lifecycle!.setMoving(true));
-  expect(appComposerRef.current).toBeNull();
-  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
-  expect(state.activeKeys).toBe(0);
-  await act(() => lifecycle!.setMoving(false));
-  expect(appComposerRef.current).toBe(handle);
-  await act(() => window.dispatchEvent(new Event("pointerdown")));
-  expect(lifecycle.isMoving()).toBe(true);
-  expect(appComposerRef.current).toBe(handle);
-  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
-  expect(state.activeKeys).toBe(1);
 });
 
 it("keeps immediate composer activity with a null lifecycle", async () => {

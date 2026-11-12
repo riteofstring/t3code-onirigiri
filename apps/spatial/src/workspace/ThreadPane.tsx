@@ -333,7 +333,7 @@ const PaneBody = memo(function PaneBody({
   const lifecycle = use(PaneLifecycleContext);
   const presentedCameraMoving = useSyncExternalStore(
     lifecycle?.subscribeMotion ?? (() => () => {}),
-    lifecycle?.isCameraMoving ?? (() => false),
+    () => (lifecycle?.isCameraMoving() ?? false) && lifecycle?.holdsLiveInMotion(paneId) !== true,
   );
   const interactive = useOnirigiriPaneInteractive();
   const workspaceActive = use(SpatialWorkspaceActiveContext);
@@ -449,6 +449,7 @@ const PaneBody = memo(function PaneBody({
   const storedPicture = mounted ? null : (snapshots?.timelinePicture(paneId)?.url ?? null);
 
   const focusOnArrival = useRef(false);
+  const [composerNavigations, setComposerNavigations] = useState(0);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const editing =
@@ -469,6 +470,7 @@ const PaneBody = memo(function PaneBody({
     };
     const composerNavigation = () => {
       focusOnArrival.current = true;
+      setComposerNavigations((count) => count + 1);
     };
     window.addEventListener(COMPOSER_NAVIGATION, composerNavigation);
     window.addEventListener("keydown", key, true);
@@ -483,7 +485,6 @@ const PaneBody = memo(function PaneBody({
     if (!lifecycle || !focused || !workspaceActive) return;
     const capture = (event: KeyboardEvent) => {
       if (
-        lifecycle.isCameraMoving() ||
         (!focusOnArrival.current && mounted && composerReady && interactive) ||
         event.defaultPrevented ||
         event.altKey ||
@@ -539,7 +540,7 @@ const PaneBody = memo(function PaneBody({
       focusOnArrival.current = false;
       paneComposerRef.current.focusAtEnd();
     }
-  }, [active, composerReady, lifecycle, mounted, paneComposerRef]);
+  }, [active, composerNavigations, composerReady, lifecycle, mounted, paneComposerRef]);
 
   const snapshotPrepared = useRef(false);
   const producerInspected = useRef(false);

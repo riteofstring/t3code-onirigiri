@@ -460,7 +460,7 @@ export function createPaneLifecycleStore(
         for (const id of mounted) {
           const chat = chats.get(id);
           if (!chat) continue;
-          const holds = chat.blocksRemoval();
+          const holds = chat.blocksRemoval() || id === focused;
           motionHolds.set(id, holds);
           if (!holds) {
             chat.prepareRemoval();
@@ -497,6 +497,11 @@ export function createPaneLifecycleStore(
       arriving = null;
       overdue.clear();
       if (paneId !== null) focusedAt.set(paneId, performance.now());
+      if (moving && paneId !== null && covered.delete(paneId)) {
+        motionHolds.set(paneId, true);
+        revealStep += 1;
+        for (const listener of motionListeners) listener();
+      }
       if (capturing?.paneId === focused) {
         capturing = null;
         retryAt.delete(paneId!);
