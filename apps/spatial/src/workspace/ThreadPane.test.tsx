@@ -125,8 +125,9 @@ vi.mock("@t3tools/web/src/hooks/useMediaQuery", () => ({
   useMediaQuery: () => state.reducedMotion,
 }));
 vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
-  const { useImperativeHandle, useLayoutEffect, useState, useSyncExternalStore } =
+  const { use, useImperativeHandle, useLayoutEffect, useState, useSyncExternalStore } =
     await import("react");
+  const { ChatPaneControlsContext } = await import("@t3tools/web/src/components/chatPaneControls");
   const { useNavigate } = await import("@tanstack/react-router");
   const { buildThreadRouteParams } = await import("@t3tools/web/src/threadRoutes");
   const { useComposerHandleContext } = await import("@t3tools/web/src/composerHandleContext");
@@ -195,6 +196,7 @@ vi.mock("@t3tools/web/src/components/ThreadRouteView", async () => {
           <textarea aria-label="Draft" className="composer-tiptap" data-testid="composer-editor" />
         </div>
         <div className="messages-timeline-scroll" />
+        <span data-pane-loading={String(use(ChatPaneControlsContext)?.loading)} />
         {shownSyncPhase ? <span role="status">Syncing messages</span> : null}
         <button onClick={() => setOpen(!open)}>{open ? "Close panel" : "Open panel"}</button>
         {panel.present ? <aside aria-label="Thread panel">{panel.value}</aside> : null}
@@ -258,6 +260,8 @@ function live(updatedAt = "2026-10-15T12:00:00.000Z") {
   state.status = "live";
 }
 
+const paneAction = () => {};
+
 async function render(
   focused = false,
   paintFrames = true,
@@ -280,6 +284,9 @@ async function render(
                   visible={visible}
                   settledVisible={settledVisible}
                   onNavigateAway={onNavigateAway}
+                  onAddPane={paneAction}
+                  onClosePane={paneAction}
+                  onToggleMaximized={paneAction}
                 />
               </PaneSnapshotContext>
             </PaneLifecycleContext>
@@ -435,11 +442,12 @@ it("prepares a background view after its projection arrives and retains its draf
   expect(container.querySelector("textarea")).toBeNull();
 });
 
-it("keeps unsynchronized content covered even without a composer readiness gate", async () => {
+it("keeps unsynchronized content covered and reported as loading even without a composer readiness gate", async () => {
   state.composerMounted = false;
   await render(true);
   await act(() => vi.advanceTimersByTimeAsync(2000));
   expect(container.querySelector("[data-spatial-preparing]")).not.toBeNull();
+  expect(container.querySelector('[data-pane-loading="true"]')).not.toBeNull();
   expect(state.engineReady).toBe(false);
   expect(requestSnapshot).not.toHaveBeenCalled();
 
@@ -447,6 +455,7 @@ it("keeps unsynchronized content covered even without a composer readiness gate"
   await render(true, false);
   await act(() => vi.advanceTimersByTimeAsync(32));
   expect(container.querySelector("[data-spatial-preparing]")).toBeNull();
+  expect(container.querySelector('[data-pane-loading="false"]')).not.toBeNull();
   expect(state.engineReady).toBe(true);
   expect(requestSnapshot).toHaveBeenCalledOnce();
 });

@@ -342,6 +342,10 @@ const PaneBody = memo(function PaneBody({
     handoff,
   );
   if (handoff && lifecycleMounted && !deferred && !preparing) setHandoff(false);
+  const controls = useMemo(
+    () => paneControls && { ...paneControls, loading: preparing },
+    [paneControls, preparing],
+  );
 
   const paneComposerRef = usePaneComposerHandle(active);
 
@@ -668,7 +672,7 @@ const PaneBody = memo(function PaneBody({
   );
 
   return (
-    <ChatPaneControlsContext value={paneControls}>
+    <ChatPaneControlsContext value={controls}>
       <ChatViewActivityContext value={activity}>
         <ComposerHandleContext value={paneComposerRef}>
           <div
