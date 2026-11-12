@@ -693,29 +693,28 @@ const PaneBody = memo(function PaneBody({
     const events = ["scroll", "input", "drop", "load"] as const;
     for (const event of events)
       element.addEventListener(event, invalidate, { capture: true, passive: true });
-    const gestures = [
-      "wheel",
-      "touchmove",
-      "keydown",
-      "pointerdown",
-      "pointerup",
-      "pointercancel",
-    ] as const;
+    const gestures = ["wheel", "touchmove", "keydown", "pointerdown"] as const;
     // A scrollbar can be held for any time before it is dragged; keys in the composer scroll nothing the user aimed at.
     const noteGesture = (event: Event) => {
       if (event.type === "keydown" && (event.target as Element).closest?.(COMPOSER_EDITOR)) return;
       if (event.type === "pointerdown")
         scrollPointers.current.add((event as PointerEvent).pointerId);
-      else if (event.type.startsWith("pointer"))
-        scrollPointers.current.delete((event as PointerEvent).pointerId);
       scrollGestureAt.current = performance.now();
     };
     for (const event of gestures)
       element.addEventListener(event, noteGesture, { capture: true, passive: true });
-    const releasePointers = () => scrollPointers.current.clear();
-    window.addEventListener("blur", releasePointers);
+    // A drag that began here can end over any pane.
+    const releases = ["pointerup", "pointercancel", "lostpointercapture", "blur"] as const;
+    const releasePointer = (event: Event) => {
+      if (event.type === "blur") {
+        if (event.target === window) scrollPointers.current.clear();
+      } else if (scrollPointers.current.delete((event as PointerEvent).pointerId))
+        scrollGestureAt.current = performance.now();
+    };
+    for (const event of releases)
+      window.addEventListener(event, releasePointer, { capture: true, passive: true });
     return () => {
-      window.removeEventListener("blur", releasePointers);
+      for (const event of releases) window.removeEventListener(event, releasePointer, true);
       for (const event of gestures) element.removeEventListener(event, noteGesture, true);
       const pending = observer.takeRecords();
       if (element.childElementCount > 0 && (!lifecycle || lifecycle.isMounted(paneId))) {

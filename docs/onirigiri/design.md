@@ -113,7 +113,7 @@ This page records constraints that span files and are easy to break without noti
   of moves keeps one chat live, not every chat passed.
   A chat the user has scrolled, or whose draft they have edited, since its picture was taken stays
   live through moves until a picture shows the change: its old picture would show the old position
-  or draft for the length of the move. A scroll counts while a pointer is held in that chat, or
+  or draft for the length of the move. A scroll counts while a pointer pressed in that chat is still down, wherever it is released, or
   within a second of a wheel, touch or key event outside the composer, so a timeline following a
   running turn does not hold its chat live.
   Nothing is removed for a move, because rebuilding a chat on arrival costs most of a second and
@@ -137,7 +137,9 @@ This page records constraints that span files and are easy to break without noti
   farthest tree with a current picture is evicted to make room, so one long rest reaches every
   chat that can be pictured. A chat whose picture is current is never mounted to take a picture.
   Once nothing is left to picture, the four nearest offscreen chats are loaded the same way, one
-  per idle period, so walking to a neighbour finds it loaded. At the cap one of those is loaded
+  per idle period, so walking to a neighbour finds it loaded. A chat loaded in the background mounts
+  its composer in one idle period and its timeline in a later one: both in one step was a single
+  task of several hundred milliseconds that a key pressed in the rest had to wait behind. At the cap one of those is loaded
   only in place of a tree farther away.
 - The six nearest offscreen chats that are not mounted keep their thread data loaded, with
   nothing of theirs mounted, so the first visit to a neighbour does not wait for its data. One

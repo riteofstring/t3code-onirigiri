@@ -84,9 +84,9 @@ export function createPaneLifecycleStore(
   const mount = (paneId: string) => {
     if (!mounted.has(paneId)) {
       mounted.add(paneId);
-      if (chats.has(paneId) && retained().has(paneId)) {
+      if (chats.has(paneId)) {
         deferred.add(paneId);
-        pendingComposers.add(paneId);
+        if (retained().has(paneId)) pendingComposers.add(paneId);
       } else deferred.delete(paneId);
       startTransition(() => notify(paneId));
     }
@@ -239,16 +239,18 @@ export function createPaneLifecycleStore(
   };
   // A composer that outlasted its wait no longer holds the other chats' timelines or pictures back.
   const awaitsComposer = () => [...pendingComposers].some((id) => !overdue.has(id));
+  const awaitsTimeline = () => {
+    const keep = retained();
+    return [...mounted].filter((id) => deferred.has(id) && keep.has(id));
+  };
   const revealTimelines = () => {
-    if (![...mounted].some((id) => deferred.has(id))) return;
+    if (awaitsTimeline().length === 0) return;
     if (moving || awaitsComposer() || arrivalFrame !== null) return;
     arrivalFrame = requestAnimationFrame(() => {
       arrivalFrame = requestAnimationFrame(() => {
         arrivalFrame = null;
         if (moving || awaitsComposer()) return;
-        const next = [...mounted]
-          .filter((id) => deferred.has(id))
-          .sort((a, b) => distance(a) - distance(b))[0];
+        const next = awaitsTimeline().sort((a, b) => distance(a) - distance(b))[0];
         if (next !== undefined && deferred.delete(next)) notify(next);
         schedule();
       });
@@ -288,12 +290,31 @@ export function createPaneLifecycleStore(
     if (
       awaitsComposer() ||
       arrivalTimer !== null ||
-      [...mounted].some((id) => deferred.has(id)) ||
+      awaitsTimeline().length > 0 ||
       !backgroundPictures ||
       !picturesReady
     )
       return;
     keepDataReady();
+    // A chat loaded in the background mounts its timeline in a later idle period than its
+    // composer: both in one step was a single task of several hundred milliseconds.
+    const staged = [...mounted].find((id) => deferred.has(id));
+    if (staged !== undefined) {
+      const rest = PICTURE_REST_MS - (performance.now() - quietSince);
+      if (rest > 0 || !loaded.has(staged)) {
+        timer = setTimeout(schedule, Math.max(rest, 100));
+        return;
+      }
+      idle = requestIdleCallback((deadline) => {
+        idle = null;
+        if (moving || pointers.size > 0 || performance.now() - quietSince < PICTURE_REST_MS) return;
+        if (!deadline.didTimeout && deadline.timeRemaining() >= PICTURE_IDLE_BUDGET_MS) {
+          if (deferred.delete(staged)) notify(staged);
+        }
+        timer = setTimeout(schedule, 100);
+      });
+      return;
+    }
     if (capturing) {
       if (
         (loaded.has(capturing.paneId) && hasPicture(capturing.paneId)) ||
@@ -364,6 +385,9 @@ export function createPaneLifecycleStore(
     "pointercancel",
     "lostpointercapture",
     "wheel",
+    "beforeinput",
+    "input",
+    "compositionstart",
     "blur",
   ] as const;
   for (const type of inputEvents)

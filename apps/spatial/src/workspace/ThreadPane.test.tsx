@@ -1630,7 +1630,7 @@ it("keeps a chat the user scrolled live until its picture shows the new position
   });
 });
 
-it("keeps a chat live after a scrollbar held for a while and then dragged", async () => {
+it("keeps a chat live after a scrollbar held and dragged, until the pointer is released anywhere", async () => {
   vi.useFakeTimers({ toFake: ["performance"] });
   try {
     const blocks = await mountInspectedChat();
@@ -1644,6 +1644,14 @@ it("keeps a chat live after a scrollbar held for a while and then dragged", asyn
       timeline.scrollTop = 640;
       timeline.dispatchEvent(new Event("scroll"));
       expect(blocks()).toBe(true);
+      snapshots.hasFreshPicture = () => true;
+      expect(blocks()).toBe(false);
+      snapshots.hasFreshPicture = () => false;
+      document.body.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 7 }));
+      vi.advanceTimersByTime(5000);
+      timeline.scrollTop = 900;
+      timeline.dispatchEvent(new Event("scroll"));
+      expect(blocks()).toBe(false);
     });
   } finally {
     vi.useRealTimers();

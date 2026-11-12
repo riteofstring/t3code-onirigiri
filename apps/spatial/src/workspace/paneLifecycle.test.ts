@@ -502,7 +502,7 @@ it("releases no timeline during a move that starts before its frame", () => {
   expect(store.timelineDeferred("p5")).toBe(true);
 });
 
-it("keeps background picture preparation behind the visible arrival and mounts its full timeline", () => {
+it("keeps background picture preparation behind the visible arrival and mounts its timeline after its composer", () => {
   const store = make();
   for (const id of ["p5", "p6", "p7"]) store.registerChat(id, releasable());
   store.setPictures((id) => id !== "p7");
@@ -524,6 +524,11 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   store.setPresented("p6", true);
   vi.advanceTimersByTime(50);
   expect(store.isMounted("p7")).toBe(true);
+  expect(store.timelineDeferred("p7")).toBe(true);
+  vi.advanceTimersByTime(300);
+  expect(store.timelineDeferred("p7")).toBe(true);
+  store.contentMounted("p7");
+  vi.advanceTimersByTime(200);
   expect(store.timelineDeferred("p7")).toBe(false);
 });
 
