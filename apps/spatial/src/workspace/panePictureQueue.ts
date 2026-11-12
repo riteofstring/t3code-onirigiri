@@ -70,7 +70,7 @@ export function createSnapshotQueue() {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = performance.now();
   // Pictures wait for a few seconds of rest after any input or camera motion.
-  let restSince = Number.NEGATIVE_INFINITY;
+  let restSince = performance.now();
   const restedAt = () => restSince + PICTURE_REST_MS;
   let activeCapture: AbortController | null = null;
   const pointers = new Set<number>();

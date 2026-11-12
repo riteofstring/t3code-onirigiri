@@ -104,16 +104,18 @@ This page records constraints that span files and are easy to break without noti
   farthest from the focused pane are evicted first, and only when they have a current picture and
   no state that removal would lose.
 - When the camera starts moving, every mounted chat is asked whether it can leave its DOM. Chats
-  with a picture and nothing to lose are removed after two frames, so the first frame of motion is
-  already covered; the others keep their DOM for the whole move. Motion admits no new trees.
-- At rest the focused chat mounts first and alone: its composer, then its timeline. Visible peers
-  start mounting once it is interactive, or after 2.5 s if it never is, each with its composer
-  before its timeline; timelines are revealed one at a time, two frames apart, nearest first, only
-  after every pending composer is ready. Pictures are not taken while peers wait. Retained chats
-  reveal their existing DOM at once.
+  with a picture and nothing to lose are removed one per frame, starting after two frames, so the
+  first frame of motion is already covered and no single frame removes every chat; the others keep
+  their DOM for the whole move. Motion admits no new trees.
+- At rest visible chats load one at a time: the focused chat first, then the nearest. Each mounts
+  its composer, then its timeline two frames later, and the next chat starts once the one before
+  it is interactive, or 2.5 s after that one started waiting if it never is. Other visible panes
+  mount at once. Pictures are not taken while a chat is still to load. Retained chats reveal their
+  existing DOM at once.
 - In overview no chat is admitted for arrival and thread data preparation stops. Chats without a
   current picture are still mounted one at a time, hidden behind their cards, only to take their
-  picture: those on screen first, then nearest the pane overview was entered from. So a chat never
+  picture: the chat focused most recently first, then those on screen, then nearest the pane
+  overview was entered from. So a chat never
   opened gets a picture in overview instead of keeping its title card.
 - When idle, one offscreen chat at a time is mounted only to take its picture: the chat focused
   most recently first, then the nearest and, at equal distance, a chat with no cover at all before
@@ -151,7 +153,7 @@ the thread shell, which is never stale.
   even though that picture cannot show the producer.
   Once a chat holds state of its own, it keeps its DOM until it unmounts, so it also stays
   exempt from eviction; reload or close it to release the hold.
-- Overview never presents or admits chat DOM. A chat without a usable picture shows a title card
+- Overview never presents chat DOM. A chat without a usable picture shows a title card
   (project icon, project and thread title) with no spinner or status. The card's icon and title
   sit at the same height in every variant, with status and spinner hung below them, so a card that
   changes variant as overview opens does not jump. Leaving overview restores

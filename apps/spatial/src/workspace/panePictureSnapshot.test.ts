@@ -110,10 +110,16 @@ it("does not start native work after cancelled phase admission or for live produ
   ).toBeNull();
   expect(native).not.toHaveBeenCalled();
 });
+/** A queue past the rest that a newly opened workspace starts with. */
+function restedQueue() {
+  const queue = createSnapshotQueue();
+  vi.advanceTimersByTime(PICTURE_REST_MS);
+  return queue;
+}
 it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion", "disable"])(
   "cancels in-flight work on %s and keeps captures serial until work resumes",
   async (input) => {
-    const queue = createSnapshotQueue();
+    const queue = restedQueue();
     const active: AbortSignal[] = [];
     const finishes: (() => void)[] = [];
     const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(
@@ -158,7 +164,7 @@ function onScreenPane() {
   return element;
 }
 it("takes an on-screen chat's picture only while a cover hides it, and stops when the cover goes", async () => {
-  const queue = createSnapshotQueue();
+  const queue = restedQueue();
   const active: AbortSignal[] = [];
   const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(
     async (_id, _element, _can, _wait, signal) => {
@@ -184,7 +190,7 @@ it("takes an on-screen chat's picture only while a cover hides it, and stops whe
   expect(active[0]!.aborted).toBe(true);
 });
 it("pictures the most recently focused chat first", async () => {
-  const queue = createSnapshotQueue();
+  const queue = restedQueue();
   const order: string[] = [];
   const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(async (id) => {
     order.push(id);
@@ -205,7 +211,7 @@ it("pictures the most recently focused chat first", async () => {
   expect(order).toEqual(["third", "second", "first"]);
 });
 it("saves a picture that finished encoding during motion only after the rest that follows", async () => {
-  const queue = createSnapshotQueue();
+  const queue = restedQueue();
   let finish!: () => void;
   const save = vi.fn();
   const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(async () => {
@@ -231,7 +237,7 @@ it("saves a picture that finished encoding during motion only after the rest tha
   expect(save).toHaveBeenCalledOnce();
 });
 it("waits for a few seconds of rest after a navigation key before starting a missing picture", async () => {
-  const queue = createSnapshotQueue();
+  const queue = restedQueue();
   const draw = vi.fn(async () => {});
   dispose = queue.setDraw(
     draw,
@@ -259,7 +265,7 @@ it("cancels scheduled phase admission without starting another capture early", a
     idle.clear();
     for (const callback of callbacks) callback({ didTimeout: false, timeRemaining: () => 50 });
   };
-  const queue = createSnapshotQueue();
+  const queue = restedQueue();
   let finish!: () => void;
   const admissions: boolean[] = [];
   const draw = vi.fn<Parameters<typeof queue.setDraw>[0]>(async (_id, _source, _can, wait) => {

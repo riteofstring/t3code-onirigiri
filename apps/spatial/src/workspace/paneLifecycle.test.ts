@@ -458,14 +458,15 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   vi.advanceTimersByTime(33);
   store.setPresented("p0", true);
   store.composerReady("p1");
-  vi.advanceTimersByTime(16);
+  vi.advanceTimersByTime(50);
   expect(store.isMounted("p2")).toBe(false);
+  store.setPresented("p1", true);
   vi.advanceTimersByTime(50);
   expect(store.isMounted("p2")).toBe(true);
   expect(store.timelineDeferred("p2")).toBe(false);
 });
 
-it("stages a cold visible chat behind the whole focused chat, or after a wait if that never shows", () => {
+it("stages a cold visible chat behind the whole focused chat, or after a wait if its composer never reports ready", () => {
   const store = make();
   store.registerChat("p0", releasable());
   store.registerChat("p1", releasable());
@@ -490,7 +491,6 @@ it("stages a cold visible chat behind the whole focused chat, or after a wait if
   store.setMoving(true);
   vi.advanceTimersByTime(100);
   store.setMoving(false);
-  store.composerReady("p0");
   vi.advanceTimersByTime(2400);
   expect(mounted(store)).toEqual(["p0"]);
   vi.advanceTimersByTime(200);
@@ -514,7 +514,7 @@ it("does not wait for a pending composer that leaves the destination", () => {
   expect(store.timelineDeferred("p0")).toBe(false);
 });
 
-it("remounts every visible chat when motion ends on an empty cell, pictured or not", () => {
+it("remounts every visible chat, one at a time, when motion ends on an empty cell, pictured or not", () => {
   const store = make();
   store.setPictures((id) => id !== "p26");
   for (const id of ["p25", "p26", "p27"]) store.registerChat(id, releasable());
@@ -522,8 +522,12 @@ it("remounts every visible chat when motion ends on an empty cell, pictured or n
   store.setFocus(null);
   for (const id of ["p25", "p26", "p27"]) store.setVisible(id, true);
   store.setMoving(false);
-  vi.advanceTimersByTime(600);
-  for (const id of ["p25", "p26", "p27"]) expect(store.isMounted(id)).toBe(true);
+  const visibleMounted = () => mounted(store).filter((id) => id !== "p0");
+  expect(visibleMounted()).toEqual(["p25"]);
+  store.setPresented("p25", true);
+  expect(visibleMounted()).toEqual(["p25", "p26"]);
+  store.setPresented("p26", true);
+  expect(visibleMounted()).toEqual(["p25", "p26", "p27"]);
 });
 
 it("admits no arriving chat in overview and restores focused-first admission when it ends", () => {

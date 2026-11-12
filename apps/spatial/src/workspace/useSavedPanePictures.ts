@@ -615,8 +615,7 @@ export function useSavedPanePictures(
         }
         return;
       }
-      pictureLog.saved += 1;
-      pictureLog.last = `saved ${snapshot.image.size} bytes`;
+      pictureLog.last = `captured ${snapshot.image.size} bytes, not kept`;
       const picture = {
         recordKey: record,
         paneId,
@@ -626,8 +625,12 @@ export function useSavedPanePictures(
         cssSize: snapshot.cssSize,
         savedAt: Date.now(),
       };
-      const keep = () =>
-        current() && element.isConnected ? keepPicture(picture, beforeVisualRevision) : undefined;
+      const keep = async () => {
+        if (!current() || !element.isConnected) return;
+        await keepPicture(picture, beforeVisualRevision);
+        pictureLog.saved += 1;
+        pictureLog.last = `saved ${snapshot.image.size} bytes`;
+      };
       if (signal.aborted) return keep;
       if (canSnapshot()) await keep();
     },

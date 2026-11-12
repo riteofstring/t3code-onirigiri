@@ -15,6 +15,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { PanePictureSnapshot } from "./panePictureSnapshot";
 import { pictureRecordKey, type SavedPanePicture } from "./panePictureStore";
 import { createPaneLifecycleStore } from "./paneLifecycle";
+import { PICTURE_REST_MS } from "./panePictureIdle";
 import { markPaneSynced, usePanePictureTheme, useSavedPanePictures } from "./useSavedPanePictures";
 
 const defaultFontSettings = {
@@ -173,7 +174,7 @@ function Probe() {
   return null;
 }
 
-async function mount({ compact = false, resizeStage = true } = {}) {
+async function mount({ compact = false, resizeStage = true, rested = true } = {}) {
   workspace?.remove();
   workspace = document.createElement("div");
   const engine = document.createElement("div");
@@ -191,6 +192,11 @@ async function mount({ compact = false, resizeStage = true } = {}) {
     hook.stageRef(workspace);
     if (resizeStage) resize(800, 600);
   });
+  // A newly opened workspace takes no picture until it has rested.
+  if (rested)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PICTURE_REST_MS);
+    });
 }
 
 const advance = (ms: number) =>
@@ -995,10 +1001,10 @@ it.each(["pointerup", "pointercancel", "lostpointercapture", "blur"])(
 it("lets a newly opened workspace settle even when the page has been open a while", async () => {
   await vi.advanceTimersByTimeAsync(5000);
   window.dispatchEvent(new Event("pointerdown"));
-  await mount();
+  await mount({ rested: false });
   markPaneSynced(paneId, { updatedAt: store.updatedAt, theme: `dark|dark|${fontRevision}` });
   hook.paneSnapshots.request(paneId, { isConnected: true } as HTMLElement);
-  await advance(249);
+  await advance(1999);
   expect(snapshot).not.toHaveBeenCalled();
   await advance(2);
   expect(store.writes).toHaveLength(1);
@@ -1058,9 +1064,7 @@ it("fills visible missing pictures before refreshes and neighbours", async () =>
     const revision = hook.paneSnapshots.request(id, { id, isConnected: true } as HTMLElement);
     markPaneSynced(id, { updatedAt: store.updatedAt, theme: appearance }, revision);
   }
-  await advance(240);
-  expect(drawn).toEqual([]);
-  await advance(30);
+  await advance(270);
   expect(drawn).toEqual([visible, paneId, neighbour]);
   for (const id of [paneId, neighbour, visible]) expect(hook.hasFreshPicture(id)).toBe(true);
 });

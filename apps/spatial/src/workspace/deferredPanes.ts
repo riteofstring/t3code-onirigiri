@@ -33,9 +33,9 @@ export function releaseDeferredPanes(
     idle = held.length > 0 ? requestIdleCallback(next, { timeout: 1000 }) : null;
   };
   idle = requestIdleCallback(next, { timeout: 1000 });
+  // Panes still held stay held: the next release carries on with them, nearest first.
   return () => {
     if (idle !== null) cancelIdleCallback(idle);
-    for (const pane of held) pane.removeAttribute(DEFERRED);
   };
 }
 

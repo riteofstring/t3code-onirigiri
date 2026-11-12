@@ -6,8 +6,9 @@ const MAX_MOUNTED = 10;
 const DATA_READY = 6;
 const DATA_IDLE_BUDGET_MS = PICTURE_IDLE_BUDGET_MS;
 const QUIET_MS = 500;
-// The focused chat goes first: visible peers start loading once it is interactive, or after this long.
-const FOCUS_FIRST_MS = 2500;
+// Visible chats load one at a time, the focused chat first and then the nearest: each starts once the
+// one before it is interactive, or after this long.
+const ARRIVAL_WAIT_MS = 2500;
 const PICTURE_TIMEOUT_MS = 10_000;
 const PICTURE_RETRY_MS = 5 * 60_000;
 const STORED_PICTURES_WAIT_MS = 2000;
@@ -48,8 +49,9 @@ export function createPaneLifecycleStore(
   const deferred = new Set<string>();
   const pendingComposers = new Set<string>();
   const presented = new Set<string>();
-  let peersHeldSince: number | null = null;
-  let peersTimer: ReturnType<typeof setTimeout> | null = null;
+  const overdue = new Set<string>();
+  let arriving: { paneId: string; since: number } | null = null;
+  let arrivalTimer: ReturnType<typeof setTimeout> | null = null;
   const dataReady = new Set<string>();
   let arrivalFrame: number | null = null;
   let removalFrame: number | null = null;
@@ -112,27 +114,39 @@ export function createPaneLifecycleStore(
     if (keepNeighbours) for (const id of panes.keys()) if (adjacent(id)) ids.add(id);
     return ids;
   };
-  const holdsPeers = () => {
-    if (peersTimer !== null) clearTimeout(peersTimer);
-    peersTimer = null;
-    if (!focused || !chats.has(focused) || presented.has(focused)) {
-      peersHeldSince = null;
-      return false;
+  /** Mounts the next visible pane unless a chat ahead of it is still loading; true while one is. */
+  const admitArrivals = (keep: Set<string>) => {
+    if (arrivalTimer !== null) clearTimeout(arrivalTimer);
+    arrivalTimer = null;
+    const nearest = (ids: Iterable<string>, wanted: (id: string) => boolean) =>
+      [...ids].filter(wanted).sort((a, b) => distance(a) - distance(b))[0];
+    for (;;) {
+      const loading = nearest(
+        mounted,
+        (id) => keep.has(id) && chats.has(id) && !presented.has(id) && !overdue.has(id),
+      );
+      if (loading === undefined) {
+        arriving = null;
+        const next = nearest(keep, (id) => panes.has(id) && !mounted.has(id));
+        if (next === undefined) return false;
+        mount(next);
+        continue;
+      }
+      if (arriving?.paneId !== loading) arriving = { paneId: loading, since: performance.now() };
+      const remaining = ARRIVAL_WAIT_MS - (performance.now() - arriving.since);
+      if (remaining > 0) {
+        arrivalTimer = setTimeout(schedule, remaining);
+        return true;
+      }
+      overdue.add(loading);
     }
-    peersHeldSince ??= performance.now();
-    const remaining = FOCUS_FIRST_MS - (performance.now() - peersHeldSince);
-    if (remaining <= 0) return false;
-    peersTimer = setTimeout(schedule, remaining);
-    return true;
   };
   const reconcile = () => {
     const keep = retained();
     if (moving || pointers.size > 0) return;
     for (const id of pendingComposers) if (!keep.has(id)) pendingComposers.delete(id);
     if (focused && keep.has(focused)) mount(focused);
-    if (focused && pendingComposers.has(focused)) return;
-    if (holdsPeers()) return;
-    for (const id of keep) if (panes.has(id)) mount(id);
+    if (admitArrivals(keep)) return;
     if (performance.now() - quietSince < QUIET_MS) return;
     for (const id of [...mounted].sort((a, b) => distance(b) - distance(a))) {
       if (mounted.size <= Math.max(maxMounted, keep.size)) break;
@@ -230,7 +244,7 @@ export function createPaneLifecycleStore(
     if (focused && panes.has(focused)) mount(focused);
     if (
       pendingComposers.size > 0 ||
-      peersTimer !== null ||
+      arrivalTimer !== null ||
       [...mounted].some((id) => deferred.has(id)) ||
       !backgroundPictures ||
       !picturesReady
@@ -349,12 +363,15 @@ export function createPaneLifecycleStore(
     }),
     isMoving: () => moving || pointers.size > 0,
     isCameraMoving: () => moving,
+    /** True once nothing has moved or been pressed for the rest that pictures wait for. */
+    isRested: () =>
+      !moving && pointers.size === 0 && performance.now() - quietSince >= PICTURE_REST_MS,
     /** Reports whether a chat's live contents are on screen and interactive. */
     setPresented: (paneId: string, shown: boolean) => {
       if (shown === presented.has(paneId)) return;
       if (shown) presented.add(paneId);
       else presented.delete(paneId);
-      if (shown && paneId === focused) schedule();
+      if (shown) schedule();
     },
     contentMounted: (paneId: string) => {
       loaded.add(paneId);
@@ -389,7 +406,8 @@ export function createPaneLifecycleStore(
       if (moving) {
         if (arrivalFrame !== null) cancelAnimationFrame(arrivalFrame);
         arrivalFrame = null;
-        peersHeldSince = null;
+        arriving = null;
+        overdue.clear();
         motionHolds.clear();
         const removable: string[] = [];
         for (const id of mounted) {
@@ -442,7 +460,8 @@ export function createPaneLifecycleStore(
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
       focused = paneId;
-      peersHeldSince = null;
+      arriving = null;
+      overdue.clear();
       if (paneId !== null) focusedAt.set(paneId, performance.now());
       if (capturing?.paneId === focused) {
         capturing = null;
@@ -507,7 +526,7 @@ export function createPaneLifecycleStore(
       if (arrivalFrame !== null) cancelAnimationFrame(arrivalFrame);
       if (removalFrame !== null) cancelAnimationFrame(removalFrame);
       cancel();
-      if (peersTimer !== null) clearTimeout(peersTimer);
+      if (arrivalTimer !== null) clearTimeout(arrivalTimer);
       if (storedTimer !== null) clearTimeout(storedTimer);
       for (const type of inputEvents)
         window.removeEventListener(type, noteInput, { capture: true });

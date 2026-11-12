@@ -1334,11 +1334,12 @@ function SpatialWorkspaceView({
           pictureUrl={pictureUrl}
           summary={card}
           fadeIn={fadeIn}
+          mayFade={lifecycle?.isRested}
           onFadeIn={() => cardsAwaitingPicture.current.delete(pane.paneId)}
         />
       );
     },
-    [displayedPictureFor, hasMoved, overview, pictureUrl, preparedPictureUrl],
+    [displayedPictureFor, hasMoved, lifecycle, overview, pictureUrl, preparedPictureUrl],
   );
 
   const [stageElement, setStageElement] = useState<HTMLElement | null>(null);

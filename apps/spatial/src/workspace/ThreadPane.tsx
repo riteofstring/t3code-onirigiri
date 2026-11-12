@@ -810,26 +810,20 @@ function PaneScrollState({
   const root = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
   const remember = useRef(() => {});
-  useLayoutEffect(() => {
-    if (!ready || restored.current || !root.current) return;
-    const scrollers = root.current.querySelectorAll<HTMLElement>(
-      ".messages-timeline-scroll, [data-tool-group-scroll]",
-    );
-    scrollers.forEach((element, index) => {
-      const saved = positions.current[index];
-      if (saved)
-        element.scrollTop = saved.atEnd ? element.scrollHeight - element.clientHeight : saved.top;
-    });
-    restored.current = true;
-    remember.current();
-  }, [positions, ready]);
-  // Positions are remembered as the chat scrolls or its contents change height. Reading them when the
-  // camera starts moving or when the chat unmounts made the browser restyle the page at the worst moment.
+  // Positions are remembered as the chat scrolls or its contents change height, at most once a frame.
+  // Reading them when the camera starts moving or when the chat unmounts made the browser restyle
+  // the page at the worst moment.
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
-    const heights =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => remember.current());
+    let frame: number | null = null;
+    const rememberSoon = () => {
+      frame ??= requestAnimationFrame(() => {
+        frame = null;
+        remember.current();
+      });
+    };
+    const heights = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(rememberSoon);
     remember.current = () => {
       const scrollers = [
         ...element.querySelectorAll<HTMLElement>(
@@ -844,15 +838,28 @@ function PaneScrollState({
         atEnd: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1,
       }));
     };
-    const onScroll = () => remember.current();
-    element.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    element.addEventListener("scroll", rememberSoon, { capture: true, passive: true });
     return () => {
-      element.removeEventListener("scroll", onScroll, true);
+      element.removeEventListener("scroll", rememberSoon, true);
+      if (frame !== null) cancelAnimationFrame(frame);
       heights?.disconnect();
       remember.current = () => {};
       restored.current = false;
     };
   }, [positions]);
+  useLayoutEffect(() => {
+    if (!ready || restored.current || !root.current) return;
+    const scrollers = root.current.querySelectorAll<HTMLElement>(
+      ".messages-timeline-scroll, [data-tool-group-scroll]",
+    );
+    scrollers.forEach((element, index) => {
+      const saved = positions.current[index];
+      if (saved)
+        element.scrollTop = saved.atEnd ? element.scrollHeight - element.clientHeight : saved.top;
+    });
+    restored.current = true;
+    remember.current();
+  }, [positions, ready]);
   return (
     <div ref={root} className="h-full w-full">
       {children}

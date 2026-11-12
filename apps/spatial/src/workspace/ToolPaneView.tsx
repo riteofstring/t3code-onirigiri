@@ -71,6 +71,9 @@ const NO_THREAD_AVAILABILITY = {
   lineageAvailable: false,
 };
 
+const TEXT_FIELDS =
+  'input:not([type]), input[type="text"], input[type="search"], input[type="url"], textarea';
+
 export function ToolPaneView({
   pane,
   title,
@@ -152,20 +155,45 @@ export function ToolPaneView({
     if (!active || surface?.kind === "terminal" || !root) return;
     const focusField = () => {
       if (root.contains(document.activeElement)) return true;
-      for (const field of root.querySelectorAll<HTMLElement>(
-        'input:not(:disabled, [type="hidden"]), textarea:not(:disabled)',
+      for (const field of root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+        TEXT_FIELDS,
       )) {
+        if (field.disabled) continue;
         field.focus({ preventScroll: true });
         if (document.activeElement === field) return true;
       }
       return false;
     };
     if (focusField()) return;
-    const fields = new MutationObserver(() => {
-      if (focusField()) fields.disconnect();
+    // The arrival owns the cursor only until the user acts: a field that mounts after a click or a
+    // typed key must not pull the cursor back. A field can also be there but not focusable until
+    // the pane is interactive a few frames later, which no mutation inside the pane reports.
+    let frames = 30;
+    let frame = requestAnimationFrame(function retry() {
+      if (focusField()) stop();
+      else if (--frames > 0) frame = requestAnimationFrame(retry);
     });
-    fields.observe(root, { childList: true, subtree: true });
-    return () => fields.disconnect();
+    const fields = new MutationObserver(() => {
+      if (focusField()) stop();
+    });
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      fields.disconnect();
+      window.removeEventListener("pointerdown", stop, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey && !event.ctrlKey && !event.metaKey) stop();
+    };
+    fields.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+    window.addEventListener("pointerdown", stop, true);
+    window.addEventListener("keydown", onKey, true);
+    return stop;
   }, [active, surface?.kind]);
   useEffect(() => {
     if (

@@ -27,6 +27,33 @@ function areShortcutModifierStatesEqual(
   );
 }
 
+// One listener set keeps the held modifiers for every user of the hook, so a view enabled while a
+// modifier is already down starts from it without having rendered on each key press before.
+let heldModifiers = EMPTY_SHORTCUT_MODIFIER_STATE;
+let heldModifierUsers = 0;
+const trackHeldModifiers = (event: KeyboardEvent) => {
+  heldModifiers = shortcutModifierStateAfterKeyboardEvent(heldModifiers, event);
+};
+const forgetHeldModifiers = () => {
+  heldModifiers = EMPTY_SHORTCUT_MODIFIER_STATE;
+};
+function watchHeldModifiers() {
+  if (heldModifierUsers++ === 0) {
+    window.addEventListener("keydown", trackHeldModifiers, true);
+    window.addEventListener("keyup", trackHeldModifiers, true);
+    window.addEventListener("paste", forgetHeldModifiers, true);
+    window.addEventListener("blur", forgetHeldModifiers);
+  }
+  return () => {
+    if (--heldModifierUsers > 0) return;
+    window.removeEventListener("keydown", trackHeldModifiers, true);
+    window.removeEventListener("keyup", trackHeldModifiers, true);
+    window.removeEventListener("paste", forgetHeldModifiers, true);
+    window.removeEventListener("blur", forgetHeldModifiers);
+    forgetHeldModifiers();
+  };
+}
+
 /** `enabled` false stops tracking, so a view that is not the active one skips every key press. */
 export function useShortcutModifierState(
   ignoreEditable = false,
@@ -34,6 +61,7 @@ export function useShortcutModifierState(
 ): ShortcutModifierState {
   const [state, setState] = useState(EMPTY_SHORTCUT_MODIFIER_STATE);
   const stateRef = useRef(EMPTY_SHORTCUT_MODIFIER_STATE);
+  useEffect(watchHeldModifiers, []);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window key, focus, paste and blur listeners that track held shortcut modifiers
   useEffect(() => {
@@ -61,6 +89,7 @@ export function useShortcutModifierState(
     const onFocus = (event: FocusEvent) => {
       if (ignoreEditable && isEditableFocused(event.target)) onResetEvent();
     };
+    if (!(ignoreEditable && isEditableFocused(document.activeElement))) updateState(heldModifiers);
     window.addEventListener("focusin", onFocus);
     window.addEventListener("keydown", onKeyboardEvent, true);
     window.addEventListener("keyup", onKeyboardEvent, true);

@@ -7,6 +7,7 @@ export function SavedPanePicture({
   pictureUrl,
   summary,
   fadeIn = false,
+  mayFade,
   onFadeIn,
 }: {
   image: Blob;
@@ -15,6 +16,8 @@ export function SavedPanePicture({
   pictureUrl: (image: Blob) => string;
   summary: ReactNode;
   fadeIn?: boolean;
+  /** Asked when the picture first shows; false shows it at once. Fades belong to rest, not motion. */
+  mayFade?: (() => boolean) | undefined;
   onFadeIn?: () => void;
 }) {
   const ref = useRef<HTMLImageElement>(null);
@@ -30,7 +33,7 @@ export function SavedPanePicture({
     const element = ref.current;
     if (!fading || !shown || !element) return;
     // A picture that arrives while the camera moves shows at once: its animation is off, so no event would end the fade.
-    if (element.closest("[data-spatial-camera-moving]")) {
+    if (mayFade?.() === false || element.closest("[data-spatial-camera-moving]")) {
       setFading(false);
       return;
     }
@@ -41,6 +44,7 @@ export function SavedPanePicture({
       element.removeEventListener("animationend", end);
       element.removeEventListener("animationcancel", end);
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- asked once, when the picture first shows
   }, [fading, shown]);
   useEffect(() => {
     const element = ref.current;

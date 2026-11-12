@@ -7,7 +7,7 @@ import { useShortcutModifierState } from "./shortcutModifierState";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-it("tracks held modifiers only while enabled, and forgets them when disabled", async () => {
+it("renders on held modifiers only while enabled, and starts from one already held when enabled", async () => {
   let renders = 0;
   let altKey = false;
   function Probe({ enabled }: { enabled: boolean }) {
@@ -31,6 +31,11 @@ it("tracks held modifiers only while enabled, and forgets them when disabled", a
   expect(altKey).toBe(true);
 
   await act(async () => root.render(<Probe enabled={false} />));
+  expect(altKey).toBe(false);
+
+  await act(async () => root.render(<Probe enabled />));
+  expect(altKey).toBe(true);
+  await press("keyup");
   expect(altKey).toBe(false);
   await act(async () => root.unmount());
 });

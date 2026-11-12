@@ -66,9 +66,15 @@ it("releases nothing while the camera moves, and carries on once it rests", () =
   expect(held(panes)).toEqual([false, false, true]);
 });
 
-it("releases every held pane at once when the release is cancelled", () => {
+it("keeps panes held when a release is cancelled, for the next release to carry on with", () => {
   const { root, panes } = createPanes([0, 100, 200], 0);
   deferOtherPanes(root);
-  releaseDeferredPanes(root)();
+  const cancel = releaseDeferredPanes(root);
+  idle.shift()!();
+  cancel();
+  expect(idle).toEqual([]);
+  expect(held(panes)).toEqual([false, false, true]);
+  releaseDeferredPanes(root);
+  idle.shift()!();
   expect(held(panes)).toEqual([false, false, false]);
 });
