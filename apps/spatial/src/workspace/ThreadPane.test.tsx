@@ -1658,6 +1658,17 @@ it("keeps a chat live after a scrollbar held and dragged, until the pointer is r
   }
 });
 
+it("keeps a chat live after a composer change made without typing until its picture shows it", async () => {
+  const blocks = await mountInspectedChat();
+  snapshots.hasFreshPicture = () => false;
+  await act(() => {
+    container.querySelector("textarea")!.setAttribute("aria-expanded", "true");
+    expect(blocks()).toBe(true);
+    snapshots.hasFreshPicture = () => true;
+    expect(blocks()).toBe(false);
+  });
+});
+
 it("keeps a chat live after a composer edit until its picture shows the draft", async () => {
   const blocks = await mountInspectedChat();
   snapshots.hasFreshPicture = () => false;

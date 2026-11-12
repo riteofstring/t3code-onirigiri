@@ -111,6 +111,19 @@ it("mounts one nearest unpictured tree per idle slot and waits for its picture",
   expect(mounted(store)).toEqual(["p0", "p1", "p3"]);
 });
 
+it("passes over a background chat whose composer never loads once its picture wait runs out", () => {
+  const store = make();
+  for (const id of ["p1", "p3"]) store.registerChat(id, releasable());
+  store.setPictures((id) => ["p0", "p2"].includes(id));
+  store.setBackgroundPictures(true);
+  vi.advanceTimersByTime(2001);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  expect(store.timelineDeferred("p1")).toBe(true);
+  vi.advanceTimersByTime(10_200);
+  expect(mounted(store)).toEqual(["p0", "p1", "p3"]);
+  expect(store.timelineDeferred("p1")).toBe(true);
+});
+
 it("pictures every offscreen chat during one long rest, past the retention cap", () => {
   const store = make();
   const pictured = new Set(["p0"]);

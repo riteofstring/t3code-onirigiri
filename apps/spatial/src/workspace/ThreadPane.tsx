@@ -677,7 +677,11 @@ const PaneBody = memo(function PaneBody({
       )
         localStateAtRisk.current = true;
       if (records.some(producerChanged)) inspectProducer();
-      if (contentChanged(records)) invalidate();
+      if (contentChanged(records)) {
+        // A composer change made without typing, such as a removed attachment, also has to reach the picture.
+        if (snapshotPrepared.current) changedSincePicture.current = true;
+        invalidate();
+      }
     };
     const observer = new MutationObserver(inspectChanges);
     const stopFlushing = observePaneVisualChanges(paneId, () => {

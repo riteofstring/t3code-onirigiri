@@ -8,6 +8,7 @@ const DATA_READY = 6;
 const NEIGHBOURS_LOADED = 4;
 const DATA_IDLE_BUDGET_MS = PICTURE_IDLE_BUDGET_MS;
 const QUIET_MS = 500;
+const TEXT_EVENTS = new Set(["beforeinput", "input", "compositionstart"]);
 // Visible chats load one at a time, the focused chat first and then the nearest: each starts once the
 // one before it is interactive, or after this long.
 const ARRIVAL_WAIT_MS = 2500;
@@ -298,11 +299,14 @@ export function createPaneLifecycleStore(
     keepDataReady();
     // A chat loaded in the background mounts its timeline in a later idle period than its
     // composer: both in one step was a single task of several hundred milliseconds.
-    const staged = [...mounted].find((id) => deferred.has(id));
+    // One whose composer never loads is left to the picture timeout below and holds nothing back.
+    const staged = [...mounted]
+      .filter((id) => deferred.has(id) && loaded.has(id))
+      .sort((a, b) => distance(a) - distance(b))[0];
     if (staged !== undefined) {
       const rest = PICTURE_REST_MS - (performance.now() - quietSince);
-      if (rest > 0 || !loaded.has(staged)) {
-        timer = setTimeout(schedule, Math.max(rest, 100));
+      if (rest > 0) {
+        timer = setTimeout(schedule, rest);
         return;
       }
       idle = requestIdleCallback((deadline) => {
@@ -375,7 +379,8 @@ export function createPaneLifecycleStore(
     quietSince = performance.now();
     cancel();
     release(true);
-    for (const listener of motionListeners) listener();
+    // Text events follow a key that already told the listeners; they only restart the rest.
+    if (!TEXT_EVENTS.has(event.type)) for (const listener of motionListeners) listener();
     schedule();
   };
   const inputEvents = [

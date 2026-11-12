@@ -111,7 +111,7 @@ This page records constraints that span files and are easy to break without noti
   until the stop delayed the first key by about half a second and dropped keys pressed on the way.
   A chat that loses focus during the move is covered again if its picture can cover it, so a run
   of moves keeps one chat live, not every chat passed.
-  A chat the user has scrolled, or whose draft they have edited, since its picture was taken stays
+  A chat the user has scrolled, or whose composer has changed, since its picture was taken stays
   live through moves until a picture shows the change: its old picture would show the old position
   or draft for the length of the move. A scroll counts while a pointer pressed in that chat is still down, wherever it is released, or
   within a second of a wheel, touch or key event outside the composer, so a timeline following a
@@ -164,7 +164,8 @@ the thread shell, which is never stale.
 - A chat moves as its picture, and can be evicted at rest, unless it holds state that lives only in its DOM:
   sections opened in the timeline, edits outside the composer, or arrival typing not yet delivered. Composer text,
   attachments and pending answers live in the composer draft store, so composer edits, clicks and
-  keys do not keep a chat live. A chat with a live producer also moves as its stored picture,
+  keys do not keep a chat from being evicted; a composer change does keep it live through moves
+  until its picture shows the change (above). A chat with a live producer also moves as its stored picture,
   even though that picture cannot show the producer.
   Once a chat holds state of its own, it keeps its DOM until it unmounts, so it also stays
   exempt from eviction; reload or close it to release the hold.
