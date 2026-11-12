@@ -111,6 +111,10 @@ This page records constraints that span files and are easy to break without noti
   until the stop delayed the first key by about half a second and dropped keys pressed on the way.
   A chat that loses focus during the move is covered again if its picture can cover it, so a run
   of moves keeps one chat live, not every chat passed.
+  A chat the user has scrolled since its picture was taken stays live through moves until a
+  picture shows the new position: its old picture would jump back to where it was for the length
+  of the move. Only a scroll within a second of a wheel, pointer, touch or key event in that chat
+  counts, so a timeline following a running turn does not hold its chat live.
   Nothing is removed for a move, because rebuilding a chat on arrival costs most of a second and
   removing several froze the start of the move. Motion admits no new trees.
 - At rest visible chats load one at a time: the focused chat first, then the nearest. Each mounts
@@ -222,6 +226,10 @@ the thread shell, which is never stale.
   scrolls away, or in overview, where a card covers every chat: there the chats still mounted are
   pictured in place, so the chat you came from has its picture within a few seconds. Leaving
   overview abandons a capture in progress.
+- An off-screen chat keeps its contents unrendered until the engine moves them into its recording
+  canvas, and they return to their place unrendered in the step that ends the recording. Showing
+  them first and hiding them afterwards restyled the whole chat four times per picture, about
+  40% of all style work in the rest after a move.
 - Picture URLs are decoded during idle time. Each selected cover retains its decoder so a ready URL
   keeps its loaded image resource when the live view temporarily replaces its image element.
   Removing the cover releases both the URL and decoder; decoded pixels remain browser-managed.

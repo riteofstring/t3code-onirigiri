@@ -1613,6 +1613,23 @@ it.each(["input", "expansion"])(
   },
 );
 
+it("keeps a chat the user scrolled live until its picture shows the new position", async () => {
+  const blocks = await mountInspectedChat();
+  const timeline = container.querySelector<HTMLElement>(".messages-timeline-scroll")!;
+  snapshots.hasFreshPicture = () => false;
+  await act(() => {
+    timeline.scrollTop = 200;
+    timeline.dispatchEvent(new Event("scroll"));
+    expect(blocks()).toBe(false);
+    timeline.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+    timeline.scrollTop = 640;
+    timeline.dispatchEvent(new Event("scroll"));
+    expect(blocks()).toBe(true);
+    snapshots.hasFreshPicture = () => true;
+    expect(blocks()).toBe(false);
+  });
+});
+
 it("moves a chat that gains a live producer as its stored picture", async () => {
   const blocks = await mountInspectedChat();
   await act(() => {

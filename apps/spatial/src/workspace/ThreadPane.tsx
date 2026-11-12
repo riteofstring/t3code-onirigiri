@@ -100,6 +100,7 @@ const PaneRouter = memo(function PaneRouter({
 
 const NEIGHBOUR_MOUNT_DELAY_MS = 300;
 const STATUS_WAIT_MS = 1000;
+const SCROLL_GESTURE_MS = 1000;
 const PICTURE_FADE_MS = 100;
 const COMPOSER_EDITOR = '[data-testid="composer-editor"]';
 
@@ -379,6 +380,8 @@ const PaneBody = memo(function PaneBody({
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollPositions = useRef<{ top: number; atEnd: boolean }[]>([]);
   const localStateAtRisk = useRef(false);
+  const scrollGestureAt = useRef(-Infinity);
+  const scrolledSincePicture = useRef(false);
   const arrivalText = useRef("");
   const noteLocalEdit = (event: { target: EventTarget }) => {
     if (!(event.target instanceof Element && event.target.closest(COMPOSER_EDITOR)))
@@ -392,8 +395,11 @@ const PaneBody = memo(function PaneBody({
   removal.current = {
     blocksRemoval: () => {
       flushPaneVisualChanges(paneId);
+      if (scrolledSincePicture.current && snapshots?.hasFreshPicture(paneId))
+        scrolledSincePicture.current = false;
       return (
         localStateAtRisk.current ||
+        scrolledSincePicture.current ||
         arrivalText.current !== "" ||
         maximizedRef.current ||
         !snapshots?.timelinePicture(paneId)
@@ -591,6 +597,9 @@ const PaneBody = memo(function PaneBody({
           previous === undefined &&
           target.matches(".messages-timeline-scroll, [data-tool-group-scroll]");
         if (restored || next === (previous ?? "0|0")) return;
+        // A picture from before the user scrolled would show the old position for the length of a move.
+        if (performance.now() - scrollGestureAt.current < SCROLL_GESTURE_MS)
+          scrolledSincePicture.current = true;
       }
       if (!snapshotPrepared.current) return;
       if (active && picturable !== null) snapshots?.invalidate(paneId, true);
@@ -678,7 +687,14 @@ const PaneBody = memo(function PaneBody({
     const events = ["scroll", "input", "drop", "load"] as const;
     for (const event of events)
       element.addEventListener(event, invalidate, { capture: true, passive: true });
+    const gestures = ["wheel", "pointerdown", "touchmove", "keydown"] as const;
+    const noteGesture = () => {
+      scrollGestureAt.current = performance.now();
+    };
+    for (const event of gestures)
+      element.addEventListener(event, noteGesture, { capture: true, passive: true });
     return () => {
+      for (const event of gestures) element.removeEventListener(event, noteGesture, true);
       const pending = observer.takeRecords();
       if (element.childElementCount > 0 && (!lifecycle || lifecycle.isMounted(paneId))) {
         if (pending.some(producerChanged)) inspectProducer();

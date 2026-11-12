@@ -47,7 +47,10 @@
   outline: none;
 }
 
-.spatial-workspace .onirigiri-pane__live-content[data-spatial-snapshot],
+/* An off-screen chat is rendered for its picture by the engine, inside its recording canvas. */
+.spatial-workspace
+  [data-onirigiri-slot="pane"][data-visible="true"]
+  .onirigiri-pane__live-content[data-spatial-snapshot],
 .spatial-workspace
   .onirigiri-pane__live-content:has(
     > .onirigiri-pane__content-frame
