@@ -452,9 +452,12 @@ function SpatialWorkspaceView({
   );
   useEffect(() => {
     if (fullScreenPhase !== null) return;
-    return releaseDeferredPanes(fullScreenBorderRef.current?.parentElement ?? null);
+    return releaseDeferredPanes(
+      fullScreenBorderRef.current?.parentElement ?? null,
+      lifecycle?.isMoving,
+    );
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Without the animation the phase never changes, so the switch itself releases the held panes.
-  }, [fullScreen, fullScreenBorderRef, fullScreenPhase]);
+  }, [fullScreen, fullScreenBorderRef, fullScreenPhase, lifecycle]);
   const [snapMaximize, setSnapMaximize] = useState(false);
   useEffect(() => {
     if (!snapMaximize) return;
@@ -1302,12 +1305,15 @@ function SpatialWorkspaceView({
       if (pane.surfaceKind !== "thread") return null;
       const data = pane.data as ThreadPaneData;
       const picture = displayedPictureFor(pane.paneId);
+      // The engine draws cards as soon as it enters overview, a render before the state here follows.
+      const titleOnly =
+        overview || workspaceRef.current?.getSnapshot().presentationMode === "overview";
       const card =
-        hasMoved || overview ? (
+        hasMoved || titleOnly ? (
           <ThreadCard
             environmentId={data.environmentId}
             threadId={data.threadId}
-            variant={overview ? "title" : picture ? "summary" : "loading"}
+            variant={titleOnly ? "title" : picture ? "summary" : "loading"}
           />
         ) : (
           <div className="relative h-full w-full bg-background">

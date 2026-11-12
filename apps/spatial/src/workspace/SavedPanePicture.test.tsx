@@ -206,3 +206,25 @@ it("ends the fade at once when it is cancelled, as when the camera starts moving
   expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
   expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
 });
+
+it("shows a picture that arrives while the camera moves without a fade, then or after it stops", async () => {
+  container.setAttribute("data-spatial-camera-moving", "");
+  await act(() => {
+    root!.render(
+      <SavedPanePicture
+        image={new Blob(["png"])}
+        cssSize={captureSize}
+        preparedUrl={null}
+        pictureUrl={pictureUrl}
+        summary="Thread"
+        fadeIn
+      />,
+    );
+  });
+  const image = container.querySelector("img")!;
+  await act(() => pending[0]!.resolve());
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
+  await act(() => container.removeAttribute("data-spatial-camera-moving"));
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
+});

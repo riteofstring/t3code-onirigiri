@@ -170,6 +170,7 @@ export function useSavedPanePictures(
   setPicturesCovered: (covered: boolean) => void;
   stageRef: (element: HTMLElement | null) => void;
   stageViewport: { width: number; height: number; compact: boolean };
+  pictureStatus: () => Record<string, string | number | boolean>;
 } {
   "use no memo";
   const holdsLiveInMotion = motion?.holdsLive;
@@ -726,7 +727,7 @@ export function useSavedPanePictures(
     const chats = [...contentRevisionsRef.current.keys()];
     return {
       "pictures enabled": enabled,
-      "stage measured": stageSizeRef.current !== null,
+      "stage measured": stageSizeRef.current !== "",
       "chats with a current picture": `${chats.filter((id) => pictureFor(id) !== null).length} of ${chats.length}`,
       "pictures stored": savedRef.current?.size ?? "loading",
       "chats running": runningPanesRef.current.size,

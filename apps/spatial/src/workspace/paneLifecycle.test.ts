@@ -514,7 +514,7 @@ it("remounts every visible chat when motion ends on an empty cell, pictured or n
   for (const id of ["p25", "p26", "p27"]) expect(store.isMounted(id)).toBe(true);
 });
 
-it("admits no chat in overview and restores composer-first admission when it ends", () => {
+it("admits no arriving chat in overview and restores composer-first admission when it ends", () => {
   const store = make();
   for (const id of ["p0", "p1", "p2"]) store.registerChat(id, releasable());
   store.setOverview(true, null);

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { captureOnirigiriPanePicture } from "@riteofstring/onirigiri";
 import { snapshotPanePicture } from "./panePictureSnapshot";
 import { createSnapshotQueue } from "./panePictureQueue";
+import { PICTURE_REST_MS } from "./panePictureIdle";
 
 vi.mock("@riteofstring/onirigiri", () => ({ captureOnirigiriPanePicture: vi.fn() }));
 vi.mock("@t3tools/web/src/hooks/useTheme", () => ({ useTheme: vi.fn() }));
@@ -110,7 +111,7 @@ it("does not start native work after cancelled phase admission or for live produ
   expect(native).not.toHaveBeenCalled();
 });
 it.each(["keydown", "wheel", "input", "compositionstart", "pointerdown", "motion", "disable"])(
-  "cancels in-flight work on %s, keeps captures serial and resumes only after a few seconds of rest",
+  "cancels in-flight work on %s and keeps captures serial until work resumes",
   async (input) => {
     const queue = createSnapshotQueue();
     const active: AbortSignal[] = [];
@@ -203,7 +204,7 @@ it("pictures the most recently focused chat first", async () => {
   await vi.advanceTimersByTimeAsync(1000);
   expect(order).toEqual(["third", "second", "first"]);
 });
-it("saves a picture that finished encoding during motion once the camera stops", async () => {
+it("saves a picture that finished encoding during motion only after the rest that follows", async () => {
   const queue = createSnapshotQueue();
   let finish!: () => void;
   const save = vi.fn();
@@ -224,7 +225,9 @@ it("saves a picture that finished encoding during motion once the camera stops",
   await vi.advanceTimersByTimeAsync(300);
   expect(save).not.toHaveBeenCalled();
   queue.setActivity(true, false);
-  await vi.advanceTimersByTimeAsync(300);
+  await vi.advanceTimersByTimeAsync(PICTURE_REST_MS - 100);
+  expect(save).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(200);
   expect(save).toHaveBeenCalledOnce();
 });
 it("waits for a few seconds of rest after a navigation key before starting a missing picture", async () => {

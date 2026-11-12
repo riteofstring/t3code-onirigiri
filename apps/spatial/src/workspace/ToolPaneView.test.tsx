@@ -352,6 +352,25 @@ it("puts the cursor in a non-terminal pane's text field on arrival, and not whil
   expect(document.activeElement).toBe(host.querySelector('[aria-label="Terminal input"]'));
 });
 
+it("puts the cursor in a field that mounts long after arrival, passing over hidden inputs", async () => {
+  const browserPane = {
+    ...terminalPane,
+    kind: "surface",
+    surface: { id: "preview", kind: "preview", resourceId: null },
+  } as unknown as ToolPane;
+  await render(true, browserPane);
+  const composer = host.querySelector<HTMLTextAreaElement>('[aria-label="Chat composer"]')!;
+  composer.focus();
+  const slot = host.querySelector("[data-browser-surface-slot]")!;
+  const hidden = Object.assign(document.createElement("input"), { type: "hidden" });
+  await act(async () => slot.append(hidden));
+  expect(document.activeElement).toBe(composer);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
+  const address = document.createElement("input");
+  await act(async () => slot.append(address));
+  expect(document.activeElement).toBe(address);
+});
+
 it("does not navigate the workspace from a modal terminal", async () => {
   await render();
   host.setAttribute("role", "dialog");

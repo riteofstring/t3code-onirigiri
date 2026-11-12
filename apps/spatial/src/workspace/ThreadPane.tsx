@@ -205,6 +205,8 @@ function usePaneContent(
   if (presented && !renderContent) setPresented(false);
   else if (!presented && prepared) setPresented(true);
 
+  useEffect(() => () => void pictureLog.producers.delete(paneId), [paneId]);
+
   const arrival = useRef<{ start: number; marks: Record<string, number> } | null>(null);
   useEffect(() => {
     if (!pictureStatusRequested) return;
@@ -543,12 +545,14 @@ const PaneBody = memo(function PaneBody({
     if (!mounted) {
       snapshotPrepared.current = false;
       producerInspected.current = false;
+      pictureLog.producers.delete(paneId);
       return;
     }
     const inspectProducer = () => {
       if (!snapshots) return;
       const producer = livePaneProducer(element);
-      if (producer) pictureLog.producers.set(paneId, describeElement(producer));
+      if (producer && pictureStatusRequested)
+        pictureLog.producers.set(paneId, describeElement(producer));
       else pictureLog.producers.delete(paneId);
       setVisualRevision(snapshots.setLiveProducer(paneId, producer !== null));
     };
@@ -800,6 +804,7 @@ function PaneScrollState({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
+  const remember = useRef(() => {});
   useLayoutEffect(() => {
     if (!ready || restored.current || !root.current) return;
     const scrollers = root.current.querySelectorAll<HTMLElement>(
@@ -811,26 +816,35 @@ function PaneScrollState({
         element.scrollTop = saved.atEnd ? element.scrollHeight - element.clientHeight : saved.top;
     });
     restored.current = true;
+    remember.current();
   }, [positions, ready]);
-  // Positions are remembered as the chat scrolls. Reading them when the camera starts moving or when
-  // the chat unmounts made the browser restyle the page at the worst moment.
+  // Positions are remembered as the chat scrolls or its contents change height. Reading them when the
+  // camera starts moving or when the chat unmounts made the browser restyle the page at the worst moment.
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
-    const remember = () => {
-      if (!restored.current) return;
-      positions.current = [
+    const heights =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => remember.current());
+    remember.current = () => {
+      const scrollers = [
         ...element.querySelectorAll<HTMLElement>(
           ".messages-timeline-scroll, [data-tool-group-scroll]",
         ),
-      ].map((scroller) => ({
+      ];
+      for (const scroller of scrollers)
+        if (scroller.firstElementChild) heights?.observe(scroller.firstElementChild);
+      if (!restored.current) return;
+      positions.current = scrollers.map((scroller) => ({
         top: scroller.scrollTop,
         atEnd: scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1,
       }));
     };
-    element.addEventListener("scroll", remember, { capture: true, passive: true });
+    const onScroll = () => remember.current();
+    element.addEventListener("scroll", onScroll, { capture: true, passive: true });
     return () => {
-      element.removeEventListener("scroll", remember, true);
+      element.removeEventListener("scroll", onScroll, true);
+      heights?.disconnect();
+      remember.current = () => {};
       restored.current = false;
     };
   }, [positions]);

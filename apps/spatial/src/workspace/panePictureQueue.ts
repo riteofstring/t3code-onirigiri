@@ -133,6 +133,14 @@ export function createSnapshotQueue() {
     idle = requestIdleCallback((deadline) => {
       idle = null;
       if (draw !== current) return;
+      const rested = restedAt();
+      if (finished.length > 0 && performance.now() < rested) {
+        timer = setTimeout(() => {
+          timer = null;
+          next();
+        }, rested - performance.now());
+        return;
+      }
       const save = finished.shift();
       if (save) {
         drawing = true;

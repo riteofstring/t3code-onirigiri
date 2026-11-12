@@ -7,8 +7,11 @@ export function deferOtherPanes(root: HTMLElement | null) {
     if (pane.dataset.focused !== "true") pane.setAttribute(DEFERRED, "");
 }
 
-/** Renders held panes again one per idle period, nearest the focused pane first. */
-export function releaseDeferredPanes(root: HTMLElement | null): () => void {
+/** Renders held panes again one per idle period at rest, nearest the focused pane first. */
+export function releaseDeferredPanes(
+  root: HTMLElement | null,
+  isMoving: () => boolean = () => false,
+): () => void {
   const held = [...(root?.querySelectorAll<HTMLElement>(`${PANE}[${DEFERRED}]`) ?? [])];
   if (held.length === 0) return () => {};
   const centre = (pane: Element) => {
@@ -26,7 +29,7 @@ export function releaseDeferredPanes(root: HTMLElement | null): () => void {
   held.sort((a, b) => distance.get(a)! - distance.get(b)!);
   let idle: number | null = null;
   const next = () => {
-    held.shift()?.removeAttribute(DEFERRED);
+    if (!isMoving()) held.shift()?.removeAttribute(DEFERRED);
     idle = held.length > 0 ? requestIdleCallback(next, { timeout: 1000 }) : null;
   };
   idle = requestIdleCallback(next, { timeout: 1000 });

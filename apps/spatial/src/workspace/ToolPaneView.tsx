@@ -146,20 +146,26 @@ export function ToolPaneView({
   const rootRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, interactive, rootRef);
   // Arriving at a pane with a text field (file search, address bar) puts the cursor in it, so typing
-  // does not land in the chat left behind. The field can mount a few frames after the pane activates.
+  // does not land in the chat left behind. The field can mount any time after the pane activates.
   useEffect(() => {
-    if (!active || surface?.kind === "terminal") return;
-    let frames = 30;
-    let frame = requestAnimationFrame(function focusField() {
-      const root = rootRef.current;
-      if (!root || root.contains(document.activeElement)) return;
-      const field = root.querySelector<HTMLElement>(
-        "input:not(:disabled), textarea:not(:disabled)",
-      );
-      if (field) field.focus({ preventScroll: true });
-      else if (--frames > 0) frame = requestAnimationFrame(focusField);
+    const root = rootRef.current;
+    if (!active || surface?.kind === "terminal" || !root) return;
+    const focusField = () => {
+      if (root.contains(document.activeElement)) return true;
+      for (const field of root.querySelectorAll<HTMLElement>(
+        'input:not(:disabled, [type="hidden"]), textarea:not(:disabled)',
+      )) {
+        field.focus({ preventScroll: true });
+        if (document.activeElement === field) return true;
+      }
+      return false;
+    };
+    if (focusField()) return;
+    const fields = new MutationObserver(() => {
+      if (focusField()) fields.disconnect();
     });
-    return () => cancelAnimationFrame(frame);
+    fields.observe(root, { childList: true, subtree: true });
+    return () => fields.disconnect();
   }, [active, surface?.kind]);
   useEffect(() => {
     if (

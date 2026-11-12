@@ -23,9 +23,14 @@ const held = (panes: HTMLElement[]) => panes.map((pane) => isDeferredPane(pane.f
 
 beforeEach(() => {
   idle = [];
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => idle.push(callback));
+  const ids = new Map<number, () => void>();
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
+    idle.push(callback);
+    ids.set(ids.size + 1, callback);
+    return ids.size;
+  });
   vi.stubGlobal("cancelIdleCallback", (id: number) => {
-    idle[id - 1] = () => {};
+    idle = idle.filter((callback) => callback !== ids.get(id));
   });
 });
 
@@ -47,6 +52,18 @@ it("holds every pane but the focused one, then releases one per idle period from
   idle.shift()!();
   expect(held(panes)).toEqual([false, false, false, false]);
   expect(idle).toEqual([]);
+});
+
+it("releases nothing while the camera moves, and carries on once it rests", () => {
+  const { root, panes } = createPanes([0, 100, 200], 0);
+  let moving = true;
+  deferOtherPanes(root);
+  releaseDeferredPanes(root, () => moving);
+  idle.shift()!();
+  expect(held(panes)).toEqual([false, true, true]);
+  moving = false;
+  idle.shift()!();
+  expect(held(panes)).toEqual([false, false, true]);
 });
 
 it("releases every held pane at once when the release is cancelled", () => {

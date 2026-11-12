@@ -109,7 +109,10 @@ This page records constraints that span files and are easy to break without noti
 - At rest the focused chat mounts first. Its composer must report ready before visible peers mount,
   and timelines are revealed one at a time, two frames apart, nearest first, only after every pending composer is
   ready. Retained chats reveal their existing DOM at once.
-- In overview the lifecycle admits nothing and background preparation stops.
+- In overview no chat is admitted for arrival and thread data preparation stops. Chats without a
+  current picture are still mounted one at a time, hidden behind their cards, only to take their
+  picture: those on screen first, then nearest the pane overview was entered from. So a chat never
+  opened gets a picture in overview instead of keeping its title card.
 - When idle, one offscreen chat at a time is mounted only to take its picture: the chat focused
   most recently first, then the nearest and, at equal distance, a chat with no cover at all before
   one with a stale cover; it waits behind
@@ -193,13 +196,15 @@ the thread shell, which is never stale.
   cannot be drawn. While one is present the pane is never captured and its picture never counts as
   fresh, so at rest the pane stays live; during motion its existing picture still covers it. After
   removal it keeps its live view until current static pixels exist.
-- Pictures are taken one at a time while idle and at least 250 ms after the last input. Missing
+- Pictures are taken, saved and faded in one at a time while idle, and only after the workspace has
+  been at rest for 2 s: no key, wheel, pointer or text input and no camera motion. Missing
   pictures go first, then refreshes behind an existing cover, then panes mounted only to be pictured,
   which yield to any other due request; within each group the chat focused most recently goes
   first. Failures back off from 3 s, doubling up to five minutes.
-  Option+arrow navigation keys do not count as input. Nothing is taken while the camera moves or
-  during a full-screen transition, and a capture in progress is abandoned when either starts; once
-  motion ends, due pictures resume without a further quiet wait.
+  Any input, Option+arrow navigation keys included, and the end of a move restart the 2 s rest.
+  Nothing is taken while the camera moves or during a full-screen transition, and a capture in
+  progress is abandoned when either starts. A chat mounted only for its picture and not yet loaded
+  is unmounted on input. A picture that arrives while the camera moves shows without a fade.
 - A pane is only pictured while it is off screen or covered. Capturing on-screen chats was tried
   and produced one-frame blank panes, so a chat you are looking at gets its picture after it
   scrolls away, or in overview, where a card covers every chat: there the chats still mounted are

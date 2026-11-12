@@ -28,7 +28,12 @@ export function SavedPanePicture({
   }, [fading, onFadeIn, shown]);
   useEffect(() => {
     const element = ref.current;
-    if (!fading || !element) return;
+    if (!fading || !shown || !element) return;
+    // A picture that arrives while the camera moves shows at once: its animation is off, so no event would end the fade.
+    if (element.closest("[data-spatial-camera-moving]")) {
+      setFading(false);
+      return;
+    }
     const end = () => setFading(false);
     element.addEventListener("animationend", end);
     element.addEventListener("animationcancel", end);
@@ -36,7 +41,7 @@ export function SavedPanePicture({
       element.removeEventListener("animationend", end);
       element.removeEventListener("animationcancel", end);
     };
-  }, [fading]);
+  }, [fading, shown]);
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
