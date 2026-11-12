@@ -106,9 +106,11 @@ This page records constraints that span files and are easy to break without noti
 - When the camera starts moving, every mounted chat is asked whether it can leave its DOM. Chats
   with a picture and nothing to lose are removed after two frames, so the first frame of motion is
   already covered; the others keep their DOM for the whole move. Motion admits no new trees.
-- At rest the focused chat mounts first. Its composer must report ready before visible peers mount,
-  and timelines are revealed one at a time, two frames apart, nearest first, only after every pending composer is
-  ready. Retained chats reveal their existing DOM at once.
+- At rest the focused chat mounts first and alone: its composer, then its timeline. Visible peers
+  start mounting once it is interactive, or after 2.5 s if it never is, each with its composer
+  before its timeline; timelines are revealed one at a time, two frames apart, nearest first, only
+  after every pending composer is ready. Pictures are not taken while peers wait. Retained chats
+  reveal their existing DOM at once.
 - In overview no chat is admitted for arrival and thread data preparation stops. Chats without a
   current picture are still mounted one at a time, hidden behind their cards, only to take their
   picture: those on screen first, then nearest the pane overview was entered from. So a chat never

@@ -366,7 +366,7 @@ it("replaces distant clean trees with the nearest stale neighbours after a focus
   expect(mounted(store)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}`));
 });
 
-it("removes eligible chat DOM one chat per frame after a covered frame, then admits focused and peer composers before timelines", () => {
+it("removes eligible chat DOM one chat per frame after a covered frame, then admits the focused chat whole before its peer", () => {
   const store = make();
   store.setVisible("p0", true);
   store.setVisible("p1", true);
@@ -385,15 +385,15 @@ it("removes eligible chat DOM one chat per frame after a covered frame, then adm
   expect(mounted(store)).toEqual(["p0"]);
   expect(store.timelineDeferred("p0")).toBe(true);
   store.composerReady("p0");
-  expect(mounted(store)).toEqual(["p0", "p1"]);
-  vi.advanceTimersByTime(100);
-  expect(store.timelineDeferred("p0")).toBe(true);
-  store.composerReady("p1");
   vi.advanceTimersByTime(16);
-  expect(store.timelineDeferred("p1")).toBe(true);
+  expect(store.timelineDeferred("p0")).toBe(true);
   vi.advanceTimersByTime(16);
   expect(store.timelineDeferred("p0")).toBe(false);
+  expect(mounted(store)).toEqual(["p0"]);
+  store.setPresented("p0", true);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
   expect(store.timelineDeferred("p1")).toBe(true);
+  store.composerReady("p1");
   vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p1")).toBe(false);
 });
@@ -455,15 +455,17 @@ it("keeps background picture preparation behind the visible arrival and mounts i
   vi.advanceTimersByTime(2000);
   expect(store.isMounted("p2")).toBe(false);
   store.composerReady("p0");
+  vi.advanceTimersByTime(33);
+  store.setPresented("p0", true);
   store.composerReady("p1");
-  vi.advanceTimersByTime(33);
+  vi.advanceTimersByTime(16);
   expect(store.isMounted("p2")).toBe(false);
-  vi.advanceTimersByTime(33);
+  vi.advanceTimersByTime(50);
   expect(store.isMounted("p2")).toBe(true);
   expect(store.timelineDeferred("p2")).toBe(false);
 });
 
-it("stages a cold visible chat behind the focused composer", () => {
+it("stages a cold visible chat behind the whole focused chat, or after a wait if that never shows", () => {
   const store = make();
   store.registerChat("p0", releasable());
   store.registerChat("p1", releasable());
@@ -473,16 +475,26 @@ it("stages a cold visible chat behind the focused composer", () => {
   store.setMoving(false);
   expect(mounted(store)).toEqual(["p0"]);
   store.composerReady("p0");
-  expect(mounted(store)).toEqual(["p0", "p1"]);
-  expect(store.timelineDeferred("p1")).toBe(true);
-  vi.advanceTimersByTime(100);
-  expect(store.timelineDeferred("p0")).toBe(true);
-  store.composerReady("p1");
   vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p0")).toBe(false);
+  vi.advanceTimersByTime(1000);
+  expect(mounted(store)).toEqual(["p0"]);
+  store.setPresented("p0", true);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
   expect(store.timelineDeferred("p1")).toBe(true);
+  store.composerReady("p1");
   vi.advanceTimersByTime(32);
   expect(store.timelineDeferred("p1")).toBe(false);
+
+  store.setPresented("p0", false);
+  store.setMoving(true);
+  vi.advanceTimersByTime(100);
+  store.setMoving(false);
+  store.composerReady("p0");
+  vi.advanceTimersByTime(2400);
+  expect(mounted(store)).toEqual(["p0"]);
+  vi.advanceTimersByTime(200);
+  expect(mounted(store)).toEqual(["p0", "p1"]);
 });
 
 it("does not wait for a pending composer that leaves the destination", () => {
@@ -514,7 +526,7 @@ it("remounts every visible chat when motion ends on an empty cell, pictured or n
   for (const id of ["p25", "p26", "p27"]) expect(store.isMounted(id)).toBe(true);
 });
 
-it("admits no arriving chat in overview and restores composer-first admission when it ends", () => {
+it("admits no arriving chat in overview and restores focused-first admission when it ends", () => {
   const store = make();
   for (const id of ["p0", "p1", "p2"]) store.registerChat(id, releasable());
   store.setOverview(true, null);
@@ -528,6 +540,8 @@ it("admits no arriving chat in overview and restores composer-first admission wh
   expect(store.timelineDeferred("p1")).toBe(true);
   expect(store.isMounted("p2")).toBe(false);
   store.composerReady("p1");
+  expect(store.isMounted("p2")).toBe(false);
+  store.setPresented("p1", true);
   expect(store.isMounted("p2")).toBe(true);
 });
 

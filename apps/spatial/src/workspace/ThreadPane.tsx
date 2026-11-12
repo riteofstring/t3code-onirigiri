@@ -419,6 +419,11 @@ const PaneBody = memo(function PaneBody({
     if (!mounted || (!composerReady && preparing)) return;
     lifecycle?.composerReady(paneId);
   }, [composerReady, lifecycle, mounted, paneId, preparing]);
+  const chatShown = mounted && !preparing;
+  useEffect(() => {
+    lifecycle?.setPresented(paneId, chatShown);
+    return () => lifecycle?.setPresented(paneId, false);
+  }, [chatShown, lifecycle, paneId]);
   const [pictureLeaving, setPictureLeaving] = useState(false);
   const wasPreparing = useRef(preparing);
   useLayoutEffect(() => {
