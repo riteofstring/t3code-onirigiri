@@ -401,6 +401,19 @@ it("leaves the cursor where Tab put it when a field mounts afterwards", async ()
   expect(document.activeElement).toBe(composer);
 });
 
+it("stops waiting for a field three seconds after arrival", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const { composer, slot } = await arriveFromComposer();
+    await act(async () => vi.advanceTimersByTime(3000));
+    composer.focus();
+    await act(async () => slot.append(document.createElement("input")));
+    expect(document.activeElement).toBe(composer);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("does not navigate the workspace from a modal terminal", async () => {
   await render();
   host.setAttribute("role", "dialog");

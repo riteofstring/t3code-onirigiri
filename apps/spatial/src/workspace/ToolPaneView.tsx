@@ -71,6 +71,7 @@ const NO_THREAD_AVAILABILITY = {
   lineageAvailable: false,
 };
 
+const ARRIVAL_FOCUS_WAIT_MS = 3000;
 const TEXT_FIELDS =
   'input:not([type]), input[type="text"], input[type="search"], input[type="url"], textarea';
 
@@ -168,7 +169,8 @@ export function ToolPaneView({
     root.focus({ preventScroll: true });
     // The field can be there but not focusable until the pane is interactive a few frames later,
     // which no mutation inside the pane reports; or it can mount later still. A click anywhere,
-    // or Tab or Escape, means the user has chosen where the cursor goes.
+    // or Tab or Escape, means the user has chosen where the cursor goes; a field that appears
+    // after ARRIVAL_FOCUS_WAIT_MS is no longer part of the arrival.
     let frames = 30;
     let frame = requestAnimationFrame(function retry() {
       if (focusField()) stop();
@@ -177,8 +179,10 @@ export function ToolPaneView({
     const fields = new MutationObserver(() => {
       if (focusField()) stop();
     });
+    const expiry = window.setTimeout(() => stop(), ARRIVAL_FOCUS_WAIT_MS);
     const stop = () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(expiry);
       fields.disconnect();
       window.removeEventListener("pointerdown", stop, true);
       window.removeEventListener("keydown", leave, true);

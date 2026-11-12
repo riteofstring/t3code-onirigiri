@@ -393,8 +393,8 @@ it("keeps chat DOM through a move, then admits a cold focused chat whole before 
   store.setFocus("p5");
   for (const id of ["p5", "p6"]) store.setVisible(id, true);
   vi.advanceTimersByTime(48);
-  expect(departing.prepareRemoval).not.toHaveBeenCalled();
-  expect(store.holdsLiveInMotion("p0")).toBe(true);
+  expect(departing.prepareRemoval).toHaveBeenCalledOnce();
+  expect(store.holdsLiveInMotion("p0")).toBe(false);
   expect(mounted(store)).toEqual(["p0"]);
   store.setMoving(false);
   expect(mounted(store)).toEqual(["p0", "p5"]);
@@ -413,7 +413,7 @@ it("keeps chat DOM through a move, then admits a cold focused chat whole before 
   expect(store.timelineDeferred("p6")).toBe(false);
 });
 
-it("keeps the focused chats live through a move and brings the others back one at a time", () => {
+it("keeps only the focused chat live through a move and brings the others back one at a time", () => {
   const store = make();
   store.setPictures(() => true);
   const ids = ["p0", "p1", "p2", "p3", "p4"];
@@ -428,19 +428,20 @@ it("keeps the focused chats live through a move and brings the others back one a
   expect(store.holdsLiveInMotion("p1")).toBe(false);
   store.setFocus("p1");
   expect(store.holdsLiveInMotion("p1")).toBe(true);
+  expect(store.holdsLiveInMotion("p0")).toBe(false);
   expect(store.revealStep()).toBe(1);
   store.setVisible("p4", false);
   const covered = () => ids.filter((id) => store.coveredAtRest(id));
-  expect(covered()).toEqual(["p2", "p3", "p4"]);
+  expect(covered()).toEqual(["p0", "p2", "p3", "p4"]);
   store.setMoving(false);
-  expect(covered()).toEqual(["p2", "p3"]);
+  expect(covered()).toEqual(["p0", "p2", "p3"]);
+  vi.advanceTimersByTime(32);
+  expect(covered()).toEqual(["p0", "p3"]);
   vi.advanceTimersByTime(32);
   expect(covered()).toEqual(["p3"]);
-  vi.advanceTimersByTime(16);
-  expect(covered()).toEqual(["p3"]);
-  vi.advanceTimersByTime(16);
+  vi.advanceTimersByTime(32);
   expect(covered()).toEqual([]);
-  expect(store.revealStep()).toBe(3);
+  expect(store.revealStep()).toBe(4);
 });
 
 it("covers no chat that was live for the move, and forgets the turns when the next move starts", () => {

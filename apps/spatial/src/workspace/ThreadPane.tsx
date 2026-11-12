@@ -450,6 +450,8 @@ const PaneBody = memo(function PaneBody({
 
   const focusOnArrival = useRef(false);
   const [composerNavigations, setComposerNavigations] = useState(0);
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const editing =
@@ -470,7 +472,7 @@ const PaneBody = memo(function PaneBody({
     };
     const composerNavigation = () => {
       focusOnArrival.current = true;
-      setComposerNavigations((count) => count + 1);
+      if (focusedRef.current) setComposerNavigations((count) => count + 1);
     };
     window.addEventListener(COMPOSER_NAVIGATION, composerNavigation);
     window.addEventListener("keydown", key, true);

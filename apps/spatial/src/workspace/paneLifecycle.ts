@@ -493,14 +493,29 @@ export function createPaneLifecycleStore(
     },
     setFocus: (paneId: string | null) => {
       if (focused === paneId || (paneId !== null && !panes.has(paneId))) return;
+      const previous = focused;
       focused = paneId;
       arriving = null;
       overdue.clear();
       if (paneId !== null) focusedAt.set(paneId, performance.now());
-      if (moving && paneId !== null && covered.delete(paneId)) {
-        motionHolds.set(paneId, true);
-        revealStep += 1;
-        for (const listener of motionListeners) listener();
+      if (moving) {
+        const arrived = paneId !== null && covered.delete(paneId);
+        if (arrived) motionHolds.set(paneId, true);
+        const left = previous === null ? undefined : chats.get(previous);
+        const leaves =
+          left !== undefined &&
+          mounted.has(previous!) &&
+          motionHolds.get(previous!) === true &&
+          !left.blocksRemoval();
+        if (leaves) {
+          motionHolds.set(previous!, false);
+          left.prepareRemoval();
+          covered.add(previous!);
+        }
+        if (arrived || leaves) {
+          revealStep += 1;
+          for (const listener of motionListeners) listener();
+        }
       }
       if (capturing?.paneId === focused) {
         capturing = null;

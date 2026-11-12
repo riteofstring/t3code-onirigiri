@@ -109,6 +109,8 @@ This page records constraints that span files and are easy to break without noti
   The focused chat always stays live, including a loaded chat that takes focus during the move, and
   its composer keeps the keyboard, so typing lands while the camera is still gliding. Covering it
   until the stop delayed the first key by about half a second and dropped keys pressed on the way.
+  A chat that loses focus during the move is covered again if its picture can cover it, so a run
+  of moves keeps one chat live, not every chat passed.
   Nothing is removed for a move, because rebuilding a chat on arrival costs most of a second and
   removing several froze the start of the move. Motion admits no new trees.
 - At rest visible chats load one at a time: the focused chat first, then the nearest. Each mounts
