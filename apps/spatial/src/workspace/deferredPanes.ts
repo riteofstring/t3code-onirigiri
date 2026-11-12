@@ -1,9 +1,11 @@
 const DEFERRED = "data-spatial-deferred";
 const PANE = '[data-onirigiri-slot="pane"]';
+// Only chats are held: they have a picture to show meanwhile, other panes would be blank.
+const CHAT = `${PANE}[data-onirigiri-pane-id^="thread:"]`;
 
-/** Holds every pane but the focused one unrendered, so a layout switch resizes one pane at once. */
+/** Holds every chat but the focused one unrendered, so a layout switch resizes one chat at once. */
 export function deferOtherPanes(root: HTMLElement | null) {
-  for (const pane of root?.querySelectorAll<HTMLElement>(PANE) ?? [])
+  for (const pane of root?.querySelectorAll<HTMLElement>(CHAT) ?? [])
     if (pane.dataset.focused !== "true") pane.setAttribute(DEFERRED, "");
 }
 
@@ -33,9 +35,10 @@ export function releaseDeferredPanes(
     idle = held.length > 0 ? requestIdleCallback(next, { timeout: 1000 }) : null;
   };
   idle = requestIdleCallback(next, { timeout: 1000 });
-  // Panes still held stay held: the next release carries on with them, nearest first.
+  // The layout is changing again: every pane it shows must be live, so nothing stays held.
   return () => {
     if (idle !== null) cancelIdleCallback(idle);
+    for (const pane of held) pane.removeAttribute(DEFERRED);
   };
 }
 

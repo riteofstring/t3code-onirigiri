@@ -363,32 +363,35 @@ async function arriveFromComposer() {
   const composer = host.querySelector<HTMLTextAreaElement>('[aria-label="Chat composer"]')!;
   composer.focus();
   await render(true, browserPane);
-  return { composer, slot: host.querySelector("[data-browser-surface-slot]")! };
+  return {
+    composer,
+    root: host.querySelector<HTMLElement>("[data-spatial-surface]")!,
+    slot: host.querySelector("[data-browser-surface-slot]")!,
+  };
 }
 
-it("puts the cursor in a text field that mounts or is enabled long after arrival, passing over other inputs", async () => {
-  const { composer, slot } = await arriveFromComposer();
+it("takes the keyboard from the chat left behind at once, then gives it to a text field that mounts or is enabled later", async () => {
+  const { root, slot } = await arriveFromComposer();
+  expect(document.activeElement).toBe(root);
   const checkbox = Object.assign(document.createElement("input"), { type: "checkbox" });
   const address = Object.assign(document.createElement("input"), { disabled: true });
   await act(async () => slot.append(checkbox, address));
   await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
-  expect(document.activeElement).toBe(composer);
+  key(root, "a");
+  expect(document.activeElement).toBe(root);
   await act(async () => {
     address.disabled = false;
   });
   expect(document.activeElement).toBe(address);
 });
 
-it.each(["a click", "a typed key"])(
-  "leaves the cursor alone when a field mounts after %s",
-  async (action) => {
-    const { composer, slot } = await arriveFromComposer();
-    if (action === "a click") composer.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    else key(composer, "a");
-    await act(async () => slot.append(document.createElement("input")));
-    expect(document.activeElement).toBe(composer);
-  },
-);
+it("leaves the cursor where a click put it when a field mounts afterwards", async () => {
+  const { composer, slot } = await arriveFromComposer();
+  composer.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  composer.focus();
+  await act(async () => slot.append(document.createElement("input")));
+  expect(document.activeElement).toBe(composer);
+});
 
 it("does not navigate the workspace from a modal terminal", async () => {
   await render();

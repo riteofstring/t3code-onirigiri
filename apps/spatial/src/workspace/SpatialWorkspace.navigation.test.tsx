@@ -98,7 +98,6 @@ vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({
   PaneLoading: () => null,
   ThreadCard: () => null,
-  ToolCard: () => null,
 }));
 vi.mock("./DraftPane", () => ({
   DraftPane: ({ paneId, onAddPane }: { paneId: string; onAddPane: (paneId: string) => void }) => (

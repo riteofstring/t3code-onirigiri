@@ -10,6 +10,7 @@ function createPanes(lefts: number[], focused: number) {
   const panes = lefts.map((left, index) => {
     const pane = document.createElement("section");
     pane.dataset.onirigiriSlot = "pane";
+    pane.dataset.onirigiriPaneId = `thread:e:${index}`;
     pane.dataset.focused = String(index === focused);
     pane.getBoundingClientRect = () => new DOMRect(left, 0, 100, 100);
     pane.append(document.createElement("div"));
@@ -66,15 +67,16 @@ it("releases nothing while the camera moves, and carries on once it rests", () =
   expect(held(panes)).toEqual([false, false, true]);
 });
 
-it("keeps panes held when a release is cancelled, for the next release to carry on with", () => {
+it("releases every held pane at once when the release is cancelled", () => {
   const { root, panes } = createPanes([0, 100, 200], 0);
   deferOtherPanes(root);
-  const cancel = releaseDeferredPanes(root);
-  idle.shift()!();
-  cancel();
-  expect(idle).toEqual([]);
-  expect(held(panes)).toEqual([false, false, true]);
-  releaseDeferredPanes(root);
-  idle.shift()!();
+  releaseDeferredPanes(root)();
   expect(held(panes)).toEqual([false, false, false]);
+});
+
+it("holds chats only, since other panes have no picture to show meanwhile", () => {
+  const { root, panes } = createPanes([0, 100, 200], 0);
+  panes[1]!.dataset.onirigiriPaneId = "tool-one";
+  deferOtherPanes(root);
+  expect(held(panes)).toEqual([false, false, true]);
 });

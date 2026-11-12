@@ -495,6 +495,9 @@ it("stages a cold visible chat behind the whole focused chat, or after a wait if
   expect(mounted(store)).toEqual(["p0"]);
   vi.advanceTimersByTime(200);
   expect(mounted(store)).toEqual(["p0", "p1"]);
+  store.composerReady("p1");
+  vi.advanceTimersByTime(64);
+  expect(store.timelineDeferred("p1")).toBe(false);
 });
 
 it("does not wait for a pending composer that leaves the destination", () => {
@@ -587,13 +590,15 @@ it("still pictures no chat that is on screen outside overview", () => {
   expect(store.pictureMount("p2")).toBe("background");
 });
 
-it("drops a chat still loading for its picture when input arrives, and keeps one that has loaded", () => {
+it("drops a chat still loading for its picture a frame after input arrives, and keeps one that has loaded", () => {
   const store = make();
   store.setPictures((id) => id === "p0");
   store.setBackgroundPictures(true);
   vi.advanceTimersByTime(2001);
   expect(mounted(store)).toEqual(["p0", "p1"]);
   window.dispatchEvent(new Event("keydown"));
+  expect(mounted(store)).toEqual(["p0", "p1"]);
+  vi.advanceTimersByTime(16);
   expect(mounted(store)).toEqual(["p0"]);
   vi.advanceTimersByTime(2001);
   expect(mounted(store)).toEqual(["p0", "p1"]);

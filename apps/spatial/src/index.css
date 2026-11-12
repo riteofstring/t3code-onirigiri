@@ -162,7 +162,7 @@
   content-visibility: hidden;
 }
 
-/* A held pane keeps its picture and leaves its live contents unrendered at their old size until released or focused. */
+/* A held chat keeps its picture and leaves its live contents unrendered at their old size until released or focused. */
 .spatial-workspace
   [data-onirigiri-slot="pane"][data-spatial-deferred]:not([data-focused="true"])
   .onirigiri-pane__live-surface {

@@ -148,13 +148,13 @@ export function ToolPaneView({
   }
   const rootRef = useRef<HTMLDivElement>(null);
   const activity = usePaneActivity(active, interactive, rootRef);
-  // Arriving at a pane with a text field (file search, address bar) puts the cursor in it, so typing
-  // does not land in the chat left behind. The field can mount any time after the pane activates.
+  // Arriving at a pane takes the keyboard from the chat left behind at once, so typing never lands
+  // there, and hands it to the pane's text field (file search, address bar) once that can take it.
   useEffect(() => {
     const root = rootRef.current;
-    if (!active || surface?.kind === "terminal" || !root) return;
+    if (!active || !surface || surface.kind === "terminal" || !root) return;
     const focusField = () => {
-      if (root.contains(document.activeElement)) return true;
+      if (root.contains(document.activeElement) && document.activeElement !== root) return true;
       for (const field of root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
         TEXT_FIELDS,
       )) {
@@ -165,9 +165,10 @@ export function ToolPaneView({
       return false;
     };
     if (focusField()) return;
-    // The arrival owns the cursor only until the user acts: a field that mounts after a click or a
-    // typed key must not pull the cursor back. A field can also be there but not focusable until
-    // the pane is interactive a few frames later, which no mutation inside the pane reports.
+    root.focus({ preventScroll: true });
+    // The field can be there but not focusable until the pane is interactive a few frames later,
+    // which no mutation inside the pane reports; or it can mount later still. A click anywhere
+    // means the user has chosen where the cursor goes.
     let frames = 30;
     let frame = requestAnimationFrame(function retry() {
       if (focusField()) stop();
@@ -180,10 +181,6 @@ export function ToolPaneView({
       cancelAnimationFrame(frame);
       fields.disconnect();
       window.removeEventListener("pointerdown", stop, true);
-      window.removeEventListener("keydown", onKey, true);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (!event.altKey && !event.ctrlKey && !event.metaKey) stop();
     };
     fields.observe(root, {
       childList: true,
@@ -192,7 +189,6 @@ export function ToolPaneView({
       attributeFilter: ["disabled"],
     });
     window.addEventListener("pointerdown", stop, true);
-    window.addEventListener("keydown", onKey, true);
     return stop;
   }, [active, surface?.kind]);
   useEffect(() => {
@@ -436,7 +432,8 @@ export function ToolPaneView({
     <ChatViewActivityContext value={activity}>
       <div
         ref={rootRef}
-        className="flex h-full w-full min-w-0 flex-col bg-background text-foreground"
+        tabIndex={-1}
+        className="flex h-full w-full min-w-0 flex-col bg-background text-foreground outline-none"
         data-spatial-surface={surface?.kind ?? "empty"}
         onKeyDownCapture={(event) => {
           const native = event.nativeEvent;

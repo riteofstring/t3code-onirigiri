@@ -159,8 +159,18 @@ export function createPaneLifecycleStore(
     capturing = null;
     if (hasPicture(paneId) || retry) retryAt.delete(paneId);
     // Input arrived while this chat was still loading for its picture. Drop the half-built tree, or
-    // it finishes mounting during the move that the input starts.
-    if (retry && !loaded.has(paneId) && !retained().has(paneId)) unmount(paneId);
+    // it finishes mounting during the move that the input starts; a frame later, so the key that
+    // arrived paints first.
+    if (retry && !loaded.has(paneId))
+      requestAnimationFrame(() => {
+        if (
+          !disposed &&
+          capturing?.paneId !== paneId &&
+          !loaded.has(paneId) &&
+          !retained().has(paneId)
+        )
+          unmount(paneId);
+      });
   };
   const adjacent = (paneId: string) => [1, 1000].includes(distance(paneId));
   const distance = (paneId: string) => {
@@ -215,13 +225,15 @@ export function createPaneLifecycleStore(
       keepDataReady();
     });
   };
+  // A composer that outlasted its wait no longer holds the other chats' timelines or pictures back.
+  const awaitsComposer = () => [...pendingComposers].some((id) => !overdue.has(id));
   const revealTimelines = () => {
     if (![...mounted].some((id) => deferred.has(id))) return;
-    if (moving || pendingComposers.size > 0 || arrivalFrame !== null) return;
+    if (moving || awaitsComposer() || arrivalFrame !== null) return;
     arrivalFrame = requestAnimationFrame(() => {
       arrivalFrame = requestAnimationFrame(() => {
         arrivalFrame = null;
-        if (moving || pendingComposers.size > 0) return;
+        if (moving || awaitsComposer()) return;
         const next = [...mounted]
           .filter((id) => deferred.has(id))
           .sort((a, b) => distance(a) - distance(b))[0];
@@ -243,7 +255,7 @@ export function createPaneLifecycleStore(
     }
     if (focused && panes.has(focused)) mount(focused);
     if (
-      pendingComposers.size > 0 ||
+      awaitsComposer() ||
       arrivalTimer !== null ||
       [...mounted].some((id) => deferred.has(id)) ||
       !backgroundPictures ||

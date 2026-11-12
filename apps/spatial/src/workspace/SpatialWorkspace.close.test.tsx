@@ -174,7 +174,6 @@ vi.mock("./SavedPanePicture", () => ({ SavedPanePicture: () => null }));
 vi.mock("./ThreadCard", () => ({
   PaneLoading: () => null,
   ThreadCard: () => null,
-  ToolCard: () => null,
 }));
 vi.mock("./DraftPane", () => ({ DraftPane: () => null }));
 vi.mock("@t3tools/web/src/hooks/useHandleNewThread", () => {

@@ -228,3 +228,23 @@ it("shows a picture that arrives while the camera moves without a fade, then or 
   await act(() => container.removeAttribute("data-spatial-camera-moving"));
   expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
 });
+
+it("shows a picture that arrives before the workspace has rested without a fade", async () => {
+  await act(() => {
+    root!.render(
+      <SavedPanePicture
+        image={new Blob(["png"])}
+        cssSize={captureSize}
+        preparedUrl={null}
+        pictureUrl={pictureUrl}
+        summary="Thread"
+        fadeIn
+        mayFade={() => false}
+      />,
+    );
+  });
+  const image = container.querySelector("img")!;
+  await act(() => pending[0]!.resolve());
+  expect(image.classList.contains("spatial-pane-picture-in")).toBe(false);
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Thread");
+});

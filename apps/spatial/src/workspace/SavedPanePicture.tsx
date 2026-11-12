@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 export function SavedPanePicture({
   image,
@@ -29,14 +29,17 @@ export function SavedPanePicture({
   useEffect(() => {
     if (fading && shown) onFadeIn?.();
   }, [fading, onFadeIn, shown]);
+  // Decided before the picture's first paint, so one that may not fade never starts to. A picture
+  // that arrives while the camera moves has its animation off, and no event would end the fade.
+  useLayoutEffect(() => {
+    if (!fading || !shown) return;
+    if (mayFade?.() === false || ref.current?.closest("[data-spatial-camera-moving]"))
+      setFading(false);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- asked once, when the picture first shows
+  }, [fading, shown]);
   useEffect(() => {
     const element = ref.current;
     if (!fading || !shown || !element) return;
-    // A picture that arrives while the camera moves shows at once: its animation is off, so no event would end the fade.
-    if (mayFade?.() === false || element.closest("[data-spatial-camera-moving]")) {
-      setFading(false);
-      return;
-    }
     const end = () => setFading(false);
     element.addEventListener("animationend", end);
     element.addEventListener("animationcancel", end);
@@ -44,7 +47,6 @@ export function SavedPanePicture({
       element.removeEventListener("animationend", end);
       element.removeEventListener("animationcancel", end);
     };
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- asked once, when the picture first shows
   }, [fading, shown]);
   useEffect(() => {
     const element = ref.current;
