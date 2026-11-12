@@ -381,11 +381,14 @@ const PaneBody = memo(function PaneBody({
   const scrollPositions = useRef<{ top: number; atEnd: boolean }[]>([]);
   const localStateAtRisk = useRef(false);
   const scrollGestureAt = useRef(-Infinity);
-  const scrolledSincePicture = useRef(false);
+  const scrollPointers = useRef(new Set<number>());
+  const changedSincePicture = useRef(false);
   const arrivalText = useRef("");
   const noteLocalEdit = (event: { target: EventTarget }) => {
     if (!(event.target instanceof Element && event.target.closest(COMPOSER_EDITOR)))
       localStateAtRisk.current = true;
+    // A picture from before the edit would show the old draft for the length of a move.
+    else changedSincePicture.current = true;
   };
   const shell = useThreadShell(thread);
   const snapshots = use(PaneSnapshotContext);
@@ -395,11 +398,11 @@ const PaneBody = memo(function PaneBody({
   removal.current = {
     blocksRemoval: () => {
       flushPaneVisualChanges(paneId);
-      if (scrolledSincePicture.current && snapshots?.hasFreshPicture(paneId))
-        scrolledSincePicture.current = false;
+      if (changedSincePicture.current && snapshots?.hasFreshPicture(paneId))
+        changedSincePicture.current = false;
       return (
         localStateAtRisk.current ||
-        scrolledSincePicture.current ||
+        changedSincePicture.current ||
         arrivalText.current !== "" ||
         maximizedRef.current ||
         !snapshots?.timelinePicture(paneId)
@@ -598,8 +601,11 @@ const PaneBody = memo(function PaneBody({
           target.matches(".messages-timeline-scroll, [data-tool-group-scroll]");
         if (restored || next === (previous ?? "0|0")) return;
         // A picture from before the user scrolled would show the old position for the length of a move.
-        if (performance.now() - scrollGestureAt.current < SCROLL_GESTURE_MS)
-          scrolledSincePicture.current = true;
+        if (
+          scrollPointers.current.size > 0 ||
+          performance.now() - scrollGestureAt.current < SCROLL_GESTURE_MS
+        )
+          changedSincePicture.current = true;
       }
       if (!snapshotPrepared.current) return;
       if (active && picturable !== null) snapshots?.invalidate(paneId, true);
@@ -687,13 +693,29 @@ const PaneBody = memo(function PaneBody({
     const events = ["scroll", "input", "drop", "load"] as const;
     for (const event of events)
       element.addEventListener(event, invalidate, { capture: true, passive: true });
-    const gestures = ["wheel", "pointerdown", "touchmove", "keydown"] as const;
-    const noteGesture = () => {
+    const gestures = [
+      "wheel",
+      "touchmove",
+      "keydown",
+      "pointerdown",
+      "pointerup",
+      "pointercancel",
+    ] as const;
+    // A scrollbar can be held for any time before it is dragged; keys in the composer scroll nothing the user aimed at.
+    const noteGesture = (event: Event) => {
+      if (event.type === "keydown" && (event.target as Element).closest?.(COMPOSER_EDITOR)) return;
+      if (event.type === "pointerdown")
+        scrollPointers.current.add((event as PointerEvent).pointerId);
+      else if (event.type.startsWith("pointer"))
+        scrollPointers.current.delete((event as PointerEvent).pointerId);
       scrollGestureAt.current = performance.now();
     };
     for (const event of gestures)
       element.addEventListener(event, noteGesture, { capture: true, passive: true });
+    const releasePointers = () => scrollPointers.current.clear();
+    window.addEventListener("blur", releasePointers);
     return () => {
+      window.removeEventListener("blur", releasePointers);
       for (const event of gestures) element.removeEventListener(event, noteGesture, true);
       const pending = observer.takeRecords();
       if (element.childElementCount > 0 && (!lifecycle || lifecycle.isMounted(paneId))) {

@@ -463,7 +463,7 @@ it("covers no chat that was live for the move, and forgets the turns when the ne
   expect(store.revealStep()).toBe(0);
 });
 
-it("holds a blocked chat live for the entire move and covers the others, still loaded", () => {
+it("holds a blocked chat live for the entire move", () => {
   const store = make();
   store.setPictures(() => true);
   let blocked = true;

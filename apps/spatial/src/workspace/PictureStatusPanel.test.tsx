@@ -36,6 +36,6 @@ it("reads out the browser's picture support, the workspace's counts and what kee
   expect(text).toContain("html-in-canvas: false");
   expect(text).toContain("webgpu: no WebGPU");
   expect(text).toContain("chats loaded: 3");
-  expect(text).toContain("chats kept live by: writing-helper#wh");
+  expect(text).toContain("live producers detected: writing-helper#wh");
   await act(async () => root.unmount());
 });

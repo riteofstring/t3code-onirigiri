@@ -111,10 +111,11 @@ This page records constraints that span files and are easy to break without noti
   until the stop delayed the first key by about half a second and dropped keys pressed on the way.
   A chat that loses focus during the move is covered again if its picture can cover it, so a run
   of moves keeps one chat live, not every chat passed.
-  A chat the user has scrolled since its picture was taken stays live through moves until a
-  picture shows the new position: its old picture would jump back to where it was for the length
-  of the move. Only a scroll within a second of a wheel, pointer, touch or key event in that chat
-  counts, so a timeline following a running turn does not hold its chat live.
+  A chat the user has scrolled, or whose draft they have edited, since its picture was taken stays
+  live through moves until a picture shows the change: its old picture would show the old position
+  or draft for the length of the move. A scroll counts while a pointer is held in that chat, or
+  within a second of a wheel, touch or key event outside the composer, so a timeline following a
+  running turn does not hold its chat live.
   Nothing is removed for a move, because rebuilding a chat on arrival costs most of a second and
   removing several froze the start of the move. Motion admits no new trees.
 - At rest visible chats load one at a time: the focused chat first, then the nearest. Each mounts

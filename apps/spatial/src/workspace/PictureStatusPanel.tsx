@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** What the picture system last did, kept for the on-page readout. */
 export const pictureLog = {
@@ -35,10 +35,12 @@ type Status = Readonly<Record<string, string | number | boolean>>;
 export function PictureStatusPanel({ read }: { read: () => Status }) {
   const [status, setStatus] = useState<Status>({});
   const [gpu, setGpu] = useState("checking");
+  const latestRead = useRef(read);
+  latestRead.current = read;
   useEffect(() => {
-    const timer = setInterval(() => setStatus(read()), 1000);
+    const timer = setInterval(() => setStatus(latestRead.current()), 1000);
     return () => clearInterval(timer);
-  }, [read]);
+  }, []);
   useEffect(() => {
     const request = navigator.gpu?.requestAdapter();
     if (!request) return setGpu("no WebGPU");
@@ -55,7 +57,7 @@ export function PictureStatusPanel({ read }: { read: () => Status }) {
     "captures started / saved / failed": `${pictureLog.started} / ${pictureLog.saved} / ${pictureLog.failed}`,
     "last capture": pictureLog.last,
     "focused chat (ms after focus)": pictureLog.arrival,
-    "chats kept live by": [...new Set(pictureLog.producers.values())].join(", ") || "nothing",
+    "live producers detected": [...new Set(pictureLog.producers.values())].join(", ") || "nothing",
   };
   return (
     <pre

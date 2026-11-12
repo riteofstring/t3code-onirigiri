@@ -1630,6 +1630,37 @@ it("keeps a chat the user scrolled live until its picture shows the new position
   });
 });
 
+it("keeps a chat live after a scrollbar held for a while and then dragged", async () => {
+  vi.useFakeTimers({ toFake: ["performance"] });
+  try {
+    const blocks = await mountInspectedChat();
+    const timeline = container.querySelector<HTMLElement>(".messages-timeline-scroll")!;
+    snapshots.hasFreshPicture = () => false;
+    await act(() => {
+      timeline.scrollTop = 200;
+      timeline.dispatchEvent(new Event("scroll"));
+      timeline.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 7 }));
+      vi.advanceTimersByTime(5000);
+      timeline.scrollTop = 640;
+      timeline.dispatchEvent(new Event("scroll"));
+      expect(blocks()).toBe(true);
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a chat live after a composer edit until its picture shows the draft", async () => {
+  const blocks = await mountInspectedChat();
+  snapshots.hasFreshPicture = () => false;
+  await act(() => {
+    dispatchSignal(container.querySelector("textarea")!, "input");
+    expect(blocks()).toBe(true);
+    snapshots.hasFreshPicture = () => true;
+    expect(blocks()).toBe(false);
+  });
+});
+
 it("moves a chat that gains a live producer as its stored picture", async () => {
   const blocks = await mountInspectedChat();
   await act(() => {
