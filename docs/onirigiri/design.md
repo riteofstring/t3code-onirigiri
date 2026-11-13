@@ -5,16 +5,19 @@ workspace of thread panes and the tool panes users add beside them. The standalo
 `onirigiri-t3-adapter` owns `@riteofstring/onirigiri-t3` and its pure row reconciliation; its README
 states those rules. The adapter keeps saved row order; `useWorkspacePanes` then orders rows by the
 sidebar's project order, so the sidebar decides row order and the saved layout decides the panes
-within each row. The spatial package links its unchanged TypeScript source exports directly into
+within each row. The spatial package compiles its unchanged TypeScript source exports directly into
 the application bundle. T3 retains ownership of selectors, persistence, routes and pane lifecycle.
 This page records constraints that span files and are easy to break without noticing.
 
 ## Build
 
-- The sibling adapter is validated at commit `02f675942c6d8021451955d9f7cb3a56773ad734`.
-  Its `link:` dependency reads that checkout directly; keep it on the recorded revision when
-  reproducing this build. T3 worktrees that adopt the link share the same sibling checkout.
-  Adapter tests and Code Polishy checks belong there; workspace integration tests remain here.
+- The engine and the adapter are vendored tarballs in `apps/spatial/vendor`, pinned by integrity in
+  the lockfile: engine commit `11ef75c`, adapter commit
+  `02f675942c6d8021451955d9f7cb3a56773ad734`. Their tests and Code Polishy checks belong in their
+  own repositories; workspace integration tests remain here.
+- The server package bundles `apps/spatial/dist` as its client, so the desktop app and `t3` serve
+  the workspace. The desktop app turns on Chromium's `CanvasDrawElement` feature before startup,
+  because pane pictures need it.
 - `apps/spatial/vite.config.ts` inherits the web app's whole toolchain (React Compiler, Tailwind,
   defines, dev proxy) so T3 components compile exactly as upstream, and replaces only the router
   plugin with one pointed at the web app's routes, because the app runs T3's route tree.

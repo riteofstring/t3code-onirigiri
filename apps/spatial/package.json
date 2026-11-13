@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@effect/atom-react": "catalog:",
-    "@riteofstring/onirigiri": "link:../../../onirigiri-beta",
-    "@riteofstring/onirigiri-t3": "link:../../../onirigiri-t3-adapter",
+    "@riteofstring/onirigiri": "file:./vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz",
+    "@riteofstring/onirigiri-t3": "file:./vendor/onirigiri-t3-0.1.0-02f6759.tgz",
     "@t3tools/client-runtime": "workspace:*",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/web": "workspace:*",

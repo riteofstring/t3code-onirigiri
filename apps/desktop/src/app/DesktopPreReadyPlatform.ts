@@ -71,6 +71,16 @@ export const make = Effect.gen(function* () {
     const linux =
       platform === "linux" ? resolveEarlyLinuxElectronOptionsFromProcess(homeDirectory) : null;
 
+    // Onirigiri pane pictures draw elements into canvases, which this Chromium still gates.
+    const blinkFeatures = readCommandLineSwitchValue(
+      Electron.app.commandLine,
+      "enable-blink-features",
+    );
+    Electron.app.commandLine.appendSwitch(
+      "enable-blink-features",
+      [blinkFeatures, "CanvasDrawElement"].filter(Boolean).join(","),
+    );
+
     if (linux !== null) {
       DesktopEarlyElectronStartup.restoreEarlyLinuxDeviceScaleFactor({
         env: process.env,

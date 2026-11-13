@@ -1,0 +1,55 @@
+name: Onirigiri macOS Alpha
+
+# Builds an unsigned Apple silicon disk image of the desktop app with the
+# Onirigiri workspace. Run it by hand, or push a tag named onirigiri-alpha-*.
+# The disk image is attached to the run.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["onirigiri-alpha-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build macOS arm64 disk image
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      # checkout's credential cleanup runs submodule foreach even with
+      # submodules disabled, which fails on the orphaned gitlinks in the
+      # vendored .repos tree.
+      - name: Checkout
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/spatial... --filter=@t3tools/scripts...
+
+      - name: Add Rust target
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Build disk image
+        run: vp run dist:desktop:dmg:arm64
+
+      - name: Upload disk image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: onirigiri-t3code-macos-arm64
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 14

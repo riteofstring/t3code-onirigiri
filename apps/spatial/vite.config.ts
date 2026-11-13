@@ -28,7 +28,7 @@ const isRouterPlugin = (plugin: PluginOption) =>
   !!plugin && "name" in plugin && /^tanstack[-:]router/.test(plugin.name);
 
 export default defineConfig(async (env) => {
-  const { test: _test, ...web } = await webConfig(env);
+  const { test: _test, run: _run, ...web } = await webConfig(env);
   const plugins = (web.plugins ?? []).flat(Infinity as 1);
   const routerIndex = plugins.findIndex(isRouterPlugin);
   return {

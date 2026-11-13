@@ -89,15 +89,16 @@ const buildCmd = Command.make(
         }),
       );
 
-      const webDist = path.join(repoRoot, "apps/web/dist");
+      // The spatial app is the web app with the Onirigiri workspace as its chat area.
+      const clientDist = path.join(repoRoot, "apps/spatial/dist");
       const clientTarget = path.join(serverDir, "dist/client");
 
-      if (yield* fs.exists(webDist)) {
-        yield* fs.copy(webDist, clientTarget);
+      if (yield* fs.exists(clientDist)) {
+        yield* fs.copy(clientDist, clientTarget);
         yield* applyDevelopmentIconOverrides(repoRoot, serverDir);
-        yield* Effect.log("[cli] Bundled web app into dist/client");
+        yield* Effect.log("[cli] Bundled spatial app into dist/client");
       } else {
-        yield* Effect.logWarning("[cli] Web dist not found. Skipping client bundle.");
+        yield* Effect.logWarning("[cli] Spatial dist not found. Skipping client bundle.");
       }
     }),
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));

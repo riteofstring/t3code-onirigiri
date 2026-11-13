@@ -1016,11 +1016,11 @@ importers:
         specifier: 4.1.2
         version: 4.1.2(effect@4.1.2)(react@19.3.0)(scheduler@0.28.0)
       '@riteofstring/onirigiri':
-        specifier: link:../../../onirigiri-beta
-        version: link:../../../onirigiri-beta
+        specifier: file:./vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz
+        version: file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
       '@riteofstring/onirigiri-t3':
-        specifier: link:../../../onirigiri-t3-adapter
-        version: link:../../../onirigiri-t3-adapter
+        specifier: file:./vendor/onirigiri-t3-0.1.0-02f6759.tgz
+        version: file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz
       '@t3tools/client-runtime':
         specifier: workspace:*
         version: link:../../packages/client-runtime
@@ -6320,6 +6320,17 @@ packages:
     engines: {node: '>= 20.0.0'}
     peerDependencies:
       '@redis/client': ^6.2.1
+
+  '@riteofstring/onirigiri-t3@file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz':
+    resolution: {integrity: sha512-/pD8f3lWe5SGhYb/yto4DWrGA2vC6WBxFdKvZV364wKwHjvGgRV5O9eJUOkMDT0Tpt/unoxKh0LLZ77zJN2vLw==, tarball: file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz}
+    version: 0.1.0
+
+  '@riteofstring/onirigiri@file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz':
+    resolution: {integrity: sha512-Nhp6lehH9ezQC6JRxM9lUDu1f6dquVn4GBfzTBUQAr0/H2XYN8ditJjWZ/AODnBcUhQjvFvn8ooP2paPEkmCfw==, tarball: file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz}
+    version: 0.4.0-beta.1
+    peerDependencies:
+      react: '>=18.2.0 <20'
+      react-dom: '>=18.2.0 <20'
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     resolution: {integrity: sha512-Vu/NICrgdRvUOeaJZIyB2FP63s6fO/4ud5l8dXmxDx9yDyn+mN0y+gsvsVviSli+T361Aqo0h46EuMoobrwawA==}
@@ -16007,6 +16018,18 @@ snapshots:
     dependencies:
       '@redis/client': 6.2.1
 
+  '@riteofstring/onirigiri-t3@file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz': {}
+
+  '@riteofstring/onirigiri@file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))':
+    dependencies:
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+      zustand: 5.0.14(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
+    transitivePeerDependencies:
+      - '@types/react'
+      - immer
+      - use-sync-external-store
+
   '@rolldown/binding-android-arm-eabi@1.2.13':
     optional: true
 
@@ -23028,6 +23051,12 @@ snapshots:
       '@types/react': 19.3.0
       react: 19.3.0
       use-sync-external-store: 1.6.0(react@19.3.0)
+
+  zustand@5.0.14(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0)):
+    optionalDependencies:
+      '@types/react': 19.3.0
+      react: 19.3.0
+      use-sync-external-store: 1.7.0(react@19.3.0)
 
   zwitch@2.0.4: {}
 
