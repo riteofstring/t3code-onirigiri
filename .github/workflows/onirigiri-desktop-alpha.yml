@@ -1,0 +1,82 @@
+name: Onirigiri Desktop Alpha
+
+# Builds unsigned installers of the desktop app with the Onirigiri workspace:
+# an Apple silicon disk image, a Linux x64 AppImage and a Windows x64
+# installer. Run it by hand, or push a tag named onirigiri-alpha-*. The
+# installers are attached to the run.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["onirigiri-alpha-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            runner: macos-15
+            rust_target: aarch64-apple-darwin
+            script: dist:desktop:dmg:arm64
+            artifact: onirigiri-t3code-macos-arm64
+            files: release/*.dmg
+          - label: Linux x64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            script: dist:desktop:linux
+            artifact: onirigiri-t3code-linux-x64
+            files: release/*.AppImage
+          - label: Windows x64
+            runner: windows-2025
+            rust_target: x86_64-pc-windows-msvc
+            script: dist:desktop:win:x64
+            artifact: onirigiri-t3code-windows-x64
+            files: release/*.exe
+    steps:
+      # checkout's credential cleanup runs submodule foreach even with
+      # submodules disabled, which fails on the orphaned gitlinks in the
+      # vendored .repos tree.
+      - name: Checkout
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/spatial... --filter=@t3tools/scripts...
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Install Linux build libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Build installer
+        run: vp run ${{ matrix.script }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 14

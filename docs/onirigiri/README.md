@@ -24,13 +24,15 @@ T3CODE_SINGLE_ORIGIN_DEV=1 npx vp run --filter @t3tools/spatial build
 To change the engine or adapter, build and `pnpm pack` it, replace the tarball in
 `apps/spatial/vendor`, update the path in `apps/spatial/package.json` and reinstall.
 
-### As a packaged macOS app
+### As a packaged desktop app
 
 `npx vp run dist:desktop:dmg:arm64` on a Mac with Rust installed writes an unsigned disk image to
-`release/`. The `Onirigiri macOS Alpha` workflow does the same on GitHub and attaches the image to
-the run. The app is named "Onirigiri for T3 Code (Alpha)" and installs beside T3 Code, but it reads
-and writes the same `~/.t3` data, so quit T3 Code first and keep a copy of that folder. The image is
-unsigned: macOS asks you to allow it under System Settings → Privacy & Security.
+`release/`; `dist:desktop:linux` and `dist:desktop:win:x64` build a Linux AppImage and a Windows
+installer the same way. The `Onirigiri Desktop Alpha` workflow builds all three on GitHub and
+attaches them to the run. The app is named "Onirigiri for T3 Code (Alpha)" and installs beside T3
+Code, but it reads and writes the same `~/.t3` data, so quit T3 Code first and keep a copy of that
+folder. The builds are unsigned: macOS asks you to allow the app under System Settings → Privacy &
+Security, and Windows SmartScreen asks you to choose "Run anyway".
 
 ### In the browser
 
