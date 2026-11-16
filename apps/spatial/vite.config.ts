@@ -1,5 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
-import { readFileSync } from "node:fs";
+import * as NodeFS from "node:fs";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
+import * as NodeURL from "node:url";
 
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import type { PluginOption } from "vite";
@@ -8,7 +10,7 @@ import { defineConfig } from "vite-plus";
 import webConfig from "../web/vite.config";
 import { scopeAncestorSelectors } from "./scopeAncestorSelectors";
 
-const webSource = new URL("../web/src/", import.meta.url).pathname;
+const webSource = NodeURL.fileURLToPath(new URL("../web/src/", import.meta.url));
 
 const webIndex = new URL("../web/index.html", import.meta.url);
 
@@ -17,7 +19,7 @@ const webBootPage = (): PluginOption => ({
   transformIndexHtml: {
     order: "pre",
     handler: () =>
-      readFileSync(webIndex, "utf8").replace(
+      NodeFS.readFileSync(webIndex, "utf8").replace(
         /<title>[^<]*<\/title>/,
         "<title>Onirigiri for T3 Code</title>",
       ),
@@ -45,7 +47,7 @@ export default defineConfig(async (env) => {
       webBootPage(),
     ],
     test: { exclude: ["**/node_modules/**", "dist/**"] },
-    publicDir: new URL("../web/public", import.meta.url).pathname,
+    publicDir: NodeURL.fileURLToPath(new URL("../web/public", import.meta.url)),
     server: {
       ...web.server,
       port: Number(process.env.PORT ?? 5743),

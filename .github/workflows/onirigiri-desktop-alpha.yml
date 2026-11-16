@@ -68,7 +68,7 @@ jobs:
 
       - name: Install Linux build libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
 
       - name: Build installer
         run: vp run ${{ matrix.script }}
