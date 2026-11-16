@@ -7,6 +7,7 @@ const STORAGE_KEY = "onirigiri-t3:workspace-preferences";
 const FOCUS_ANCHOR_KEY = "onirigiri-t3:focus-anchor";
 const LAYOUT_MODE_KEY = "onirigiri-t3:layout-mode";
 const MINIMAP_PLACEMENT_KEY = "onirigiri-t3:minimap-placement";
+const PANE_PICTURES_KEY = "onirigiri-t3:pane-pictures";
 const DEFAULT_MINIMAP_PLACEMENT: OnirigiriMinimapPlacement = {
   corner: "bottom-right",
   widthPx: 220,
@@ -30,6 +31,16 @@ export function writeItem(key: string, value: string) {
   try {
     window.localStorage.setItem(key, value);
   } catch {}
+}
+
+/** Callers read this once per mount: switching modes reloads the window. */
+export function panePicturesEnabled() {
+  return import.meta.env.MODE !== "all-live" && readItem(PANE_PICTURES_KEY) !== "off";
+}
+
+export function setPanePicturesEnabled(enabled: boolean) {
+  writeItem(PANE_PICTURES_KEY, enabled ? "on" : "off");
+  window.location.reload();
 }
 
 export const overviewZoomChoices = [

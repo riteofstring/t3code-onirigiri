@@ -58,6 +58,7 @@ import { WorkspaceTooltips, WorkspaceControlButton } from "./WorkspaceTooltips";
 import { WorkspaceToolbar } from "./WorkspaceToolbar";
 import {
   overviewZoomChoices,
+  panePicturesEnabled,
   useFocusAnchorPreference,
   useLayoutModePreference,
   useMinimapPlacement,
@@ -203,7 +204,7 @@ function SpatialWorkspaceView({
   layoutMode: WorkspaceLayoutMode;
   onLayoutModeChange: (mode: WorkspaceLayoutMode) => void;
 }) {
-  const alwaysLive = import.meta.env.MODE === "all-live";
+  const [alwaysLive] = useState(() => !panePicturesEnabled());
   const router = useRouter();
   const { controller: toolController, bindWorkspace } = useSpatialController();
   const { toolPanes, addEmpty, getPanes, remove } = toolController;

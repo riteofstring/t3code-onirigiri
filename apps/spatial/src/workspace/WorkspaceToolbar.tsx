@@ -13,15 +13,10 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
-import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "@t3tools/web/src/components/ui/select";
 import { Input } from "@t3tools/web/src/components/ui/input";
+import { Popover, PopoverPopup, PopoverTrigger } from "@t3tools/web/src/components/ui/popover";
 
 import { FocusAnchorToggle } from "./FocusAnchorToggle";
 import {
@@ -29,6 +24,8 @@ import {
   MIN_COLUMN_WIDTH,
   MIN_ROW_HEIGHT,
   overviewZoomChoices,
+  panePicturesEnabled,
+  setPanePicturesEnabled,
   type WorkspacePreferences,
 } from "./useWorkspacePreferences";
 import { WorkspaceTooltipButton as Button } from "./WorkspaceTooltips";
@@ -69,9 +66,9 @@ export function WorkspaceToolbar({
 }) {
   const [open, setOpen] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  const [selectOpen, setSelectOpen] = useState(false);
-  const selectOpenRef = useRef(false);
-  const selectPopupRef = useRef<HTMLDivElement>(null);
+  const [pictures] = useState(panePicturesEnabled);
+  const [popup, setPopup] = useState<"zoom" | "rows" | "columns" | null>(null);
+  const popupRef = useRef(popup);
   const mouseHoverRef = useRef(false);
   const pointerInsideRef = useRef(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,6 +120,15 @@ export function WorkspaceToolbar({
     { label: "New pane", keys: formatOnirigiriShortcut(NEW_PANE_BINDING).keys },
   ];
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const rowHeight = preferences.maximizeAll
+    ? "viewport"
+    : (focusedRowHeight ?? preferences.rowHeight);
+  const rowsCapped =
+    layoutMode !== "strip" &&
+    preferences.maxRowHeight > 0 &&
+    maxRowHeight === preferences.maxRowHeight;
+  const rowsLabel = rowHeightLabel(rowHeight, maxRowHeight, rowsCapped);
+  const columnWidth = clampColumnWidth(preferences.columnWidth, maxColumnWidth);
 
   const cancelClose = useCallback(() => {
     if (closeTimerRef.current === null) return;
@@ -137,19 +143,19 @@ export function WorkspaceToolbar({
       focused.blur();
     }
     setOpen(false);
-    setSelectOpen(false);
-    selectOpenRef.current = false;
+    setPopup(null);
+    popupRef.current = null;
   }, [cancelClose]);
 
   const scheduleClose = useCallback(() => {
     cancelClose();
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
-      if (pointerInsideRef.current || selectOpenRef.current) return;
+      if (pointerInsideRef.current || popupRef.current !== null) return;
       const focused = document.activeElement;
       if (
         focused &&
-        (containerRef.current?.contains(focused) || selectPopupRef.current?.contains(focused)) &&
+        (containerRef.current?.contains(focused) || focused.closest(POPUP_SELECTOR)) &&
         focused.matches(":focus-visible")
       )
         return;
@@ -158,6 +164,14 @@ export function WorkspaceToolbar({
   }, [cancelClose, close]);
 
   useEffect(() => cancelClose, [cancelClose]);
+
+  const popupChange = (name: "zoom" | "rows" | "columns") => (next: boolean) => {
+    const current = next ? name : popupRef.current === name ? null : popupRef.current;
+    popupRef.current = current;
+    setPopup(current);
+    if (next) cancelClose();
+    else if (mouseHoverRef.current && !pointerInsideRef.current) scheduleClose();
+  };
 
   useLayoutEffect(() => {
     if (open && focusOnOpenRef.current) {
@@ -177,7 +191,7 @@ export function WorkspaceToolbar({
     };
     const contains = (target: EventTarget | null) =>
       target instanceof Node &&
-      (container.contains(target) || selectPopupRef.current?.contains(target));
+      (container.contains(target) || (target instanceof Element && target.closest(POPUP_SELECTOR)));
     const leave = (event: PointerEvent) => {
       pointerInsideRef.current = false;
       if (event.pointerType === "mouse") scheduleClose();
@@ -187,14 +201,14 @@ export function WorkspaceToolbar({
         return;
       if (
         closeTimerRef.current === null &&
-        !selectOpenRef.current &&
+        popupRef.current === null &&
         !contains(event.relatedTarget)
       ) {
         close();
       }
     };
     const keyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !open || selectOpenRef.current) return;
+      if (event.key !== "Escape" || !open || popupRef.current !== null) return;
       event.preventDefault();
       event.stopPropagation();
       if (advanced) {
@@ -266,75 +280,81 @@ export function WorkspaceToolbar({
               inert={!advanced}
             >
               <div className="spatial-workspace-controls__advanced">
-                <label
-                  className="spatial-workspace-controls__field"
-                  title="How large panes appear in overview."
+                <SizePopover
+                  label="Zoom"
+                  value={
+                    overviewZoomChoices.find((choice) => choice.value === preferences.overviewZoom)!
+                      .label
+                  }
+                  open={popup === "zoom"}
+                  onOpenChange={popupChange("zoom")}
                 >
-                  <span>Overview zoom</span>
-                  <Select
-                    value={preferences.overviewZoom}
-                    items={overviewZoomChoices}
-                    open={selectOpen}
-                    onOpenChange={(next) => {
-                      selectOpenRef.current = next;
-                      setSelectOpen(next);
-                      if (next) cancelClose();
-                      else if (mouseHoverRef.current && !pointerInsideRef.current) scheduleClose();
-                    }}
-                    onValueChange={(value) => {
-                      const choice = overviewZoomChoices.find((option) => option.value === value);
-                      if (choice) onPreferencesChange({ overviewZoom: choice.value });
-                    }}
+                  <div
+                    className="spatial-workspace-controls__choices"
+                    role="radiogroup"
+                    aria-label="Overview zoom"
+                    title="How large panes appear in overview."
                   >
-                    <SelectTrigger size="compact" className="text-xs" aria-label="Overview zoom">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectPopup ref={selectPopupRef} side="top" alignItemWithTrigger={false}>
-                      {overviewZoomChoices.map((choice) => (
-                        <SelectItem key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                </label>
-                <RowHeightControl
-                  height={
-                    preferences.maximizeAll
-                      ? "viewport"
-                      : (focusedRowHeight ?? preferences.rowHeight)
-                  }
-                  maximum={maxRowHeight}
-                  capped={
-                    layoutMode !== "strip" &&
-                    preferences.maxRowHeight > 0 &&
-                    maxRowHeight === preferences.maxRowHeight
-                  }
-                  onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
-                />
-                {layoutMode === "strip" ? null : (
-                  <MaxSizeControl
-                    label="Max row height"
-                    ariaLabel="Maximum row height in pixels"
-                    minimum={MIN_ROW_HEIGHT}
-                    size={preferences.maxRowHeight}
-                    onChange={(maxRowHeight) => onPreferencesChange({ maxRowHeight })}
+                    {overviewZoomChoices.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={preferences.overviewZoom === choice.value}
+                        className="spatial-workspace-controls__text-button"
+                        onClick={() => {
+                          onPreferencesChange({ overviewZoom: choice.value });
+                          popupChange("zoom")(false);
+                        }}
+                      >
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                </SizePopover>
+                <SizePopover
+                  label="Rows"
+                  value={rowsLabel}
+                  open={popup === "rows"}
+                  onOpenChange={popupChange("rows")}
+                >
+                  <RowHeightControl
+                    height={rowHeight}
+                    maximum={maxRowHeight}
+                    capped={rowsCapped}
+                    onChange={(rowHeight) => onPreferencesChange({ rowHeight, maximizeAll: false })}
                   />
-                )}
-                <ColumnWidthControl
-                  width={preferences.columnWidth}
-                  maximum={maxColumnWidth}
-                  onChange={(columnWidth) =>
-                    onPreferencesChange({ columnWidth, maximizeAll: false })
-                  }
-                />
-                <MaxSizeControl
-                  label="Max column width"
-                  ariaLabel="Maximum column width in pixels"
-                  minimum={MIN_COLUMN_WIDTH}
-                  size={preferences.maxColumnWidth}
-                  onChange={(maxColumnWidth) => onPreferencesChange({ maxColumnWidth })}
-                />
+                  {layoutMode === "strip" ? null : (
+                    <MaxSizeControl
+                      label="Max"
+                      ariaLabel="Maximum row height in pixels"
+                      minimum={MIN_ROW_HEIGHT}
+                      size={preferences.maxRowHeight}
+                      onChange={(maxRowHeight) => onPreferencesChange({ maxRowHeight })}
+                    />
+                  )}
+                </SizePopover>
+                <SizePopover
+                  label="Columns"
+                  value={`${columnWidth}px`}
+                  open={popup === "columns"}
+                  onOpenChange={popupChange("columns")}
+                >
+                  <ColumnWidthControl
+                    width={preferences.columnWidth}
+                    maximum={maxColumnWidth}
+                    onChange={(columnWidth) =>
+                      onPreferencesChange({ columnWidth, maximizeAll: false })
+                    }
+                  />
+                  <MaxSizeControl
+                    label="Max"
+                    ariaLabel="Maximum column width in pixels"
+                    minimum={MIN_COLUMN_WIDTH}
+                    size={preferences.maxColumnWidth}
+                    onChange={(maxColumnWidth) => onPreferencesChange({ maxColumnWidth })}
+                  />
+                </SizePopover>
                 <span className="spatial-workspace-controls__options">
                   <Button
                     aria-label={
@@ -386,6 +406,29 @@ export function WorkspaceToolbar({
                     </svg>
                   </Button>
                   <FocusAnchorToggle focusAnchor={focusAnchor} onToggle={onToggleAnchor} />
+                  <Button
+                    aria-label="Pane pictures"
+                    aria-pressed={pictures}
+                    tooltip={
+                      pictures
+                        ? "Pane pictures on: smoother motion. Click to keep every pane live (reloads)"
+                        : "Every pane live: no pictures. Click to turn pane pictures on (reloads)"
+                    }
+                    onClick={() => setPanePicturesEnabled(!pictures)}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+                      <path d="M1.5 11l4-4 3 3 2-2 4 4" />
+                      <circle cx="11" cy="5.5" r="1" />
+                    </svg>
+                  </Button>
                   <Button
                     aria-label="Keyboard shortcuts"
                     aria-haspopup="dialog"
@@ -558,6 +601,58 @@ function OnirigiriMark() {
   );
 }
 
+const POPUP_SELECTOR = "[data-spatial-workspace-popup]";
+
+function SizePopover({
+  label,
+  value,
+  open,
+  onOpenChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger
+        className="spatial-workspace-controls__text-button"
+        aria-label={`${label}: ${value}`}
+      >
+        <span>{label}</span>
+        <span className="spatial-workspace-controls__text-value">{value}</span>
+      </PopoverTrigger>
+      <PopoverPopup data-spatial-workspace-popup="" side="top" padding="compact">
+        <div className="spatial-workspace-controls__popover">{children}</div>
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
+function rowHeightRange(height: WorkspacePreferences["rowHeight"], maximum: number | null) {
+  const max = maximum ?? MIN_ROW_HEIGHT;
+  const min = Math.min(MIN_ROW_HEIGHT, max);
+  const value = Math.max(min, Math.min(max, height === "viewport" ? max : height));
+  return { min, max, value };
+}
+
+function rowHeightLabel(
+  height: WorkspacePreferences["rowHeight"],
+  maximum: number | null,
+  capped: boolean,
+) {
+  const { max, value } = rowHeightRange(height, maximum);
+  return value === max && !capped ? "Full view" : `${value}px`;
+}
+
+function clampColumnWidth(width: number, maximum: number | null) {
+  const max = Math.max(MIN_COLUMN_WIDTH, maximum ?? MIN_COLUMN_WIDTH);
+  return Math.max(MIN_COLUMN_WIDTH, Math.min(max, width));
+}
+
 function RowHeightControl({
   height,
   maximum,
@@ -569,16 +664,14 @@ function RowHeightControl({
   capped: boolean;
   onChange: (height: WorkspacePreferences["rowHeight"]) => void;
 }) {
-  const max = maximum ?? MIN_ROW_HEIGHT;
-  const min = Math.min(MIN_ROW_HEIGHT, max);
-  const value = Math.max(min, Math.min(max, height === "viewport" ? max : height));
+  const { min, max, value } = rowHeightRange(height, maximum);
   const progress = max === min ? 100 : ((value - min) / (max - min)) * 100;
   return (
     <label
       className="spatial-workspace-controls__field"
       title="Shows the focused row. Changing it sets every row. Double-click to reset."
     >
-      <span>Row height</span>
+      <span>Height</span>
       <span className="spatial-workspace-controls__height">
         <input
           className="settings-slider w-full"
@@ -669,7 +762,7 @@ function ColumnWidthControl({
   onChange: (width: number) => void;
 }) {
   const max = Math.max(MIN_COLUMN_WIDTH, maximum ?? MIN_COLUMN_WIDTH);
-  const value = Math.max(MIN_COLUMN_WIDTH, Math.min(max, width));
+  const value = clampColumnWidth(width, maximum);
   const progress =
     max === MIN_COLUMN_WIDTH ? 100 : ((value - MIN_COLUMN_WIDTH) / (max - MIN_COLUMN_WIDTH)) * 100;
   return (
@@ -677,7 +770,7 @@ function ColumnWidthControl({
       className="spatial-workspace-controls__field"
       title="Sets the width of every column. Double-click to reset."
     >
-      <span>Column width</span>
+      <span>Width</span>
       <span className="spatial-workspace-controls__height">
         <input
           className="settings-slider w-full"

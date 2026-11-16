@@ -185,7 +185,12 @@ function status() {
 }
 
 function rowHeight() {
-  return host.querySelector<HTMLInputElement>('input[aria-label="Row height in pixels"]')!;
+  return document.querySelector<HTMLInputElement>('input[aria-label="Row height in pixels"]')!;
+}
+
+async function openRows() {
+  if (rowHeight()) return;
+  await act(() => host.querySelector<HTMLButtonElement>('[aria-label^="Rows:"]')!.click());
 }
 
 function paneHeights() {
@@ -217,6 +222,7 @@ function setViewport(width: number, height: number) {
 }
 
 async function changeHeight(value: string) {
+  await openRows();
   await act(() => {
     const input = rowHeight();
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -535,6 +541,7 @@ it("leaves full screen panes when committing a shorter row height", async () => 
     }),
   );
   await render();
+  await openRows();
   expect(rowHeight().value).toBe(rowHeight().max);
   await act(() => vi.advanceTimersByTime(120));
   expect(paneHeights().every((height) => height > 420)).toBe(true);

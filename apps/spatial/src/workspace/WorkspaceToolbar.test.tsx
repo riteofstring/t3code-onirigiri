@@ -55,8 +55,16 @@ function settings() {
   return JSON.parse(host.querySelector("output")!.textContent!);
 }
 
+async function control(label: string, popover: "Rows" | "Columns") {
+  const selector = `input[aria-label="${label}"]`;
+  if (!document.querySelector(selector)) {
+    await act(() => host.querySelector<HTMLButtonElement>(`[aria-label^="${popover}:"]`)!.click());
+  }
+  return document.querySelector<HTMLInputElement>(selector)!;
+}
+
 function rowHeight() {
-  return host.querySelector<HTMLInputElement>('input[aria-label="Row height in pixels"]')!;
+  return document.querySelector<HTMLInputElement>('input[aria-label="Row height in pixels"]')!;
 }
 
 async function click(label: string) {
@@ -68,8 +76,8 @@ async function click(label: string) {
 }
 
 async function typeHeight(value: string) {
+  const input = await control("Row height in pixels", "Rows");
   await act(() => {
-    const input = rowHeight();
     input.focus();
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -111,9 +119,7 @@ afterEach(async () => {
 it("sets a maximum column width that stays at least the minimum and turns off at 0", async () => {
   await click("Workspace controls");
   await click("Advanced workspace controls");
-  const maximum = host.querySelector<HTMLInputElement>(
-    '[aria-label="Maximum column width in pixels"]',
-  )!;
+  const maximum = await control("Maximum column width in pixels", "Columns");
   const enter = async (value: string) => {
     await act(() => {
       maximum.focus();
@@ -148,17 +154,15 @@ it("remembers overview and row defaults across reloads, with a way back to viewp
   });
   await click("Workspace controls");
   await click("Advanced workspace controls");
+  await act(() => host.querySelector<HTMLButtonElement>('[aria-label="Zoom: Auto"]')!.click());
   await act(() => {
-    const select = host.querySelector<HTMLButtonElement>('[aria-label="Overview zoom"]')!;
-    select.focus();
-    select.click();
-  });
-  await act(() => {
-    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    const option = [...document.querySelectorAll<HTMLElement>('[role="radio"]')].find(
       (element) => element.textContent === "Near",
     )!;
     option.click();
   });
+  expect(document.querySelector('[aria-label="Overview zoom"]')).toBeNull();
+  expect(button("Zoom: Near")).toBeTruthy();
   await typeHeight("384");
   expect(settings()).toEqual({
     overviewZoom: "near",
@@ -221,27 +225,35 @@ it("bounds the slider to the view while preserving fixed heights across resizing
   await typeHeight("720");
   expect(settings().rowHeight).toBe(720);
   await click("Shorter view");
+  await control("Row height in pixels", "Rows");
   expect(rowHeight().max).toBe("640");
   expect(rowHeight().value).toBe("640");
   expect(settings().rowHeight).toBe(720);
   await click("Taller view");
+  await control("Row height in pixels", "Rows");
   expect(rowHeight().value).toBe("720");
   await typeHeight("1000");
   expect(settings().rowHeight).toBe("viewport");
   await click("Shorter view");
+  await control("Row height in pixels", "Rows");
   expect(rowHeight().value).toBe("640");
   await click("Tiny view");
+  await control("Row height in pixels", "Rows");
   expect(rowHeight().min).toBe("60");
   expect(rowHeight().max).toBe("60");
   expect(rowHeight().disabled).toBe(true);
 });
 
-it("Escape closes Advanced and restores focus without undoing an applied height", async () => {
+it("Escape closes the size popover, then Advanced, without undoing an applied height", async () => {
   await click("Workspace controls");
   await click("Advanced workspace controls");
   await typeHeight("420");
-  expect((await key(rowHeight(), "Escape")).defaultPrevented).toBe(true);
+  await key(rowHeight(), "Escape");
+  expect(document.querySelector('input[aria-label="Row height in pixels"]')).toBeNull();
+  expect(button("Rows: 420px")).toBeTruthy();
   expect(settings().rowHeight).toBe(420);
+  await act(() => button("Rows: 420px").focus());
+  expect((await key(button("Rows: 420px"), "Escape")).defaultPrevented).toBe(true);
   expect(document.activeElement).toBe(button("Advanced workspace controls"));
   expect(button("Advanced workspace controls").getAttribute("aria-expanded")).toBe("false");
   await key(button("Advanced workspace controls"), "Escape");
@@ -330,9 +342,7 @@ it("keeps settings usable when storage cannot be written", async () => {
 it("sets a 2D maximum row height that stays at least the minimum, turns off at 0 and hides in strip mode", async () => {
   await click("Workspace controls");
   await click("Advanced workspace controls");
-  const maximum = host.querySelector<HTMLInputElement>(
-    '[aria-label="Maximum row height in pixels"]',
-  )!;
+  const maximum = await control("Maximum row height in pixels", "Rows");
   const enter = async (value: string) => {
     await act(() => {
       maximum.focus();
@@ -350,9 +360,10 @@ it("sets a 2D maximum row height that stays at least the minimum, turns off at 0
   expect(await enter("0")).toBe(0);
   expect(maximum.value).toBe("0");
   await click("Switch to strip layout");
-  expect(host.querySelector('[aria-label="Maximum row height in pixels"]')).toBeNull();
+  await control("Maximum row height in pixels", "Rows");
+  expect(document.querySelector('[aria-label="Maximum row height in pixels"]')).toBeNull();
   await click("Switch to 2D layout");
-  expect(host.querySelector('[aria-label="Maximum row height in pixels"]')).not.toBeNull();
+  expect(await control("Maximum row height in pixels", "Rows")).not.toBeNull();
 });
 
 it("uses safe defaults for malformed saved preferences", async () => {
@@ -415,7 +426,7 @@ it("sets every column's width from 442 pixels up to half the view width, and dou
   expect(settings().columnWidth).toBe(840);
   await click("Workspace controls");
   await click("Advanced workspace controls");
-  const slider = host.querySelector<HTMLInputElement>('[aria-label="Column width in pixels"]')!;
+  const slider = await control("Column width in pixels", "Columns");
   expect([slider.min, slider.max, slider.value]).toEqual(["442", "900", "840"]);
   await act(() => {
     slider.focus();
@@ -466,4 +477,21 @@ it("switches between the strip and 2D layouts", async () => {
   expect(mode()).toBe("strip");
   await click("Switch to 2D layout");
   expect(mode()).toBe("rows");
+});
+
+it("switches pane pictures off for the next load and reloads", async () => {
+  const reload = vi.fn();
+  vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload });
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
+  expect(button("Pane pictures").getAttribute("aria-pressed")).toBe("true");
+  await click("Pane pictures");
+  expect(localStorage.getItem("onirigiri-t3:pane-pictures")).toBe("off");
+  expect(reload).toHaveBeenCalledOnce();
+  await act(() => root.unmount());
+  root = createRoot(host);
+  await act(() => root.render(<Workspace />));
+  await click("Workspace controls");
+  await click("Advanced workspace controls");
+  expect(button("Pane pictures").getAttribute("aria-pressed")).toBe("false");
 });
