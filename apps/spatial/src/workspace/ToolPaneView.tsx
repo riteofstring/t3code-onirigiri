@@ -153,6 +153,7 @@ export function ToolPaneView({
   // there, and hands it to the pane's text field (file search, address bar) once that can take it.
   useEffect(() => {
     const root = rootRef.current;
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Arrival focus runs when the pane becomes active or its kind changes, not on every surface update.
     if (!active || !surface || surface.kind === "terminal" || !root) return;
     const focusField = () => {
       if (root.contains(document.activeElement) && document.activeElement !== root) return true;

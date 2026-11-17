@@ -213,9 +213,11 @@ export function useEmptySpots(
   const [cells, setCells] = useState<readonly EmptySpot[]>([]);
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const latest = useRef({ getLayout, getFocusedPaneId });
+  // oxlint-disable-next-line react/refs -- The settle timer reads the latest layout getters without restarting when they change.
   latest.current = { getLayout, getFocusedPaneId };
   useEffect(() => {
     if (!stage || !enabled) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Drops the layer when the stage is gone or empty spots are turned off.
       setContainer(null);
       return;
     }
@@ -261,6 +263,7 @@ export function useEmptySpots(
   useEffect(() => {
     const world = stage?.querySelector<HTMLElement>("[data-onirigiri-world-surface]");
     if (!stage || !world || !enabled) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Clears the measured cells when there is no world surface to measure.
       setCells([]);
       return;
     }
@@ -288,6 +291,7 @@ export function useEmptySpots(
       clearTimeout(timer);
       resize.disconnect();
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new layout revision measures the empty cells again.
   }, [allowNewRows, container, defaultRowHeight, enabled, moving, revision, stage]);
   return { cells: enabled ? cells : [], container };
 }

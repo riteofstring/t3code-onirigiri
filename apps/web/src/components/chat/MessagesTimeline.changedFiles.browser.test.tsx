@@ -84,38 +84,51 @@ const atoms = await vi.hoisted(async () => {
   };
 });
 
-vi.mock("../../state/threads", () => ({
+vi.mock(import("../../state/threads"), async (original) => ({
+  ...(await original()),
   environmentThreadShells: atoms.shells,
   environmentThreadDetails: atoms.details,
 }));
-vi.mock("../../state/projects", () => ({ environmentProjects: atoms.projects }));
-vi.mock("../../state/shell", () => ({
-  environmentSnapshotAtom: atoms.snapshots,
-  allEnvironmentShellsBootstrappedAtom: atoms.unusedBoolean,
-  allEnvironmentProjectSnapshotsReadyAtom: atoms.unusedBoolean,
-  shellEnvironment: { openInEditor: {} },
+vi.mock(import("../../state/projects"), async (original) => ({
+  ...(await original()),
+  environmentProjects: atoms.projects,
 }));
-vi.mock("../../state/server", () => ({
-  serverEnvironment: { configValueAtom: atoms.configs },
-  environmentServerConfigsAtom: atoms.unusedConfigs,
-  primaryServerKeybindingsAtom: atoms.keybindings,
-  primaryServerAvailableEditorsAtom: atoms.editors,
+vi.mock(import("../../state/shell"), async (original) => ({
+  ...(await original()),
+  environmentSnapshotAtom: atoms.snapshots as never,
+  allEnvironmentShellsBootstrappedAtom: atoms.unusedBoolean as never,
+  allEnvironmentProjectSnapshotsReadyAtom: atoms.unusedBoolean as never,
+  shellEnvironment: { openInEditor: {} } as never,
+}));
+vi.mock(import("../../state/server"), async (original) => ({
+  ...(await original()),
+  serverEnvironment: { configValueAtom: atoms.configs } as never,
+  environmentServerConfigsAtom: atoms.unusedConfigs as never,
+  primaryServerKeybindingsAtom: atoms.keybindings as never,
+  primaryServerAvailableEditorsAtom: atoms.editors as never,
 }));
 vi.mock("../../rpc/atomRegistry", () => ({
   get appAtomRegistry() {
     return atoms.registry;
   },
+  subscribeAtomChanges: () => () => {},
 }));
-vi.mock("../../state/use-atom-command", () => ({
-  useAtomCommand: () => fixture.openInEditor,
+vi.mock(import("../../state/use-atom-command"), async (original) => ({
+  ...(await original()),
+  useAtomCommand: (() => fixture.openInEditor) as never,
 }));
-vi.mock("../../localApi", () => ({
-  readLocalApi: () => ({ contextMenu: { show: fixture.menu } }),
+vi.mock(import("../../localApi"), async (original) => ({
+  ...(await original()),
+  readLocalApi: (() => ({ contextMenu: { show: fixture.menu } })) as never,
 }));
-vi.mock("../../lib/openPullRequestLink", () => ({ useOpenPrLink: () => undefined }));
-vi.mock("../../hooks/useSettings", () => ({
-  useClientSettings: (select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
-    select(DEFAULT_CLIENT_SETTINGS),
+vi.mock(import("../../lib/openPullRequestLink"), async (original) => ({
+  ...(await original()),
+  useOpenPrLink: (() => undefined) as never,
+}));
+vi.mock(import("../../hooks/useSettings"), async (original) => ({
+  ...(await original()),
+  useClientSettings: ((select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
+    select(DEFAULT_CLIENT_SETTINGS)) as never,
 }));
 vi.mock("../ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => <p>{text}</p>,
@@ -345,6 +358,7 @@ function prepare(): Disposable {
       "ResizeObserver",
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     ),

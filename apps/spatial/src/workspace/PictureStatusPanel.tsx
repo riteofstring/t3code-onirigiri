@@ -36,6 +36,7 @@ export function PictureStatusPanel({ read }: { read: () => Status }) {
   const [status, setStatus] = useState<Status>({});
   const [gpu, setGpu] = useState("checking");
   const latestRead = useRef(read);
+  // oxlint-disable-next-line react/refs -- The one-second poll calls the latest reader without restarting.
   latestRead.current = read;
   useEffect(() => {
     const timer = setInterval(() => setStatus(latestRead.current()), 1000);
@@ -43,6 +44,7 @@ export function PictureStatusPanel({ read }: { read: () => Status }) {
   }, []);
   useEffect(() => {
     const request = navigator.gpu?.requestAdapter();
+    // oxlint-disable-next-line react/set-state-in-effect -- Reports a browser without WebGPU once, on mount.
     if (!request) return setGpu("no WebGPU");
     void request.then(
       (adapter) => setGpu(adapter ? adapter.info.vendor || "available" : "no adapter"),

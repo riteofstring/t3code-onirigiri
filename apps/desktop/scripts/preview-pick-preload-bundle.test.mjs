@@ -55,6 +55,8 @@ it("loads the emitted guest keyboard bridge with only Electron available", async
         },
         Window,
         window: new Window(),
+        crypto: globalThis.crypto,
+        process: { argv: [] },
         document: { hasFocus: () => true },
         HTMLElement: class {
           closest() {

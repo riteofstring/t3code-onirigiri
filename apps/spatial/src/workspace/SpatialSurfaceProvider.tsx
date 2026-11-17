@@ -75,7 +75,7 @@ export function SpatialSurfaceProvider({
     [],
   );
   const navigation = useSpatialSurfaceNavigation(controller, "", focusPane, isPaneClosing);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- page-lifetime preview services read the workspace's navigation outside React
+  // Page-lifetime preview services read the workspace's navigation outside React.
   useEffect(() => {
     setPageSurfaceNavigation(navigation);
     return () => setPageSurfaceNavigation(null);

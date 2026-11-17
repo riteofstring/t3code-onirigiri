@@ -61,6 +61,7 @@ export function useShortcutModifierState(
 ): ShortcutModifierState {
   const [state, setState] = useState(EMPTY_SHORTCUT_MODIFIER_STATE);
   const stateRef = useRef(EMPTY_SHORTCUT_MODIFIER_STATE);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the shared window listeners that record held modifiers while any user of this hook is mounted
   useEffect(watchHeldModifiers, []);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window key, focus, paste and blur listeners that track held shortcut modifiers

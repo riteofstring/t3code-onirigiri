@@ -902,6 +902,7 @@ function SpatialWorkspaceView({
     if (initialPanes === null || (!alwaysLive && lifecycle === null)) return;
     const restoring = !restoredRouteRef.current;
     restoredRouteRef.current = true;
+    // oxlint-disable-next-line react/set-state-in-effect -- Follows the router: focuses the pane the current route names.
     if (routePaneId) focusRoutePane(routePaneId, restoring);
   }, [alwaysLive, initialPanes, lifecycle, routePaneId]);
 
@@ -1138,6 +1139,7 @@ function SpatialWorkspaceView({
         setClosingToolPanes(new Set(closingToolPanesRef.current));
       }
     },
+    // oxlint-disable-next-line react/memo-dependencies -- The callback reads every value listed, including the ones the compiler treats as stable.
     [closePreview, closeTerminal, isPaneClosing, remove, router, toolController],
   );
 

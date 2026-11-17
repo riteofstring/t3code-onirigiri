@@ -1,6 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeFS from "node:fs";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeURL from "node:url";
 
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -46,7 +45,8 @@ export default defineConfig(async (env) => {
       scopeAncestorSelectors(),
       webBootPage(),
     ],
-    test: { exclude: ["**/node_modules/**", "dist/**"] },
+    // The repository root's limits, which these tests ran under before they became their own project.
+    test: { exclude: ["**/node_modules/**", "dist/**"], hookTimeout: 60_000, testTimeout: 60_000 },
     publicDir: NodeURL.fileURLToPath(new URL("../web/public", import.meta.url)),
     server: {
       ...web.server,

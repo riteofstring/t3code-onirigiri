@@ -141,6 +141,7 @@ function usePaneContent(
   }, [mounted, statusReady, visible, waitedForStatus]);
   const contentAvailable = focused || statusReady || waitedForStatus;
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- An unmounted pane drops its content so the next mount is staged again.
     if (!mounted) setContentMounted(false);
     else if (contentAvailable && !contentMounted) {
       const show = () => startTransition(() => setContentMounted(true));
@@ -177,6 +178,7 @@ function usePaneContent(
     lifecycle,
     mounted,
     paneId,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A change in where the move will rest decides again when to mount.
     settledVisible,
     snapshots,
     visible,
@@ -390,11 +392,13 @@ const PaneBody = memo(function PaneBody({
     // A picture from before the edit would show the old draft for the length of a move.
     else changedSincePicture.current = true;
   };
-  const shell = useThreadShell(thread);
+  const _shell = useThreadShell(thread);
   const snapshots = use(PaneSnapshotContext);
   const maximizedRef = useRef(maximized);
+  // oxlint-disable-next-line react/refs -- The removal handlers read the latest maximized state when the engine calls them.
   maximizedRef.current = maximized;
   const removal = useRef<ChatRemoval>({ blocksRemoval: () => true, prepareRemoval: () => {} });
+  // oxlint-disable-next-line react/refs -- The engine keeps one removal handle per pane; it always calls the latest handlers.
   removal.current = {
     blocksRemoval: () => {
       flushPaneVisualChanges(paneId);
@@ -460,6 +464,7 @@ const PaneBody = memo(function PaneBody({
   const focusOnArrival = useRef(false);
   const [composerNavigations, setComposerNavigations] = useState(0);
   const focusedRef = useRef(focused);
+  // oxlint-disable-next-line react/refs -- The window key listener reads the latest focus without being added again.
   focusedRef.current = focused;
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -551,6 +556,7 @@ const PaneBody = memo(function PaneBody({
       focusOnArrival.current = false;
       paneComposerRef.current.focusAtEnd();
     }
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A composer navigation tries the arrival focus again.
   }, [active, composerNavigations, composerReady, lifecycle, mounted, paneComposerRef]);
 
   const snapshotPrepared = useRef(false);
@@ -810,6 +816,7 @@ function TimelinePicture({
     const root = pane.getBoundingClientRect();
     const scale = root.width / pane.offsetWidth || 1;
     setOffset({ x: (root.left - box.left) / scale, y: (root.top - box.top) / scale });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new picture is measured against the pane again.
   }, [picture?.url]);
   return (
     <div

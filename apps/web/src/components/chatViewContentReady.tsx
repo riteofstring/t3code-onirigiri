@@ -33,10 +33,6 @@ export function ChatViewContentReadyProvider({
   return <ChatViewContentReadyContext value={context}>{children}</ChatViewContentReadyContext>;
 }
 
-export function useChatViewContentGated(): boolean {
-  return useContext(ChatViewContentReadyContext) !== null;
-}
-
 export function ChatViewPendingContent() {
   const suspend = useContext(ChatViewContentReadyContext)?.suspend;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds a pending-content entry in the provider's count while this placeholder is mounted

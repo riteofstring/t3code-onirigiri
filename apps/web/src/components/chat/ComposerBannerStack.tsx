@@ -116,7 +116,8 @@ export function NoticeText({
     if (activity.isActive()) measure();
     let frame: number | null = null;
     const scheduleMeasure = () => {
-      frame ??= requestAnimationFrame(() => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
         frame = null;
         measure();
       });

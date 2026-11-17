@@ -2,6 +2,7 @@ import type { DeviceStreamClient, DuoPanelSinks } from "@t3tools/client-runtime/
 import { IOS_PHONE_SHAPE } from "@t3tools/client-runtime/device/shape-profile";
 import { expect, it, vi } from "vite-plus/test";
 
+import "~/index.css";
 import { render } from "../../../test/render";
 
 const viewers = vi.hoisted(() => ({ phone: vi.fn(), duo: vi.fn() }));
@@ -50,6 +51,10 @@ function fixture(kind: "phone" | "duo") {
     onResetReady: vi.fn(),
     onInputCancel: vi.fn(),
   };
+  const duo = {
+    model: { id: "iphone-duo", url: "/duo.glb" } as const,
+    onControlRejectedListener: vi.fn(),
+  };
   const view = (active: boolean, screenId = 1) => {
     const screen = {
       width: 400,
@@ -78,9 +83,8 @@ function fixture(kind: "phone" | "duo") {
               {...shared}
               active={active}
               screen={screen}
-              model={{ id: "iphone-duo", url: "/duo.glb" }}
+              {...duo}
               hingePreview={null}
-              onControlRejectedListener={vi.fn()}
             />
           )}
         </div>

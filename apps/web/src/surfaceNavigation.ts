@@ -38,31 +38,38 @@ export function readPageSurfaceNavigation(): SurfaceNavigation | null {
   return pageNavigation;
 }
 
-const nativeNavigation: SurfaceNavigation = (() => {
-  const state = useRightPanelStore.getState();
-  return {
-    open: state.open,
-    openBrowser: state.openBrowser,
-    openFile: state.openFile,
-    openAttachment: state.openAttachment,
-    openPullRequest: state.openPullRequest,
-    openTerminal: state.openTerminal,
-    openDevice: state.openDevice,
-    renameDevice: state.renameDevice,
-    closeSurface: state.closeSurface,
-    close: state.close,
-    openProactive: state.openProactive,
-    getUserActionRevision: state.getUserActionRevision,
-    splitTerminal: state.splitTerminal,
-    activateTerminal: state.activateTerminal,
-    closeTerminal: state.closeTerminal,
-    reconcileBrowserSurfaces: state.reconcileBrowserSurfaces,
-    hasSurface: (ref, id) =>
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces.some(
-        (surface) => surface.id === id,
-      ),
-  };
-})();
+type RightPanelStore = ReturnType<typeof useRightPanelStore.getState>;
+type RightPanelAction = Exclude<keyof SurfaceNavigation, "hasSurface">;
+
+// Reads the store on every call, so an action replaced with setState is the one that runs.
+const storeAction = <Key extends RightPanelAction>(key: Key): RightPanelStore[Key] =>
+  ((...args: never[]) =>
+    (useRightPanelStore.getState()[key] as (...args: never[]) => unknown)(
+      ...args,
+    )) as RightPanelStore[Key];
+
+const nativeNavigation: SurfaceNavigation = {
+  open: storeAction("open"),
+  openBrowser: storeAction("openBrowser"),
+  openFile: storeAction("openFile"),
+  openAttachment: storeAction("openAttachment"),
+  openPullRequest: storeAction("openPullRequest"),
+  openTerminal: storeAction("openTerminal"),
+  openDevice: storeAction("openDevice"),
+  renameDevice: storeAction("renameDevice"),
+  closeSurface: storeAction("closeSurface"),
+  close: storeAction("close"),
+  openProactive: storeAction("openProactive"),
+  getUserActionRevision: storeAction("getUserActionRevision"),
+  splitTerminal: storeAction("splitTerminal"),
+  activateTerminal: storeAction("activateTerminal"),
+  closeTerminal: storeAction("closeTerminal"),
+  reconcileBrowserSurfaces: storeAction("reconcileBrowserSurfaces"),
+  hasSurface: (ref, id) =>
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).surfaces.some(
+      (surface) => surface.id === id,
+    ),
+};
 
 export function useSurfaceNavigation(): SurfaceNavigation {
   return useContext(SurfaceNavigationContext) ?? nativeNavigation;

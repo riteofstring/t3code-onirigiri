@@ -74,11 +74,16 @@ it("does not reuse the previous thread's preparation when a view changes threads
 it.each([false, true])(
   "keeps suspended content covered with pending blocks first: %s",
   async (pendingFirst) => {
-    const blocks = {
-      first: Promise.withResolvers<string>(),
-      second: Promise.withResolvers<string>(),
-      third: Promise.withResolvers<string>(),
+    const block = () => {
+      let resolve!: (value: string) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<string>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+      });
+      return { promise, resolve, reject };
     };
+    const blocks = { first: block(), second: block(), third: block() };
     function Block({ result }: { result: Promise<string> }) {
       return <pre>{use(result)}</pre>;
     }

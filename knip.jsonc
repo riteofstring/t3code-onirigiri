@@ -93,6 +93,10 @@
       // electron-builder from this workspace, outside its package scripts.
       "ignoreDependencies": ["playwright-core", "electron-builder"],
     },
+    "apps/spatial": {
+      // The build inherits apps/web's Vite config, whose React plugin resolves this peer by name.
+      "ignoreDependencies": ["babel-plugin-react-compiler"],
+    },
     "apps/web": {
       // Worktree setup (scripts/setup-worktree.ts) runs this directly, and evidence
       // fixtures run under node.

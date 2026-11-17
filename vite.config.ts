@@ -19,6 +19,7 @@ const TEST_CONFIG_PACKAGES = [
   "apps/desktop",
   "apps/mobile",
   "apps/server",
+  "apps/spatial",
   "apps/web",
   "packages/client-runtime",
 ];
@@ -663,6 +664,17 @@ export default defineConfig({
         ],
         rules: {
           "t3code/no-mobile-uniwind-theme-escape-hatches": ["error", { allowUniwindTheme: true }],
+        },
+      },
+      {
+        // The Onirigiri workspace's tests choose jsdom per file and run on real timers.
+        files: ["apps/spatial/**"],
+        rules: {
+          "t3code/no-dom-test-environment": "off",
+          "t3code/no-native-title-tooltip": "off",
+          "t3code/no-polling-loop-in-tests": "off",
+          "t3code/no-real-time-wait-in-tests": "off",
+          "t3code/no-wall-clock-in-tests": "off",
         },
       },
     ],

@@ -33,7 +33,9 @@
     "test",
     "scripts/verify-built-boot.ts",
     "scripts/warm-dep-cache.ts",
+    "../../scripts/lib/disable-dev-editor.ts",
     "../../scripts/lib/public-config.ts",
-    "../../scripts/lib/third-party-licenses.ts"
+    "../../scripts/lib/third-party-licenses.ts",
+    "../../packages/client-runtime/src/state/orchestrationV2TestFixtures.ts"
   ]
 }

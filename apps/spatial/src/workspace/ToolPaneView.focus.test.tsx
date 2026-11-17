@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { EMPTY_TERMINAL_SESSION_STATE } from "../../../../packages/client-runtime/src/state/terminal";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
 import { terminalSurface } from "@t3tools/web/src/rightPanelStore";

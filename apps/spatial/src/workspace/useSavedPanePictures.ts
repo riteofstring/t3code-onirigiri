@@ -509,6 +509,7 @@ export function useSavedPanePictures(
     contentRevisions,
     enabled,
     displayedPictureFor,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry, live producers and saved pictures change which picture URLs are displayed.
     geometryVersion,
     pictureUrls,
     liveProducers,
@@ -544,7 +545,6 @@ export function useSavedPanePictures(
       }
       return { kind: "placeholder" };
     },
-    // oxlint-disable-next-line react/memo-dependencies -- Motion changes which chats hold their DOM, so the engine must resolve presentations again.
     [
       enabled,
       displayedPictureFor,
@@ -552,6 +552,7 @@ export function useSavedPanePictures(
       pictureMount,
       holdsLiveInMotion,
       coveredAtRest,
+      // oxlint-disable-next-line react/memo-dependencies -- Motion changes which chats hold their DOM, so the engine must resolve presentations again.
       cameraMoving,
       revealStep,
     ],

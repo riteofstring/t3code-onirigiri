@@ -3,16 +3,19 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it } from "vite-plus/test";
 
-import { useShortcutModifierState } from "./shortcutModifierState";
+import { useShortcutModifierState } from "@t3tools/web/src/shortcutModifierState";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 it("renders on held modifiers only while enabled, and starts from one already held when enabled", async () => {
   let renders = 0;
   let altKey = false;
-  function Probe({ enabled }: { enabled: boolean }) {
+  const onRender = (held: boolean) => {
     renders += 1;
-    altKey = useShortcutModifierState(false, enabled).altKey;
+    altKey = held;
+  };
+  function Probe({ enabled }: { enabled: boolean }) {
+    onRender(useShortcutModifierState(false, enabled).altKey);
     return null;
   }
   const root = createRoot(document.createElement("div"));
