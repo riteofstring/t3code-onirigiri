@@ -5,7 +5,9 @@ workspace: a niri-style canvas where every conversation, terminal, browser, file
 pane you can arrange in rows and columns, pan across and zoom out to an overview. T3's sidebar,
 settings and providers are unchanged. The spatial app lives in `apps/spatial`.
 
-This is a beta demo. Expect rough edges.
+This is an alpha. Expect rough edges; the [root README](../../README.md#known-limits) lists the
+known limits. To install a packaged build, download it from
+[Releases](https://github.com/riteofstring/t3code-onirigiri/releases).
 
 ## Get it running
 
@@ -15,7 +17,7 @@ Corepack for pnpm. The engine and the `onirigiri-t3-adapter` package are vendore
 cloning.
 
 ```bash
-git clone --branch release/cleanup-base https://github.com/riteofstring/t3code-onirigiri.git
+git clone https://github.com/riteofstring/t3code-onirigiri.git
 cd t3code-onirigiri
 corepack pnpm install --frozen-lockfile --ignore-scripts
 T3CODE_SINGLE_ORIGIN_DEV=1 npx vp run --filter @t3tools/spatial build
@@ -29,10 +31,11 @@ To change the engine or adapter, build and `pnpm pack` it, replace the tarball i
 `npx vp run dist:desktop:dmg:arm64` on a Mac with Rust installed writes an unsigned disk image to
 `release/`; `dist:desktop:linux` and `dist:desktop:win:x64` build a Linux AppImage and a Windows
 installer the same way. The `Onirigiri Desktop Alpha` workflow builds all three on GitHub and
-attaches them to the run. The app is named "Onirigiri for T3 Code (Alpha)" and installs beside T3
-Code, but it reads and writes the same `~/.t3` data, so quit T3 Code first and keep a copy of that
-folder. The builds are unsigned: macOS asks you to allow the app under System Settings → Privacy &
-Security, and Windows SmartScreen asks you to choose "Run anyway".
+attaches them to the run. The app is named "Onirigiri for T3 Code (Alpha)" and reads and writes the
+same `~/.t3` data as T3 Code, so quit T3 Code first and keep a copy of that folder. The Windows
+installer uses T3 Code's application ID, so it can replace an installed T3 Code instead of sitting
+beside it. The builds are unsigned: macOS asks you to allow the app under System Settings → Privacy
+& Security, and Windows SmartScreen asks you to choose "Run anyway".
 
 ### In the browser
 
@@ -84,5 +87,4 @@ the conversation it belongs to.
 
 ## Notes
 
-Design constraints that span files are in [design.md](design.md). The root
-[README](../../README.md) installs standard T3 Code, not this fork.
+Design constraints that span files are in [design.md](design.md).
