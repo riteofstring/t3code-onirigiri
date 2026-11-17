@@ -1365,6 +1365,32 @@ describe("rightPanelStore", () => {
     expect(state.surfaces[0]).not.toHaveProperty("host");
   });
 
+  it("opens a reference without a host in the only tab showing that pull request, across a reload", async () => {
+    const store = useRightPanelStore.getState();
+    const reference = { projectId: "project-a", repository: "acme/api", number: 7 };
+    const url = "https://github.com/acme/api/pull/7";
+    store.openPullRequest(refA, reference);
+    store.openPullRequest(refA, { ...reference, url });
+    const opened = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(opened.surfaces).toHaveLength(1);
+    store.setPullRequestDetailTab(refA, opened.surfaces[0]!.id, "code");
+
+    const { storage, name } = useRightPanelStore.persist.getOptions();
+    const saved = await storage!.getItem(name!);
+    useRightPanelStore.setState({ byThreadKey: {} });
+    await storage!.setItem(name!, saved!);
+    await useRightPanelStore.persist.rehydrate();
+
+    store.open(refA, "files");
+    store.openPullRequest(refA, reference);
+    store.openPullRequest(refA, { ...reference, url });
+    const restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    const tabs = restored.surfaces.filter((surface) => surface.kind === "pull-request");
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).toMatchObject({ ...reference, url, detailTab: "code" });
+    expect(restored.activeSurfaceId).toBe(tabs[0]!.id);
+  });
+
   it("keeps one pull request read from two servers as two tabs", () => {
     const local = {
       environmentId: "local",

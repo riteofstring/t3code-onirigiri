@@ -957,7 +957,32 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       openPullRequest: (ref, target) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
-            const surface = pullRequestSurface(target);
+            const opened = pullRequestSurface(target);
+            // A target that names no host opens the tab already showing that pull request: the
+            // one without a host, or else the only one when its URL names no host either.
+            const showing =
+              target.host === undefined
+                ? current.surfaces.filter(
+                    (entry): entry is PullRequestSurface =>
+                      entry.kind === "pull-request" &&
+                      entry.environmentId === opened.environmentId &&
+                      entry.projectId === opened.projectId &&
+                      entry.repository === opened.repository &&
+                      entry.number === opened.number,
+                  )
+                : [];
+            const existing =
+              showing.find((entry) => entry.host === undefined) ??
+              (opened.host === undefined && showing.length === 1 ? showing[0] : undefined);
+            const { host: _host, ...hostless } = opened;
+            const surface: PullRequestSurface =
+              existing === undefined
+                ? opened
+                : {
+                    ...hostless,
+                    id: existing.id,
+                    ...(existing.host === undefined ? {} : { host: existing.host }),
+                  };
             const next = upsertSurface(current, surface);
             return target.url
               ? {
