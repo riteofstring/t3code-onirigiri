@@ -25,9 +25,10 @@ Download the installer for your platform from
 
 The installers are unsigned, which is why macOS and Windows ask before the first launch.
 
-The app is named "Onirigiri for T3 Code (Alpha)" and reads and writes the same `~/.t3` data as
-T3 Code. Quit T3 Code before you start it, and keep a copy of that folder. The Windows installer
-uses T3 Code's application ID, so it can replace an installed T3 Code instead of sitting beside it.
+The app installs as "Onirigiri for T3 Code (Alpha)"; its own windows and menus still say
+"T3 Code (Beta)". It reads and writes the same `~/.t3` data as T3 Code. Quit T3 Code before you
+start it, and keep a copy of that folder. The Windows installer uses T3 Code's application ID, so it
+can replace an installed T3 Code instead of sitting beside it.
 
 Like T3 Code, it drives the coding agents already installed and signed in on your machine. See
 [Install and first run](docs/user/install.md) for the providers and how to set them up.
@@ -56,7 +57,13 @@ The [Onirigiri guide](docs/onirigiri/README.md#using-the-workspace) covers the r
 - Shortly after a move, about one key press in ten takes more than 100 ms to appear, and up to
   about 0.4 s, while a chat is pictured or a neighbour loads in the background.
 - Terminal and file panes drop keys typed before their text field takes focus on arrival.
+- Leaving a maximized pane measured slower in this build than in the one before it; the cause is
+  not yet traced.
+- With the processor slowed four times, about one move in twenty has a frame gap of about a second
+  as it comes to rest.
 - Only chats have pictures. Other panes stay live while moving and in the overview.
+- 4K displays and graphics memory use are untested.
+- The app does not update itself. Download newer builds from Releases.
 - The fork follows T3 Code's `main` as of 7 November 2026.
 
 ## Reporting problems

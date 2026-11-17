@@ -31,11 +31,13 @@ To change the engine or adapter, build and `pnpm pack` it, replace the tarball i
 `npx vp run dist:desktop:dmg:arm64` on a Mac with Rust installed writes an unsigned disk image to
 `release/`; `dist:desktop:linux` and `dist:desktop:win:x64` build a Linux AppImage and a Windows
 installer the same way. The `Onirigiri Desktop Alpha` workflow builds all three on GitHub and
-attaches them to the run. The app is named "Onirigiri for T3 Code (Alpha)" and reads and writes the
-same `~/.t3` data as T3 Code, so quit T3 Code first and keep a copy of that folder. The Windows
-installer uses T3 Code's application ID, so it can replace an installed T3 Code instead of sitting
-beside it. The builds are unsigned: macOS asks you to allow the app under System Settings → Privacy
-& Security, and Windows SmartScreen asks you to choose "Run anyway".
+attaches them to the run; for a tag named `onirigiri-alpha-*` it also collects them in a draft
+prerelease. The app installs as "Onirigiri for T3 Code (Alpha)", while its own windows and menus
+still say "T3 Code (Beta)". It reads and writes the same `~/.t3` data as T3 Code, so quit T3 Code
+first and keep a copy of that folder. The Windows installer uses T3 Code's application ID, so it can
+replace an installed T3 Code instead of sitting beside it. The builds are unsigned: macOS asks you
+to allow the app under System Settings → Privacy & Security, and Windows SmartScreen asks you to
+choose "Run anyway". They carry no update feed, so the app does not update itself.
 
 ### In the browser
 
@@ -55,6 +57,10 @@ T3CODE_SINGLE_ORIGIN_DEV=1 T3CODE_PORT=5734 npx vp run --filter @t3tools/spatial
 Open the pairing URL the backend prints (`http://localhost:5743/pair#token=…`) in Chrome. Then add a
 project and enable an installed, signed-in provider in Settings → Providers. Embedded browser panes
 need the desktop app.
+
+Pane pictures need WebGPU and Chrome's HTML-in-Canvas flag (`chrome://flags/#canvas-draw-element`);
+the desktop app turns the feature on by itself. Without them every pane stays live and nothing else
+changes.
 
 ### In the desktop app
 

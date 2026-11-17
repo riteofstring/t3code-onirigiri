@@ -13,8 +13,9 @@ This page records constraints that span files and are easy to break without noti
 
 - The engine and the adapter are vendored tarballs in `apps/spatial/vendor`, pinned by integrity in
   the lockfile: engine commit `11ef75c`, adapter commit
-  `02f675942c6d8021451955d9f7cb3a56773ad734`. Their tests and Code Polishy checks belong in their
-  own repositories; workspace integration tests remain here.
+  `02f675942c6d8021451955d9f7cb3a56773ad734`. The engine archive still carries the version
+  `0.4.0-beta.1`; its source is what the engine repository releases as `0.4.0-beta.2`. Their tests
+  and Code Polishy checks belong in their own repositories; workspace integration tests remain here.
 - The server package bundles `apps/spatial/dist` as its client, so the desktop app and `t3` serve
   the workspace. The desktop app turns on Chromium's `CanvasDrawElement` feature before startup,
   because pane pictures need it.
