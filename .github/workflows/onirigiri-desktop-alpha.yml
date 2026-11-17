@@ -3,7 +3,8 @@ name: Onirigiri Desktop Alpha
 # Builds unsigned installers of the desktop app with the Onirigiri workspace:
 # an Apple silicon disk image, a Linux x64 AppImage and a Windows x64
 # installer. Run it by hand, or push a tag named onirigiri-alpha-*. The
-# installers are attached to the run.
+# installers are attached to the run. A tag also collects them in a draft
+# prerelease, which is public only once someone publishes it.
 
 on:
   workflow_dispatch:
@@ -70,8 +71,22 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
 
+      # The alpha ships no update feed. This value is not an owner/name pair, so
+      # the build bakes none in and the app reports updates as unavailable,
+      # instead of asking this repository's releases for update files that
+      # these unsigned builds do not publish.
       - name: Build installer
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: none
         run: vp run ${{ matrix.script }}
+
+      - name: Name the installer after the fork
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in ${{ matrix.files }}; do
+            mv "$file" "$(dirname "$file")/Onirigiri-$(basename "$file")"
+          done
 
       - name: Upload installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -80,3 +95,35 @@ jobs:
           path: ${{ matrix.files }}
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Draft the release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: installers
+          merge-multiple: true
+
+      - name: Draft or update the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" installers/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" installers/* \
+              --draft \
+              --prerelease \
+              --verify-tag \
+              --title "Onirigiri for T3 Code (Alpha): ${GITHUB_REF_NAME#onirigiri-}" \
+              --notes "Unsigned alpha installers for macOS (Apple silicon), Windows (x64) and Linux (x64). The [README](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.md) has the first-launch steps and the known limits. These builds do not update themselves."
+          fi
