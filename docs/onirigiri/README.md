@@ -12,9 +12,10 @@ known limits. To install a packaged build, download it from
 ## Get it running
 
 You need Git, [Node](https://nodejs.org) at the version pinned in `package.json` (`engines`) and
-Corepack for pnpm. The engine and the `onirigiri-t3-adapter` package are vendored as tarballs in
-`apps/spatial/vendor`; each file name ends with the commit it was packed from, so nothing else needs
-cloning.
+Corepack for pnpm. Node no longer bundles Corepack, so install it with
+`npm install --global corepack`. The engine and the `onirigiri-t3-adapter` package are vendored as
+tarballs in `apps/spatial/vendor`; each file name ends with the commit it was packed from, so
+nothing else needs cloning.
 
 ```bash
 git clone https://github.com/riteofstring/t3code-onirigiri.git
