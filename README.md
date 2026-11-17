@@ -27,15 +27,15 @@ The installers are unsigned, which is why macOS and Windows ask before the first
 
 The app installs as "Onirigiri for T3 Code (Alpha)"; its own windows and menus still say
 "T3 Code (Beta)". It reads and writes the same `~/.t3` data as T3 Code. Quit T3 Code before you
-start it, and keep a copy of that folder. The Windows installer uses T3 Code's application ID, so it
-can replace an installed T3 Code instead of sitting beside it.
+start it, and keep a copy of that folder. On Windows the installer uses T3 Code's installer identity
+and install folder, so it replaces an installed T3 Code.
 
 Like T3 Code, it drives the coding agents already installed and signed in on your machine. See
 [Install and first run](docs/user/install.md) for the providers and how to set them up.
 
-Also like T3 Code, its server sends product usage events to T3 Code's endpoint. Set
-`T3CODE_TELEMETRY_ENABLED=false` to turn that off; [Product usage data](docs/user/telemetry.md)
-lists what is sent.
+Unlike T3 Code, this fork sends no product usage data unless you set
+`T3CODE_TELEMETRY_ENABLED=true`. [Product usage data](docs/user/telemetry.md) lists what T3 Code
+sends.
 
 To build from source or run it in a browser, see the [Onirigiri guide](docs/onirigiri/README.md).
 

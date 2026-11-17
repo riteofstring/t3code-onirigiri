@@ -35,8 +35,8 @@ installer the same way. The `Onirigiri Desktop Alpha` workflow builds all three 
 attaches them to the run; for a tag named `onirigiri-alpha-*` it also collects them in a draft
 prerelease. The app installs as "Onirigiri for T3 Code (Alpha)", while its own windows and menus
 still say "T3 Code (Beta)". It reads and writes the same `~/.t3` data as T3 Code, so quit T3 Code
-first and keep a copy of that folder. The Windows installer uses T3 Code's application ID, so it can
-replace an installed T3 Code instead of sitting beside it. The builds are unsigned: macOS asks you
+first and keep a copy of that folder. On Windows the installer uses T3 Code's installer identity
+and install folder, so it replaces an installed T3 Code. The builds are unsigned: macOS asks you
 to allow the app under System Settings → Privacy & Security, and Windows SmartScreen asks you to
 choose "Run anyway". They carry no update feed, so the app does not update itself.
 
