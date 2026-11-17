@@ -1016,8 +1016,8 @@ importers:
         specifier: 4.1.2
         version: 4.1.2(effect@4.1.2)(react@19.3.0)(scheduler@0.28.0)
       '@riteofstring/onirigiri':
-        specifier: file:./vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz
-        version: file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
+        specifier: file:./vendor/onirigiri-0.4.0-beta.2-542eac0.tgz
+        version: file:apps/spatial/vendor/onirigiri-0.4.0-beta.2-542eac0.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
       '@riteofstring/onirigiri-t3':
         specifier: file:./vendor/onirigiri-t3-0.1.0-02f6759.tgz
         version: file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz
@@ -6325,9 +6325,9 @@ packages:
     resolution: {integrity: sha512-/pD8f3lWe5SGhYb/yto4DWrGA2vC6WBxFdKvZV364wKwHjvGgRV5O9eJUOkMDT0Tpt/unoxKh0LLZ77zJN2vLw==, tarball: file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz}
     version: 0.1.0
 
-  '@riteofstring/onirigiri@file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz':
-    resolution: {integrity: sha512-Nhp6lehH9ezQC6JRxM9lUDu1f6dquVn4GBfzTBUQAr0/H2XYN8ditJjWZ/AODnBcUhQjvFvn8ooP2paPEkmCfw==, tarball: file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz}
-    version: 0.4.0-beta.1
+  '@riteofstring/onirigiri@file:apps/spatial/vendor/onirigiri-0.4.0-beta.2-542eac0.tgz':
+    resolution: {integrity: sha512-paF6ZlmGDajAonD197U6XG+gkVGWBBf84BSGqMA+4pJ2gmkAhXkpdAwkiRjYWN5d7ia8hR+90NuZ/fb7MYvm1Q==, tarball: file:apps/spatial/vendor/onirigiri-0.4.0-beta.2-542eac0.tgz}
+    version: 0.4.0-beta.2
     peerDependencies:
       react: '>=18.2.0 <20'
       react-dom: '>=18.2.0 <20'
@@ -16020,7 +16020,7 @@ snapshots:
 
   '@riteofstring/onirigiri-t3@file:apps/spatial/vendor/onirigiri-t3-0.1.0-02f6759.tgz': {}
 
-  '@riteofstring/onirigiri@file:apps/spatial/vendor/onirigiri-0.4.0-beta.1-11ef75c.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))':
+  '@riteofstring/onirigiri@file:apps/spatial/vendor/onirigiri-0.4.0-beta.2-542eac0.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))':
     dependencies:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
