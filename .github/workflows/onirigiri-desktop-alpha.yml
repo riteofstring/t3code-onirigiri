@@ -84,8 +84,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          prefix="Onirigiri-"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            prefix="Onirigiri-${GITHUB_REF_NAME#onirigiri-}-"
+          fi
           for file in ${{ matrix.files }}; do
-            mv "$file" "$(dirname "$file")/Onirigiri-$(basename "$file")"
+            mv "$file" "$(dirname "$file")/${prefix}$(basename "$file")"
           done
 
       - name: Upload installer
