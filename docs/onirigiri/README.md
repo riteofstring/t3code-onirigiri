@@ -92,6 +92,24 @@ advanced controls lists every shortcut. The main ones (Option on macOS, Alt else
 Click **New pane** in an empty cell to add a chat, terminal, browser, files, diff or other tool beside
 the conversation it belongs to.
 
+## Troubleshooting pane pictures
+
+The workspace has a readout that shows whether pictures are being taken: the browser version,
+whether HTML-in-Canvas and WebGPU are available, and how many captures started, were saved or
+failed. In the browser, add `?pictureStatus=1` to the address; `?pictureStatus=0` hides it again.
+In the desktop app, open View → Toggle Developer Tools and run this in the Console:
+
+```js
+sessionStorage.setItem("onirigiri.pictureStatus", "1");
+location.reload();
+```
+
+The Pane pictures button in the workspace controls turns pictures off and on, which reloads the
+window, so you can compare the two.
+
+`?otherPanes=pictures` is an experiment that also pictures terminal, file and browser panes while
+they move. It is not supported, and `?otherPanes=live` switches it off again.
+
 ## Notes
 
 Design constraints that span files are in [design.md](design.md).
