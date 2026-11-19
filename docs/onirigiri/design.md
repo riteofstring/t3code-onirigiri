@@ -12,7 +12,8 @@ This page records constraints that span files and are easy to break without noti
 ## Build
 
 - The engine and the adapter are vendored tarballs in `apps/spatial/vendor`, pinned by integrity in
-  the lockfile: engine `0.4.0-beta.2` at commit `542eac0`, adapter commit
+  the lockfile: engine `0.4.0-beta.2` at tag `v0.4.0-beta.2` (commit `a8be6c6`; the tarball's file
+  name carries that commit's earlier ID, `542eac0`), adapter commit
   `02f675942c6d8021451955d9f7cb3a56773ad734`. Their tests and Code Polishy checks belong in their
   own repositories; workspace integration tests remain here.
 - The server package bundles `apps/spatial/dist` as its client, so the desktop app and `t3` serve
