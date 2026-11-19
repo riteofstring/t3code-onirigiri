@@ -2865,7 +2865,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           role: "Viewer",
         },
       ],
-      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      ...(signed
+        ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") }
+        : {
+            // Packaging breaks Electron's own signature, and Apple silicon calls a
+            // downloaded app without a valid one damaged. An ad hoc signature gets
+            // the Open Anyway prompt instead. The hardened runtime stays off: it
+            // would deny camera and microphone to terminals and agents here.
+            identity: "-",
+            hardenedRuntime: false,
+          }),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,

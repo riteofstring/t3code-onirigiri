@@ -1622,6 +1622,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("signs macOS builds ad hoc unless a certificate signs them", () =>
+    Effect.gen(function* () {
+      const macConfig = (signed: boolean) =>
+        createBuildConfig("mac", "dmg", "1.2.3", signed, false, undefined, undefined).pipe(
+          Effect.map((config) => config.mac as Record<string, unknown>),
+        );
+
+      const unsigned = yield* macConfig(false);
+      assert.equal(unsigned.identity, "-");
+      assert.isFalse(unsigned.hardenedRuntime);
+      assert.notProperty(unsigned, "sign");
+
+      const signed = yield* macConfig(true);
+      assert.notProperty(signed, "identity");
+      assert.notProperty(signed, "hardenedRuntime");
+      assert.match(signed.sign as string, /scripts[\\/]sign-macos\.ts$/);
+    }),
+  );
+
   it("parses Windows bsdtar member listings with CRLF line endings", () => {
     assert.deepStrictEqual(
       parseWslRuntimeArchiveMembers("./t3-1.2.3-linux-x64/t3\r\nt3-1.2.3-linux-x64/client/\r\n"),

@@ -80,6 +80,18 @@ jobs:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: none
         run: vp run ${{ matrix.script }}
 
+      # macOS reports a downloaded app without a valid signature as damaged, so
+      # the app inside the disk image must carry the build's ad hoc signature.
+      - name: Check the app's signature in the disk image
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/alpha-dmg"
+          hdiutil attach release/*.dmg -nobrowse -readonly -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          codesign --verify --deep --strict --verbose=2 "$mount"/*.app
+          codesign --display --verbose=2 "$mount"/*.app 2>&1 | grep -x "Signature=adhoc"
+
       - name: Name the installer after the fork
         shell: bash
         run: |
