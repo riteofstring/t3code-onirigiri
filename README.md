@@ -25,10 +25,11 @@ as T3 Code, so keep a copy of that folder.
 
 1. Download the `.dmg` file and open it.
 2. Drag "Onirigiri for T3 Code (Alpha)" onto the Applications folder.
-3. Open the app from Applications. macOS says it could not verify the app and does not open it.
-   Close that message.
-4. Open **System Settings → Privacy & Security**, scroll down to the note about the app and choose
-   **Open Anyway**. You do this once; after that the app opens like any other.
+3. Open the app from Applications. macOS says "Not Opened" because Apple could not verify the
+   app. Choose **Done**, not Move to Trash.
+4. Open **System Settings → Privacy & Security** and scroll down to **Security**. Next to the note
+   that the app was blocked, choose **Open Anyway**, then confirm with your password or Touch ID.
+   You do this once; after that the app opens like any other.
 
 There is no installer for Intel Macs.
 
