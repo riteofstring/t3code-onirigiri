@@ -14,22 +14,47 @@ This is an alpha. It is not made, endorsed or supported by the T3 Code team.
 
 ## Install
 
-Download the installer for your platform from
-[Releases](https://github.com/riteofstring/t3code-onirigiri/releases).
+You do not need to build anything. Every
+[release](https://github.com/riteofstring/t3code-onirigiri/releases) carries a ready-made installer
+for each platform under **Assets**. Take the newest release.
 
-| Platform              | File        | First launch                                                     |
-| --------------------- | ----------- | ---------------------------------------------------------------- |
-| macOS (Apple silicon) | `.dmg`      | Allow the app under System Settings → Privacy & Security         |
-| Windows (x64)         | `.exe`      | In the SmartScreen prompt, choose "More info", then "Run anyway" |
-| Linux (x64)           | `.AppImage` | Make the file executable, then run it                            |
+Before you install, quit T3 Code if it is running. This app reads and writes the same `~/.t3` data
+as T3 Code, so keep a copy of that folder.
 
-The installers are unsigned, which is why macOS and Windows ask before the first launch. Where
-Windows Smart App Control is on, it blocks the installer and offers no way to run it.
+### macOS (Apple silicon)
 
-The app installs as "Onirigiri for T3 Code (Alpha)"; its own windows and menus still say
-"T3 Code (Beta)". It reads and writes the same `~/.t3` data as T3 Code. Quit T3 Code before you
-start it, and keep a copy of that folder. On Windows the installer uses T3 Code's installer identity
-and install folder, so it replaces an installed T3 Code.
+1. Download the `.dmg` file and open it.
+2. Drag "Onirigiri for T3 Code (Alpha)" onto the Applications folder.
+3. Open the app from Applications. macOS says it could not verify the app and does not open it.
+   Close that message.
+4. Open **System Settings → Privacy & Security**, scroll down to the note about the app and choose
+   **Open Anyway**. You do this once; after that the app opens like any other.
+
+There is no installer for Intel Macs.
+
+### Windows (x64)
+
+1. Download the `.exe` file and run it.
+2. Windows shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
+3. The installer finishes by itself and starts the app.
+
+The installer uses T3 Code's installer identity and install folder, so it replaces an installed
+T3 Code. Where Smart App Control is on, Windows blocks the installer and offers no way to run it.
+
+### Linux (x64)
+
+1. Download the `.AppImage` file.
+2. In a terminal, in the folder you downloaded it to, make the file executable and start it:
+
+   ```bash
+   chmod +x ./Onirigiri-*.AppImage
+   ./Onirigiri-*.AppImage
+   ```
+
+### After installing
+
+The installers are unsigned, which is why macOS and Windows ask before the first launch. The app
+is named "Onirigiri for T3 Code (Alpha)"; its own windows and menus still say "T3 Code (Beta)".
 
 Like T3 Code, it drives the coding agents already installed and signed in on your machine. See
 [Install and first run](docs/user/install.md) for the providers and how to set them up.
