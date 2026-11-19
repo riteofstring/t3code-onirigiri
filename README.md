@@ -23,7 +23,8 @@ Download the installer for your platform from
 | Windows (x64)         | `.exe`      | In the SmartScreen prompt, choose "More info", then "Run anyway" |
 | Linux (x64)           | `.AppImage` | Make the file executable, then run it                            |
 
-The installers are unsigned, which is why macOS and Windows ask before the first launch.
+The installers are unsigned, which is why macOS and Windows ask before the first launch. Where
+Windows Smart App Control is on, it blocks the installer and offers no way to run it.
 
 The app installs as "Onirigiri for T3 Code (Alpha)"; its own windows and menus still say
 "T3 Code (Beta)". It reads and writes the same `~/.t3` data as T3 Code. Quit T3 Code before you
@@ -67,6 +68,8 @@ The [Onirigiri guide](docs/onirigiri/README.md#using-the-workspace) covers the r
   as it comes to rest.
 - Only chats have pictures. Other panes stay live while moving and in the overview.
 - 4K displays and graphics memory use are untested.
+- The Windows build leaves out the runtime T3 Code installs into a WSL distro, so running agents
+  in WSL is untested and may not work.
 - The app does not update itself. Download newer builds from Releases.
 - The fork follows T3 Code's `main` as of 7 November 2026.
 
